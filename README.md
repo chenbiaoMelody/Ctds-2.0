@@ -15,7 +15,7 @@
 | [docs/01-vibe coding最佳实践调研报告.md](docs/01-vibe coding最佳实践调研报告.md) | 方法论与业界依据 |
 | [docs/C-TDS项目总体实施计划与WBS.md](docs/C-TDS项目总体实施计划与WBS.md) | 总体实施计划 + 136 工作包 WBS |
 | [docs/项目启动确认记录-2026-09-05.md](docs/项目启动确认记录-2026-09-05.md) | T+0 启动决策与待决事项（**含 D-1 基线重排待裁决**） |
-| [docs/logs/](docs/logs/) | 项目开发日志（会话级，命名 `Ctds-项目开发日志-yy-mm-dd-hhss.md`） |
+| [docs/logs/](docs/logs/) | 项目开发日志（会话级，命名 `Ctds-项目开发日志-yy-mm-dd-hhss.md`，时间戳随最近一次落盘同步更新） |
 | [docs/tasks/](docs/tasks/) | 跨会话任务笔记（按需创建） |
 
 ## 仓库约定
