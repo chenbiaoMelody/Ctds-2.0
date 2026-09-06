@@ -16,7 +16,7 @@
 
 ```json
 {
-  "reviewer": "01-规格符合性",
+  "reviewer": "01-规格与设计符合性",
   "verdict": "PASS | FAIL",
   "findings": [
     { "severity": "P0|P1|P2", "file": "路径", "issue": "问题描述", "evidence": "依据（规格条目/章程条款）" }
