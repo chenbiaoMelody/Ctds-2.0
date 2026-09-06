@@ -4,6 +4,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.ctds.common.web.GlobalExceptionHandler;
+import com.ctds.common.web.TraceIdFilter;
 import com.ctds.example.application.GreetingService;
 import com.ctds.example.infrastructure.InMemoryGreetingRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -19,7 +21,9 @@ class GreetingControllerTest {
     @BeforeEach
     void setUp() {
         mockMvc = MockMvcBuilders.standaloneSetup(
-                new GreetingController(new GreetingService(new InMemoryGreetingRepository()))).build();
+                        new GreetingController(new GreetingService(new InMemoryGreetingRepository())))
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .addFilters(new TraceIdFilter()).build();
     }
 
     @Test
@@ -29,7 +33,7 @@ class GreetingControllerTest {
                         .header("X-Trace-Id", "t-123")
                         .content("{\"message\":\"hi\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.code").value("0"))
                 .andExpect(jsonPath("$.traceId").value("t-123"))
                 .andExpect(jsonPath("$.data.message").value("hi"));
     }
@@ -40,7 +44,17 @@ class GreetingControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"message\":\"hi\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.code").value("0"))
                 .andExpect(jsonPath("$.traceId").value("-"));
+    }
+
+    @Test
+    void createShouldReturn400WithParamCodeWhenMessageBlank() throws Exception {
+        mockMvc.perform(post("/api/v1/greetings")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"message\":\"   \"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("1000C0001"))
+                .andExpect(jsonPath("$.message").value("message must not be null or blank"));
     }
 }

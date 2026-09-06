@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import com.ctds.common.errorcode.BizException;
 import com.ctds.example.domain.Greeting;
 import com.ctds.example.infrastructure.InMemoryGreetingRepository;
 import org.junit.jupiter.api.Test;
@@ -21,19 +22,21 @@ class GreetingServiceTest {
     }
 
     @Test
-    void greetShouldRejectBlankMessage() {
+    void greetShouldRejectBlankMessageAsParamInvalid() {
         final GreetingService service = new GreetingService(new InMemoryGreetingRepository());
 
-        final IllegalArgumentException thrown =
-                assertThrows(IllegalArgumentException.class, () -> service.greet("   "));
+        final BizException thrown = assertThrows(BizException.class, () -> service.greet("   "));
 
-        assertEquals("message must not be blank", thrown.getMessage());
+        assertEquals("1000C0001", thrown.getErrorCode().value());
+        assertEquals("message must not be null or blank", thrown.getMessage());
     }
 
     @Test
     void greetShouldRejectNullMessage() {
         final GreetingService service = new GreetingService(new InMemoryGreetingRepository());
 
-        assertThrows(NullPointerException.class, () -> service.greet(null));
+        final BizException thrown = assertThrows(BizException.class, () -> service.greet(null));
+
+        assertEquals("1000C0001", thrown.getErrorCode().value());
     }
 }

@@ -22,7 +22,7 @@ class LayerRulesTest {
     @ArchTest
     static final ArchRule domainMustBeIndependent = classes()
             .that().resideInAPackage("..domain..")
-            .should().onlyDependOnClassesThat().resideInAnyPackage("java..", "..domain..");
+            .should().onlyDependOnClassesThat().resideInAnyPackage("java..", "..common.errorcode..", "..domain..");
 
     @ArchTest
     static final ArchRule applicationMustNotAccessInterfaces = noClasses()

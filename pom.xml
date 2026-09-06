@@ -20,6 +20,7 @@
 
   <!-- 模块目录规划见 ADR-002：services/ common/ std-adapter/ connector-sdk/ frontend/ deploy/ -->
   <modules>
+    <module>common/errorcode</module>
     <module>services/example-service</module>
   </modules>
 
@@ -37,6 +38,11 @@
         <artifactId>archunit-junit5</artifactId>
         <version>${archunit.version}</version>
         <scope>test</scope>
+      </dependency>
+      <dependency>
+        <groupId>com.ctds</groupId>
+        <artifactId>common-errorcode</artifactId>
+        <version>${project.version}</version>
       </dependency>
     </dependencies>
   </dependencyManagement>
