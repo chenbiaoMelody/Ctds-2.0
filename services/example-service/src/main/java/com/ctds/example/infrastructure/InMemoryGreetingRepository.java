@@ -2,9 +2,8 @@ package com.ctds.example.infrastructure;
 
 import com.ctds.example.domain.Greeting;
 import com.ctds.example.domain.GreetingRepository;
-import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import org.springframework.stereotype.Repository;
 
 /**
@@ -13,11 +12,16 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class InMemoryGreetingRepository implements GreetingRepository {
 
-    private final ConcurrentMap<UUID, Greeting> store = new ConcurrentHashMap<>();
+    private final List<Greeting> store = new CopyOnWriteArrayList<>();
 
     @Override
     public Greeting save(final Greeting greeting) {
-        store.put(greeting.id(), greeting);
+        store.add(greeting);
         return greeting;
+    }
+
+    @Override
+    public List<Greeting> findAll() {
+        return List.copyOf(store);
     }
 }
