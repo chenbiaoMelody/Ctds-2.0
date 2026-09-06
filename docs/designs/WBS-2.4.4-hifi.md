@@ -8,7 +8,7 @@
 
 | 轮次 | 结论（确认/打回） | 确认人（PO） | 日期 | 意见（打回必填） |
 | --- | --- | --- | --- | --- |
-| 1 | 待确认 | | | |
+| 1 | 确认 | 项目主导者（兼任 PO；会话回复"定稿确认"） | 2026-09-06 | 认可与低保真的差异声明（Spring Boot 内置结构化日志）；后续评审修复（清理过滤器等）按下方增补条款留痕 |
 
 ## 与低保真的差异声明（细化产生的唯一结构性调整）
 
@@ -39,6 +39,7 @@
 | `clear()` | 清除本组件全部键（**不动** traceId——归 TraceIdFilter 管） |
 
 MDC 键约定：`traceId`（既有，常量取自 `ApiResult.TRACE_MDC_KEY`）、`errorCode`、`module`。MDC 无值的键不出现在 JSON 中。
+按请求清理（评审②P1 修复增补）：Web 环境自动注册 `LogContextCleanupFilter`，请求结束清除 `errorCode`/`module`（不清 traceId，防线程池复用泄漏）；该过滤器仅受 servlet 存在性守卫，**不受 `ctds.audit.enabled` 开关约束**（业务代码写 MDC 不受开关控制，评审②P2-1 解耦）。
 
 ### AuditRecorder（接口）与 AuditEvent
 
@@ -72,7 +73,7 @@ public record AuditEvent(
 | 项 | 值/规则 |
 | --- | --- |
 | 审计文件路径 | `{ctds.audit.file-dir}/audit-YYYY-MM-DD.jsonl`（相对工作目录，按天滚动，保留策略随部署侧采集，组件不删文件） |
-| detail 约束 | 键 ≤20 个、每值 ≤512 字符，超限截断并加 `…[truncated]` 标记（审计可用性优先，不因明细过大失败）；**禁止放入密码、令牌、个人信息**（评审②核对项） |
+| detail 约束 | 键 ≤20 个、每值 ≤512 字符，超值限截断并加 `…[truncated]` 标记；键数超限保留前 20 个并新增键 `_truncated:"true"`（评审①P2 增补约定）；**禁止放入密码、令牌、个人信息**（评审②核对项） |
 | 依赖 | `net.logstash.logback:logstash-logback-encoder:8.1`（Maven Central 核验 2026-09-06，Apache-2.0；9.0 需 Jackson 3 故不采用）+ `spring-boot-starter`（日志门面）、`spring-boot-autoconfigure`（自动装配）、`common-errorcode`（复用 ErrorCode/TraceIdFilter 约定）；pom 版本经根 dependencyManagement 统一管理 |
 | 模块归属 | `common/logging`，artifactId `common-logging`，自动装配注册文件 `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`（沿用 errorcode 模式） |
 | ADR 增补 | ADR-005 §3 增补第 6 项"日志与审计契约"（本页契约表+边界值精要），随编码任务提交 |
