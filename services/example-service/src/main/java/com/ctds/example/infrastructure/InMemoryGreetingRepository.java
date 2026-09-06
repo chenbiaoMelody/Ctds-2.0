@@ -1,0 +1,23 @@
+package com.ctds.example.infrastructure;
+
+import com.ctds.example.domain.Greeting;
+import com.ctds.example.domain.GreetingRepository;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import org.springframework.stereotype.Repository;
+
+/**
+ * 基础设施层：内存仓储实现（骨架演示用，正式持久化随 C-1.x 数据模型落地）。
+ */
+@Repository
+public class InMemoryGreetingRepository implements GreetingRepository {
+
+    private final ConcurrentMap<UUID, Greeting> store = new ConcurrentHashMap<>();
+
+    @Override
+    public Greeting save(final Greeting greeting) {
+        store.put(greeting.id(), greeting);
+        return greeting;
+    }
+}
