@@ -7,7 +7,9 @@ out/
 coverage/
 
 # 运行期日志与审计文件（不入库；部署侧统一采集）
-logs/
+# 红线例外：docs/logs/ 是开发日志目录，必须随任务分支入库（AGENTS.md 1.4）——**/logs/ 不得命中它
+**/logs/
+!docs/logs/
 *.log
 
 # 环境与密钥（红线：任何密钥不入库）
