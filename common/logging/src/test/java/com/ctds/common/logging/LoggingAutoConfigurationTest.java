@@ -20,9 +20,12 @@ class LoggingAutoConfigurationTest {
     }
 
     @Test
-    void contextShouldOmitAuditRecorderWhenDisabled() {
+    void contextShouldOmitAuditRecorderWhenDisabledButKeepCleanupFilter() {
         runner.withPropertyValues("ctds.audit.enabled=false")
-                .run(context -> assertThat(context).doesNotHaveBean(AuditRecorder.class));
+                .run(context -> {
+                    assertThat(context).doesNotHaveBean(AuditRecorder.class);
+                    assertThat(context).hasBean("logContextCleanupFilter");
+                });
     }
 
     @Test

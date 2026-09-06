@@ -18,20 +18,22 @@ import org.springframework.context.annotation.Configuration;
  */
 @AutoConfiguration
 @EnableConfigurationProperties(AuditProperties.class)
-@ConditionalOnProperty(prefix = "ctds.audit", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class LoggingAutoConfiguration {
 
     /**
      * @param serviceName 服务名（spring.application.name，写入审计 JSONL 的 service 字段）
      */
     @Bean(destroyMethod = "shutdown")
+    @ConditionalOnProperty(prefix = "ctds.audit", name = "enabled", havingValue = "true", matchIfMissing = true)
     public AuditRecorder auditRecorder(final AuditProperties properties,
             @Value("${spring.application.name:default}") final String serviceName) {
         return new AsyncFileAuditRecorder(Path.of(properties.getFileDir()), serviceName,
                 properties.getQueueCapacity(), Clock.systemUTC());
     }
 
-    /** Web 环境：注册 LogContext 清理过滤器（评审②P1 修复，按请求语义防 MDC 泄漏）。 */
+    /** Web 环境：注册 LogContext 清理过滤器（评审②P1 修复，按请求语义防 MDC 泄漏）。
+     *  仅受 servlet 存在性守卫、不受 ctds.audit.enabled 开关约束——业务代码写 MDC 不受开关控制
+     *  （评审②P2-1：否则开关关闭时线程复用 MDC 泄漏会静默复活）。 */
     @Configuration(proxyBeanMethods = false)
     @ConditionalOnClass(name = "jakarta.servlet.Filter")
     static class LogContextWebConfiguration {
