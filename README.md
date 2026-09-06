@@ -9,13 +9,13 @@
 | 文档 | 说明 |
 | --- | --- |
 | [城市可信数据空间PRD.md](城市可信数据空间PRD.md) | PRD V1.0（原始基线） |
-| [docs/城市可信数据空间PRD-V2.0.md](docs/城市可信数据空间PRD-V2.0.md) | PRD V2.0 AI 融合版（评审中） |
-| [docs/03-C-TDS项目研发章程与开发规范.md](docs/03-C-TDS项目研发章程与开发规范.md) | 研发章程 V2.1（最高制度） |
+| [docs/城市可信数据空间PRD-V2.0.md](docs/城市可信数据空间PRD-V2.0.md) | PRD V2.0 AI 融合版（发布稿·产品基线） |
+| [docs/03-C-TDS项目研发章程与开发规范.md](docs/03-C-TDS项目研发章程与开发规范.md) | 研发章程 V2.3（最高制度） |
 | [docs/02-AI开发风险与对策手册.md](docs/02-AI开发风险与对策手册.md) | 13 类 AI 研发风险与对策（V1.1） |
 | [docs/01-vibe coding最佳实践调研报告.md](docs/01-vibe coding最佳实践调研报告.md) | 方法论与业界依据 |
 | [docs/C-TDS项目总体实施计划与WBS.md](docs/C-TDS项目总体实施计划与WBS.md) | 总体实施计划 + 136 工作包 WBS |
 | [docs/项目启动确认记录-2026-09-05.md](docs/项目启动确认记录-2026-09-05.md) | T+0 启动决策与待决事项（**含 D-1 基线重排待裁决**） |
-| [docs/logs/](docs/logs/) | 项目开发日志（会话级，命名 `Ctds-项目开发日志-yy-mm-dd-hhss.md`，时间戳随最近一次落盘同步更新） |
+| [docs/logs/](docs/logs/) | 项目开发日志（**一次任务一份**，命名 `Ctds-项目开发日志-yy-mm-dd-hhss.md`，时间戳 = 落盘时点；历史日志只读，文件名排序即时间序） |
 | [docs/tasks/](docs/tasks/) | 跨会话任务笔记（按需创建） |
 
 ## 仓库约定
