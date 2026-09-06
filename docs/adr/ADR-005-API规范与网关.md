@@ -26,7 +26,7 @@
 2. **API 规范（REST + JSON）**：
    - 资源命名：复数名词小写连字符（`/api/v1/data-spaces/{id}/datasets`）；版本在路径（`/api/v1`）；
    - 动作：标准 HTTP 方法语义；非 CRUD 动作用动词子资源（`POST /…/actions/publish`）；
-   - 分页：`pageNum`/`pageSize`/`orderBy`，响应含 `total`（由 common-分页组件统一实现，2.4.3）；
+   - 分页：`pageNum`/`pageSize`/`orderBy`，响应含 `total`（由 common-分页组件统一实现，2.4.3）；**数值边界（补充固化 2026-09-06，随 2.4.3 落地）**：pageNum ∈ [1,10000]、pageSize ∈ [1,100]（默认 10）、orderBy 单字段 ≤64 字符（"字段名[,asc|desc]"，持久层须列名白名单映射）；响应字段 = list + total + pageNum/pageSize/totalPages（后三者为派生便利字段）；
    - 时间：ISO-8601 字符串（UTC 存储、东八区展示）；
    - 统一响应结构：`{ "code": "0", "message": "…", "traceId": "…", "data": … }`——**code 为字符串**（"0"=成功，其余为 §3.3 九位错误码；补充澄清 2026-09-06，随 2.4.2 组件落地固化）；对外错误信息不暴露内部实现（章程 4.3）；
    - 幂等：写操作支持 `X-Idempotency-Key` 头（由 common-幂等组件实现，2.4.7）。
