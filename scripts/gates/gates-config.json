@@ -1,0 +1,39 @@
+{
+  "version": "V1.0",
+  "note": "C-TDS quality gate config. Consumed by scripts/gates/run-gates.ps1. Thresholds come from charter 4.2 table.",
+  "thresholds": {
+    "coreLineCoverage": 80,
+    "overallLineCoverage": 70,
+    "mutationKillRate": 60,
+    "maxCyclomaticComplexity": 15,
+    "maxNewDuplicatedLines": 0
+  },
+  "coreModules": ["policy-engine", "metering-billing", "crypto", "auth", "did"],
+  "stages": {
+    "secretsScan": { "enabled": true, "mode": "builtin-regex", "ciTool": "gitleaks (pending ADR-001 approval)" },
+    "structureCheck": { "enabled": true },
+    "devLogNamingCheck": { "enabled": true },
+    "adrFieldsCheck": {
+      "enabled": true,
+      "requiredFields": ["背景", "决策", "理由", "备选", "业务影响说明", "影响范围", "可替换性"]
+    },
+    "compile": { "enabled": false, "status": "PENDING-ADR001", "tool": "maven" },
+    "lint": { "enabled": false, "status": "PENDING-ADR001", "tool": "checkstyle+spotless" },
+    "unitTest": { "enabled": false, "status": "PENDING-ADR001", "tool": "junit5+jacoco", "includeBranchCoverage": true },
+    "mutationTest": { "enabled": false, "status": "PENDING-ADR001", "tool": "pitest" },
+    "duplication": { "enabled": false, "status": "PENDING-ADR001", "tool": "pmd-cpd" },
+    "complexity": { "enabled": false, "status": "PENDING-ADR001", "tool": "sonarqube" },
+    "sast": { "enabled": false, "status": "PENDING-ADR001", "tool": "semgrep" },
+    "dependencyScan": { "enabled": false, "status": "PENDING-ADR001", "tool": "owasp-dependency-check" },
+    "moduleDependency": { "enabled": false, "status": "PENDING-ADR001", "tool": "archunit" }
+  },
+  "secretsPatterns": [
+    "-----BEGIN (RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----",
+    "AKIA[0-9A-Z]{16}",
+    "sk-[a-zA-Z0-9]{20,}",
+    "xox[baprs]-[0-9A-Za-z-]{10,}",
+    "(?i)(api[_-]?key|secret[_-]?key|access[_-]?token|private[_-]?key)\\s*[:=]\\s*['\"][A-Za-z0-9+/=_-]{16,}['\"]",
+    "(?i)(password|passwd|pwd)\\s*[:=]\\s*['\"][^'\"\\s]{8,}['\"]"
+  ],
+  "secretsExcludePaths": [".git", "scripts/gates/reports", "*.min.js", "*.lock"]
+}
