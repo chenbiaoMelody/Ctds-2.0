@@ -22,6 +22,7 @@
   <modules>
     <module>common/errorcode</module>
     <module>common/pagination</module>
+    <module>common/logging</module>
     <module>services/example-service</module>
   </modules>
 
@@ -30,6 +31,7 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <archunit.version>1.5.0</archunit.version>
     <maven-checkstyle-plugin.version>3.6.0</maven-checkstyle-plugin.version>
+    <logstash-logback-encoder.version>8.1</logstash-logback-encoder.version>
   </properties>
 
   <dependencyManagement>
@@ -49,6 +51,16 @@
         <groupId>com.ctds</groupId>
         <artifactId>common-pagination</artifactId>
         <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.ctds</groupId>
+        <artifactId>common-logging</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>net.logstash.logback</groupId>
+        <artifactId>logstash-logback-encoder</artifactId>
+        <version>${logstash-logback-encoder.version}</version>
       </dependency>
     </dependencies>
   </dependencyManagement>
