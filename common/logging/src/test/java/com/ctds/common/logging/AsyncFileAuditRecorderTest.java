@@ -19,6 +19,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
@@ -35,6 +36,7 @@ class AsyncFileAuditRecorderTest {
 
     private static final Instant NOW = Instant.parse("2026-09-06T10:15:30Z");
     private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final int TRUNCATED_SUFFIX_LENGTH = "…[truncated]".length();
 
     private final ListAppender<ILoggingEvent> logCapture = new ListAppender<>();
     private Logger recorderLogger;
@@ -135,6 +137,7 @@ class AsyncFileAuditRecorderTest {
             }
         };
         try {
+            attachLogCapture();
             recorder.record(event("blocked"));
             assertTrue(enteredWrite.await(2, TimeUnit.SECONDS), "writer 应已进入写入");
             recorder.record(event("queued"));
@@ -150,6 +153,8 @@ class AsyncFileAuditRecorderTest {
         assertEquals(2, lines.size());
         assertTrue(lines.get(0).contains("blocked"));
         assertTrue(lines.get(1).contains("queued"));
+        final long warns = logCapture.list.stream().filter(e -> e.getLevel() == Level.WARN).count();
+        assertEquals(1, warns, "首丢应产生 1 条 WARN");
     }
 
     @Test
@@ -186,6 +191,72 @@ class AsyncFileAuditRecorderTest {
         recorder.record(event("e-5"));
         recorder.shutdown();
         assertEquals(5, Files.readAllLines(tempDir.resolve("audit-2026-09-06.jsonl")).size());
+    }
+
+    @Test
+    void detailValueOverLimitShouldBeTruncatedWithMarker(@TempDir final Path tempDir) throws Exception {
+        final AsyncFileAuditRecorder recorder = newRecorder(tempDir, new SettableClock(NOW));
+        try {
+            recorder.record(AuditEvent.of("tester", "greeting.create", "greeting", "g-1",
+                    AuditOutcome.SUCCESS, Map.of("big", "x".repeat(600))));
+        } finally {
+            recorder.shutdown();
+        }
+        final JsonNode json = readSingleLine(tempDir.resolve("audit-2026-09-06.jsonl"));
+        final String value = json.get("detail").get("big").asText();
+        assertEquals(512 + TRUNCATED_SUFFIX_LENGTH, value.length());
+        assertTrue(value.startsWith("xxxxx"));
+        assertTrue(value.endsWith("…[truncated]"));
+    }
+
+    @Test
+    void detailOverTwentyKeysShouldKeepFirstTwentyWithTruncatedFlag(@TempDir final Path tempDir)
+            throws Exception {
+        final Map<String, String> detail = new LinkedHashMap<>();
+        for (int i = 1; i <= 25; i++) {
+            detail.put("k" + i, "v" + i);
+        }
+        final AsyncFileAuditRecorder recorder = newRecorder(tempDir, new SettableClock(NOW));
+        try {
+            recorder.record(AuditEvent.of("tester", "greeting.create", "greeting", "g-1",
+                    AuditOutcome.SUCCESS, detail));
+        } finally {
+            recorder.shutdown();
+        }
+        final JsonNode json = readSingleLine(tempDir.resolve("audit-2026-09-06.jsonl"));
+        final JsonNode written = json.get("detail");
+        assertTrue(written.has("k1"));
+        assertTrue(written.has("k20"));
+        assertTrue(written.has("_truncated"));
+        assertFalse(written.has("k21"));
+    }
+
+    @Test
+    void ioFailureShouldLogAgainAfterRateWindow(@TempDir final Path tempDir) throws Exception {
+        attachLogCapture();
+        final SettableClock clock = new SettableClock(NOW);
+        final AsyncFileAuditRecorder recorder = new AsyncFileAuditRecorder(
+                tempDir, "test-service", 100, clock) {
+            @Override
+            protected void writeLine(final String json) {
+                throw new IllegalStateException("disk broken");
+            }
+        };
+        try {
+            recorder.record(event("first"));
+            Thread.sleep(200);
+            assertEquals(1, countErrors(), "窗口内应恰好 1 条 ERROR");
+            clock.set(NOW.plus(Duration.ofSeconds(61)));
+            recorder.record(event("second"));
+            Thread.sleep(200);
+            assertEquals(2, countErrors(), "限频窗口过后应恢复记录");
+        } finally {
+            recorder.shutdown();
+        }
+    }
+
+    private long countErrors() {
+        return logCapture.list.stream().filter(e -> e.getLevel() == Level.ERROR).count();
     }
 
     private AsyncFileAuditRecorder newRecorder(final Path tempDir, final Clock clock) {

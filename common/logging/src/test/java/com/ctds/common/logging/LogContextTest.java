@@ -45,6 +45,20 @@ class LogContextTest {
     }
 
     @Test
+    void setModuleWithEmptyValueShouldRemoveKey() {
+        LogContext.setModule("greeting");
+        LogContext.setModule("");
+        assertNull(MDC.get(LogContext.MODULE_MDC_KEY));
+    }
+
+    @Test
+    void setModuleWithNullShouldRemoveKey() {
+        LogContext.setModule("greeting");
+        LogContext.setModule(null);
+        assertNull(MDC.get(LogContext.MODULE_MDC_KEY));
+    }
+
+    @Test
     void clearShouldRemoveOwnKeysButKeepTraceId() {
         MDC.put(ApiResult.TRACE_MDC_KEY, "t-1");
         LogContext.setErrorCode("1000C0001");

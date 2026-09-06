@@ -16,6 +16,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -140,11 +141,18 @@ class AuditTrailIntegrationTest {
     }
 
     private JsonNode readEvent(final Path file, final String action) throws Exception {
-        final List<String> lines = Files.readAllLines(file);
-        final String line = lines.stream()
-                .filter(candidate -> candidate.contains(action))
-                .findFirst()
-                .orElseThrow(() -> new AssertionError("审计文件缺少 action=" + action));
-        return MAPPER.readTree(line);
+        for (int i = 0; i < 40; i++) {
+            if (Files.exists(file)) {
+                final List<String> lines = Files.readAllLines(file);
+                final Optional<String> hit = lines.stream()
+                        .filter(candidate -> candidate.contains(action))
+                        .findFirst();
+                if (hit.isPresent()) {
+                    return MAPPER.readTree(hit.get());
+                }
+            }
+            Thread.sleep(50);
+        }
+        throw new AssertionError("审计文件缺少 action=" + action);
     }
 }

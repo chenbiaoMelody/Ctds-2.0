@@ -120,7 +120,7 @@ public class AsyncFileAuditRecorder implements AuditRecorder {
         try {
             writeLine(line);
         } catch (final Exception ex) {
-            final long now = System.currentTimeMillis();
+            final long now = clock.millis();
             if (now - lastErrorLogMillis >= ERROR_LOG_INTERVAL_MILLIS) {
                 lastErrorLogMillis = now;
                 log.error("audit file write failed, line dropped", ex);

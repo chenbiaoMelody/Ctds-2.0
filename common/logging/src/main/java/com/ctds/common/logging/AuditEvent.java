@@ -3,6 +3,8 @@ package com.ctds.common.logging;
 import com.ctds.common.errorcode.BizException;
 import com.ctds.common.errorcode.ErrorCodes;
 import java.time.Instant;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
@@ -29,7 +31,8 @@ public record AuditEvent(
             throw new BizException(ErrorCodes.PARAM_INVALID, "audit outcome must not be null");
         }
         actor = (actor == null || actor.isBlank()) ? "anonymous" : actor;
-        detail = (detail == null) ? Map.of() : Map.copyOf(detail);
+        // 用 LinkedHashMap 保序拷贝（Map.copyOf 不保序，会使 detail "保留前 20 键"契约失去确定语义）
+        detail = (detail == null) ? Map.of() : Collections.unmodifiableMap(new LinkedHashMap<>(detail));
     }
 
     /** 业务侧便捷工厂：eventId/eventTime 留空由组件补填。 */

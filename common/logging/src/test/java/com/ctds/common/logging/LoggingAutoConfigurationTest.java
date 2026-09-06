@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
+import org.springframework.boot.test.context.FilteredClassLoader;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
 /**
@@ -31,5 +32,11 @@ class LoggingAutoConfigurationTest {
     @Test
     void contextShouldRegisterCleanupFilterWhenServletPresent() {
         runner.run(context -> assertThat(context).hasBean("logContextCleanupFilter"));
+    }
+
+    @Test
+    void contextShouldOmitCleanupFilterWithoutServletApi() {
+        runner.withClassLoader(new FilteredClassLoader(jakarta.servlet.Filter.class))
+                .run(context -> assertThat(context).doesNotHaveBean("logContextCleanupFilter"));
     }
 }
