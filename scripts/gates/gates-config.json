@@ -9,23 +9,29 @@
     "maxNewDuplicatedLines": 0
   },
   "coreModules": ["policy-engine", "metering-billing", "crypto", "auth", "did"],
+  "toolchain": {
+    "javaHome": "C:\\Program Files\\Java\\jdk-17",
+    "mavenBin": "mvn",
+    "mavenArgs": "-B -ntp"
+  },
   "stages": {
-    "secretsScan": { "enabled": true, "mode": "builtin-regex", "ciTool": "gitleaks (pending ADR-001 approval)" },
+    "secretsScan": { "enabled": true, "mode": "builtin-regex", "ciTool": "gitleaks (pending whitelist admission, docs/04 §2.3)" },
     "structureCheck": { "enabled": true },
     "devLogNamingCheck": { "enabled": true },
     "adrFieldsCheck": {
       "enabled": true,
       "requiredFields": ["背景", "决策", "理由", "备选", "业务影响说明", "影响范围", "可替换性"]
     },
-    "compile": { "enabled": false, "status": "PENDING-ADR001", "tool": "maven" },
-    "lint": { "enabled": false, "status": "PENDING-ADR001", "tool": "checkstyle+spotless" },
-    "unitTest": { "enabled": false, "status": "PENDING-ADR001", "tool": "junit5+jacoco", "includeBranchCoverage": true },
-    "mutationTest": { "enabled": false, "status": "PENDING-ADR001", "tool": "pitest" },
-    "duplication": { "enabled": false, "status": "PENDING-ADR001", "tool": "pmd-cpd" },
-    "complexity": { "enabled": false, "status": "PENDING-ADR001", "tool": "sonarqube" },
-    "sast": { "enabled": false, "status": "PENDING-ADR001", "tool": "semgrep" },
-    "dependencyScan": { "enabled": false, "status": "PENDING-ADR001", "tool": "owasp-dependency-check" },
-    "moduleDependency": { "enabled": false, "status": "PENDING-ADR001", "tool": "archunit" }
+    "compile": { "enabled": true, "tool": "maven", "goals": "compile" },
+    "lint": { "enabled": true, "tool": "checkstyle", "goals": "checkstyle:check" },
+    "unitTest": { "enabled": true, "tool": "junit5+archunit", "goals": "test" },
+    "coverage": { "enabled": false, "status": "PENDING-JACOCO", "tool": "jacoco" },
+    "mutationTest": { "enabled": false, "status": "PENDING-TOOLCHAIN", "tool": "pitest" },
+    "duplication": { "enabled": false, "status": "PENDING-TOOLCHAIN", "tool": "pmd-cpd" },
+    "complexity": { "enabled": false, "status": "PENDING-TOOLCHAIN", "tool": "sonarqube" },
+    "sast": { "enabled": false, "status": "PENDING-TOOLCHAIN", "tool": "semgrep" },
+    "dependencyScan": { "enabled": false, "status": "PENDING-TOOLCHAIN", "tool": "owasp-dependency-check" },
+    "moduleDependency": { "enabled": false, "status": "PENDING-TOOLCHAIN", "tool": "archunit-crossmodule" }
   },
   "secretsPatterns": [
     "-----BEGIN (RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----",

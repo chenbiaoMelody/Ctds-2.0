@@ -28,7 +28,20 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gates\run-gates.ps1
 | structureCheck 结构检查 | ✅ 已启用 | AGENTS.md/章程/ADR/日志等必备文件齐备 |
 | devLogNamingCheck 日志命名 | ✅ 已启用 | `docs/logs/` 文件名符合 `Ctds-项目开发日志-yy-mm-dd-hhss.md` 规范 |
 | adrFieldsCheck ADR 字段 | ✅ 已启用 | 每份 ADR 必含：背景/决策/理由/备选/业务影响说明/影响范围/可替换性（章程 4.4 + D-3） |
-| compile / lint / unitTest / mutationTest / duplication / complexity / sast / dependencyScan | ⏸ PENDING | 依赖 ADR-001 技术栈批准后接入工具链（阈值已在 `gates-config.json` 按章程 4.2 表预置） |
+| compile 编译 | ✅ 已启用（WBS 2.4.1 接入） | `mvn -B -ntp compile`，零错误 |
+| lint 格式与风格 | ✅ 已启用（WBS 2.4.1 接入） | `mvn -B -ntp checkstyle:check`（config/checkstyle/checkstyle.xml），零违规 |
+| unitTest 单元测试 | ✅ 已启用（WBS 2.4.1 接入） | `mvn -B -ntp test`（JUnit5 + ArchUnit 分层规则），全部通过 |
+| coverage 覆盖率 | ⏸ PENDING | JaCoCo 行/分支覆盖（核心 ≥80%、整体 ≥70%，章程 4.2），接入属工具链变更走 ADR |
+| mutationTest 变异测试 | ⏸ PENDING | 核心模块出现后接入（pitest），阈值 60% |
+| duplication 重复度 | ⏸ PENDING | PMD CPD，新增重复行 = 0 |
+| complexity 复杂度 | ⏸ PENDING | SonarQube，圈复杂度 >15 打回 |
+| sast 静态安全扫描 | ⏸ PENDING | Semgrep，安全热点 = 0 |
+| dependencyScan 依赖扫描 | ⏸ PENDING | OWASP Dependency-Check，高危 = 0 |
+| moduleDependency 模块依赖 | ⏸ PENDING | 跨模块依赖规则（ArchUnit 跨模块检查随多模块出现后启用） |
+
+## 工具链
+
+Maven 阶段需要 JDK 17 与 Maven 3.9+：脚本优先读环境变量 `JAVA_HOME`，缺省回退到 `gates-config.json` 的 `toolchain.javaHome`（当前本机 `C:\Program Files\Java\jdk-17`）；`mavenBin`/`mavenArgs` 同理可覆盖。依赖解析走用户级 `%USERPROFILE%\.m2\settings.xml`（阿里云镜像）。单阶段超时 600 秒。
 
 ## 阈值管理
 

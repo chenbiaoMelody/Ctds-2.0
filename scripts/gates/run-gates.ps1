@@ -109,6 +109,57 @@ if ($cfg.stages.adrFieldsCheck.enabled) {
     else { Add-Result "adrFieldsCheck" "FAIL" ($bad -join "; ") }
 }
 
+# ---------- Toolchain stages (compile / lint / unitTest via Maven) ----------
+$toolJavaHome = $env:JAVA_HOME
+if (-not $toolJavaHome -and $cfg.toolchain -and $cfg.toolchain.javaHome) { $toolJavaHome = $cfg.toolchain.javaHome }
+$toolMavenBin = "mvn"
+if ($cfg.toolchain -and $cfg.toolchain.mavenBin) { $toolMavenBin = $cfg.toolchain.mavenBin }
+$toolMavenArgs = ""
+if ($cfg.toolchain -and $cfg.toolchain.mavenArgs) { $toolMavenArgs = $cfg.toolchain.mavenArgs }
+
+foreach ($stageName in @("compile", "lint", "unitTest")) {
+    $s = $cfg.stages.$stageName
+    if (-not $s -or -not $s.enabled) { continue }
+    # defensive allowlist: config values are joined into a cmd.exe command line
+    foreach ($v in @($toolMavenBin, $toolMavenArgs, $s.goals)) {
+        if ($v -and ($v -notmatch '^[A-Za-z0-9:._\-\s]+$')) {
+            Add-Result $stageName "FAIL" "Illegal characters in gates-config toolchain/stage value (allowed: A-Za-z0-9 : . _ - space)"
+            continue
+        }
+    }
+    if (-not $toolJavaHome -or -not (Test-Path $toolJavaHome)) {
+        Add-Result $stageName "FAIL" "JAVA_HOME not found (set env JAVA_HOME or gates-config toolchain.javaHome)"
+        continue
+    }
+    $outLog = Join-Path $env:TEMP ("ctds-gate-" + $stageName + "-out.log")
+    $oldJavaHome = $env:JAVA_HOME
+    $env:JAVA_HOME = $toolJavaHome
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = "cmd.exe"
+    $psi.Arguments = "/c " + $toolMavenBin + " " + $toolMavenArgs + " " + $s.goals
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.WorkingDirectory = $RepoRoot
+    $proc = [System.Diagnostics.Process]::Start($psi)
+    $outTask = $proc.StandardOutput.ReadToEndAsync()
+    $errTask = $proc.StandardError.ReadToEndAsync()
+    if (-not $proc.WaitForExit(600000)) {
+        try { $proc.Kill() } catch { }
+        Add-Result $stageName "FAIL" ("mvn " + $s.goals + " timed out after 600s")
+    } elseif ($proc.ExitCode -eq 0) {
+        Add-Result $stageName "PASS" ("mvn " + $s.goals + " exit 0")
+    } else {
+        $null = $outTask.Wait(10000)
+        $null = $errTask.Wait(10000)
+        $allOut = ($outTask.Result + [Environment]::NewLine + $errTask.Result) -split "`r?`n" | Where-Object { $_.Trim() -ne "" }
+        $tail = ($allOut | Select-Object -Last 6) -join " | "
+        [System.IO.File]::WriteAllText($outLog, ($outTask.Result + $errTask.Result))
+        Add-Result $stageName "FAIL" ("mvn " + $s.goals + " exit " + $proc.ExitCode + ": " + $tail)
+    }
+    if ($oldJavaHome) { $env:JAVA_HOME = $oldJavaHome } else { Remove-Item Env:JAVA_HOME -ErrorAction SilentlyContinue }
+}
+
 # ---------- Pending stages (toolchain blocked by ADR-001 approval) ----------
 foreach ($prop in $cfg.stages.PSObject.Properties) {
     $s = $prop.Value
