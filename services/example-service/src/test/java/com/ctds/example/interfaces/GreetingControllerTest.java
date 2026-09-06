@@ -22,7 +22,7 @@ class GreetingControllerTest {
     @BeforeEach
     void setUp() {
         mockMvc = MockMvcBuilders.standaloneSetup(
-                        new GreetingController(new GreetingService(new InMemoryGreetingRepository())))
+                        new GreetingController(new GreetingService(new InMemoryGreetingRepository(), event -> { })))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .addFilters(new TraceIdFilter()).build();
     }
@@ -61,7 +61,7 @@ class GreetingControllerTest {
 
     @Test
     void listShouldReturnPagedEnvelope() throws Exception {
-        final GreetingService service = new GreetingService(new InMemoryGreetingRepository());
+        final GreetingService service = new GreetingService(new InMemoryGreetingRepository(), event -> { });
         service.greet("one");
         service.greet("two");
         service.greet("three");
@@ -91,7 +91,7 @@ class GreetingControllerTest {
 
     @Test
     void listShouldSortByOrderByDesc() throws Exception {
-        final GreetingService service = new GreetingService(new InMemoryGreetingRepository());
+        final GreetingService service = new GreetingService(new InMemoryGreetingRepository(), event -> { });
         service.greet("banana");
         service.greet("apple");
         service.greet("cherry");
@@ -109,7 +109,7 @@ class GreetingControllerTest {
 
     @Test
     void listShouldReturnEmptyListWhenPageNumBeyondData() throws Exception {
-        final GreetingService service = new GreetingService(new InMemoryGreetingRepository());
+        final GreetingService service = new GreetingService(new InMemoryGreetingRepository(), event -> { });
         service.greet("only");
         mockMvc = MockMvcBuilders.standaloneSetup(new GreetingController(service))
                 .setControllerAdvice(new GlobalExceptionHandler())

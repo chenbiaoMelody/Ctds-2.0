@@ -39,6 +39,8 @@ class AuditTrailIntegrationTest {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final String PARAM_INVALID_CODE = "1000C0001";
+    private static final String PLAIN_LOG_PATTERN =
+            "^\\d{4}-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}:\\d{2}.*\\s(INFO|WARN|ERROR)\\s.*";
 
     private static Path auditDir;
 
@@ -105,7 +107,7 @@ class AuditTrailIntegrationTest {
             assertTrue(json.hasNonNull("@timestamp"), "JSON 日志应含 @timestamp");
         }
         final boolean plainLogLines = output.getAll().lines()
-                .anyMatch(line -> line.matches("^\\d{4}-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}:\\d{2}.*\\s(INFO|WARN|ERROR)\\s.*"));
+                .anyMatch(line -> line.matches(PLAIN_LOG_PATTERN));
         assertFalse(plainLogLines, "应用日志不应再是纯文本格式");
     }
 

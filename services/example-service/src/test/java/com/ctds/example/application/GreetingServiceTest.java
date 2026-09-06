@@ -13,7 +13,7 @@ class GreetingServiceTest {
 
     @Test
     void greetShouldSaveAndReturnDomainObject() {
-        final GreetingService service = new GreetingService(new InMemoryGreetingRepository());
+        final GreetingService service = new GreetingService(new InMemoryGreetingRepository(), event -> { });
 
         final Greeting result = service.greet("你好，C-TDS");
 
@@ -23,7 +23,7 @@ class GreetingServiceTest {
 
     @Test
     void greetShouldRejectBlankMessageAsParamInvalid() {
-        final GreetingService service = new GreetingService(new InMemoryGreetingRepository());
+        final GreetingService service = new GreetingService(new InMemoryGreetingRepository(), event -> { });
 
         final BizException thrown = assertThrows(BizException.class, () -> service.greet("   "));
 
@@ -33,7 +33,7 @@ class GreetingServiceTest {
 
     @Test
     void greetShouldRejectNullMessage() {
-        final GreetingService service = new GreetingService(new InMemoryGreetingRepository());
+        final GreetingService service = new GreetingService(new InMemoryGreetingRepository(), event -> { });
 
         final BizException thrown = assertThrows(BizException.class, () -> service.greet(null));
 

@@ -20,13 +20,25 @@ public final class LogContext {
 
     /** 写入错误码；null 或空串视为清除该键。 */
     public static void setErrorCode(final String code) {
+        setOrRemove(ERROR_CODE_MDC_KEY, code);
     }
 
     /** 写入业务模块标识（如模块名/用例名）；null 或空串视为清除该键。 */
     public static void setModule(final String module) {
+        setOrRemove(MODULE_MDC_KEY, module);
     }
 
     /** 清除本组件管理的全部键（不清除 traceId）。 */
     public static void clear() {
+        MDC.remove(ERROR_CODE_MDC_KEY);
+        MDC.remove(MODULE_MDC_KEY);
+    }
+
+    private static void setOrRemove(final String key, final String value) {
+        if (value == null || value.isEmpty()) {
+            MDC.remove(key);
+        } else {
+            MDC.put(key, value);
+        }
     }
 }
