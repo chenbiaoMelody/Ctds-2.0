@@ -2,21 +2,26 @@ package com.ctds.example;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.ctds.common.logging.LogContext;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Stream;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -47,6 +52,13 @@ class AuditTrailIntegrationTest {
     @BeforeAll
     static void createAuditDir() throws Exception {
         auditDir = Files.createTempDirectory("ctds-audit-it");
+    }
+
+    @AfterAll
+    static void deleteAuditDir() throws Exception {
+        try (Stream<Path> paths = Files.walk(auditDir)) {
+            paths.sorted(Comparator.reverseOrder()).forEach(path -> path.toFile().delete());
+        }
     }
 
     @DynamicPropertySource
@@ -90,6 +102,7 @@ class AuditTrailIntegrationTest {
         assertEquals("DENIED", json.get("outcome").asText());
         assertTrue(output.getAll().contains("\"errorCode\":\"" + PARAM_INVALID_CODE + "\""),
                 "JSON 日志应包含 errorCode 字段");
+        assertNull(MDC.get(LogContext.ERROR_CODE_MDC_KEY), "请求结束后 errorCode 应被清理");
     }
 
     @Test

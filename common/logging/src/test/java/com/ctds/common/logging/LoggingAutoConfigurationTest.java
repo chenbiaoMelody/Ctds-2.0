@@ -24,4 +24,9 @@ class LoggingAutoConfigurationTest {
         runner.withPropertyValues("ctds.audit.enabled=false")
                 .run(context -> assertThat(context).doesNotHaveBean(AuditRecorder.class));
     }
+
+    @Test
+    void contextShouldRegisterCleanupFilterWhenServletPresent() {
+        runner.run(context -> assertThat(context).hasBean("logContextCleanupFilter"));
+    }
 }

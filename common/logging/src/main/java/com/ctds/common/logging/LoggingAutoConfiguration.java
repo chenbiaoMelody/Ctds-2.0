@@ -4,9 +4,12 @@ import java.nio.file.Path;
 import java.time.Clock;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 
 /**
  * 日志/审计组件自动装配（沿用 errorcode 模块的注册模式，ADR-005 §3 第 6 项）。
@@ -26,5 +29,16 @@ public class LoggingAutoConfiguration {
             @Value("${spring.application.name:default}") final String serviceName) {
         return new AsyncFileAuditRecorder(Path.of(properties.getFileDir()), serviceName,
                 properties.getQueueCapacity(), Clock.systemUTC());
+    }
+
+    /** Web 环境：注册 LogContext 清理过滤器（评审②P1 修复，按请求语义防 MDC 泄漏）。 */
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnClass(name = "jakarta.servlet.Filter")
+    static class LogContextWebConfiguration {
+
+        @Bean
+        FilterRegistrationBean<LogContextCleanupFilter> logContextCleanupFilter() {
+            return new FilterRegistrationBean<>(new LogContextCleanupFilter());
+        }
     }
 }
