@@ -24,6 +24,7 @@
     <module>common/pagination</module>
     <module>common/logging</module>
     <module>common/auth</module>
+    <module>common/crypto</module>
     <module>services/example-service</module>
   </modules>
 
@@ -33,6 +34,7 @@
     <archunit.version>1.5.0</archunit.version>
     <maven-checkstyle-plugin.version>3.6.0</maven-checkstyle-plugin.version>
     <logstash-logback-encoder.version>8.1</logstash-logback-encoder.version>
+    <bouncycastle.version>1.85.2</bouncycastle.version>
   </properties>
 
   <dependencyManagement>
@@ -62,6 +64,17 @@
         <groupId>com.ctds</groupId>
         <artifactId>common-auth</artifactId>
         <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.ctds</groupId>
+        <artifactId>common-crypto</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <!-- 国密算法唯一实现来源（dependencies.md 已登记；组件只封装、禁止自研——章程红线）。 -->
+      <dependency>
+        <groupId>org.bouncycastle</groupId>
+        <artifactId>bcprov-jdk18on</artifactId>
+        <version>${bouncycastle.version}</version>
       </dependency>
       <dependency>
         <groupId>net.logstash.logback</groupId>

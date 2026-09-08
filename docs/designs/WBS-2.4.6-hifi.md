@@ -10,7 +10,7 @@
 
 | 轮次 | 结论（确认/打回） | 确认人（PO） | 日期 | 意见（打回必填） |
 | --- | --- | --- | --- | --- |
-| 1 | 待确认 | | | |
+| 1 | 确认 | po | 2026-09-08:15:53 | |
 
 ## 与低保真的差异声明（细化产生的两处澄清，无结构新增）
 
@@ -139,3 +139,27 @@ public interface KeyProvider {
 2. 密钥轮换后旧密文解密路由（信封 keyRef 内嵌方案）→ 2.6.3 裁决（信封版本字段已预留）；
 3. 传输层国密（TLCP）→ 部署基线/2.6.1；
 4. 真实 KMS 产品选型 → 2.6.3 启动前 PO 裁决。
+
+## 评审修复记录（编码会话 4 视角会审后增补留痕，沿 2.4.5 先例；均为实现澄清/加固，不新增对外行为）
+
+- **评审①（规格与设计符合性，总判定：有条件通过；P0=0 P1=0）**：
+  - ①P2-1：**64 MiB 边界往返不对称已修复**——明文恰为上限时信封长 = 64MiB+33，解密上界原按明文口径拒绝自产数据；修复为信封口径上界（SM4：`MAX+MIN_LEN`；SM2：`MAX+97`，`Inputs.requireSm4EnvelopeLength/requireSm2CipherLength`），并补"明文恰为上限往返"用例（Sm4ServiceTest.roundTripAtExactMaxBoundary）；
+  - ①P2-2：密钥文件命名约定落实——`.gitignore` 增加 `*.keys`/`*keys*.properties`/`*keyfile*` 拦截，LocalFileKeyProvider javadoc 写明约定；
+  - ①P2-3：**S 码对外文案冲突登记待 PO 裁决**——契约错误码表所载 S 码文案（"密钥服务暂不可用/加解密操作失败"）仅存于日志，出站经 GlobalExceptionHandler 统一替换为"系统繁忙，请稍后重试"（契约 B9 要求 errorcode 零改动，实现忠实执行后者）；请 PO 在验收时确认此口径；
+  - ①P3-3：SM4 吞吐基准已实测（1 MiB：加密 ~18.7ms / 解密 ~21.4ms，即 ~53/~47 MiB/s，开发机单线程）——数值记入交付说明与开发日志；
+- **评审②（安全与供应链，总判定：需修复后发布；P0=0 P1=0）**：
+  - ②P2-1：**字符串便捷入口 64MiB 上界旁路已修复**——encryptText/decryptText 先做文本长度校验再转字节/解码（Inputs.requireText 增上界 = 明文上限），补"超长文本先拒、非法 keyRef 拒"用例；
+  - ②P2-2：**合规向量溯源留痕补齐**——三重独立实现（OpenSSL 3.5.5 / BouncyCastle 1.85.2 / Python gmssl）交叉计算的命令与结果快照记入编码会话开发日志（26-09-08 编码日志），与 ADR-006 §7 呼应；
+  - ②P2-3：bcprov 以 **compile 传递依赖**（非 optional）为**有意决策留痕**：common-crypto 即"全平台唯一加解密入口"，引入即使用，凡引必带算法库；2.4.5 的 resource-server 用 optional 是因 auth 有"只服务侧不用网关侧"的消费面，二者场景不同；后续若出现"引 crypto 但不用 SM2/SM4"的消费方再改 optional（评审③后确认无此类消费方）；
+  - ②P2-4：密钥文件误提交双防线补齐——`.gitignore` 增 `*keys*.properties`/`*keyfile*`；门禁 secretsScan 无引号密钥行正则属门禁配置（红线 3：门禁配置变更须走架构变更流程），以观察项登记待流程放行，不擅改 gates-config.json；
+  - ②P3-1：keyRef 字符集限 `[A-Za-z0-9._-]`（Inputs 常量单点，防日志伪造）；
+  - ②P3-3：LocalFileKeyProvider javadoc 已补命名约定；
+  - ②P3-2/P3-4/P3-5/P3-6/P3-7：登记观察项（缺失文件异常含路径仅运维面可接受、SM2 附录向量 4.3.3 补齐、本地密钥文件演示级保护、common-errorcode 传递 web 栈属既有设计、S 型异常堆栈无敏感数据）。
+- **评审③（一致性与重复，总判定：有条件通过；P0=0）**：
+  - ③P1：**SM3 空输入语义统一并留痕**——两个重载均放行空输入（SM3 空消息摘要有标准定义，摘要与加解密不同，不适用边界表"空数组拒绝"），测试补"空串与空字节结果一致"；本契约新增此边界（B6"任意字节"口径）；
+  - ③P2-1：hifi B8 与 ADR-006 口径同步——SM2 附录向量因标准原文网络不可达推迟至 4.3.3 补齐（ADR-006 §7 已登记，本条为 hifi 侧留痕）；
+  - ③P2-2：enabled 开关两种语义声明——crypto 型"全禁用 fail-fast"与 auth/audit 型"部分禁用"均为有意设计（fail-fast 沿 2.4.5 评审教训，见 ADR-006 §6），公共文档后续统一收敛；
+  - ③P3-1：keyRef 正则与"密钥服务暂不可用"文案已收敛到 Inputs 单点（LocalFileKeyProvider 改调 Inputs.keyUnavailable()）；
+  - ③P3-2：DemoKeyProviderConfig 引用应用层 KEY_REF 常量——演示期接受，登记观察项（2.6.3 真实 KMS 实现时 KEY_REF 下沉 domain）；
+  - ③P3-3：ADR-006 错误码位宽表述"8 位"更正为"9 位"。
+- **评审④（测试质量）**：结论见本会话评审处置（hifi 记录随编码会话日志一并留痕）。

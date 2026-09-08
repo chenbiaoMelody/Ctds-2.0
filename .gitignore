@@ -20,6 +20,10 @@ coverage/
 *.p12
 *.pfx
 secrets*
+# 国密组件密钥文件约定命名（WBS 2.4.6 B10：LocalFileKeyProvider 密钥文件建议用 *.keys 命名并被拦截）
+*.keys
+*keys*.properties
+*keyfile*
 
 # 系统与编辑器
 .DS_Store
