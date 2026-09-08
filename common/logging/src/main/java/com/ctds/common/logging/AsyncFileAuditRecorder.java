@@ -44,11 +44,16 @@ public class AsyncFileAuditRecorder implements AuditRecorder {
     private final Path fileDir;
     private final String serviceName;
     private final Clock clock;
-    private final BlockingQueue<String> queue;
+    private final BlockingQueue<Line> queue;
     private final Thread writerThread;
     private final AtomicLong droppedCount = new AtomicLong();
     private volatile boolean accepting = true;
     private volatile long lastErrorLogMillis;
+
+    /** 入队元素：日文件名在入队时刻按事件时间定稿（修复：写线程消费时刻定日会致积压事件落错日文件，
+     *  且跨天滚动测试存在时钟竞态——滚动语义=事件发生日，非落盘日）。 */
+    record Line(String day, String json) {
+    }
 
     /** @param fileDir 审计文件目录 @param serviceName 服务名（JSONL service 字段）
      *  @param queueCapacity 有界队列容量 @param clock 时钟（可注入以便测试跨天滚动） */
@@ -68,22 +73,22 @@ public class AsyncFileAuditRecorder implements AuditRecorder {
         if (event == null) {
             return;
         }
-        final String line = toJson(enrich(event));
-        if (line == null) {
+        final AuditEvent enriched = enrich(event);
+        final String json = toJson(enriched);
+        if (json == null) {
             return;
         }
-        if (!queue.offer(line)) {
+        if (!queue.offer(new Line(DAY.format(enriched.eventTime()), json))) {
             warnDrop();
         }
     }
 
-    /** 写出一行 JSON（protected 以便测试注入阻塞/故障；默认追加到按天滚动的 JSONL 文件）。 */
-    protected void writeLine(final String json) {
-        final String day = DAY.format(clock.instant());
-        final Path file = fileDir.resolve("audit-" + day + ".jsonl");
+    /** 写出一行 JSON（protected 以便测试注入阻塞/故障；默认追加到入队日定稿的 JSONL 文件）。 */
+    protected void writeLine(final Line line) {
+        final Path file = fileDir.resolve("audit-" + line.day() + ".jsonl");
         try {
             Files.createDirectories(fileDir);
-            Files.writeString(file, json + System.lineSeparator(), StandardCharsets.UTF_8,
+            Files.writeString(file, line.json() + System.lineSeparator(), StandardCharsets.UTF_8,
                     StandardOpenOption.CREATE, StandardOpenOption.APPEND);
         } catch (final IOException ex) {
             throw new UncheckedIOException(ex);
@@ -103,7 +108,7 @@ public class AsyncFileAuditRecorder implements AuditRecorder {
 
     private void drainLoop() {
         while (accepting || !queue.isEmpty()) {
-            String line;
+            Line line;
             try {
                 line = queue.poll(200, TimeUnit.MILLISECONDS);
             } catch (final InterruptedException ex) {
@@ -116,7 +121,7 @@ public class AsyncFileAuditRecorder implements AuditRecorder {
         }
     }
 
-    private void writeSafely(final String line) {
+    private void writeSafely(final Line line) {
         try {
             writeLine(line);
         } catch (final Exception ex) {

@@ -126,14 +126,14 @@ class AsyncFileAuditRecorderTest {
         final AsyncFileAuditRecorder recorder = new AsyncFileAuditRecorder(
                 tempDir, "test-service", 1, new SettableClock(NOW)) {
             @Override
-            protected void writeLine(final String json) {
+            protected void writeLine(final Line line) {
                 enteredWrite.countDown();
                 try {
                     writerGate.await(2, TimeUnit.SECONDS);
                 } catch (InterruptedException ex) {
                     Thread.currentThread().interrupt();
                 }
-                super.writeLine(json);
+                super.writeLine(line);
             }
         };
         try {
@@ -163,7 +163,7 @@ class AsyncFileAuditRecorderTest {
         final AsyncFileAuditRecorder recorder = new AsyncFileAuditRecorder(
                 tempDir, "test-service", 100, new SettableClock(NOW)) {
             @Override
-            protected void writeLine(final String json) {
+            protected void writeLine(final Line line) {
                 throw new IllegalStateException("disk broken");
             }
         };
@@ -238,7 +238,7 @@ class AsyncFileAuditRecorderTest {
         final AsyncFileAuditRecorder recorder = new AsyncFileAuditRecorder(
                 tempDir, "test-service", 100, clock) {
             @Override
-            protected void writeLine(final String json) {
+            protected void writeLine(final Line line) {
                 throw new IllegalStateException("disk broken");
             }
         };
