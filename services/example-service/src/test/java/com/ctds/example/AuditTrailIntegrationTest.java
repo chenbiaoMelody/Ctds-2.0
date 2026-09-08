@@ -95,7 +95,11 @@ class AuditTrailIntegrationTest {
     @Test
     void rejectedListShouldRecordDeniedEventAndJsonLogWithErrorCode(final CapturedOutput output)
             throws Exception {
-        mockMvc.perform(get("/api/v1/greetings").param("orderBy", "secret_column"))
+        // 2.4.5 接入后列表端点受 RBAC 保护：补合法上下文头（user 角色有 greeting.read），
+        // 使本用例仍聚焦 2.4.4 的排序字段拒绝审计路径（行为契约未变，仅用例准备适配）
+        mockMvc.perform(get("/api/v1/greetings")
+                        .param("orderBy", "secret_column")
+                        .header("X-Ctds-Subject", "u-audit").header("X-Ctds-Roles", "user"))
                 .andExpect(status().isBadRequest());
 
         final Path file = awaitAuditFile();

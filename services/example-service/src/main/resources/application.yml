@@ -12,3 +12,10 @@ logging:
     format:
       console: logstash
       file: logstash
+
+# 鉴权演示规则（WBS 2.4.5 B9，模式 A 配置文件映射；3.9.2 后由库表来源覆盖）
+ctds:
+  auth:
+    permissions:
+      user: greeting.read
+      admin: greeting.read,greeting.delete

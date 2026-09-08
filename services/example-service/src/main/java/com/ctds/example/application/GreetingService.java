@@ -1,5 +1,6 @@
 package com.ctds.example.application;
 
+import com.ctds.common.auth.AuthContext;
 import com.ctds.common.errorcode.BizException;
 import com.ctds.common.errorcode.ErrorCodes;
 import com.ctds.common.logging.AuditEvent;
@@ -13,6 +14,7 @@ import com.ctds.example.domain.GreetingRepository;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -48,6 +50,18 @@ public class GreetingService {
         final int from = (int) Math.min(query.offset(), sorted.size());
         final int to = Math.min(from + query.pageSize(), sorted.size());
         return PageResult.of(sorted.subList(from, to), sorted.size(), query);
+    }
+
+    /**
+     * 删除问候语（演示鉴权接入 B9）：成功记 SUCCESS 审计，actor 用真实身份
+     * （兑现 2.4.4 "鉴权组件就绪后接真实身份" 预留）；不存在按 1000C0003 拒绝。
+     */
+    public void delete(final UUID id) {
+        if (!greetingRepository.deleteById(id)) {
+            throw new BizException(ErrorCodes.RESOURCE_NOT_FOUND, "资源不存在");
+        }
+        auditRecorder.record(AuditEvent.of(AuthContext.subject(), "greeting.delete", "greeting",
+                id.toString(), AuditOutcome.SUCCESS, null));
     }
 
     private List<Greeting> applySort(final List<Greeting> all, final PageQuery query) {

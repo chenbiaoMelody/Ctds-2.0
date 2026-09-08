@@ -3,6 +3,7 @@ package com.ctds.example.infrastructure;
 import com.ctds.example.domain.Greeting;
 import com.ctds.example.domain.GreetingRepository;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import org.springframework.stereotype.Repository;
 
@@ -23,5 +24,10 @@ public class InMemoryGreetingRepository implements GreetingRepository {
     @Override
     public List<Greeting> findAll() {
         return List.copyOf(store);
+    }
+
+    @Override
+    public boolean deleteById(final UUID id) {
+        return store.removeIf(greeting -> greeting.id().equals(id));
     }
 }

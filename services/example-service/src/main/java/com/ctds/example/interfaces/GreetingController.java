@@ -1,6 +1,7 @@
 package com.ctds.example.interfaces;
 
 import com.ctds.common.api.ApiResult;
+import com.ctds.common.auth.RequirePermission;
 import com.ctds.common.pagination.PageQuery;
 import com.ctds.common.pagination.PageResult;
 import com.ctds.example.application.GreetingService;
@@ -8,8 +9,11 @@ import com.ctds.example.domain.Greeting;
 import com.ctds.example.interfaces.dto.GreetingRequest;
 import com.ctds.example.interfaces.dto.GreetingView;
 import java.util.List;
+import java.util.UUID;
 import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -37,6 +41,7 @@ public class GreetingController {
     }
 
     @GetMapping(produces = MediaType.APPLICATION_JSON_VALUE)
+    @RequirePermission("greeting.read")
     public ApiResult<PageResult<GreetingView>> list(
             @RequestParam(required = false) final Integer pageNum,
             @RequestParam(required = false) final Integer pageSize,
@@ -45,5 +50,12 @@ public class GreetingController {
         final List<GreetingView> views = page.list().stream()
                 .map(greeting -> new GreetingView(greeting.id(), greeting.message())).toList();
         return ApiResult.ok(new PageResult<>(views, page.total(), page.pageNum(), page.pageSize(), page.totalPages()));
+    }
+
+    @DeleteMapping(path = "/{id}", produces = MediaType.APPLICATION_JSON_VALUE)
+    @RequirePermission("greeting.delete")
+    public ApiResult<Void> delete(@PathVariable final UUID id) {
+        greetingService.delete(id);
+        return ApiResult.ok(null);
     }
 }
