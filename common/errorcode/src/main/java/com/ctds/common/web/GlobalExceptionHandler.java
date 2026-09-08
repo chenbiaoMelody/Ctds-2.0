@@ -6,7 +6,6 @@ import com.ctds.common.errorcode.ErrorCodes;
 import com.ctds.common.errorcode.ErrorType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.slf4j.MDC;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -65,6 +64,6 @@ public class GlobalExceptionHandler {
     }
 
     private String currentTraceId() {
-        return ApiResult.sanitizeTraceId(MDC.get(ApiResult.TRACE_MDC_KEY));
+        return ApiResult.currentTraceId();
     }
 }
