@@ -23,6 +23,7 @@
     <module>common/errorcode</module>
     <module>common/pagination</module>
     <module>common/logging</module>
+    <module>common/auth</module>
     <module>services/example-service</module>
   </modules>
 
@@ -55,6 +56,11 @@
       <dependency>
         <groupId>com.ctds</groupId>
         <artifactId>common-logging</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.ctds</groupId>
+        <artifactId>common-auth</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
