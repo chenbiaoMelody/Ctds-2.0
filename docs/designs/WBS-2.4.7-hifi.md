@@ -37,18 +37,18 @@
 | 属性 | 类型 | 必填 | 默认 | 说明 |
 | --- | --- | --- | --- | --- |
 | `key` | String | 是 | — | 幂等键 SpEL 表达式（方法参数上下文，如 `#order.orderNo`；求值结果为 null/空串 → 抛 `1000C0001` PARAM_INVALID，快速失败） |
-| `expireSeconds` | long | 否 | 600 | 结果缓存有效期（秒）；到期后同键允许重新执行（执行中标记 TTL 用配置 `processing-ttl-seconds`，与结果 TTL 分离） |
+| `expireSeconds` | long | 否 | -1（取配置 `default-expire-seconds`=600） | 结果缓存有效期（秒）；到期后同键允许重新执行（执行中标记 TTL 用配置 `processing-ttl-seconds`，与结果 TTL 分离） |
 
 **`@Locked`**（方法级；切面 `LockAdvice` @Around）
 
 | 属性 | 类型 | 必填 | 默认 | 说明 |
 | --- | --- | --- | --- | --- |
 | `key` | String | 是 | — | 锁键 SpEL 表达式（方法参数上下文，如 `#productId`；求值 null/空 → `1000C0001`） |
-| `waitSeconds` | long | 否 | 3 | 获取锁等待超时（秒）；超时 → `1002C0002`"操作繁忙，请稍后重试" |
+| `waitSeconds` | long | 否 | -1（取配置 `default-wait-seconds`=3） | 获取锁等待超时（秒）；超时 → `1002C0002`"操作繁忙，请稍后重试" |
 | `leaseSeconds` | long | 否 | -1 | 持锁自动释放（秒）；`-1` = 看门狗自动续期（Redisson 默认 30s 续期，持锁线程存活期间锁不过期） |
 
 - 切面顺序（@Order）：幂等切面外层、锁切面内层——先判重、再互斥（两注解同用时语义确定）；锁/幂等异常均经 BizException 抛出，由 GlobalExceptionHandler 映射。
-- 返回值序列化：方法返回值经 Jackson 序列化进结果缓存（返回类型反序列化还原）；返回 null 视为合法结果（缓存"完成"标记，重复请求返回 null）；返回值不可序列化 → `1002S0002`。V1.0 幂等方法返回值须为可 JSON 序列化类型（文档写明）。
+- 返回值序列化：方法返回值经 Jackson 序列化进结果缓存（返回类型反序列化还原）；返回 null 视为合法结果（缓存"完成"标记，重复请求返回 null）；返回值不可序列化 → `1000S9999`（平台内部错误；**评审①P1-2 修订：原边界表/本节"1002S0002"字样为笔误**——该码契约语义=锁服务不可用，用于序列化失败会造成错误码语义污染；实现按 1000S9999 修正并释放执行权可重试）。V1.0 幂等方法返回值须为可 JSON 序列化类型（文档写明）。
 
 ### 接口契约
 
@@ -117,13 +117,14 @@
 | 场景 | 行为 | 依据 |
 | --- | --- | --- |
 | SpEL 求值失败 / key 表达式为 null/空 | 调用时抛 `1000C0001` PARAM_INVALID（快速失败，不执行业务） | 注解契约 key 必填 |
+| 幂等/锁键超长（>256 字符） | 抛 `1000C0001`（评审②P2-2：防超长键对 Redis 内存压力；键卫生=含业务命名空间、不可枚举，为使用方责任，ADR-007 §4） | 边界（评审②补充） |
 | 幂等键重复且结果存在 | 不执行业务，反序列化返回首次结果（模式 B） | B2 |
 | 幂等键重复且结果不存在（执行中） | 抛 `1002C0001` 请求处理中 | B4 |
 | 业务异常 | 释放执行权（release），不缓存结果，允许重试 | B3 |
 | 幂等键 TTL 过期 | 允许重新执行（结果缓存与执行中标记分开计 TTL） | B5 |
 | 业务执行超过程序中标记 TTL | 执行中标记先过期 → 后续同键请求可能再次执行（**使用方责任**：把 processing-ttl-seconds 配到业务上限以上；文档写明） | 边界（V1.0 无看门狗式续期，避免过度设计） |
 | 返回值 null | 视为合法结果，缓存完成态；重复请求返回 null | 契约 |
-| 返回值不可 JSON 序列化 | 抛 `1002S0002`（失败即释放执行权，可重试） | 契约 |
+| 返回值不可 JSON 序列化 | 抛 `1000S9999`（平台内部错误；失败即释放执行权，可重试）——**评审①P1-2 修订：原表 1002S0002 为笔误**（该码=锁服务不可用，语义污染） | 契约（修订留痕见变更影响声明） |
 | 锁等待超时 | 抛 `1002C0002` 操作繁忙（业务不执行） | B6 |
 | 持锁期间业务异常 | finally 释放，锁不泄漏；他人可再获取 | B7 |
 | 持锁线程崩溃 | Redisson 看门狗续期停止 → 锁自动过期释放（防死锁）；内存实现进程内无此场景（进程崩锁即失） | B7/不做什么 |
@@ -133,7 +134,15 @@
 
 ## 变更影响声明
 
-（本表随 4 视角评审处置结果增补，沿 2.4.6 hifi"评审修复记录"先例——评审处置留痕见本文件评审后修订版 + 编码会话日志）
+- **评审①P1-2（契约笔误修正留痕）**：边界表"返回值不可 JSON 序列化"与接口契约"返回值序列化"两处 `1002S0002` 字样修正为 `1000S9999`——1002S0002 契约语义为"锁服务不可用"（错误码表 L99-100 锁定），用于序列化失败会造成错误码语义污染；实现按 1000S9999（平台内部错误，S→500 出站统一"系统繁忙"）抛出并释放执行权（可重试）。已同步 ADR-007 修订记录。
+- **评审①P1-1（配置键名对齐留痕）**：契约键 `processing-ttl-seconds` / `default-wait-seconds` / `default-lease-seconds` 对应属性字段统一为 processingTtlSeconds / defaultWaitSeconds / defaultLeaseSeconds——原字段名（processingTtl/defaultWaitTime/defaultLeaseTime）与契约键不匹配，Spring 松弛绑定下契约键静默失效（默认值兜底），其中 processing-ttl-seconds 是使用方按业务上调的安全配置，静默失效构成正确性陷阱；已修 + 装配测试用 property 字符串验证绑定生效。
+- **评审①P1-3（B10 审计补全留痕）**：锁服务异常（tryLock 抛 1002S0002）路径补审计（detail=service_unavailable）；新增审计联动测试（幂等命中 SUCCESS/处理中 FAILURE/锁超时 FAILURE/锁服务异常 FAILURE/关闭零条）。
+- **评审①P2-1（complete 存储异常口径统一留痕）**：complete 写结果存储失败包装为 1002S0001（与 tryAcquire/getResult 同口径 fail-closed）。
+- **评审①P2-2（B9 封套断言补全留痕）**：example-service 集成测试补 2 条封套断言（1002C0001 C 码 400+契约文案 / 1002S0001 S 码出站统一"系统繁忙"）。
+- **评审①P3 处理**：①InMemory 惰性过期滞留条目（无后台清理线程）→ 登记观察项（单机/演示可接受，javadoc 已声明）；②审计 outcome 用 FAILURE（处理中被拒/超时属失败语义）→ 维持现状；③Redis/Redisson 契约基类留 2.4.11 Testcontainers 后补跑 → 维持观察项；④注解默认值表述已表注（-1=取配置默认）。
+- **评审②处置留痕**：①P2-1 fail-closed 三路径测试（tryAcquire/getResult/complete → 1002S0001，业务不执行/release 调用断言）；②P2-2 键长度上限（SpelKeyResolver.MAX_KEY_LENGTH=256，超限 1000C0001）+ ADR-007 §4 键卫生使用方责任（键须含业务命名空间、不可枚举）；③P2-3 ADR-007 §4 补 Redis 连接部署警告（生产 rediss:// TLS、口令经环境变量/密钥服务注入零入库，2.5.x 观察项）；④P3-2 SpelKeyResolver 换 SimpleEvaluationContext（只读数据绑定纵深防御，禁方法调用/T()）；⑤P3-1 LockAdvice tryLock 异常统一收敛 1002S0002（自定义 LockService 抛通用异常也按契约码）。
+- **评审③处置留痕**：P1 三个 Duration 配置字段（processingTtlSeconds/defaultWaitSeconds/defaultLeaseSeconds）加 `@DurationUnit(ChronoUnit.SECONDS)`——Spring 对纯数字 Duration 默认按毫秒解析，契约键纯数字值（如 processing-ttl-seconds: 60）会被静默绑成 60ms（安全配置失效陷阱，评审①P1-1 键名失效的同类变体）；补装配测试纯数字绑定断言。P3 项（审计 outcome DENIED/FAILURE 全仓口径、审计开关形态扁平 vs auth 嵌套、切面重复不值得抽象、库存不足 C 码/B 码沉淀、PARAM_INVALID 统一文案）全部登记观察项，不动代码。
+- **评审④处置留痕**：①P1-1 处理中并发测试 processing TTL 50ms 窗口提至 1s + @Timeout(5)（防慢机时延链超窗口导致第二请求 replace 成功挂死）；②P1-2 新增 SpEL 求值异常测试（key="#order.orderNo" 传 null → 1000C0001）；③P2-2 自定义 LockService 通用异常包装测试；④P2-3 封套断言补 1002C0002/1002S0002 两条；⑤P2-4 redis 模式正向装配测试（提供 StringRedisTemplate/RedissonClient → Redis/Redisson 实现注册）；⑥P2-5 锁超时测试 latch 握手替代 sleep(200ms)（消慢机 flaky）；⑦P2-6 返回值 null 合法 + 序列化失败 1000S9999 用例；⑧P2-7 锁侧超长键测试；⑨P3-1 unlock 兜底、P3-3 契约层并发全进入断言、P3-5 双注解叠加顺序组合测试 → 登记观察项（后续会话补，非阻塞）。
 
 ## 规格缺口声明
 
