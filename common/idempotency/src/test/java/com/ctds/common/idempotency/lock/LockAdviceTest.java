@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.ctds.common.errorcode.BizException;
 import com.ctds.common.errorcode.ErrorCodes;
 import com.ctds.common.idempotency.IdempotencyErrorCodes;
+import com.ctds.common.idempotency.SpelKeyResolver;
 import com.ctds.common.idempotency.lock.LockService.LockHandle;
 import java.time.Duration;
 import java.util.Optional;
@@ -148,15 +149,20 @@ class LockAdviceTest {
     void 等待超时返回操作繁忙() throws Exception {
         final ExecutorService pool = Executors.newSingleThreadExecutor();
         try {
-            // 锁由另一线程持有 2 秒（可重入锁同线程会重入成功，必须跨线程制造互斥）
+            // 锁由另一线程持有 2 秒（可重入锁同线程会重入成功，必须跨线程制造互斥）；
+            // 用 latch 握手确认锁已持有（评审④P2-5：替代 sleep 消除慢机调度竞态）
+            final CountDownLatch lockHeld = new CountDownLatch(1);
             final Future<?> holder = pool.submit(() -> {
                 final Optional<LockHandle> h = lockService.tryLock("ctds:lock:busy",
                         Duration.ofMillis(100), Duration.ofSeconds(-1));
                 assertTrue(h.isPresent());
+                lockHeld.countDown();
                 sleepQuietly(2000);
                 h.orElseThrow().unlock();
             });
-            Thread.sleep(200);
+            if (!lockHeld.await(2, TimeUnit.SECONDS)) {
+                throw new AssertionError("holder did not acquire lock");
+            }
             final BizException ex = assertThrows(BizException.class, () -> service.waiting("busy"));
             assertEquals(IdempotencyErrorCodes.LOCK_ACQUIRE_TIMEOUT.value(), ex.getErrorCode().value());
             holder.get(5, TimeUnit.SECONDS);
@@ -185,6 +191,14 @@ class LockAdviceTest {
     @Test
     void 空键拒绝快速失败() {
         final BizException ex = assertThrows(BizException.class, () -> service.waiting(null));
+        assertEquals(ErrorCodes.PARAM_INVALID.value(), ex.getErrorCode().value());
+    }
+
+    @Test
+    void 超长键拒绝快速失败() {
+        // 评审④P2-7：锁侧与幂等侧同路径——键长超限 → 1000C0001
+        final BizException ex = assertThrows(BizException.class,
+                () -> service.waiting("K".repeat(SpelKeyResolver.MAX_KEY_LENGTH + 1)));
         assertEquals(ErrorCodes.PARAM_INVALID.value(), ex.getErrorCode().value());
     }
 }

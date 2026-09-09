@@ -1,7 +1,9 @@
 package com.ctds.common.idempotency.lock;
 
 import java.time.Duration;
+import java.time.temporal.ChronoUnit;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.convert.DurationUnit;
 
 /**
  * 锁组件配置（契约 = WBS-2.4.7-hifi 配置项表；前缀 ctds.lock）。
@@ -18,11 +20,15 @@ public class LockProperties {
     /** 锁键前缀（防业务键冲突）。 */
     private String keyPrefix = "ctds:lock:";
 
-    /** 获取锁等待超时默认值（@Locked 未显式指定 waitSeconds 时）。 */
-    private Duration defaultWaitTime = Duration.ofSeconds(3);
+    /** 获取锁等待超时默认值（契约键 default-wait-seconds，纯数字=秒；@Locked 未显式指定 waitSeconds 时；
+     *  @DurationUnit 防纯数字被按毫秒静默解析，评审③P1）。 */
+    @DurationUnit(ChronoUnit.SECONDS)
+    private Duration defaultWaitSeconds = Duration.ofSeconds(3);
 
-    /** 持锁自动释放默认值（@Locked 未显式指定 leaseSeconds 时；-1 = 看门狗自动续期）。 */
-    private Duration defaultLeaseTime = Duration.ofSeconds(-1);
+    /** 持锁自动释放默认值（契约键 default-lease-seconds，纯数字=秒；@Locked 未显式指定 leaseSeconds 时；-1 = 看门狗自动续期；
+     *  @DurationUnit 防纯数字被按毫秒静默解析，评审③P1）。 */
+    @DurationUnit(ChronoUnit.SECONDS)
+    private Duration defaultLeaseSeconds = Duration.ofSeconds(-1);
 
     /** 审计联动开关（锁超时/锁服务异常记审计；沿 2.4.5 已确认口径"默认开启可配置关闭"）。 */
     private boolean auditEnabled = true;
@@ -51,20 +57,20 @@ public class LockProperties {
         this.keyPrefix = keyPrefix;
     }
 
-    public Duration getDefaultWaitTime() {
-        return defaultWaitTime;
+    public Duration getDefaultWaitSeconds() {
+        return defaultWaitSeconds;
     }
 
-    public void setDefaultWaitTime(final Duration defaultWaitTime) {
-        this.defaultWaitTime = defaultWaitTime;
+    public void setDefaultWaitSeconds(final Duration defaultWaitSeconds) {
+        this.defaultWaitSeconds = defaultWaitSeconds;
     }
 
-    public Duration getDefaultLeaseTime() {
-        return defaultLeaseTime;
+    public Duration getDefaultLeaseSeconds() {
+        return defaultLeaseSeconds;
     }
 
-    public void setDefaultLeaseTime(final Duration defaultLeaseTime) {
-        this.defaultLeaseTime = defaultLeaseTime;
+    public void setDefaultLeaseSeconds(final Duration defaultLeaseSeconds) {
+        this.defaultLeaseSeconds = defaultLeaseSeconds;
     }
 
     public boolean isAuditEnabled() {

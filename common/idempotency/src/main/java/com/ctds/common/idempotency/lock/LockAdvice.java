@@ -45,10 +45,22 @@ public class LockAdvice {
     public Object around(final ProceedingJoinPoint pjp, final Locked locked) throws Throwable {
         final String fullKey = prefixedKey(locked.key(), pjp);
         final Duration waitTime = locked.waitSeconds() > 0
-                ? Duration.ofSeconds(locked.waitSeconds()) : properties.getDefaultWaitTime();
+                ? Duration.ofSeconds(locked.waitSeconds()) : properties.getDefaultWaitSeconds();
         final Duration leaseTime = locked.leaseSeconds() > 0
-                ? Duration.ofSeconds(locked.leaseSeconds()) : properties.getDefaultLeaseTime();
-        final Optional<LockHandle> handle = lockService.tryLock(fullKey, waitTime, leaseTime);
+                ? Duration.ofSeconds(locked.leaseSeconds()) : properties.getDefaultLeaseSeconds();
+        final Optional<LockHandle> handle;
+        try {
+            handle = lockService.tryLock(fullKey, waitTime, leaseTime);
+        } catch (RuntimeException e) {
+            // 锁服务不可用（fail-closed，1002S0002）：记审计后统一按契约码抛出——
+            // 实现类已包装该码则原样重抛，自定义 LockService 抛其他异常也收敛为 1002S0002（评审②P3-1）
+            audit(fullKey, AuditOutcome.FAILURE, "service_unavailable");
+            if (e instanceof BizException be
+                    && IdempotencyErrorCodes.LOCK_SERVICE_UNAVAILABLE.equals(be.getErrorCode())) {
+                throw e;
+            }
+            throw new BizException(IdempotencyErrorCodes.LOCK_SERVICE_UNAVAILABLE, "锁服务不可用", e);
+        }
         if (handle.isEmpty()) {
             audit(fullKey, AuditOutcome.FAILURE, "timeout");
             throw new BizException(IdempotencyErrorCodes.LOCK_ACQUIRE_TIMEOUT,

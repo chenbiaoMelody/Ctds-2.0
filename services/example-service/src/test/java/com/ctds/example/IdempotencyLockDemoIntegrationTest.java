@@ -5,6 +5,10 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.ctds.common.api.ApiResult;
+import com.ctds.common.errorcode.BizException;
+import com.ctds.common.idempotency.IdempotencyErrorCodes;
+import com.ctds.common.web.GlobalExceptionHandler;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ctds.example.application.DemoOrderService;
@@ -20,7 +24,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
@@ -48,9 +54,58 @@ class IdempotencyLockDemoIntegrationTest {
     @Autowired
     private DemoOrderRepository orderRepository;
 
+    @Autowired
+    private GlobalExceptionHandler globalExceptionHandler;
+
     @BeforeEach
     void resetDemoState() {
         orderRepository.clear();
+    }
+
+    @Test
+    void 处理中错误封套与文案出站正确() {
+        // 评审①P2-2：B9 封套断言——1002C 码经 GlobalExceptionHandler 出站 = 400 + 契约文案（不含内部细节）
+        final ResponseEntity<ApiResult<Void>> resp = globalExceptionHandler.onBizException(
+                new BizException(IdempotencyErrorCodes.IDEMPOTENCY_IN_PROGRESS,
+                        IdempotencyErrorCodes.IDEMPOTENCY_IN_PROGRESS_MESSAGE));
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(resp.getBody()).isNotNull();
+        assertThat(resp.getBody().code()).isEqualTo("1002C0001");
+        assertThat(resp.getBody().message()).isEqualTo("请求处理中，请稍后重试");
+    }
+
+    @Test
+    void 存储不可用S码出站统一系统繁忙() {
+        // 评审①P2-2：1002S 码出站统一"系统繁忙"（S 码 message 不出站，防内部实现泄露）
+        final ResponseEntity<ApiResult<Void>> resp = globalExceptionHandler.onBizException(
+                new BizException(IdempotencyErrorCodes.IDEMPOTENCY_STORE_UNAVAILABLE, "幂等存储不可用"));
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
+        assertThat(resp.getBody()).isNotNull();
+        assertThat(resp.getBody().code()).isEqualTo("1002S0001");
+        assertThat(resp.getBody().message()).isEqualTo("系统繁忙，请稍后重试");
+    }
+
+    @Test
+    void 锁超时封套与文案出站正确() {
+        // 评审④P2-3：1002C0002 C 码封套 = 400 + 契约文案
+        final ResponseEntity<ApiResult<Void>> resp = globalExceptionHandler.onBizException(
+                new BizException(IdempotencyErrorCodes.LOCK_ACQUIRE_TIMEOUT,
+                        IdempotencyErrorCodes.LOCK_ACQUIRE_TIMEOUT_MESSAGE));
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(resp.getBody()).isNotNull();
+        assertThat(resp.getBody().code()).isEqualTo("1002C0002");
+        assertThat(resp.getBody().message()).isEqualTo("操作繁忙，请稍后重试");
+    }
+
+    @Test
+    void 锁服务不可用S码出站统一系统繁忙() {
+        // 评审④P2-3：1002S0002 S 码出站统一"系统繁忙"
+        final ResponseEntity<ApiResult<Void>> resp = globalExceptionHandler.onBizException(
+                new BizException(IdempotencyErrorCodes.LOCK_SERVICE_UNAVAILABLE, "锁服务不可用"));
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
+        assertThat(resp.getBody()).isNotNull();
+        assertThat(resp.getBody().code()).isEqualTo("1002S0002");
+        assertThat(resp.getBody().message()).isEqualTo("系统繁忙，请稍后重试");
     }
 
     @Test

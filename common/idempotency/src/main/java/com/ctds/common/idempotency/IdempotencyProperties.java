@@ -1,7 +1,9 @@
 package com.ctds.common.idempotency;
 
 import java.time.Duration;
+import java.time.temporal.ChronoUnit;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.convert.DurationUnit;
 
 /**
  * 幂等组件配置（契约 = WBS-2.4.7-hifi 配置项表；前缀 ctds.idempotency）。
@@ -18,8 +20,10 @@ public class IdempotencyProperties {
     /** 幂等键前缀（防业务键冲突）。 */
     private String keyPrefix = "ctds:idem:";
 
-    /** 执行中标记 TTL：须 ≥ 业务最长执行时间，否则超长业务可能被重复执行（使用方责任，hifi 边界表）。 */
-    private Duration processingTtl = Duration.ofSeconds(60);
+    /** 执行中标记 TTL（契约键 processing-ttl-seconds，纯数字=秒）：须 ≥ 业务最长执行时间，
+     *  否则超长业务可能被重复执行（使用方责任，hifi 边界表；@DurationUnit 防纯数字被按毫秒静默解析，评审③P1）。 */
+    @DurationUnit(ChronoUnit.SECONDS)
+    private Duration processingTtlSeconds = Duration.ofSeconds(60);
 
     /** 结果缓存默认 TTL（@Idempotent 未显式指定 expireSeconds 时）。 */
     private long defaultExpireSeconds = 600;
@@ -51,12 +55,12 @@ public class IdempotencyProperties {
         this.keyPrefix = keyPrefix;
     }
 
-    public Duration getProcessingTtl() {
-        return processingTtl;
+    public Duration getProcessingTtlSeconds() {
+        return processingTtlSeconds;
     }
 
-    public void setProcessingTtl(final Duration processingTtl) {
-        this.processingTtl = processingTtl;
+    public void setProcessingTtlSeconds(final Duration processingTtlSeconds) {
+        this.processingTtlSeconds = processingTtlSeconds;
     }
 
     public long getDefaultExpireSeconds() {

@@ -53,8 +53,12 @@ public class IdempotencyAdvice {
             try {
                 store.complete(fullKey, ResultCodec.serialize(result), expireOf(idempotent));
             } catch (JsonProcessingException e) {
-                // 返回值类型不可 JSON 序列化 = 使用方代码缺陷 → 平台内部错误（出站统一"系统繁忙"）
+                // 返回值类型不可 JSON 序列化 = 使用方代码缺陷 → 平台内部错误（出站统一"系统繁忙"；
+                // 评审①P1-2：契约边界表 1002S0002 字样为笔误（该码语义=锁服务不可用），实现按 1000S9999 修正）
                 throw new BizException(ErrorCodes.INTERNAL_ERROR, "幂等结果序列化失败", e);
+            } catch (RuntimeException e) {
+                // 结果写入存储失败 = 幂等存储不可用（fail-closed，与 tryAcquire/getResult 同口径 1002S0001）
+                throw new BizException(IdempotencyErrorCodes.IDEMPOTENCY_STORE_UNAVAILABLE, "幂等存储不可用", e);
             }
             return result;
         } catch (Throwable t) {
@@ -73,7 +77,7 @@ public class IdempotencyAdvice {
 
     private boolean tryAcquireSafe(final String fullKey) {
         try {
-            return store.tryAcquire(fullKey, properties.getProcessingTtl());
+            return store.tryAcquire(fullKey, properties.getProcessingTtlSeconds());
         } catch (RuntimeException e) {
             throw new BizException(IdempotencyErrorCodes.IDEMPOTENCY_STORE_UNAVAILABLE, "幂等存储不可用", e);
         }

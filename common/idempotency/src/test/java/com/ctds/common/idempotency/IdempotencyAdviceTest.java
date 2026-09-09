@@ -1,10 +1,18 @@
 package com.ctds.common.idempotency;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import com.ctds.common.errorcode.BizException;
 import com.ctds.common.errorcode.ErrorCodes;
+import java.lang.reflect.Method;
 import java.time.Duration;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -12,6 +20,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.aspectj.lang.ProceedingJoinPoint;
+import org.aspectj.lang.reflect.MethodSignature;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -34,7 +44,10 @@ class IdempotencyAdviceTest {
     @Autowired
     private InMemoryIdempotencyStore store;
 
-    private static final Duration PROCESSING_TTL = Duration.ofMillis(50);
+    @Autowired
+    private IdempotencyProperties properties;
+
+    private static final Duration PROCESSING_TTL = Duration.ofSeconds(1);
     private static final long RESULT_EXPIRE_SECONDS = 1;
 
     @Configuration
@@ -54,7 +67,7 @@ class IdempotencyAdviceTest {
         IdempotencyProperties idempotencyProperties() {
             final IdempotencyProperties props = new IdempotencyProperties();
             props.setMode("memory");
-            props.setProcessingTtl(PROCESSING_TTL);
+            props.setProcessingTtlSeconds(PROCESSING_TTL);
             props.setDefaultExpireSeconds(RESULT_EXPIRE_SECONDS);
             props.setAuditEnabled(false);
             return props;
@@ -72,6 +85,7 @@ class IdempotencyAdviceTest {
 
         private final AtomicInteger submitCalls = new AtomicInteger();
         private final AtomicInteger failureAttempts = new AtomicInteger();
+        private final AtomicInteger nullCalls = new AtomicInteger();
 
         @Idempotent(key = "#orderNo")
         public String submit(final String orderNo) {
@@ -94,6 +108,22 @@ class IdempotencyAdviceTest {
             return "slow-" + orderNo;
         }
 
+        @Idempotent(key = "#order.orderNo")
+        public String submitByObject(final DemoOrder order) {
+            return "obj-" + order.orderNo();
+        }
+
+        @Idempotent(key = "#key")
+        public String returnsNull(final String key) {
+            nullCalls.incrementAndGet();
+            return null;
+        }
+
+        @Idempotent(key = "#key")
+        public CyclicPayload cyclic(final String key) {
+            return new CyclicPayload();
+        }
+
         public int submitCallCount() {
             return submitCalls.get();
         }
@@ -102,9 +132,27 @@ class IdempotencyAdviceTest {
             return failureAttempts.get();
         }
 
+        public int nullCallCount() {
+            return nullCalls.get();
+        }
+
         public void reset() {
             submitCalls.set(0);
             failureAttempts.set(0);
+            nullCalls.set(0);
+        }
+    }
+
+    /** SpEL 对象求值参数（评审④P1-2：SpEL 求值异常分支测试用）。 */
+    record DemoOrder(String orderNo) {
+    }
+
+    /** 自引用对象：Jackson 序列化必然失败（评审④P2-6：序列化失败 → 1000S9999）。 */
+    static class CyclicPayload {
+        public final CyclicPayload self;
+
+        CyclicPayload() {
+            this.self = this;
         }
     }
 
@@ -149,6 +197,7 @@ class IdempotencyAdviceTest {
     }
 
     @Test
+    @org.junit.jupiter.api.Timeout(5)
     void 并发同键第二请求返回处理中错误() throws Exception {
         final CountDownLatch entered = new CountDownLatch(1);
         final CountDownLatch release = new CountDownLatch(1);
@@ -184,5 +233,101 @@ class IdempotencyAdviceTest {
     void 空键拒绝快速失败() {
         final BizException ex = assertThrows(BizException.class, () -> service.submit(null));
         assertEquals(ErrorCodes.PARAM_INVALID.value(), ex.getErrorCode().value());
+    }
+
+    @Test
+    void 存储不可用拒绝执行业务failClosed() throws Throwable {
+        // 评审②P2-1：tryAcquire 存储异常 → 1002S0001，业务不执行（fail-closed，防重复执行）
+        final IdempotencyStore broken = mock(IdempotencyStore.class);
+        when(broken.tryAcquire(any(), any())).thenThrow(new RuntimeException("redis down"));
+        final IdempotencyAdvice advice = new IdempotencyAdvice(broken, properties, null);
+        final ProceedingJoinPoint pjp = joinPointOf("submit", new Object[] {"A"});
+        final BizException ex = assertThrows(BizException.class,
+                () -> advice.around(pjp, submitAnnotation()));
+        assertEquals("1002S0001", ex.getErrorCode().value());
+        verify(broken, never()).release(any());
+        assertEquals(0, service.submitCallCount());
+    }
+
+    @Test
+    void 读结果存储异常返回存储不可用() throws Throwable {
+        // 评审②P2-1：重复请求读结果存储异常 → 1002S0001（与 tryAcquire 同口径 fail-closed）
+        final IdempotencyStore broken = mock(IdempotencyStore.class);
+        when(broken.tryAcquire(any(), any())).thenReturn(false);
+        when(broken.getResult(any())).thenThrow(new RuntimeException("redis down"));
+        final IdempotencyAdvice advice = new IdempotencyAdvice(broken, properties, null);
+        final BizException ex = assertThrows(BizException.class,
+                () -> advice.around(joinPointOf("submit", new Object[] {"A"}), submitAnnotation()));
+        assertEquals("1002S0001", ex.getErrorCode().value());
+    }
+
+    @Test
+    void 写结果存储异常返回存储不可用并释放执行权() throws Throwable {
+        // 评审②P2-1：complete 存储异常 → 1002S0001 + 释放执行权（可重试）
+        final IdempotencyStore broken = mock(IdempotencyStore.class);
+        when(broken.tryAcquire(any(), any())).thenReturn(true);
+        doThrow(new RuntimeException("redis down")).when(broken).complete(any(), any(), any());
+        final IdempotencyAdvice advice = new IdempotencyAdvice(broken, properties, null);
+        final BizException ex = assertThrows(BizException.class,
+                () -> advice.around(joinPointOf("submit", new Object[] {"A"}), submitAnnotation()));
+        assertEquals("1002S0001", ex.getErrorCode().value());
+        verify(broken).release(any());
+    }
+
+    @Test
+    void 超长键拒绝快速失败() throws Throwable {
+        // 评审②P2-2：键长度超限 → 1000C0001（防超长键对 Redis 内存压力）
+        final String longKey = "K".repeat(SpelKeyResolver.MAX_KEY_LENGTH + 1);
+        final BizException ex = assertThrows(BizException.class, () -> service.submit(longKey));
+        assertEquals(ErrorCodes.PARAM_INVALID.value(), ex.getErrorCode().value());
+    }
+
+    @Test
+    void SpEL求值异常拒绝快速失败() {
+        // 评审④P1-2：key="#order.orderNo" 且 order=null → 求值异常 → 1000C0001（业务不执行）
+        final BizException ex = assertThrows(BizException.class, () -> service.submitByObject(null));
+        assertEquals(ErrorCodes.PARAM_INVALID.value(), ex.getErrorCode().value());
+        assertEquals(0, service.submitCallCount());
+    }
+
+    @Test
+    void 空对象键拒绝快速失败() {
+        // key="#order.orderNo" 且 order.orderNo=null → 求值结果为 null → 空键 → 1000C0001
+        final BizException ex = assertThrows(BizException.class,
+                () -> service.submitByObject(new DemoOrder(null)));
+        assertEquals(ErrorCodes.PARAM_INVALID.value(), ex.getErrorCode().value());
+    }
+
+    @Test
+    void 返回null视为合法结果且重复返回null() {
+        // 评审④P2-6：null 返回值合法（缓存完成态）；重复请求返回 null 且不重复执行
+        assertThat(service.returnsNull("A")).isNull();
+        assertThat(service.returnsNull("A")).isNull();
+        assertThat(service.nullCallCount()).isEqualTo(1);
+    }
+
+    @Test
+    void 返回值不可序列化转为内部错误并可重试() {
+        // 评审④P2-6：自引用对象序列化必然失败 → 1000S9999 + 释放执行权（可重试）
+        final BizException ex = assertThrows(BizException.class, () -> service.cyclic("A"));
+        assertEquals(ErrorCodes.INTERNAL_ERROR.value(), ex.getErrorCode().value());
+        // 释放后同键可重试（仍失败，但证明执行权已释放、无永久占用）
+        final BizException again = assertThrows(BizException.class, () -> service.cyclic("A"));
+        assertEquals(ErrorCodes.INTERNAL_ERROR.value(), again.getErrorCode().value());
+    }
+
+    private static ProceedingJoinPoint joinPointOf(final String methodName, final Object[] args)
+            throws NoSuchMethodException {
+        final ProceedingJoinPoint pjp = mock(ProceedingJoinPoint.class);
+        final MethodSignature sig = mock(MethodSignature.class);
+        when(pjp.getSignature()).thenReturn(sig);
+        final Method method = DemoService.class.getMethod(methodName, String.class);
+        when(sig.getMethod()).thenReturn(method);
+        when(pjp.getArgs()).thenReturn(args);
+        return pjp;
+    }
+
+    private static Idempotent submitAnnotation() throws NoSuchMethodException {
+        return DemoService.class.getMethod("submit", String.class).getAnnotation(Idempotent.class);
     }
 }
