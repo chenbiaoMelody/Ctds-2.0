@@ -19,3 +19,9 @@ ctds:
     permissions:
       user: greeting.read
       admin: greeting.read,greeting.delete
+  # 幂等与分布式锁演示（WBS 2.4.7 B11）：内存模式 = 零中间件依赖，演示/单测可执行；
+  # 多实例生产部署须 mode=redis 并经 redisson-spring-boot-starter 提供 Redis 连接（hifi B8 边界）
+  idempotency:
+    mode: memory
+  lock:
+    mode: memory
