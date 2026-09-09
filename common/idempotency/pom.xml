@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.ctds</groupId>
+    <artifactId>ctds-platform</artifactId>
+    <version>2.0.0-SNAPSHOT</version>
+    <relativePath>../../pom.xml</relativePath>
+  </parent>
+
+  <artifactId>common-idempotency</artifactId>
+  <name>common-idempotency</name>
+  <description>公共组件：幂等与分布式锁（@Idempotent 结果复用 + @Locked 互斥；WBS 2.4.7，设计定稿 docs/designs/WBS-2.4.7-hifi.md，契约见 ADR-007）</description>
+
+  <dependencies>
+    <!-- 注解切面运行时（@Aspect + SpEL）；AopAutoConfiguration 仅在存在 @Aspect 类时生效，无副作用。 -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-aop</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.ctds</groupId>
+      <artifactId>common-errorcode</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.ctds</groupId>
+      <artifactId>common-logging</artifactId>
+    </dependency>
+    <!-- 幂等返回值序列化（结果缓存；组件自建 ObjectMapper，不依赖 web 栈）。
+         jsr310：支持 java.time（Instant/LocalDateTime 等）返回值（Spring 生态标准配套）。 -->
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.fasterxml.jackson.datatype</groupId>
+      <artifactId>jackson-datatype-jsr310</artifactId>
+    </dependency>
+    <!-- 分布式锁唯一实现来源（dependencies.md 已登记）：optional 防无 Redis 环境被 Redisson 自动配置牵连，
+         Redis 模式由引入方显式加依赖触发（hifi B1）；锁协议不自研（沿国密红线逻辑）。 -->
+    <dependency>
+      <groupId>org.redisson</groupId>
+      <artifactId>redisson-spring-boot-starter</artifactId>
+      <optional>true</optional>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+</project>

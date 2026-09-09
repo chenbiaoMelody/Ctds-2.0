@@ -1,0 +1,2 @@
+com.ctds.common.idempotency.IdempotencyAutoConfiguration
+com.ctds.common.idempotency.lock.LockAutoConfiguration
