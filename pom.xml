@@ -25,6 +25,7 @@
     <module>common/logging</module>
     <module>common/auth</module>
     <module>common/crypto</module>
+    <module>common/idempotency</module>
     <module>services/example-service</module>
   </modules>
 
@@ -35,6 +36,7 @@
     <maven-checkstyle-plugin.version>3.6.0</maven-checkstyle-plugin.version>
     <logstash-logback-encoder.version>8.1</logstash-logback-encoder.version>
     <bouncycastle.version>1.85.2</bouncycastle.version>
+    <redisson.version>3.52.0</redisson.version>
   </properties>
 
   <dependencyManagement>
@@ -69,6 +71,17 @@
         <groupId>com.ctds</groupId>
         <artifactId>common-crypto</artifactId>
         <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.ctds</groupId>
+        <artifactId>common-idempotency</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <!-- 分布式锁唯一实现来源（dependencies.md 已登记；组件只封装、不自研锁协议——沿国密红线逻辑）。 -->
+      <dependency>
+        <groupId>org.redisson</groupId>
+        <artifactId>redisson-spring-boot-starter</artifactId>
+        <version>${redisson.version}</version>
       </dependency>
       <!-- 国密算法唯一实现来源（dependencies.md 已登记；组件只封装、禁止自研——章程红线）。 -->
       <dependency>

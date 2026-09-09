@@ -9,7 +9,7 @@
 
 | 轮次 | 结论（确认/打回） | 确认人（PO） | 日期 | 意见（打回必填） |
 | --- | --- | --- | --- | --- |
-| 1 | 待签署 | 项目主导者（兼任 PO） |  |  |
+| 1 | 确认 | 项目主导者（兼任 PO） | 2026-09-09:20:30 |  |
 
 ## 行为清单（12 项，逐条对应 lofi 已确认方向与计划测试）
 
@@ -107,6 +107,8 @@
 | --- | --- | --- | --- |
 | `org.springframework.boot:spring-boot-starter-aop` | Boot 3.5.16 BOM 管理 | compile（非 optional） | 注解切面运行时（@Aspect + 自动配置；无副作用，存在 @Aspect 才生效） |
 | `org.redisson:redisson-spring-boot-starter` | 3.52.0（根 pom dependencyManagement 锁版） | **optional** | 分布式锁 + 幂等 Redis 连接（自带 spring-boot-starter-data-redis）；Redis 模式引入方显式加依赖 |
+| `com.fasterxml.jackson.core:jackson-databind` | Boot 3.5.16 BOM 管理 | compile | 幂等返回值序列化/反序列化（结果缓存；组件自建 ObjectMapper，不依赖 web 栈） |
+| `com.fasterxml.jackson.datatype:jackson-datatype-jsr310` | Boot 3.5.16 BOM 管理 | compile | 幂等返回值 java.time 类型支持（ResultCodec 注册 JavaTimeModule；编码期补充，Spring 生态标准配套） |
 | `com.ctds:common-errorcode` / `common-logging` | 2.0.0-SNAPSHOT | compile | 统一错误码 / 审计联动 |
 | `org.springframework.boot:spring-boot-starter-test` | Boot BOM | test | 测试 |
 
