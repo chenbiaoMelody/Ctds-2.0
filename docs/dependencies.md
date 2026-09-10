@@ -13,3 +13,27 @@
 | `org.redisson:redisson-spring-boot-starter` | 3.52.0（根 pom `dependencyManagement` 显式锁版，2026-09-09 实测官方仓库 3.x 系列 latest 即此版；4.x 面向 Spring Boot 4.1 与项目 3.5 不符，弃用） | common-idempotency 分布式锁（Redisson RLock：看门狗自动续期/可重入/释放校验，锁协议不自研——沿"组件只封装、禁止自研算法"红线逻辑）+ 幂等 Redis 连接（starter 自带 spring-boot-starter-data-redis）；以 optional 引入，Redis 模式由引入方显式加依赖 | Apache-2.0 | repo1.maven.org 官方 `maven-metadata.xml`，2026-09-09 实测核验存在，3.x latest/release=3.52.0（其 pom 声明 spring-boot 3.5.5，与项目 3.5.16 同主次兼容） | PO 预授权：WBS-2.4.7 lofi 确认（问题 2"选 Redisson"）+ hifi 签署（2026-09-09:20:30，依赖清单） | WBS 2.4.7 |
 | `com.fasterxml.jackson.core:jackson-databind` | 由 Spring Boot 3.5.16 BOM 管理（pom 不显式锁版） | common-idempotency 幂等返回值序列化/反序列化（结果缓存；组件自建 ObjectMapper，不依赖 web 栈） | Apache-2.0 | 本地仓库实测（dependency:get 经 aliyun 镜像解析成功，Boot 3.5.16 BOM 解析），2026-09-09 | PO 预授权：WBS-2.4.7 hifi 签署（2026-09-09:20:30，依赖清单） | WBS 2.4.7 |
 | `com.fasterxml.jackson.datatype:jackson-datatype-jsr310` | 由 Spring Boot 3.5.16 BOM 管理（pom 不显式锁版） | common-idempotency 幂等返回值 java.time 类型（Instant/LocalDateTime 等）序列化支持（ResultCodec 注册 JavaTimeModule） | Apache-2.0 | 本地仓库实测（dependency:get 经 aliyun 镜像解析成功，Boot 3.5.16 BOM 解析），2026-09-09 | PO 预授权：WBS-2.4.7 hifi 签署（2026-09-09:20:30，依赖清单）；本行为编码期补充（返回值 java.time 支持，Spring 生态标准配套） | WBS 2.4.7 |
+
+## 前端 npm 依赖（WBS 2.4.9，frontend/）
+
+> 前端工程为独立 npm 工程（不进 Maven），锁定文件 = `frontend/package-lock.json`（npm install 自动生成，随分支提交）。版本组合以官方 create-vite vue-ts 模板锁定线 + npmmirror 官方注册表实测核验为准；版本记法为 package.json semver 范围。
+
+| 包名（npm） | 锁定范围 | 用途 | 许可证 | 核验来源与日期 | 审批记录 | 引入任务 |
+| --- | --- | --- | --- | --- | --- | --- |
+| `vue` | ^3.5.42 | 框架核心（ADR-001 冻结栈） | MIT | create-vite 9.2.0 模板（^3.5.41）+ npmmirror 实测 latest=3.5.42，2026-09-10 | PO 预授权：WBS-2.4.9 lofi 问题 1"认可"，签署见 `docs/designs/WBS-2.4.9-lofi.md` 确认记录 | WBS 2.4.9 |
+| `vue-router` | ^5.3.1 | 路由（H3/H4；peer vue ^3.5.34 || ^4.0.0，pinia peer optional 不引入） | MIT | npmmirror 实测 5.3.1 + peerDependencies 核验，2026-09-10 | 同上 | WBS 2.4.9 |
+| `element-plus` | ^2.14.5 | UI 组件库（ADR-001 冻结栈） | MIT | npmmirror 实测 2.14.5，2026-09-10 | 同上 | WBS 2.4.9 |
+| `@element-plus/icons-vue` | ^2.3.2 | 图标库（peer vue ^3.2.0） | MIT | npmmirror 实测 2.3.2，2026-09-10 | 同上 | WBS 2.4.9 |
+| `vite` | ^8.2.2 | 构建/开发服务器（ADR-001 冻结栈） | MIT | create-vite 模板（^8.2.2）+ npmmirror 实测 8.2.2，2026-09-10 | 同上 | WBS 2.4.9 |
+| `@vitejs/plugin-vue` | ^6.0.8 | Vue SFC 编译插件（peer vite ^5–^8） | MIT | 模板 + npmmirror 实测 6.0.8，2026-09-10 | 同上 | WBS 2.4.9 |
+| `typescript` | ~6.0.2 | TS 语言（模板锁定线；vue-tsc 3.3.11 peer ≥5.0，不追 7.x 最新线） | Apache-2.0 | create-vite 模板锁定 ~6.0.2，2026-09-10 | 同上 | WBS 2.4.9 |
+| `vue-tsc` | ^3.3.11 | 类型检查（build 阶段） | MIT | 模板 + npmmirror 实测 3.3.11，2026-09-10 | 同上 | WBS 2.4.9 |
+| `@vue/tsconfig` | ^0.9.1 | TS 配置基准（模板自带） | MIT | 模板锁定，2026-09-10 | 同上 | WBS 2.4.9 |
+| `@types/node` | ^24.13.3 | Node 类型（模板自带） | MIT | 模板锁定，2026-09-10 | 同上 | WBS 2.4.9 |
+| `vitest` | ^5.0.0 | 单元测试框架（peer vite ^6.4–^8） | MIT | npmmirror 实测 5.0.0，2026-09-10 | 同上 | WBS 2.4.9 |
+| `@vue/test-utils` | ^2.5.0 | 组件挂载测试（peer vue 3.x） | MIT | npmmirror 实测 2.5.0，2026-09-10 | 同上 | WBS 2.4.9 |
+| `jsdom` | ^30.0.1 | Vitest DOM 环境 | MIT | npmmirror 实测 30.0.1，2026-09-10 | 同上 | WBS 2.4.9 |
+| `eslint` | ^9.39.5 | 代码检查（dist-tags maintenance 稳定线；eslint-plugin-vue 10.11.0 支持 ^9；**9.39.5 为 9 线最终维护版，npm 提示 EOL 属预期，V1.0 内不升级 10.x**） | MIT | npmmirror 实测 9.39.5，2026-09-10 | 同上 | WBS 2.4.9 |
+| `eslint-plugin-vue` | ^10.11.0 | Vue 规则集（peer eslint ^8.57–^10；@stylistic/@typescript-eslint 为 optional） | MIT | npmmirror 实测 10.11.0，2026-09-10 | 同上 | WBS 2.4.9 |
+| `vue-eslint-parser` | ^10.4.1 | .vue 文件解析 | MIT | npmmirror 实测 10.4.1，2026-09-10 | 同上 | WBS 2.4.9 |
+| `@typescript-eslint/parser` | ^8.70.0 | `<script setup lang="ts">` 解析（vue-eslint-parser 配 parser；ESLint 对 TS 语法必需的前置解析器） | MIT | npmmirror 实测 8.70.0，2026-09-10 | PO 预授权范围内（eslint 生态必要配套，编码期补充；lofi 问题 1 授权"按冻结栈内自主选定"覆盖） | WBS 2.4.9 |

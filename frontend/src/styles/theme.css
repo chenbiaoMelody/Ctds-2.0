@@ -1,0 +1,30 @@
+/* WBS-2.4.9 H6 主题契约：品牌主色 #2563eb 一处配置，全站生效。
+ * Element Plus 主题变量规范：主色 + light-3/5/7/9（浅色渐变）+ dark-2（深色）。 */
+:root {
+  --el-color-primary: #2563eb;
+  --el-color-primary-light-3: #4f83ef;
+  --el-color-primary-light-5: #7ba2f4;
+  --el-color-primary-light-7: #a7c1f8;
+  --el-color-primary-light-8: #bdd0fa;
+  --el-color-primary-light-9: #d9e4fc;
+  --el-color-primary-dark-2: #1d4ed8;
+}
+
+/* 全局基础排版 */
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family:
+    'Microsoft YaHei',
+    'PingFang SC',
+    'Helvetica Neue',
+    Arial,
+    sans-serif;
+  background-color: #f3f4f6;
+}
