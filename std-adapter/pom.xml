@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.ctds</groupId>
+    <artifactId>ctds-platform</artifactId>
+    <version>2.0.0-SNAPSHOT</version>
+    <relativePath>../../pom.xml</relativePath>
+  </parent>
+
+  <artifactId>std-adapter</artifactId>
+  <name>std-adapter</name>
+  <description>标准适配层：信通院测评/互联互通相关实现的唯一收口模块（WBS 2.4.8 骨架 + 互联互通接口占位，
+    设计定稿 docs/designs/WBS-2.4.8-hifi.md，契约见 ADR-008）。纯 jar 库模块：无启动类、无端口、不单独部署。</description>
+
+  <dependencies>
+    <!-- 错误码段 1003 + BizException 统一异常体系（复用 common-errorcode，不新增异常类）。 -->
+    <dependency>
+      <groupId>com.ctds</groupId>
+      <artifactId>common-errorcode</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+</project>

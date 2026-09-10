@@ -40,6 +40,11 @@
       <groupId>com.ctds</groupId>
       <artifactId>common-idempotency</artifactId>
     </dependency>
+    <!-- 标准适配层（WBS 2.4.8）：演示端点探活三标准域占位状态（契约见 ADR-008）。 -->
+    <dependency>
+      <groupId>com.ctds</groupId>
+      <artifactId>std-adapter</artifactId>
+    </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-web</artifactId>

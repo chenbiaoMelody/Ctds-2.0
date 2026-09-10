@@ -26,6 +26,7 @@
     <module>common/auth</module>
     <module>common/crypto</module>
     <module>common/idempotency</module>
+    <module>std-adapter</module>
     <module>services/example-service</module>
   </modules>
 
@@ -75,6 +76,12 @@
       <dependency>
         <groupId>com.ctds</groupId>
         <artifactId>common-idempotency</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <!-- 标准适配层（WBS 2.4.8）：信通院测评/互联互通相关实现的唯一收口模块（章程 4.3 / ADR-008）。 -->
+      <dependency>
+        <groupId>com.ctds</groupId>
+        <artifactId>std-adapter</artifactId>
         <version>${project.version}</version>
       </dependency>
       <!-- 分布式锁唯一实现来源（dependencies.md 已登记；组件只封装、不自研锁协议——沿国密红线逻辑）。 -->
