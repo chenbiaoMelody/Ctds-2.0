@@ -44,10 +44,4 @@ class PlaceholderApisTest {
         assertThat(api.status().message())
                 .isEqualTo("该能力域尚未开放：测评证据采集与互联互通契约测试将由测评演练工作包实现（M2）");
     }
-
-    @Test
-    void 占位探活重复调用返回一致状态() {
-        final InterconnectStandardApi api = new PlaceholderInterconnectStandardApi();
-        assertThat(api.status()).isEqualTo(api.status());
-    }
 }

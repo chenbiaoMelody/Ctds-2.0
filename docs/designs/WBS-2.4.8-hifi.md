@@ -29,7 +29,7 @@
 
 | 类型 | 位置 | 契约 |
 | --- | --- | --- |
-| `StdDomain`（enum） | `com.ctds.std` | 三值固定：`INTERCONNECT("interconnect","互联互通")`、`DID_INTEROP("did","跨空间身份互认")`、`EVIDENCE("evidence","测评证据")`；字段 code（稳定字符串，进 API 响应）、displayName（中文）；说明文案常量随占位实现提供（下表） |
+| `StdDomain`（enum） | `com.ctds.std` | 三值固定：`INTERCONNECT("interconnect","互联互通")`、`DID_INTEROP("did","跨空间身份互认")`、`EVIDENCE("evidence","测评证据")`；字段 code（稳定字符串，进 API 响应）、displayName（中文）；"尚未开放"定稿文案由占位实现在 status() 内联返回、测试以字面量钉死（评审③P3-3 措辞对齐；见下表） |
 | `StdDomainStatus`（record） | `com.ctds.std` | `(StdDomain domain, boolean implemented, String message)`；紧凑构造器：domain/message 非 null、message 非空白，违反 → `IllegalArgumentException`（内部防御，骨架内调用点全部常量化，不可达 Web 层） |
 | `StdDomainApi`（interface） | `com.ctds.std` | `StdDomain domain()`；`StdDomainStatus status()`——"这个标准域今天什么状态"的唯一探活契约 |
 | `InterconnectStandardApi`（interface） | `com.ctds.std.interconnect` | `extends StdDomainApi`，骨架内无新增方法；javadoc 锚定 C-9.1/C-9.2、WBS 4.x 收口位置 |
