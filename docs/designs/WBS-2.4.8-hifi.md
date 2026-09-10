@@ -36,7 +36,7 @@
 | `DidInteropStandardApi`（interface） | `com.ctds.std.did` | `extends StdDomainApi`，同上；javadoc 锚定政务 CA 3.1.4、跨空间身份互认 3.1.10、智能体互认 C-9.3 |
 | `EvidenceStandardApi`（interface） | `com.ctds.std.evidence` | `extends StdDomainApi`，同上；javadoc 锚定测评证据采集与互联互通契约测试自动轨（章程 G1） |
 | `PlaceholderInterconnectStandardApi` 等三个 | 各域包内 | 实现对应子接口；纯常量返回，无状态、无配置、无网络访问 |
-| `StdAdapterErrorCodes`（final 类） | `com.ctds.std` | `NOT_IMPLEMENTED = ErrorCode.of("1003C0001")`（对外文案"该标准互联功能尚未开放"）；`static BizException notImplemented(StdDomain domain)`：domain 为 null → `IllegalArgumentException`（编程错误快速失败）；BizException 对外文案固定为码表文案，不拼接域信息 |
+| `StdAdapterErrorCodes`（final 类） | `com.ctds.std` | `NOT_IMPLEMENTED = ErrorCode.of("1003C0001")`（对外文案"该标准互联功能尚未开放"）；`NOT_IMPLEMENTED_MESSAGE` 公开文案常量（沿 2.4.7 `IDEMPOTENCY_IN_PROGRESS_MESSAGE` 先例，评审①P3-1 登记）；`static BizException notImplemented(StdDomain domain)`：domain 为 null → `IllegalArgumentException`（编程错误快速失败）；BizException 对外文案固定为码表文案，不拼接域信息 |
 
 ### 占位实现状态值（message 定稿，业务语言）
 

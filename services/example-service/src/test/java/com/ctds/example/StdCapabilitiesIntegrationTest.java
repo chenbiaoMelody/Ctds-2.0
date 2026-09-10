@@ -49,9 +49,13 @@ class StdCapabilitiesIntegrationTest {
                 .andExpect(jsonPath("$.data[1].code").value("did"))
                 .andExpect(jsonPath("$.data[1].name").value("跨空间身份互认"))
                 .andExpect(jsonPath("$.data[1].implemented").value(false))
+                .andExpect(jsonPath("$.data[1].message").value(
+                        "该能力域尚未开放：政务 CA 接入与跨空间身份互认接口将由后续工作包实现（WBS 3.1.4 / 3.1.10）"))
                 .andExpect(jsonPath("$.data[2].code").value("evidence"))
                 .andExpect(jsonPath("$.data[2].name").value("测评证据"))
-                .andExpect(jsonPath("$.data[2].implemented").value(false));
+                .andExpect(jsonPath("$.data[2].implemented").value(false))
+                .andExpect(jsonPath("$.data[2].message").value(
+                        "该能力域尚未开放：测评证据采集与互联互通契约测试将由测评演练工作包实现（M2）"));
     }
 
     @Test
