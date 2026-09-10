@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>C-TDS 平台前端骨架 · 低保真原型</title>
+<style>
+  :root {
+    --brand: #2563eb;        /* 品牌主色（示意，最终以主题设计为准） */
+    --brand-dark: #1d4ed8;
+    --bg: #f3f4f6;
+    --card: #ffffff;
+    --border: #e5e7eb;
+    --text: #1f2937;
+    --muted: #6b7280;
+    --sidebar-w: 220px;
+    --header-h: 56px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; background: var(--bg); color: var(--text); }
+
+  /* 三区布局：左菜单 + 顶栏 + 内容区 */
+  .layout { display: flex; min-height: 100vh; }
+  .sidebar { width: var(--sidebar-w); background: #111827; color: #d1d5db; flex-shrink: 0; }
+  .brand { height: var(--header-h); display: flex; align-items: center; padding: 0 18px; color: #fff; font-weight: 600; letter-spacing: 1px; border-bottom: 1px solid #1f2937; }
+  .brand span { color: #60a5fa; }
+  .menu { padding: 10px 0; }
+  .menu-item { padding: 12px 18px; cursor: pointer; font-size: 14px; display: flex; align-items: center; gap: 10px; }
+  .menu-item:hover { background: #1f2937; }
+  .menu-item.active { background: var(--brand); color: #fff; }
+  .menu-item .dot { width: 8px; height: 8px; border-radius: 2px; background: #4b5563; display: inline-block; }
+  .menu-item.active .dot { background: #fff; }
+  .menu-item.disabled { opacity: 0.45; cursor: not-allowed; }
+  .menu-group { padding: 10px 18px 4px; font-size: 12px; color: #6b7280; letter-spacing: 2px; }
+
+  .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .header { height: var(--header-h); background: var(--card); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; padding: 0 20px; }
+  .header .crumb { font-size: 13px; color: var(--muted); }
+  .header .user { font-size: 13px; display: flex; align-items: center; gap: 8px; }
+  .header .tag { background: #fef3c7; color: #92400e; font-size: 12px; padding: 2px 8px; border-radius: 10px; }
+
+  .content { padding: 20px; }
+  .page-title { font-size: 18px; font-weight: 600; margin-bottom: 4px; }
+  .page-desc { font-size: 13px; color: var(--muted); margin-bottom: 16px; }
+
+  /* 组件示例区（低保真示意，最终以 Element Plus 组件为准） */
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; margin-bottom: 16px; }
+  .stat { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+  .stat .num { font-size: 26px; font-weight: 700; color: var(--brand); }
+  .stat .label { font-size: 13px; color: var(--muted); margin-top: 4px; }
+  .panel { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+  .panel h4 { font-size: 14px; margin-bottom: 12px; }
+  .table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .table th, .table td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+  .table th { background: #f9fafb; color: var(--muted); font-weight: 500; }
+  .badge { font-size: 12px; padding: 2px 10px; border-radius: 10px; }
+  .badge.gray { background: #f3f4f6; color: #6b7280; border: 1px solid #d1d5db; }
+  .badge.blue { background: #dbeafe; color: #1d4ed8; }
+  .btn { background: var(--brand); color: #fff; border: none; border-radius: 6px; padding: 8px 16px; font-size: 13px; cursor: pointer; }
+  .btn.plain { background: #fff; color: var(--brand); border: 1px solid var(--brand); }
+  .role-switch { display: flex; align-items: center; gap: 10px; font-size: 13px; margin-bottom: 12px; }
+  .role-switch select { padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; }
+  .note { font-size: 12px; color: var(--muted); background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 10px 12px; margin-bottom: 16px; }
+  .role { color: var(--brand); font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="layout">
+
+  <!-- 左：侧边菜单栏 -->
+  <aside class="sidebar">
+    <div class="brand">C-TDS <span>数据空间</span></div>
+    <nav class="menu">
+      <div class="menu-group">平台导航</div>
+      <div class="menu-item active"><span class="dot"></span>工作台</div>
+      <div class="menu-item"><span class="dot"></span>标准能力</div>
+      <div class="menu-item"><span class="dot"></span>数据目录（占位）</div>
+      <div class="menu-group">权限演示</div>
+      <div class="menu-item" id="permItem"><span class="dot"></span>仅管理员可见</div>
+    </nav>
+  </aside>
+
+  <!-- 右：顶栏 + 内容 -->
+  <div class="main">
+    <header class="header">
+      <div class="crumb">工作台 / 概览</div>
+      <div class="user">
+        <span class="tag">演示模式</span>
+        <span>当前角色：<span class="role" id="roleLabel">普通用户</span></span>
+      </div>
+    </header>
+
+    <main class="content">
+      <div class="page-title">工作台</div>
+      <div class="page-desc">前端框架骨架示例页：布局 / 菜单 / 组件 / 主题的统一载体。</div>
+
+      <div class="note">
+        💡 <b>权限演示</b>：切换到"管理员"角色，左侧菜单将出现"仅管理员可见"入口；切回"普通用户"即隐藏。骨架期用静态权限点演示机制，真实授权数据源由后续工作包接入。
+      </div>
+
+      <div class="role-switch">
+        演示角色：<select id="roleSelect">
+          <option value="user">普通用户</option>
+          <option value="admin">管理员</option>
+        </select>
+      </div>
+
+      <!-- 统计卡片 -->
+      <div class="cards">
+        <div class="stat"><div class="num">3</div><div class="label">标准能力域</div></div>
+        <div class="stat"><div class="num">0</div><div class="label">已开放能力</div></div>
+        <div class="stat"><div class="num">1</div><div class="label">示例页面</div></div>
+      </div>
+
+      <!-- 标准能力示例：真实对接 example-service /api/v1/std-capabilities -->
+      <div class="panel">
+        <h4>标准能力状态（对接 example-service 真实接口）</h4>
+        <table class="table">
+          <thead><tr><th>能力域</th><th>状态</th><th>说明</th></tr></thead>
+          <tbody>
+            <tr><td>互联互通</td><td><span class="badge gray">未开放</span></td><td>对接国家/区域枢纽（占位）</td></tr>
+            <tr><td>跨空间身份互认</td><td><span class="badge gray">未开放</span></td><td>政务 CA / 跨空间身份（占位）</td></tr>
+            <tr><td>测评证据</td><td><span class="badge gray">未开放</span></td><td>信通院测评证据采集（占位）</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- 组件示例 -->
+      <div class="panel">
+        <h4>Element Plus 组件示例（表格 / 按钮 / 表单）</h4>
+        <table class="table">
+          <thead><tr><th>示例</th><th>预览</th></tr></thead>
+          <tbody>
+            <tr><td>按钮</td><td><button class="btn">主要按钮</button> <button class="btn plain">次要按钮</button></td></tr>
+            <tr><td>表单</td><td><input placeholder="输入框占位" style="padding:7px 10px;border:1px solid var(--border);border-radius:6px;width:200px"></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script>
+  // 权限点演示：管理员可见"仅管理员可见"菜单项
+  const roleSelect = document.getElementById('roleSelect');
+  const permItem = document.getElementById('permItem');
+  const roleLabel = document.getElementById('roleLabel');
+  function applyRole() {
+    const role = roleSelect.value;
+    roleLabel.textContent = role === 'admin' ? '管理员' : '普通用户';
+    permItem.style.display = role === 'admin' ? 'flex' : 'none';
+  }
+  roleSelect.addEventListener('change', applyRole);
+  applyRole(); // 初始：普通用户，隐藏管理员项
+</script>
+</body>
+</html>
