@@ -5,7 +5,8 @@ import { hasPermission, getDemoRole, setDemoRole } from '../stores/demoRole'
 /**
  * WBS-2.4.9 H3/H4 测试：
  * - 路由表结构断言：每条菜单路由必含 meta.title 与菜单属性；权限路由必含 meta.permission；
- * - 权限点守卫逻辑：admin 放行，普通用户拒绝；无权限点要求恒放行。
+ * - 权限点守卫逻辑：admin 放行，普通用户拒绝；无权限点要求恒放行；
+ * - 守卫 beforeEach 实际行为：普通用户访问受保护路由 → 重定向 dashboard + denied 提示参数；admin 放行。
  */
 
 describe('路由表结构（H3）', () => {
@@ -59,5 +60,26 @@ describe('权限点判断（H4）', () => {
     setDemoRole('admin')
     expect(getDemoRole()).toBe('admin')
     expect(hasPermission('demo:admin')).toBe(true)
+  })
+})
+
+describe('守卫 beforeEach 实际行为（H4）', () => {
+  beforeEach(() => {
+    localStorage.clear()
+  })
+
+  it('普通用户访问受保护路由：重定向 dashboard 并带 denied 提示参数', async () => {
+    const { default: router } = await import('../router/index')
+    setDemoRole('user')
+    await router.push('/admin-only')
+    expect(router.currentRoute.value.name).toBe('dashboard')
+    expect(router.currentRoute.value.query.denied).toBe('1')
+  })
+
+  it('admin 角色访问受保护路由：放行', async () => {
+    const { default: router } = await import('../router/index')
+    setDemoRole('admin')
+    await router.push('/admin-only')
+    expect(router.currentRoute.value.name).toBe('admin-only')
   })
 })

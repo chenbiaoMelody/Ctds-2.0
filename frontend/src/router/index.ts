@@ -15,6 +15,8 @@ declare module 'vue-router' {
     title?: string
     /** 是否出现在侧边栏菜单 */
     menu?: boolean
+    /** 菜单图标（Element Plus 图标组件名） */
+    icon?: string
     /** 菜单排序权重（越小越靠前） */
     menuOrder?: number
     /** 所需权限点（骨架期：'demo:admin' 演示权限点） */
@@ -35,25 +37,25 @@ const routes = [
         path: 'dashboard',
         name: 'dashboard',
         component: () => import('../views/dashboard/IndexView.vue'),
-        meta: { title: '工作台', menu: true, menuOrder: 1 },
+        meta: { title: '工作台', menu: true, menuOrder: 1, icon: 'HomeFilled' },
       },
       {
         path: 'std-capabilities',
         name: 'std-capabilities',
         component: () => import('../views/std-capabilities/IndexView.vue'),
-        meta: { title: '标准能力', menu: true, menuOrder: 2 },
+        meta: { title: '标准能力', menu: true, menuOrder: 2, icon: 'Connection' },
       },
       {
         path: 'catalog',
         name: 'catalog',
         component: () => import('../views/catalog/IndexView.vue'),
-        meta: { title: '数据目录', menu: true, menuOrder: 3 },
+        meta: { title: '数据目录', menu: true, menuOrder: 3, icon: 'FolderOpened' },
       },
       {
         path: 'admin-only',
         name: 'admin-only',
         component: () => import('../views/admin-only/IndexView.vue'),
-        meta: { title: '仅管理员可见', menu: true, menuOrder: 4, permission: 'demo:admin' },
+        meta: { title: '仅管理员可见', menu: true, menuOrder: 4, icon: 'Lock', permission: 'demo:admin' },
       },
       {
         path: ':pathMatch(.*)*',

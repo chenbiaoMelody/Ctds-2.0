@@ -1,20 +1,24 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 import { routes } from '../router'
 import { getDemoRole, setDemoRole, type DemoRole } from '../stores/demoRole'
 
 /**
- * WBS-2.4.9 H2 三区布局骨架：左侧菜单栏 + 顶部栏 + 主内容区。
+ * WBS-2.4.9 H2 三区布局骨架：左侧菜单栏（可折叠）+ 顶部栏 + 主内容区。
  * - 菜单由路由表驱动（meta.menu = true），按 menuOrder 排序；
+ * - 菜单图标由 meta.icon 解析（Element Plus 图标组件名）；
  * - 权限点路由按演示角色过滤显示；
- * - 顶栏右侧：演示模式标识 + 角色切换（骨架期静态两角色）。
+ * - 顶栏右侧：演示模式标识 + 角色切换（骨架期静态两角色）；
+ * - 无权限访问被守卫重定向时（query.denied=1）顶栏显示提示。
  */
 
 const route = useRoute()
 const router = useRouter()
 
 const currentRole = ref<DemoRole>(getDemoRole())
+const collapsed = ref(false)
 
 const menuItems = computed(() => {
   const root = routes.find((r) => r.path === '/')
@@ -25,9 +29,20 @@ const menuItems = computed(() => {
     .sort((a, b) => (a.meta?.menuOrder ?? 99) - (b.meta?.menuOrder ?? 99))
 })
 
+function resolveIcon(name?: string) {
+  if (!name) return null
+  return (ElementPlusIconsVue as Record<string, unknown>)[name] ?? null
+}
+
 const activePath = computed(() => route.path)
 
 const pageTitle = computed(() => route.meta?.title ?? '未命名页面')
+
+const denied = computed(() => route.query.denied === '1')
+
+function dismissDenied() {
+  router.replace({ query: { ...route.query, denied: undefined } })
+}
 
 function onRoleChange(role: DemoRole) {
   currentRole.value = role
@@ -42,22 +57,35 @@ function onRoleChange(role: DemoRole) {
 
 <template>
   <el-container class="main-layout">
-    <el-aside width="220px" class="sidebar">
-      <div class="brand">C-TDS <span>数据空间</span></div>
-      <el-menu :default-active="activePath" router class="sidebar-menu">
+    <el-aside :width="collapsed ? '64px' : '220px'" class="sidebar">
+      <div class="brand">C-TDS <span v-if="!collapsed">数据空间</span></div>
+      <el-menu
+        :default-active="activePath"
+        :collapse="collapsed"
+        router
+        class="sidebar-menu"
+      >
         <el-menu-item
           v-for="item in menuItems"
           :key="item.path"
           :index="'/' + item.path"
         >
-          {{ item.meta?.title }}
+          <el-icon v-if="resolveIcon(item.meta?.icon)">
+            <component :is="resolveIcon(item.meta?.icon)" />
+          </el-icon>
+          <span>{{ item.meta?.title }}</span>
         </el-menu-item>
       </el-menu>
     </el-aside>
 
     <el-container>
       <el-header class="topbar">
-        <div class="crumb">首页 / {{ pageTitle }}</div>
+        <div class="topbar-left">
+          <el-icon class="collapse-trigger" @click="collapsed = !collapsed">
+            <component :is="resolveIcon(collapsed ? 'Expand' : 'Fold')" />
+          </el-icon>
+          <span class="crumb">首页 / {{ pageTitle }}</span>
+        </div>
         <div class="topbar-right">
           <el-tag size="small" type="warning">演示模式</el-tag>
           <el-select
@@ -74,6 +102,15 @@ function onRoleChange(role: DemoRole) {
       </el-header>
 
       <el-main class="content">
+        <el-alert
+          v-if="denied"
+          title="无权限访问该页面"
+          type="warning"
+          :closable="true"
+          show-icon
+          class="denied-tip"
+          @close="dismissDenied"
+        />
         <router-view />
       </el-main>
     </el-container>
@@ -88,6 +125,7 @@ function onRoleChange(role: DemoRole) {
 .sidebar {
   background-color: #111827;
   overflow: hidden;
+  transition: width 0.2s;
 }
 
 .brand {
@@ -131,9 +169,29 @@ function onRoleChange(role: DemoRole) {
   border-bottom: 1px solid #e5e7eb;
 }
 
+.topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.collapse-trigger {
+  font-size: 18px;
+  cursor: pointer;
+  color: #4b5563;
+}
+
+.collapse-trigger:hover {
+  color: var(--el-color-primary);
+}
+
 .crumb {
   font-size: 13px;
   color: #6b7280;
+}
+
+.denied-tip {
+  margin-bottom: 16px;
 }
 
 .topbar-right {
