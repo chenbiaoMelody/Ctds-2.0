@@ -19,9 +19,9 @@
 | B2 | example-service 引入 Flyway 依赖四件套（版本走 Boot 3.5.16 BOM），`dependencies.md` 登记 4 项（审批栏注明 PO 预授权 + lofi 问题 5） | lofi 做什么-2 + 待确认 5 | mvn compile PASS + 依赖树实测解析留痕 |
 | B3 | 默认 profile 行为零变化：不配数据源、无 `mysql` profile 时 Flyway 不装配，服务照常启动，既有测试与端点不受影响 | lofi 做什么-4 + 待确认 4 | 既有全量单测 PASS（不碰数据库）+ 无 profile 启动冒烟 |
 | B4 | 示例迁移两脚本：`V1__create_demo_note.sql` 建 demo_note 表（id/标题/内容/创建时间）+ `V2__seed_demo_note.sql` 插入 2 行演示数据 | lofi 做什么-3 | 条件集成测试（B7）+ Docker 演练（B9） |
-| B5 | 只读演示端点 `GET /api/v1/demo-notes`：JdbcTemplate 读 demo_note 全部行，按 id 升序，返回统一封套 `{code:"0", traceId, data:[...]}`（沿 ADR-005 封套规范） | lofi 做什么-3 | 端点行为验证并入 B7 条件集成测试与 B9 Docker 演练（不引入 H2，不为单测伪造数据源） |
-| B6 | `mysql` profile 配置 `application-mysql.yml`：数据源（localhost:3306/ctds_demo，账号口令经环境变量注入，**密钥零入库**）+ `spring.flyway` 开启、`baseline-on-migrate=false` | lofi 做什么-2/4 | 配置装配单测（profile 激活后 Flyway bean 存在）+ Docker 演练 |
-| B7 | 条件化集成测试 `FlywayMigrationTest`（定稿更正：设计原名 FlywayMigrationIT，编码期发现 surefire 默认不拾取 `*IT` 命名，2026-09-12 更名并留痕）：环境变量 `CTDS_IT_MYSQL_URL` 存在才执行（验证 V1/V2 依次应用、flyway_schema_history 有两行记录、重复执行 no-op），否则标记跳过——默认门禁环境无库也全绿 | lofi 做什么-5 | @EnabledIfEnvironmentVariable 条件单测；跳过态在默认 mvn test 输出留痕 |
+| B5 | 只读演示端点 `GET /api/v1/demo-notes`：JdbcTemplate 读 demo_note 全部行，按 id 升序，`@RequirePermission("demo.read")`（评审②处置补齐），返回统一封套（沿 ADR-005） | lofi 做什么-3 | B7 条件集成测试真实调用端点断言（200+2 行按 id 升序 + 未认证 401 双向）+ B9 Docker 演练 curl 留痕 |
+| B6 | `mysql` profile 配置 `application-mysql.yml`：数据源（localhost:3306/ctds_demo，账号口令经环境变量注入，**密钥零入库**）+ `spring.flyway` 开启、`out-of-order=false`、`baseline-on-migrate=false`（评审①后显式化） | lofi 做什么-2/4 | 装配正确性由 B7 条件测试间接覆盖（`@Autowired Flyway` 成功即装配成立；默认门禁环境无库不跑，2.4.11 Testcontainers 建成后补齐默认自动化——评审③指出的覆盖缺口，已接受） |
+| B7 | 条件化集成测试 `FlywayMigrationTest`（定稿更正：设计原名 FlywayMigrationIT，编码期发现 surefire 默认不拾取 `*IT` 命名，2026-09-12 更名并留痕）：环境变量 `CTDS_IT_MYSQL_URL` 存在才执行（验证 V1/V2 依次应用、flyway_schema_history 有两行记录、演示数据标题契约、重复执行 no-op、B5 端点 200/401 双向断言）；连接参数 `CTDS_IT_MYSQL_USER`（默认 root）/`CTDS_IT_MYSQL_PASSWORD`（默认 ctds-demo，**仅为本地一次性演练容器口令，非任何真实环境凭据，禁止在共享/真实环境复用**——评审②留痕），否则标记跳过——默认门禁环境无库也全绿 | lofi 做什么-5 | @EnabledIfEnvironmentVariable 条件单测；跳过态在默认 mvn test 输出留痕 |
 | B8 | 四层分层沿 2.4.1 ArchUnit 规则：DemoNoteController（interfaces）→ 不直连数据层（经 infrastructure 的 DemoNoteJdbcRepository）；JdbcTemplate 封装在 infrastructure | lofi 做什么-3 | 既有 ArchUnit 测试 PASS（新类自动纳入扫描） |
 | B9 | 真实迁移演练（Docker MySQL 8）：空库启动 → V1/V2 依次应用 → 端点返回 2 行 → 重启 no-op → 篡改已应用脚本 → 启动失败报校验和错误；命令与输出附交付说明 | lofi 做什么-6 | 人工/半自动演练留痕（业务可读步骤） |
 
@@ -31,8 +31,10 @@
 
 | 项 | 契约 |
 | --- | --- |
-| 成功响应 | `{ "code": "0", "message": null, "traceId": "<链路ID>", "data": [ { "id": 1, "title": "...", "content": "...", "createdAt": "..." } ] }` |
-| 未启用 mysql profile 时 | 端点不存在（404，控制器条件装配 `@ConditionalOnProperty(ctds.demo.db-enabled)` 或 `@Profile("mysql")`），不产生"服务不可用"误导 |
+| 鉴权 | `@RequirePermission("demo.read")`（评审②补齐，与同服务既有端点安全基线一致）；演示权限映射 user/admin 均授予（application.yml `ctds.auth.permissions`） |
+| 成功响应 | `{ "code": "0", "message": "success", "traceId": "<链路ID>", "data": [ { "id": 1, "title": "...", "content": "...", "createdAt": "..." } ] }`（message 实为 ApiResult.ok 固定 "success"，评审①更正原笔误 "null"） |
+| 未认证访问 | 401 + code `1000C0002`（沿既有鉴权组件行为） |
+| 未启用 mysql profile 时 | 端点不存在（404，控制器条件装配 `@ConditionalOnProperty(ctds.demo.db-enabled)`），不产生"服务不可用"误导 |
 | 数据库不可达 | 服务启动失败（Spring 数据源初始化失败，错误不暴露口令等内部信息）——迁移场景"带库启动失败优于带病运行" |
 
 ## 配置契约（B6，application-mysql.yml）
@@ -54,18 +56,18 @@ spring:
 ## 示例脚本契约（B4）
 
 ```sql
--- V1__create_demo_note.sql
+-- WBS 2.4.10 示例迁移 V1：建迁移演示表（ADR-009：一条脚本只做一件事）
 CREATE TABLE demo_note (
   id BIGINT AUTO_INCREMENT PRIMARY KEY,
   title VARCHAR(64)  NOT NULL COMMENT '标题',
   content VARCHAR(512) NOT NULL COMMENT '内容',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间'
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='迁移工具链演示表（WBS 2.4.10）';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='数据库迁移工具链演示表（WBS 2.4.10 / ADR-009）';
 
--- V2__seed_demo_note.sql
+-- WBS 2.4.10 示例迁移 V2：灌入演示数据（V1 建表 → V2 灌数据，演示版本递进）
 INSERT INTO demo_note (title, content) VALUES
   ('迁移演示', '本行数据由 V2__seed_demo_note.sql 写入（Flyway 版本化管理演示）'),
-  ('版本递进', 'V1 建表 → V2 灌数据：每次结构变更都是新版本脚本');
+  ('版本递进', 'V1 建表 → V2 灌数据：每次结构变更都是新版本脚本（ADR-009）');
 ```
 
 ## 依赖锁定表（B2，Maven，版本由 Spring Boot 3.5.16 BOM 管理，编码期实测核验）
@@ -83,7 +85,7 @@ INSERT INTO demo_note (title, content) VALUES
 | --- | --- |
 | 数据库已是最新（重启/重复启动） | Flyway no-op，启动正常（幂等），零副作用 |
 | 已应用脚本被修改（校验和不符） | 启动失败，报"Detected applied migration not resolved locally / 校验和验证失败"并指明版本号（篡改防护；修复须走 ADR-009 规定的处理流程，禁止改历史脚本） |
-| 脚本版本号倒退/乱序提交 | out-of-order=false 下新低版本脚本被忽略并告警（规范要求版本号必须取 history 最大值+1） |
+| 脚本版本号倒退/乱序提交 | out-of-order=false 下新低版本脚本被忽略并告警（规范要求版本号必须取 history 最大值+1）；自动化覆盖随 2.4.11 Testcontainers 补"插入低版本脚本验证被忽略"用例（评审④建议，已接受） |
 | 数据库不可达（口令错/库未启动） | 服务启动失败（fail-fast），错误信息不含口令；演示端点不产生部分可用状态 |
 | 未启用 mysql profile | 数据源/Flyway/演示端点全部不装配，行为与 2.4.9 合并时点完全一致 |
 | V2 灌数据脚本重复执行 | 不会发生（flyway_schema_history 已记录版本，Flyway 跳过已应用脚本）——演示表无唯一键冲突风险 |
@@ -92,7 +94,7 @@ INSERT INTO demo_note (title, content) VALUES
 
 1. 既有全量单测（默认 profile）：全部 PASS 且零数据库依赖（B3）；
 2. `mvn -pl services/example-service -B test`：新增/修改类纳入 ArchUnit 分层扫描（B8）；
-3. `FlywayMigrationTest`（B7）：`@EnabledIfEnvironmentVariable(named = "CTDS_IT_MYSQL_URL", matches = ".+")`；断言 V1/V2 应用、history 两行、二次执行 no-op、demo_note 恰 2 行；
+3. `FlywayMigrationTest`（B7）：`@EnabledIfEnvironmentVariable(named = "CTDS_IT_MYSQL_URL", matches = ".+")`；断言 V1/V2 应用、history 两行、演示数据标题契约、二次执行 no-op、demo-notes 端点 200（2 行按 id 升序）与未认证 401 双向；
 4. Docker 演练（B9，人工触发，PO 启动 Docker Desktop 后执行）：`docker run -d --name ctds-mysql-demo -e MYSQL_ROOT_PASSWORD=<演练口令> -p 3306:3306 mysql:8` → `CREATE DATABASE ctds_demo` → 以 mysql profile 启动服务 → curl 端点验 2 行 → 重启验 no-op → 篡改脚本验 fail-fast；全部命令与输出摘要附交付说明；
 5. 门禁：全量 run-gates GREEN（adrFieldsCheck 覆盖 ADR-009）。
 

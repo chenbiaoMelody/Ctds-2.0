@@ -1,6 +1,7 @@
 package com.ctds.example.interfaces;
 
 import com.ctds.common.api.ApiResult;
+import com.ctds.common.auth.RequirePermission;
 import com.ctds.example.application.DemoNoteService;
 import com.ctds.example.interfaces.dto.DemoNoteView;
 import java.util.List;
@@ -27,6 +28,7 @@ public class DemoNoteController {
     }
 
     @GetMapping(produces = MediaType.APPLICATION_JSON_VALUE)
+    @RequirePermission("demo.read")
     public ApiResult<List<DemoNoteView>> list() {
         final List<DemoNoteView> views = demoNoteService.list().stream()
                 .map(note -> new DemoNoteView(note.id(), note.title(), note.content(),
