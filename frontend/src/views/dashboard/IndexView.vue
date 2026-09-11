@@ -43,8 +43,8 @@ const capabilityRows = [
       <el-table :data="capabilityRows" size="default">
         <el-table-column prop="name" label="能力域" min-width="160" />
         <el-table-column label="状态" width="120">
-          <template #default="{ row }">
-            <el-tag type="info" size="small">{{ row.status }}</el-tag>
+          <template #default="scope">
+            <el-tag type="info" size="small">{{ scope.row.status }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="desc" label="说明" min-width="240" />
