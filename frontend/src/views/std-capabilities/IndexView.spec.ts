@@ -5,8 +5,10 @@ import IndexView from './IndexView.vue'
 
 /**
  * WBS-2.4.9 H8 标准能力示例页测试（mock fetch）：
+ * - 加载中：渲染 skeleton 骨架屏；
  * - 成功：渲染三行"未开放"能力域；
  * - 失败：显示错误提示与重试按钮；
+ * - 封套 code≠0：按错误提示处理；
  * - 空数组：显示空态提示。
  */
 
@@ -30,6 +32,13 @@ const mountPage = () =>
 describe('标准能力示例页（H8）', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
+
+  it('加载中：渲染骨架屏', () => {
+    vi.stubGlobal('fetch', vi.fn().mockReturnValue(new Promise(() => {})))
+    const wrapper = mountPage()
+    expect(wrapper.find('.el-skeleton').exists()).toBe(true)
   })
 
   it('成功：渲染三行能力域且状态为未开放', async () => {

@@ -18,11 +18,12 @@ export function setDemoRole(role: DemoRole): void {
 }
 
 /**
- * 权限点判断（骨架期占位规则）：
+ * 权限点判断（骨架期占位规则，菜单显隐与路由守卫共用）：
  * - 无权限点要求（undefined）→ 放行；
  * - 要求权限点 → 仅 admin 角色放行（演示 admin 拥有全部权限点）。
+ * role 缺省时读 localStorage 演示角色；UI 层（如菜单 computed）应显式传入响应式角色。
  */
-export function hasPermission(required: string | undefined): boolean {
+export function hasPermission(required: string | undefined, role: DemoRole = getDemoRole()): boolean {
   if (!required) return true
-  return getDemoRole() === 'admin'
+  return role === 'admin'
 }

@@ -37,8 +37,8 @@ async function loadCapabilities() {
     } else {
       errorMessage.value = '标准能力服务返回异常，请稍后重试。'
     }
-  } catch {
-    errorMessage.value = '标准能力服务暂不可用，请确认后端 example-service 已启动。'
+    } catch {
+      errorMessage.value = '标准能力服务暂不可用，请稍后重试。'
   } finally {
     loading.value = false
   }

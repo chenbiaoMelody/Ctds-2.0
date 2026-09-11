@@ -5,7 +5,8 @@ import tsParser from '@typescript-eslint/parser'
 /**
  * WBS-2.4.9 H9 ESLint flat config（ESLint 9 稳定线）：
  * - .vue 文件：vue-eslint-parser + @typescript-eslint/parser 解析 TS，vue 规则集；
- * - .ts 文件：@typescript-eslint/parser 直接解析，核心规则（TS 类型检查仍由 vue-tsc build 负责）；
+ * - .ts 文件：@typescript-eslint/parser 做语法级解析（骨架期有意未启用 eslint:recommended /
+ *   typescript-eslint 规则集，TS 质量由 vue-tsc build 类型检查把关；后续可按需纳入推荐规则集）；
  * - `<script setup lang="ts">` 的 TS 解析依赖 @typescript-eslint/parser（Vue+TS 工程标准配套）。
  */
 export default [

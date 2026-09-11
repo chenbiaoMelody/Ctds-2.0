@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 import { routes } from '../router'
-import { getDemoRole, setDemoRole, type DemoRole } from '../stores/demoRole'
+import { getDemoRole, setDemoRole, hasPermission, type DemoRole } from '../stores/demoRole'
 
 /**
  * WBS-2.4.9 H2 三区布局骨架：左侧菜单栏（可折叠）+ 顶部栏 + 主内容区。
@@ -25,7 +25,8 @@ const menuItems = computed(() => {
   const children = root && 'children' in root ? (root.children ?? []) : []
   return children
     .filter((r) => r.meta?.menu === true)
-    .filter((r) => !r.meta?.permission || currentRole.value === 'admin')
+    // 菜单显隐与路由守卫共用同一权限点判断（单一事实来源）；显式传响应式角色触发重算
+    .filter((r) => hasPermission(r.meta?.permission, currentRole.value))
     .sort((a, b) => (a.meta?.menuOrder ?? 99) - (b.meta?.menuOrder ?? 99))
 })
 

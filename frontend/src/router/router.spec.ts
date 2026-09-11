@@ -18,11 +18,12 @@ describe('路由表结构（H3）', () => {
     expect(children.length).toBeGreaterThanOrEqual(5)
   })
 
-  it('每条菜单路由必含 meta.title', () => {
+  it('每条菜单路由必含 meta.title 与 meta.icon', () => {
     const menuRoutes = children.filter((r) => r.meta?.menu === true)
     expect(menuRoutes.length).toBeGreaterThanOrEqual(4)
     for (const r of menuRoutes) {
       expect(r.meta?.title).toBeTruthy()
+      expect(r.meta?.icon).toBeTruthy()
     }
   })
 
@@ -81,5 +82,11 @@ describe('守卫 beforeEach 实际行为（H4）', () => {
     setDemoRole('admin')
     await router.push('/admin-only')
     expect(router.currentRoute.value.name).toBe('admin-only')
+  })
+
+  it('未知路径：真实导航落到 404 兜底页', async () => {
+    const { default: router } = await import('../router/index')
+    await router.push('/no-such-page')
+    expect(router.currentRoute.value.name).toBe('not-found')
   })
 })

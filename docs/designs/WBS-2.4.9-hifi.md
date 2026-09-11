@@ -9,7 +9,7 @@
 
 | 轮次 | 结论（确认/打回） | 确认人（PO） | 日期 | 意见（打回必填） |
 | --- | --- | --- | --- | --- |
-| 1 | 待确认 | | | |
+| 1 | 确认 | PO | 2026-09-10 | 与 lofi 同批两级一并确认（补审③发现"本表未回录确认事实"后补录，确认事实见 lofi 确认记录与日志 26-09-10-2153） |
 
 ## 行为清单（9 项，逐条对应 lofi 已确认方向与计划测试）
 
@@ -59,7 +59,7 @@
 | 要素 | 内容 |
 | --- | --- |
 | 数据来源 | `GET /api/v1/std-capabilities`（真实调用，经 Vite dev proxy 转发 localhost:8080） |
-| 页面状态 | 加载中（el-skeleton/loading 态）→ 成功（表格三行：互联互通/跨空间身份互认/测评证据，状态徽标"未开放"）→ 失败（el-alert 错误提示"标准能力服务暂不可用，请确认后端 example-service 已启动"，不暴露内部实现） |
+| 页面状态 | 加载中（el-skeleton/loading 态）→ 成功（表格三行：互联互通/跨空间身份互认/测评证据，状态徽标"未开放"）→ 失败（el-alert 错误提示"标准能力服务暂不可用，请稍后重试"，中性文案不暴露内部实现） |
 | 字段映射 | 响应 data[].code → 能力域；data[].name → 中文名；data[].implemented → 状态徽标（false=未开放）；data[].message → 说明列 |
 | 边界值 | 后端未启动 → 显示错误提示（可重试）；封套 code≠"0" → 按错误提示展示；列表为空 → 空态提示"暂无标准能力域" |
 
@@ -136,12 +136,13 @@ frontend/
 | `eslint` | ^9.39.5 | 代码检查（maintenance 稳定线；eslint-plugin-vue 10.11.0 支持 ^9） | npmmirror 实测 9.39.5（dist-tags maintenance），2026-09-10 | 同上 | 不追 10.x，取生态兼容稳定线 |
 | `eslint-plugin-vue` | ^10.11.0 | Vue 规则集（peer eslint ^8.57–^10；@stylistic/@typescript-eslint 为 optional 不引入） | npmmirror 实测 10.11.0，2026-09-10 | 同上 | — |
 | `vue-eslint-parser` | ^10.4.1 | .vue 文件解析 | npmmirror 实测 10.4.1，2026-09-10 | 同上 | — |
+| `@typescript-eslint/parser` | ^8.70.0 | .ts/.vue 内 TS 块解析（vue-eslint-parser 配套，补审①P3-2 lint 覆盖 .ts 引入） | npmmirror 实测 8.70.0，2026-09-11 | PO 预授权（dependencies.md 留痕） | 补审③发现设计表漏登第 18 项，2026-09-11 补登 |
 
 ## 边界值与异常行为
 
 | 场景 | 行为 |
 | --- | --- |
-| example-service 未启动时访问 /std-capabilities | 页面显示错误提示"标准能力服务暂不可用，请确认后端 example-service 已启动"（al-ellert，可重试），不白屏、不抛异常 |
+| example-service 未启动时访问 /std-capabilities | 页面显示中性错误提示"标准能力服务暂不可用，请稍后重试"（el-alert，可重试），不白屏、不抛异常、不暴露内部服务名（补审②建议文案中性化，2026-09-11 同步本表） |
 | 后端返回封套 code≠"0" | 同错误提示处理（不解析 data，避免误读错误结构） |
 | 无权限访问 /admin-only | 菜单不显示入口；直接输入 URL → 守卫拦截，重定向 /dashboard + 提示"无权限访问" |
 | 未知路径 | 404 占位页"页面不存在" |
@@ -150,10 +151,10 @@ frontend/
 
 ## 测试计划（映射 H1–H9）
 
-1. `router/index.spec.ts`：路由表结构断言（每条必含 meta.title；带 menu 的路由必含 meta.icon 等菜单属性）；守卫行为单测（有权限放行 / 无权限重定向+提示）；
-2. `layouts/MainLayout.spec.ts`：三区布局渲染冒烟（菜单栏/顶栏/内容区存在，菜单项数量 = 带 menu 路由数）；
-3. `views/dashboard/IndexView.spec.ts`：关键文案与组件断言（统计卡 3 张、表格存在、按钮存在）；
-4. `views/std-capabilities/IndexView.spec.ts`：mock fetch 成功 → 表格三行且状态"未开放"；mock 失败 → 错误提示出现；空数组 → 空态提示；
+1. `src/router/router.spec.ts`（补审③更正测试文件名）：路由表结构断言（每条必含 meta.title；带 menu 的路由必含 meta.icon 等菜单属性）；守卫行为单测（有权限放行 / 无权限重定向+提示 / 未知路径真实导航落 404）；
+2. `layouts/MainLayout.spec.ts`：三区布局渲染冒烟（菜单栏/顶栏/内容区存在，菜单项数量 = 带 menu 路由数）；无权限提示条消费（denied=1 渲染"无权限访问该页面"/关闭后清除 query/无 query 不渲染）；
+3. `views/dashboard/IndexView.spec.ts`：关键文案与组件断言（统计卡 3 张、表格存在、按钮存在、权限演示提示条文案）；
+4. `views/std-capabilities/IndexView.spec.ts`：mock fetch 加载中 → 骨架屏；成功 → 表格三行且状态"未开放"；失败 → 错误提示出现；封套 code≠0 → 错误提示；空数组 → 空态提示；
 5. `views/admin-only/IndexView.spec.ts`：权限演示页文案渲染；
 6. 工程命令实测：`npm run lint` / `npm run test` / `npm run build` 三绿（交付说明附输出摘要）；
 7. 集成验证：example-service 启动 + `npm run dev`，浏览器人工核对三区布局、菜单跳转、标准能力页真实数据、权限演示（普通用户隐藏 / 管理员可见）——验证命令与截图附交付说明。
@@ -169,5 +170,5 @@ frontend/
 
 - 验收剧本：现有剧本无前端节点，**无需更新**；新增前端骨架演示建议入剧本（由 PO 定，见交付说明建议文本）；
 - 追溯矩阵：基建任务无 C-x.y 规格文件，不涉及；
-- 依赖登记簿：`docs/dependencies.md` 新增 17 项 npm 包登记（本文件依赖锁定表为登记数据源）；
+- 依赖登记簿：`docs/dependencies.md` 新增 18 项 npm 包登记（本文件依赖锁定表为登记数据源；第 18 项 @typescript-eslint/parser 于补审①引入、补审③发现后补登）；
 - ADR：不新增 ADR（本任务无新契约级决策需固化；如 PO 认为前端工程基线值得 ADR，可在验收时提出，另走 ADR 变更流程）。
