@@ -1,0 +1,7 @@
+-- WBS 2.4.10 示例迁移 V1：建迁移演示表（规范见 ADR-009：一条脚本只做一件事、命名 V{版本}__{描述}.sql）
+CREATE TABLE demo_note (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  title VARCHAR(64)  NOT NULL COMMENT '标题',
+  content VARCHAR(512) NOT NULL COMMENT '内容',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='数据库迁移工具链演示表（WBS 2.4.10 / ADR-009）';

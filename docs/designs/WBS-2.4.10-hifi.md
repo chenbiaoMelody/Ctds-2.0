@@ -21,7 +21,7 @@
 | B4 | 示例迁移两脚本：`V1__create_demo_note.sql` 建 demo_note 表（id/标题/内容/创建时间）+ `V2__seed_demo_note.sql` 插入 2 行演示数据 | lofi 做什么-3 | 条件集成测试（B7）+ Docker 演练（B9） |
 | B5 | 只读演示端点 `GET /api/v1/demo-notes`：JdbcTemplate 读 demo_note 全部行，按 id 升序，返回统一封套 `{code:"0", traceId, data:[...]}`（沿 ADR-005 封套规范） | lofi 做什么-3 | 端点行为验证并入 B7 条件集成测试与 B9 Docker 演练（不引入 H2，不为单测伪造数据源） |
 | B6 | `mysql` profile 配置 `application-mysql.yml`：数据源（localhost:3306/ctds_demo，账号口令经环境变量注入，**密钥零入库**）+ `spring.flyway` 开启、`baseline-on-migrate=false` | lofi 做什么-2/4 | 配置装配单测（profile 激活后 Flyway bean 存在）+ Docker 演练 |
-| B7 | 条件化集成测试 `FlywayMigrationIT`：环境变量 `CTDS_IT_MYSQL_URL` 存在才执行（验证 V1/V2 依次应用、flyway_schema_history 有两行记录、重复执行 no-op），否则标记跳过——默认门禁环境无库也全绿 | lofi 做什么-5 | @EnabledIfEnvironmentVariable 条件单测；跳过态在默认 mvn test 输出留痕 |
+| B7 | 条件化集成测试 `FlywayMigrationTest`（定稿更正：设计原名 FlywayMigrationIT，编码期发现 surefire 默认不拾取 `*IT` 命名，2026-09-12 更名并留痕）：环境变量 `CTDS_IT_MYSQL_URL` 存在才执行（验证 V1/V2 依次应用、flyway_schema_history 有两行记录、重复执行 no-op），否则标记跳过——默认门禁环境无库也全绿 | lofi 做什么-5 | @EnabledIfEnvironmentVariable 条件单测；跳过态在默认 mvn test 输出留痕 |
 | B8 | 四层分层沿 2.4.1 ArchUnit 规则：DemoNoteController（interfaces）→ 不直连数据层（经 infrastructure 的 DemoNoteJdbcRepository）；JdbcTemplate 封装在 infrastructure | lofi 做什么-3 | 既有 ArchUnit 测试 PASS（新类自动纳入扫描） |
 | B9 | 真实迁移演练（Docker MySQL 8）：空库启动 → V1/V2 依次应用 → 端点返回 2 行 → 重启 no-op → 篡改已应用脚本 → 启动失败报校验和错误；命令与输出附交付说明 | lofi 做什么-6 | 人工/半自动演练留痕（业务可读步骤） |
 
@@ -72,10 +72,10 @@ INSERT INTO demo_note (title, content) VALUES
 
 | 坐标 | 锁定版本 | 用途 | 核验来源与日期 | 审批记录 | 备注 |
 | --- | --- | --- | --- | --- | --- |
-| `org.flywaydb:flyway-core` | Boot 3.5.16 BOM 管理（编码期 `dependency:get` 实测解析） | 迁移引擎（版本化管理 + 校验和防篡改 + flyway_schema_history） | 阿里云镜像实测，2026-09-12 | PO 预授权（lofi 问题 5） | 选型判定见 lofi 场景判定 |
-| `org.flywaydb:flyway-mysql` | 同上 | Flyway 8.2+ 拆分的 MySQL 方言支持（缺它 MySQL 连接不识别） | 同上 | 同上 | 与 flyway-core 同版本 |
-| `org.springframework.boot:spring-boot-starter-jdbc` | 3.5.16（BOM） | DataSource + JdbcTemplate + Flyway 自动装配前提 | Boot BOM，2026-09-12 | 同上 | — |
-| `com.mysql:mysql-connector-j` | 同上 | MySQL 8 JDBC 驱动（ADR-001 冻结栈配套） | 同上 | 同上 | runtime scope |
+| `org.flywaydb:flyway-core` | 11.7.2（Boot 3.5.16 BOM 管理，pom 不显式锁版；dependency:tree 实测解析） | 迁移引擎（版本化管理 + 校验和防篡改 + flyway_schema_history） | 阿里云镜像 dependency:tree 实测 11.7.2，2026-09-12 | PO 预授权（lofi 问题 5） | 选型判定见 lofi 场景判定 |
+| `org.flywaydb:flyway-mysql` | 11.7.2（同上，runtime scope） | Flyway 8.2+ 拆分的 MySQL 方言支持（缺它 MySQL 连接不识别） | 同上，2026-09-12 | 同上 | 与 flyway-core 同版本 |
+| `org.springframework.boot:spring-boot-starter-jdbc` | 3.5.16（BOM） | DataSource + JdbcTemplate + Flyway 自动装配前提 | Boot BOM，2026-09-12 | 同上 | 引入后默认 profile 需排除 DataSourceAutoConfiguration（B3 兼容性机制，见 application.yml 注释） |
+| `com.mysql:mysql-connector-j` | 9.7.0（BOM，runtime scope） | MySQL 8 JDBC 驱动（ADR-001 冻结栈配套） | dependency:tree 实测 9.7.0，2026-09-12 | 同上 | — |
 
 ## 边界值与异常行为
 
@@ -92,7 +92,7 @@ INSERT INTO demo_note (title, content) VALUES
 
 1. 既有全量单测（默认 profile）：全部 PASS 且零数据库依赖（B3）；
 2. `mvn -pl services/example-service -B test`：新增/修改类纳入 ArchUnit 分层扫描（B8）；
-3. `FlywayMigrationIT`（B7）：`@EnabledIfEnvironmentVariable(named = "CTDS_IT_MYSQL_URL", matches = ".+")`；断言 V1/V2 应用、history 两行、二次执行 no-op、demo_note 恰 2 行；
+3. `FlywayMigrationTest`（B7）：`@EnabledIfEnvironmentVariable(named = "CTDS_IT_MYSQL_URL", matches = ".+")`；断言 V1/V2 应用、history 两行、二次执行 no-op、demo_note 恰 2 行；
 4. Docker 演练（B9，人工触发，PO 启动 Docker Desktop 后执行）：`docker run -d --name ctds-mysql-demo -e MYSQL_ROOT_PASSWORD=<演练口令> -p 3306:3306 mysql:8` → `CREATE DATABASE ctds_demo` → 以 mysql profile 启动服务 → curl 端点验 2 行 → 重启验 no-op → 篡改脚本验 fail-fast；全部命令与输出摘要附交付说明；
 5. 门禁：全量 run-gates GREEN（adrFieldsCheck 覆盖 ADR-009）。
 
