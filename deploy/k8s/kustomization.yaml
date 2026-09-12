@@ -1,0 +1,10 @@
+# Kustomize resource list (WBS 2.5.1, spec: ADR-013).
+# Enables offline structural validation (`kubectl kustomize .`) now and
+# `kubectl apply -k` after IMAGE_PLACEHOLDER injection in WBS 2.5.2.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - backend-deployment.yaml
+  - backend-service.yaml
+  - frontend-deployment.yaml
+  - frontend-service.yaml

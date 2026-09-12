@@ -1,0 +1,16 @@
+# C-TDS backend Service (WBS 2.5.1, spec: ADR-013 K2).
+apiVersion: v1
+kind: Service
+metadata:
+  name: ctds-backend
+  labels:
+    app.kubernetes.io/part-of: ctds
+    app.kubernetes.io/name: example-service
+    app.kubernetes.io/component: backend
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: example-service
+  ports:
+    - port: 8080
+      targetPort: 8080

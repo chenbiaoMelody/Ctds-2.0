@@ -1,0 +1,5 @@
+# Build context whitelist: only the pre-built static site and the container
+# nginx config enter the image (spec ADR-013).
+*
+!dist/
+!nginx.container.conf

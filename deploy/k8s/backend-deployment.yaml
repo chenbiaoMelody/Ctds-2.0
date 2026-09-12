@@ -1,0 +1,45 @@
+# C-TDS backend Deployment (WBS 2.5.1, spec: ADR-013).
+# IMAGE_PLACEHOLDER is injected by the 2.5.2 deployment toolchain with the
+# canonical tag from scripts/pipeline/image-tag.ps1 (naming spec: ADR-012).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ctds-backend
+  labels:
+    app.kubernetes.io/part-of: ctds
+    app.kubernetes.io/name: example-service
+    app.kubernetes.io/component: backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: example-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: ctds
+        app.kubernetes.io/name: example-service
+        app.kubernetes.io/component: backend
+    spec:
+      containers:
+        - name: example-service
+          image: IMAGE_PLACEHOLDER
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"

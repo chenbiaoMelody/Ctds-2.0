@@ -47,3 +47,12 @@
 | `@typescript-eslint/parser` | ^8.70.0 | `<script setup lang="ts">` 解析（vue-eslint-parser 配 parser；ESLint 对 TS 语法必需的前置解析器） | MIT | npmmirror 实测 8.70.0，2026-09-10 | PO 预授权范围内（eslint 生态必要配套，编码期补充；lofi 问题 1 授权"按冻结栈内自主选定"覆盖） | WBS 2.4.9 |
 | `@playwright/test` | ^1.63.0 | E2E 测试框架（Vite/Vue 官方文档推荐方案；engines node>=20，本机 Node 24.14 满足；**无 peerDependencies**，与 eslint 9/vitest 5/vue 3.5 无冲突面；浏览器二进制 `npx playwright install chromium` 为本机开发资源不入库；规范载体 ADR-011） | Apache-2.0 | npmmirror 官方注册表实测 latest=1.63.0 + engines/dependencies 逐项核验，2026-09-12；Chromium 二进制实测下载成功（114.6 MB，ms-playwright 本机目录） | PO 确认：WBS-2.4.12 两级设计确认（AskUserQuestion 即时选定"确认进入编码"，2026-09-12），判定留痕见 `docs/designs/WBS-2.4.12-lofi.md`"问题确认"节 | WBS 2.4.12 |
 | `@cyclonedx/cyclonedx-npm` | ^6.0.1（devDependencies；package-lock.json 实锁 6.0.1） | 前端 SBOM 材料清单产出（--package-lock-only 以锁定文件为准，WBS 2.2.6 nightly 流水线 N5 阶段） | Apache-2.0 | npmmirror 官方注册表实测 latest=6.0.1 + engines node>=20.18（本机 Node 24.14 满足）+ 无 peerDependencies，2026-09-12 | PO 预授权：WBS-2.2.6 lofi 问题 2"确认"（AskUserQuestion 即时选定"确认进入编码"，2026-09-12），判定留痕见 `docs/designs/WBS-2.2.6-lofi.md` §6 | WBS 2.2.6 |
+
+## 容器基础镜像（WBS 2.5.1）
+
+> 容器基础镜像非 Maven/npm 依赖，单独成节登记；显式 tag 禁 latest（沿 ADR-010 精神），规范载体 ADR-013。拉取通道：直拉 Docker Hub，网络受限时经 docker.m.daocloud.io 拉取后 retag 改回规范名（本机操作留痕不入库）。
+
+| 基础镜像 | 用途 | 许可证 | 核验来源与日期 | 审批记录 | 引入任务 |
+| --- | --- | --- | --- | --- | --- |
+| `eclipse-temurin:17-jre` | 后端容器运行环境（Java 17 JRE，ADR-001 冻结栈配套；非 root uid 1000 + MaxRAMPercentage=75 运行） | GPLv2 with CE（temurin 官方发行许可，运行时使用无传染问题） | Docker Hub 官方 eclipse-temurin 仓库（Eclipse Temurin 官方维护，tag 显式锁定 17-jre），2026-09-12 实测拉取 | PO 预授权：WBS-2.5.1 lofi 问题 3"确认"（AskUserQuestion 即时选定"确认进入编码"，2026-09-12），判定留痕见 `docs/designs/WBS-2.5.1-lofi.md` §4 | WBS 2.5.1 |
+| `nginx:1.29-alpine` | 前端容器静态托管（SPA history 路由 fallback + gzip；显式 tag 禁 latest/mainline 漂移） | BSD-2-Clause（nginx 官方镜像） | Docker Hub 官方 nginx 仓库（1.29 主线稳定 + alpine 最小攻击面），2026-09-12 实测拉取 | 同上 | WBS 2.5.1 |

@@ -1,0 +1,6 @@
+# Build context whitelist: only the pre-built fat jar enters the image
+# (spec ADR-013: Dockerfile is a packaging recipe, not a build recipe).
+*
+!target/
+target/*
+!target/example-service*.jar
