@@ -1,0 +1,38 @@
+# RBAC for Prometheus kubernetes_sd pod discovery (WBS 2.5.3, ADR-014).
+# kind-mode clusters enforce RBAC: the default ServiceAccount cannot list
+# pods (measured in the 2.5.3 drill - discovery stayed empty). Minimal
+# read-only pod access, cluster-wide, for annotation-based scrape targets.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ctds-prometheus
+  namespace: ctds-monitoring
+  labels:
+    app.kubernetes.io/part-of: ctds
+    app.kubernetes.io/name: ctds-prometheus
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ctds-prometheus-pod-reader
+  labels:
+    app.kubernetes.io/part-of: ctds
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ctds-prometheus-pod-reader
+  labels:
+    app.kubernetes.io/part-of: ctds
+subjects:
+  - kind: ServiceAccount
+    name: ctds-prometheus
+    namespace: ctds-monitoring
+roleRef:
+  kind: ClusterRole
+  name: ctds-prometheus-pod-reader
+  apiGroup: rbac.authorization.k8s.io

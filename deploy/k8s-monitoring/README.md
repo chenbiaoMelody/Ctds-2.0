@@ -8,6 +8,7 @@
 | --- | --- |
 | `namespace.yaml` | ctds-monitoring 命名空间 |
 | `prometheus-config.yaml` | 抓取配置（Pod 注解自动发现）+ 告警规则两条（服务下线 / 5xx 错误率） |
+| `prometheus-rbac.yaml` | Prometheus 抓取发现所需最小 RBAC（ServiceAccount + ClusterRole + 绑定，只读 pods） |
 | `prometheus-deployment.yaml` | Prometheus Deployment（v3.13.3，数据保留 24h）+ ClusterIP Service（9090） |
 | `alertmanager-config.yaml` | 路由配置（默认路由 v1，分组/静默可用） |
 | `alertmanager-deployment.yaml` | Alertmanager Deployment（v0.34.0）+ ClusterIP Service（9093） |

@@ -176,13 +176,22 @@ if ($node -eq "") {
 if ($script:FailedStep -eq "") {
     Write-Host "[MONITOR] step 3/6 applying monitoring stack and waiting for rollout..."
     $k8sDir = Join-Path $RepoRoot "deploy\k8s-monitoring"
-    $out, $code = Invoke-Native ("kubectl apply -f """ + $k8sDir + """ 2>&1")
+    # kubectl apply -f <dir> processes files in LEXICAL order, and
+    # alertmanager-*/grafana-* sort before namespace.yaml - without this
+    # pre-apply the first run dies on "namespaces not found" (measured).
+    $out, $code = Invoke-Native ("kubectl apply -f """ + (Join-Path $k8sDir "namespace.yaml") + """ 2>&1")
+    if ($code -eq 0) {
+        $out, $code = Invoke-Native ("kubectl apply -f """ + $k8sDir + """ 2>&1")
+    }
     if ($code -ne 0) {
         $script:FailedStep = "apply"
         $script:FailureExcerpt = ($out | Select-Object -Last 10) -join "`n"
     } else {
         foreach ($l in $out) { Write-Host ("  " + $l) }
         Add-Step "S3a kubectl apply -f deploy/k8s-monitoring" "PASS" ("manifests: " + $k8sDir)
+        # ConfigMap content is read at pod start: restart Prometheus so every
+        # run picks up the current scrape/rule/alerting config deterministically.
+        $null = Invoke-Native "kubectl -n ctds-monitoring rollout restart deployment/ctds-prometheus 2>&1"
     }
 }
 if ($script:FailedStep -eq "") {
@@ -239,9 +248,19 @@ if ($script:FailedStep -eq "") {
     [System.IO.File]::WriteAllLines($pfPidFile, [string[]]($pf + $pfPermanent))
     Start-Sleep -Seconds 4
     $query = "http://localhost:" + $TempPorts.prometheus + "/api/v1/query?query=up%7Bjob%3D%22ctds-backend%22%7D"
-    $out, $code = Invoke-Native ("curl.exe -s --max-time 10 """ + $query + """ 2>&1")
-    $body = ($out | ForEach-Object { "$_" }) -join ""
-    $ok = ($code -eq 0) -and ($body -match '"value":\["\d+(\.\d+)?","1"\]')
+    # Prometheus may have just restarted (config rollout): the up series only
+    # exists after the first scrape completes - poll instead of a single shot.
+    $ok = $false
+    $body = ""
+    $waited = 0
+    while (-not $ok -and $waited -lt 60) {
+        Start-Sleep -Seconds 10
+        $waited += 10
+        $out, $code = Invoke-Native ("curl.exe -s --max-time 10 """ + $query + """ 2>&1")
+        $body = ($out | ForEach-Object { "$_" }) -join ""
+        $ok = ($code -eq 0) -and ($body -match '"value":\[\d+(\.\d+)?,"1"\]')
+        if (-not $ok) { Write-Host ("    ...retrying (" + $waited + "s)") }
+    }
     if ($ok) {
         Add-Step "S4 metrics-link smoke" "PASS" ("Prometheus scrapes ctds-backend: up{job=""ctds-backend""} == 1 (annotation-based pod discovery)")
     } else {
@@ -269,7 +288,7 @@ if ($script:FailedStep -eq "") {
         "  ports:",
         "    - port: 3000",
         "      targetPort: 3000",
-        "      nodePort: " + $GrafanaNodePort
+        "      nodePort: $GrafanaNodePort"
     )
     $out, $code = Invoke-Native ("kubectl apply -f """ + $npFile + """ 2>&1")
     if ($code -ne 0) {
@@ -320,7 +339,7 @@ if ($script:FailedStep -eq "") {
     } else {
         $script:drillScaledDown = $true
         $script:drillRestored = $false
-        Write-Host "  backend scaled to 0; waiting for CtdsBackendDown to fire (cap " + $DrillTimeoutSeconds + "s)..."
+        Write-Host "  backend scaled to 0; waiting for CtdsBackendDown to fire (cap $($DrillTimeoutSeconds)s)..."
         $fired = $false
         $waited = 0
         while ($waited -lt $DrillTimeoutSeconds) {
@@ -328,7 +347,7 @@ if ($script:FailedStep -eq "") {
             $waited += 15
             $out, $code = Invoke-Native ("curl.exe -s --max-time 10 """ + $promBase + "/api/v1/alerts"" 2>&1")
             $body = ($out | ForEach-Object { "$_" }) -join ""
-            if ($body -match '"name":"CtdsBackendDown"' -and $body -match '"state":"firing"') { $fired = $true; break }
+            if ($body -match '\"alertname\":\"CtdsBackendDown\"' -and $body -match '"state":"firing"') { $fired = $true; break }
             Write-Host ("    ...waiting (" + $waited + "s)")
         }
         if (-not $fired) {
@@ -356,15 +375,14 @@ if ($script:FailedStep -eq "") {
 
     # Silence roundtrip (create + delete) proves the routing/silencing API.
     if ($script:FailedStep -eq "") {
+        $startsAt = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
         $endsAt = (Get-Date).ToUniversalTime().AddMinutes(5).ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
         $silenceFile = Join-Path $copyRoot "drill-silence.json"
-        Write-TextFile $silenceFile @(
-            '{"matchers":[{"name":"alertname","value":"CtdsBackendDown","isRegex":false}],'
-            '"startsAt":"' + (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ") + '",'
-            '"endsAt":"' + $endsAt + '",'
-            '"createdBy":"monitoring.ps1 drill","comment":"smoke silence"}'
-        )
-        $out, $code = Invoke-Native ("curl.exe -s -X POST --data-binary @""" + $silenceFile + """ --max-time 10 """ + $amBase + "/api/v2/silences"" 2>&1")
+        # -f formatting, no `+` concatenation inside @(): with LF line endings
+        # PS 5.1 splits `string + $var` array items into two (measured, 2.5.3).
+        $silenceJson = '{{"matchers":[{{"name":"alertname","value":"CtdsBackendDown","isRegex":false}}],"startsAt":"{0}","endsAt":"{1}","createdBy":"monitoring.ps1 drill","comment":"smoke silence"}}' -f $startsAt, $endsAt
+        Write-TextFile $silenceFile @($silenceJson)
+        $out, $code = Invoke-Native ("curl.exe -s -X POST -H ""Content-Type: application/json"" --data-binary @""" + $silenceFile + """ --max-time 10 """ + $amBase + "/api/v2/silences"" 2>&1")
         $silBody = ($out | ForEach-Object { "$_" }) -join ""
         if ($code -eq 0 -and $silBody -match '"silenceID":"([\w\-]+)"') {
             $sid = $Matches[1]
@@ -402,7 +420,7 @@ if ($script:FailedStep -eq "") {
                     $waited += 15
                     $out, $code = Invoke-Native ("curl.exe -s --max-time 10 """ + $promBase + "/api/v1/alerts"" 2>&1")
                     $body = ($out | ForEach-Object { "$_" }) -join ""
-                    if (-not ($body -match '"name":"CtdsBackendDown"' -and $body -match '"state":"firing"')) { $resolved = $true; break }
+                    if (-not ($body -match '\"alertname\":\"CtdsBackendDown\"' -and $body -match '"state":"firing"')) { $resolved = $true; break }
                     Write-Host ("    ...waiting (" + $waited + "s)")
                 }
                 if ($resolved) {
