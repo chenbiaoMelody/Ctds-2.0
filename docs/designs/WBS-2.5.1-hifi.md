@@ -34,7 +34,7 @@
 | 契约 | 定义 |
 | --- | --- |
 | Dockerfile 位置与 context | `services/example-service/`（需 target jar 就位）、`frontend/`（需 dist/ 与 nginx.container.conf 就位） |
-| K8s 模板 | `deploy/k8s/*.yaml`；镜像注入点 = `IMAGE_PLACEHOLDER` 字符串（每文件 1 处） |
+| K8s 模板 | `deploy/k8s/*.yaml`；镜像注入点 = `image: IMAGE_PLACEHOLDER` 字段行（每份 Deployment 1 处；注入按 image: 字段行定位，勿全文替换） |
 | 端口约定 | 后端容器 8080（Service 同口）、前端容器 80；宿主验证端口 18080/18081（一次性，不入模板） |
 | 探针约定 | tcpSocket（后端 8080 / 前端 80），initialDelay 30s/10s（后端 Spring 启动窗） |
 | 基础镜像 | eclipse-temurin:17-jre、nginx:1.29-alpine（禁 latest；dependencies.md 基础镜像节 + ADR-013 双登记） |
@@ -49,7 +49,7 @@
 | B-4 | 基础镜像直拉失败 | G2 镜像源 retag 通道，实测留痕 |
 | B-5 | SPA 深链接刷新（/login） | nginx fallback 返回 200（F3 覆盖） |
 | B-6 | 后端容器内存超限 | JVM MaxRAMPercentage=75 配合 limits 1Gi，OOM 由 K8s 重启策略兜底（模板注释载明） |
-| B-7 | IMAGE_PLACEHOLDER 未注入直接 apply | kubectl 校验会因镜像名非法报错——属 2.5.2 注入机制的防呆边界，README 载明 |
+| B-7 | `IMAGE_PLACEHOLDER` 未注入直接 apply | kubectl apply 可提交但 Pod 调度失败（ImagePullBackOff，镜像名非法）——属 2.5.2 注入机制的防呆边界，README 载明（评审②更正：apply 侧不报错，失败在调度侧） |
 
 ## 4. 依赖核验与登记（引入前 4 步，章程 3.5）
 
@@ -71,3 +71,11 @@
 | 各模块容器化 | B1/B2 + F1/F2（容器化对象口径 lofi #1） | B3/F3 冒烟实测 + G1 tag 契约 |
 | K8s 编排模板 | K1–K4 + 契约表 + ADR-013 | K5 离线校验 + README（K6） |
 | （衔接）镜像命名契约消费 | G1 | 实测 image-tag 输出作 docker build tag |
+
+## 7. 补正说明（编码与实测/评审处置期）
+
+- **B1 jar 名通配留痕**（评审①P2）：Dockerfile 实际 COPY `target/example-service*.jar`（version-agnostic，与 .dockerignore 白名单同口径），hifi B1 原文写具体版本名——通配方向合理且实测构建通过，此补正即为留痕；Spring Boot 3.5 repack 只产单一 fat jar，无 *-plain.jar 双匹配面（评审③收紧建议评估后维持通配）。
+- **uid 1001**（评审①②③P2）：Dockerfile/ADR-013/hifi 均为 uid 1001（uid 1000 被基础镜像默认用户占用，useradd 退 4 实测）；dependencies.md 登记行笔误 uid 1000 已更正并注明原因。
+- **K8s 模板评审处置**（评审②③④P3）：backend Deployment 补 `runAsNonRoot: true`（镜像 USER=appuser，安全成立）；limits 补 OOM 兜底注释（①P3 B-6）；两 Deployment 注释改写不再包含 IMAGE_PLACEHOLDER 字面量（防 2.5.2 全文替换误伤），注入口径=按 `image:` 字段行定位（④P3）；frontend 非 root 改造与 securityContext 生产化、label 取值统一（ctds-frontend vs ADR-012 模块名 frontend）**登记 2.5.2 处理**（②③P3 留痕）。
+- **K5 校验改道**：`kubectl create --dry-run=client` 需连 API 做资源映射，本机无集群行不通——改 `kubectl kustomize`（kustomization.yaml 为新增交付物），OpenAPI schema 校验顺延 2.5.2 集群演练。
+- **评审③P3 不采纳**：两 Deployment 结构同构（45 行/份）不抽 kustomize base/overlay——ADR-013 §2 已有 overlay 弃用决策，4 文件规模抽层反增复杂度。

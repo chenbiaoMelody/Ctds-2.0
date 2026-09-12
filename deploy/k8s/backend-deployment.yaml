@@ -23,7 +23,14 @@ spec:
     spec:
       containers:
         - name: example-service
+          # Image reference is injected by the 2.5.2 toolchain using the
+          # canonical tag from scripts/pipeline/image-tag.ps1 (spec: ADR-012).
+          # Only the `image:` field below is replaced - inject by line, not
+          # by string search.
           image: IMAGE_PLACEHOLDER
+          securityContext:
+            # Image USER is appuser (uid 1001); non-root is verified at run.
+            runAsNonRoot: true
           ports:
             - containerPort: 8080
           readinessProbe:
@@ -42,4 +49,6 @@ spec:
               cpu: "250m"
             limits:
               memory: "1Gi"
+              # OOM beyond the limit is recovered by the K8s restart policy
+              # (hifi B-6); JVM heap follows the limit via MaxRAMPercentage.
               cpu: "1000m"

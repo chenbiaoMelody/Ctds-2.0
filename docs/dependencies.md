@@ -54,5 +54,5 @@
 
 | 基础镜像 | 用途 | 许可证 | 核验来源与日期 | 审批记录 | 引入任务 |
 | --- | --- | --- | --- | --- | --- |
-| `eclipse-temurin:17-jre` | 后端容器运行环境（Java 17 JRE，ADR-001 冻结栈配套；非 root uid 1000 + MaxRAMPercentage=75 运行） | GPLv2 with CE（temurin 官方发行许可，运行时使用无传染问题） | Docker Hub 官方 eclipse-temurin 仓库（Eclipse Temurin 官方维护，tag 显式锁定 17-jre），2026-09-12 实测拉取 | PO 预授权：WBS-2.5.1 lofi 问题 3"确认"（AskUserQuestion 即时选定"确认进入编码"，2026-09-12），判定留痕见 `docs/designs/WBS-2.5.1-lofi.md` §4 | WBS 2.5.1 |
+| `eclipse-temurin:17-jre` | 后端容器运行环境（Java 17 JRE，ADR-001 冻结栈配套；非 root 专用用户 uid 1001 运行——uid 1000 已被基础镜像默认用户 ubuntu 占用，useradd 退 4 实测留痕，MaxRAMPercentage=75 随容器内存伸缩） | GPLv2 with CE（temurin 官方发行许可，运行时使用无传染问题） | Docker Hub 官方 eclipse-temurin 仓库（Eclipse Temurin 官方维护，tag 显式锁定 17-jre），2026-09-12 实测拉取 | PO 预授权：WBS-2.5.1 lofi 问题 3"确认"（AskUserQuestion 即时选定"确认进入编码"，2026-09-12），判定留痕见 `docs/designs/WBS-2.5.1-lofi.md` §4 | WBS 2.5.1 |
 | `nginx:1.29-alpine` | 前端容器静态托管（SPA history 路由 fallback + gzip；显式 tag 禁 latest/mainline 漂移） | BSD-2-Clause（nginx 官方镜像） | Docker Hub 官方 nginx 仓库（1.29 主线稳定 + alpine 最小攻击面），2026-09-12 实测拉取 | 同上 | WBS 2.5.1 |

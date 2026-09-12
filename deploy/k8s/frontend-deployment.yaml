@@ -23,6 +23,10 @@ spec:
     spec:
       containers:
         - name: ctds-frontend
+          # Image reference is injected by the 2.5.2 toolchain using the
+          # canonical tag from scripts/pipeline/image-tag.ps1 (spec: ADR-012).
+          # Only the `image:` field below is replaced - inject by line, not
+          # by string search. Non-root hardening deferred to 2.5.2 (review 2).
           image: IMAGE_PLACEHOLDER
           ports:
             - containerPort: 80
