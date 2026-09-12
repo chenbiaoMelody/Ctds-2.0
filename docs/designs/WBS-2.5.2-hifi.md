@@ -2,7 +2,7 @@
 
 > 状态：**已确认（2026-09-12，PO 两级设计一次确认"确认进入编码"，AskUserQuestion 即时选定留痕）——本清单即编码契约**
 > 上游：WBS 2.5.2 任务行（"部署脚本 + runbook，开发/测试环境演练通过"）+ ADR-012（镜像命名）+ ADR-013（模板与注入口径）+ 2.5.1 登记项五条
-> 低保真：`docs/designs/WBS-2.5.2-lofi.md`（六判定 D1~D7）
+> 低保真：`docs/designs/WBS-2.5.2-lofi.md`（七判定 D1~D7）
 
 ## 一、行为清单（Given/When/Then，业务可读）
 
@@ -10,7 +10,7 @@
 
 | 编号 | 行为 | Given/When/Then |
 | --- | --- | --- |
-| A1 | 环境自检 | Given 本机；当脚本启动；则依次自检 docker 可用、kubectl 可用、**集群可达**（`kubectl version` 带 32s 超时探测）、两个 ctds 镜像已在本地（tag 由 `image-tag.ps1` 现算现查）、deploy/k8s 模板含占位符 `image:` 行恰 2 处；任一缺失 → 报**业务可读**错误（缺什么、怎么办、给出下一条命令）并退出码 2 |
+| A1 | 环境自检 | Given 本机；当脚本启动；则依次自检 docker 可用、kubectl 可用、**集群可达**（`kubectl version` 带 32s 超时探测）、两个 ctds 镜像已在本地（tag 由 `image-tag.ps1` 现算现查）、deploy/k8s 模板含占位符 `image:` 行恰 2 处、curl.exe 可用（A6 冒烟硬前置，评审③回写契约）；任一缺失 → 报**业务可读**错误（缺什么、怎么办、给出下一条命令）并退出码 2 |
 | A2 | 注入 | Given 自检通过；当执行注入；则把 `deploy/k8s/` 整目录复制到 `build-output/deploy/<时间戳>/k8s/`，在**副本**上逐行扫描：仅"`image:` 字段 + 值恰为 `IMAGE_PLACEHOLDER`"的行被替换为对应模块 canonical tag（backend-deployment.yaml → example-service tag；frontend-deployment.yaml → frontend tag）；**每个文件替换数必须恰好 1，否则报错退出**；工作区原文件零改动 |
 | A3 | NodePort patch（副本内） | Given 注入副本；当处理 Service；则在副本内给两份 Service 打 NodePort patch（backend 30080 / frontend 30081）；`deploy/k8s/` 原模板（ClusterIP）不动 |
 | A4 | OpenAPI schema 校验（登记项⑤） | Given 注入副本就绪；当部署前；则先 `kubectl apply --dry-run=server -k <副本目录>`——真实 API 服务端 schema 校验（兑现 2.5.1 hifi K5 顺延项）；失败 → 业务可读报错退出 |
@@ -53,7 +53,8 @@
 | --- | --- | --- |
 | `-RepoRoot` | 脚本上级目录推导 | 仓库根 |
 | `-RolloutTimeoutSeconds` | 180 | rollout status 超时 |
-| `-Teardown` | 关 | 一键卸载（delete -k） |
+| `-Teardown` | 关 | 一键卸载（delete -k，同时回收 port-forward） |
+| `-CopyDir` | 空（自动取最新副本） | 指定 `-k` 副本目录（评审①回写契约表） |
 | 退出码 | — | 0=全流程 PASS；1=部署/冒烟失败；2=环境自检失败 |
 
 ### 依赖的既有接口（复用，不改）
@@ -105,5 +106,5 @@
 1. **镜像分钟级 tag 回退**（对 A1 的边界补强）：`image-tag.ps1` 的 tag 含分钟时间戳，脚本现算 tag 与镜像实际 tag 可能差一分钟——自检在精确查不到时，回退认领"同仓库 + 同 git 短哈希（先剥 `-dirty` 后缀再解析）"的最新本地 tag，认领过程打印留痕；
 2. **新增 A4-pre 镜像装载步骤**（对 A4/A5 的前置补强）：新版 Docker Desktop 内置集群为 **kind 模式**（独立 containerd），不自动可见 docker 守护进程的本地镜像——不装载则全体 Pod `ImagePullBackOff`（实测根因）；步骤 = `docker save` 管道进节点 `ctr --namespace k8s.io images import`，导入后 `images ls` 验证；
 3. **backend 镜像 USER 数字化**（对 2.5.1 遗留镜像的修订）：`runAsNonRoot: true` 下 kubelet 只认**数字 uid**，镜像 `USER appuser`（用户名）触发 `CreateContainerConfigError`（实测根因）；Dockerfile 改 `USER 1001`，ADR-013 uid 1001 口径不变；
-4. **A6 冒烟通道改分离式 port-forward**（对 D6/A6 的实测修订）：kind 模式集群**不把 NodePort 映射到宿主 localhost**（NodePort patch 保留，对映射 NodePort 的集群仍有效）——冒烟与访问入口改由脚本拉起的**分离式 kubectl port-forward**（30081→80、30080→8080）提供，脚本退出后存活供浏览器访问，`-Teardown` 按 `port-forward.pids` 统一回收；
+4. **A6 冒烟通道改分离式 port-forward**（对 D6/A6 的实测修订）：kind 模式集群**不把 NodePort 映射到宿主 localhost**（NodePort patch 保留，对映射 NodePort 的集群仍有效）——冒烟与访问入口改由脚本拉起的**分离式 kubectl port-forward**（30081→80、30080→8080）提供，脚本退出后存活供浏览器访问，`-Teardown` 按 `port-forward.pids` 统一回收。**"分离式"正是对 D6"短进程易断"顾虑的回应**：D6 反对的是随脚本退出而断的短进程，采用的恰是不随脚本退出的长驻进程；
 5. 演练链为以上补正的完整实测路径：run1 自检拦截（tag 分钟差）→ run2 暴露 -dirty 哈希解析错 + 旧镜像 rollout 失败 → run3 暴露 kind 镜像隔离 → run4 暴露 USER 用户名校验错 → run5 暴露 NodePort 不映射 → 修复后全链 PASS（见开发日志终态验证）。

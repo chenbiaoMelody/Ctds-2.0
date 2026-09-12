@@ -13,15 +13,16 @@
 - 部署成功后访问入口：前端 `http://localhost:30081`（SPA 深链接如 `/login` 同样 200）、后端 `http://localhost:30080`（`/` 返回 404 属正常=服务在应答）。访问由**分离式 kubectl port-forward** 提供（Docker Desktop kind 模式集群不把 NodePort 映射到 localhost，实测留痕）——脚本退出后转发仍在，`-Teardown` 统一回收。
 - 幂等：重复执行直接覆盖同名资源，每轮生成新的时间戳副本目录。
 
-## 脚本内做了什么（六步）
+## 脚本内做了什么（部署六步 + 一份报告）
 
 1. 环境自检：docker / kubectl / 集群可达 / 两镜像在本地 / 模板占位符恰 2 处 / curl.exe；
-2. 副本注入：复制 `deploy/k8s` → `build-output/deploy/<时间戳>/k8s/`，逐行**只替换"image: 字段且值为 IMAGE_PLACEHOLDER"的行**（每文件恰 1 处，多/少即报错）；
-3. NodePort patch（仅副本内）：backend 30080 / frontend 30081，base 模板保持 ClusterIP；Docker Desktop kind 模式下另由分离式 port-forward 提供宿主访问；
-4. 镜像装载：`docker save` → 集群节点 `ctr` 导入（kind 模式集群有独立 containerd，不见本地镜像——实测根因）；
-5. 服务端 schema 校验：`kubectl apply --dry-run=server`（OpenAPI schema 级，兑现 2.5.1 顺延项）；
-6. 部署与就绪等待：`kubectl apply -k` + 双 Deployment `rollout status`（默认 180s 超时）；
-7. 分离式 port-forward + 冒烟 + 业务可读报告落盘。
+2. 副本注入 + NodePort patch：复制 `deploy/k8s` → `build-output/deploy/<时间戳>/k8s/`，逐行**只替换"image: 字段且值为 IMAGE_PLACEHOLDER"的行**（每文件恰 1 处，多/少即报错）；副本内 Service 打 NodePort patch（backend 30080 / frontend 30081），base 模板保持 ClusterIP；
+3. 镜像装载：`docker save` → 集群节点 `ctr` 导入（kind 模式集群有独立 containerd，不见本地镜像——实测根因）；
+4. 服务端 schema 校验：`kubectl apply --dry-run=server`（OpenAPI schema 级，兑现 2.5.1 顺延项）；
+5. 部署与就绪等待：`kubectl apply -k` + 双 Deployment `rollout status`（默认 180s 超时）；
+6. 分离式 port-forward + 冒烟：拉起 30081/30080 两条转发专线（脚本退出后存活，`-Teardown` 回收）并做 HTTP 探测。
+
+报告（业务可读，落盘到 `build-output/deploy/<时间戳>/deploy-report.md`；`-Teardown` 同样落 `teardown-report.md`）不占步骤号。
 
 ## 边界与限制（留痕）
 

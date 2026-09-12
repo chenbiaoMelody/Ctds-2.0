@@ -1,8 +1,10 @@
 # C-TDS one-click deployment toolchain (WBS 2.5.2, spec: ADR-012/ADR-013).
 # One command: self-check -> inject canonical image tags into a COPY of
 # deploy/k8s (line-anchored, workspace untouched) -> NodePort patch (copy
-# only) -> server-side schema validation -> apply -> rollout wait -> smoke
-# test -> business-readable report. -Teardown removes what was deployed.
+# only) -> load images into the cluster node -> server-side schema
+# validation -> apply -> rollout wait -> detached port-forward + smoke
+# test -> business-readable report. -Teardown removes what was deployed
+# and stops the port-forwards.
 # Usage:
 #   powershell -NoProfile -ExecutionPolicy Bypass -File scripts\deploy\deploy.ps1
 #   powershell ... deploy.ps1 -Teardown
@@ -81,9 +83,7 @@ function Invoke-Teardown {
     $pfRoot = Join-Path $RepoRoot "build-output\deploy"
     if (Test-Path $pfRoot) {
         foreach ($f in (Get-ChildItem $pfRoot -Recurse -Filter "port-forward.pids" -ErrorAction SilentlyContinue)) {
-            foreach ($p in (Get-Content $f.FullName -ErrorAction SilentlyContinue)) {
-                if ($p -match "^\d+$") { Stop-Process -Id ([int]$p) -Force -ErrorAction SilentlyContinue }
-            }
+            Stop-PortForwardPids (Get-Content $f.FullName -ErrorAction SilentlyContinue)
             Remove-Item $f.FullName -Force -ErrorAction SilentlyContinue
         }
     }
@@ -97,8 +97,34 @@ function Invoke-Teardown {
     if ("$out" -match "NotFound") {
         Write-Host "[DEPLOY] nothing to clean (resources not found) - treated as success"
     }
+    # Teardown leaves an archive trail too (review 4: A8 was the only
+    # behaviour with no execution evidence).
+    $teardownReport = Join-Path (Split-Path -Parent $copy) "teardown-report.md"
+    $tr = New-Object System.Collections.Generic.List[string]
+    $tr.Add("# C-TDS teardown report (WBS 2.5.2)")
+    $tr.Add("")
+    $tr.Add("- Time: " + (Get-Date -Format "yyyy-MM-dd HH:mm:ss"))
+    $tr.Add("- Copy dir: " + $copy)
+    $tr.Add("- kubectl delete exit code: " + $code)
+    $tr.Add("- Result: **PASS**" + $(if ("$out" -match "NotFound") { " (nothing to clean: resources not found)" }))
+    $tr.Add("")
+    $tr.Add("[TEARDOWN] PASS")
+    [System.IO.File]::WriteAllLines($teardownReport, [string[]]$tr)
     Write-Host "[DEPLOY] PASS (teardown)"
     return 0
+}
+
+# Kill ONLY the recorded process if it is still a kubectl forwarder: pid
+# files can go stale and the OS may reuse the id for an unrelated process.
+function Stop-PortForwardPids($pidLines) {
+    foreach ($p in $pidLines) {
+        if ($p -match "^\d+$") {
+            $proc = Get-Process -Id ([int]$p) -ErrorAction SilentlyContinue
+            if ($proc -and $proc.ProcessName -eq "kubectl") {
+                Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
 }
 
 if ($Teardown) { $rc = Invoke-Teardown; exit $rc }
@@ -126,7 +152,7 @@ foreach ($m in $ModuleMap) {
         $tagOut = @(& (Join-Path $RepoRoot "scripts\pipeline\image-tag.ps1") -ModuleName $m.Module)
         if ($tagOut.Count -gt 0) { $tag = ("$($tagOut[0])").Trim() }
     } catch { }
-    if ($tag -notmatch "^ctds/[\w\-]+:\S+$") {
+    if ($tag -notmatch "^ctds/[\w\-]+:[\w\.\-]+$") {
         Report-Check $false ("image tag computation failed for module " + $m.Module)
         continue
     }
@@ -141,7 +167,7 @@ foreach ($m in $ModuleMap) {
         $gitHash = ($core -split "-")[-1]
         $out2, $c2 = Invoke-Native ("docker images """ + $m.Image + """ --format {{.Tag}} 2>&1")
         $cand = ($out2 | ForEach-Object { "$_" } |
-            Where-Object { $_ -match ([regex]::Escape($gitHash) + "(-dirty)?$") } |
+            Where-Object { $_ -match ([regex]::Escape($gitHash) + "(-dirty)?$") -and $_ -match "^[\w\.\-]+$" } |
             Sort-Object -Descending | Select-Object -First 1)
         if ($c2 -eq 0 -and $cand) {
             $tag = $m.Image + ":" + $cand
@@ -172,6 +198,7 @@ if (-not $selfOk) {
     Write-Host "[DEPLOY] environment self-check failed - fix the items above and rerun (exit 2). Build guidance: run nightly-build.ps1 first, then docker build per deploy/runbook.md."
     exit 2
 }
+Add-Step "A1 environment self-check" "PASS" "docker / kubectl+cluster reachable / both local images present (exact tag or same-git-hash fallback) / placeholder exactly 1 per deployment template / curl.exe"
 
 # ---------- A2+A3 copy, inject, NodePort patch ----------
 Write-Host "[DEPLOY] step 2/6 copy templates, inject image tags, patch NodePort..."
@@ -334,9 +361,7 @@ if ($script:FailedStep -eq "") {
         if (Test-Path $pfRoot) {
             foreach ($f in (Get-ChildItem $pfRoot -Recurse -Filter "port-forward.pids" -ErrorAction SilentlyContinue)) {
                 if ($f.FullName -ne $pfPidFile) {
-                    foreach ($p in (Get-Content $f.FullName -ErrorAction SilentlyContinue)) {
-                        if ($p -match "^\d+$") { Stop-Process -Id ([int]$p) -Force -ErrorAction SilentlyContinue }
-                    }
+                    Stop-PortForwardPids (Get-Content $f.FullName -ErrorAction SilentlyContinue)
                 }
             }
         }
@@ -421,6 +446,8 @@ if ($script:FailureExcerpt -ne "") {
     foreach ($l in ($script:FailureExcerpt -split "`n")) { $rep.Add($l) }
     $rep.Add('```')
 }
+$rep.Add("")
+$rep.Add("[DEPLOY] " + $verdict)
 [System.IO.File]::WriteAllLines($reportPath, [string[]]$rep)
 
 Write-Host ("[DEPLOY] report: " + $reportPath)

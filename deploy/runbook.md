@@ -61,7 +61,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\deploy\deploy.ps1
 ## 6. 清理
 
 ```bat
-:: 卸载集群内资源（不动镜像、不动本地文件）
+:: 卸载集群内资源并停掉转发专线（不动镜像、不动仓库文件）
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\deploy\deploy.ps1 -Teardown
 
 :: 确认清空

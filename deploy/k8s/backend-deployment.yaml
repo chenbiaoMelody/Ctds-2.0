@@ -31,7 +31,9 @@ spec:
           # by string search.
           image: IMAGE_PLACEHOLDER
           securityContext:
-            # Image USER is appuser (uid 1001); non-root is verified at run.
+            # Image USER is numeric uid 1001 (appuser); non-root is verified
+            # at run. Numeric uid: the kubelet runAsNonRoot check cannot
+            # verify a user name (2.5.2 drill finding).
             runAsNonRoot: true
           ports:
             - containerPort: 8080
