@@ -1,4 +1,4 @@
-# 一键部署工具链（WBS 2.5.2，规范载体 ADR-012/013）
+# 一键部署工具链（WBS 2.5.2 应用部署 + WBS 2.5.3 监控基座，规范载体 ADR-012/013/014）
 
 本目录是"上架电梯"：一条命令把两个镜像部署到开发/测试 Kubernetes 集群并验证可访问。镜像名来源始终是 ADR-012 契约（`scripts/pipeline/image-tag.ps1`），注入方式沿 ADR-013 口径——**在本目录产出的副本目录上行级注入，仓库模板文件零改动**。
 
@@ -29,3 +29,7 @@
 - 目标环境 = 开发/测试（本机 Docker Desktop 内置 K8s 同口径）；生产口径（Ingress/多副本/Helm）属后续任务。
 - 脚本不构建镜像：缺镜像时自检报错并给指引（nightly-build.ps1 → docker build，完整命令见 `deploy/runbook.md`）。
 - 中间件（MySQL/Redis）不在部署范围（沿 ADR-013 口径）。
+
+## 监控基座入口（WBS 2.5.3，规范载体 ADR-014）
+
+`monitoring.ps1`：一键部署/验证监控三件套（Prometheus 指标采集、Alertmanager 告警路由、Grafana 看板），含端到端告警演练与报告落盘；`-Teardown` 清监控栈。用法与失败对照见 `deploy/runbook.md` §7。前提：应用已由 `deploy.ps1` 部署。

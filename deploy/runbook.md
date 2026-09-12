@@ -1,4 +1,4 @@
-# C-TDS 开发/测试环境部署 Runbook（WBS 2.5.2）
+# C-TDS 开发/测试环境部署 Runbook（WBS 2.5.2 应用部署 / WBS 2.5.3 监控基座）
 
 > 面向读者：需要把平台"跑起来看效果"的成员（无需编程知识）。
 > 覆盖范围：开发/测试环境（单机 Docker Desktop + 内置 Kubernetes）。生产部署属后续任务。
@@ -80,7 +80,7 @@ kubectl get all
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\deploy\monitoring.ps1
 ```
 
-结尾看到 `[MONITOR] PASS` 即成功，报告落盘 `build-output/monitoring/<时间戳>/monitoring-report.md`。脚本会顺带做一次**告警演练**：把平台后端临时缩到 0（约 1~2 分钟不可用，仅本机）→ 验证告警真的响了 → 自动恢复。全程无需人工干预。
+结尾看到 `[MONITOR] PASS` 即成功，报告落盘 `build-output/monitoring/<时间戳>/monitoring-report.md`。脚本会顺带做一次**告警演练**：把平台后端临时缩到 0（约 1~2 分钟不可用，仅本机）→ 验证告警真的响了 → 自动恢复。全程无需人工干预。注意：30082 的免登录入口仅在本机 kind 模式集群下安全（NodePort 不映射宿主网卡）；若改用于真实多节点集群，Grafana 会匿名暴露在节点 IP 上——生产化任务必须先收紧访问口径（ADR-014 §4）。
 
 ### 怎么看结果
 

@@ -131,11 +131,24 @@ Report-Check ($code -eq 0) ("platform app deployed (ctds-backend in default name
 $out, $code = Invoke-Native "curl.exe --version 2>&1"
 Report-Check ($code -eq 0) ("curl.exe available for smoke test: " + "$($out[0])")
 
+# Port occupancy self-check (hifi §7 boundary): fail fast with the culprit
+# hint instead of a late smoke failure. A port held by OUR own previous
+# detached port-forward is fine (rerun scenario, reaped later).
+foreach ($port in (@($GrafanaNodePort) + @($TempPorts.Values))) {
+    $listen = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($null -eq $listen) {
+        Report-Check $true ("localhost port " + $port + " free")
+    } else {
+        $owner = Get-Process -Id $listen.OwningProcess -ErrorAction SilentlyContinue
+        Report-Check ($owner -and $owner.ProcessName -eq "kubectl") ("localhost port " + $port + " free (held by pid " + $listen.OwningProcess + " [" + $owner.ProcessName + "] - if not kubectl: exit the occupying program and rerun)")
+    }
+}
+
 if (-not $selfOk) {
     Write-Host "[MONITOR] environment self-check failed - fix the items above and rerun (exit 2)."
     exit 2
 }
-Add-Step "S1 environment self-check" "PASS" ("cluster reachable / " + $MonitorImages.Count + " pinned images local / ctds-backend deployed / curl.exe")
+Add-Step "S1 environment self-check" "PASS" ("cluster reachable / " + $MonitorImages.Count + " pinned images local / ctds-backend deployed / curl.exe / entry ports free")
 
 # ---------- S2 load images into the cluster node ----------
 # The Docker Desktop built-in cluster (kind mode) has its own containerd and
@@ -147,9 +160,9 @@ New-Item -ItemType Directory -Path $copyRoot -Force | Out-Null
 $nodeOut, $nc = Invoke-Native "kubectl get nodes --no-headers -o custom-columns=:metadata.name 2>&1"
 $node = ""
 if ($nc -eq 0 -and $nodeOut.Count -gt 0) { $node = ("$($nodeOut[0])").Trim() }
-if ($node -eq "") {
+if ($node -eq "" -or $node -notmatch "^[\w\-\.]+$") {
     $script:FailedStep = "image-load"
-    $script:FailureExcerpt = "could not resolve a cluster node name (kubectl get nodes)"
+    $script:FailureExcerpt = "cluster node name missing or contains unexpected characters (kubectl get nodes output: " + $node + ")"
 } else {
     foreach ($img in $MonitorImages) {
         $out, $code = Invoke-Native ("docker save """ + $img + """ | docker exec -i " + $node + " ctr --namespace k8s.io images import - 2>&1")
@@ -200,7 +213,8 @@ if ($script:FailedStep -eq "") {
         if ($code -ne 0) {
             $script:FailedStep = "rollout"
             $podOut, $null = Invoke-Native "kubectl -n ctds-monitoring get pods -o wide 2>&1"
-            $script:FailureExcerpt = "rollout of " + $dep + " failed or timed out.`n" + (($podOut | Select-Object -Last 15) -join "`n")
+            $evOut, $null = Invoke-Native "kubectl -n ctds-monitoring get events --sort-by=.lastTimestamp 2>&1"
+            $script:FailureExcerpt = "rollout of " + $dep + " failed or timed out.`n" + (($podOut | Select-Object -Last 15) -join "`n") + "`n--- recent events ---`n" + (($evOut | Select-Object -Last 10) -join "`n")
             break
         }
         Write-Host ("  rollout ok: " + $dep)
@@ -262,7 +276,22 @@ if ($script:FailedStep -eq "") {
         if (-not $ok) { Write-Host ("    ...retrying (" + $waited + "s)") }
     }
     if ($ok) {
-        Add-Step "S4 metrics-link smoke" "PASS" ("Prometheus scrapes ctds-backend: up{job=""ctds-backend""} == 1 (annotation-based pod discovery)")
+        # Both alert rules must be LOADED and syntactically healthy: the drill
+        # only fires CtdsBackendDown, so CtdsBackendHighErrorRate would
+        # otherwise have zero verification (review-4 P2 finding).
+        $rulesUrl = "http://localhost:" + $TempPorts.prometheus + "/api/v1/rules"
+        $out, $code = Invoke-Native ("curl.exe -s --max-time 10 """ + $rulesUrl + """ 2>&1")
+        $rulesBody = ($out | ForEach-Object { "$_" }) -join ""
+        $rulesOk = ($code -eq 0) `
+            -and ($rulesBody -match '"name":"CtdsBackendDown"' -and $rulesBody -match '"name":"CtdsBackendHighErrorRate"') `
+            -and ($rulesBody -match '"health":"ok"') `
+            -and ($rulesBody -notmatch '"lastError":"[^"]+"')
+        if ($rulesOk) {
+            Add-Step "S4 metrics-link smoke" "PASS" ("Prometheus scrapes ctds-backend: up{job=""ctds-backend""} == 1 (annotation-based pod discovery); both alert rules loaded with health=ok")
+        } else {
+            $script:FailedStep = "rules-load"
+            $script:FailureExcerpt = "alert rules not loaded or unhealthy (expected CtdsBackendDown + CtdsBackendHighErrorRate with health=ok): " + $rulesBody.Substring(0, [Math]::Min(400, $rulesBody.Length))
+        }
     } else {
         $script:FailedStep = "metrics-smoke"
         $script:FailureExcerpt = "expected up{job=ctds-backend}==1 from the Prometheus API, got: " + $body.Substring(0, [Math]::Min(300, $body.Length)) + " (check: backend exposes /actuator/prometheus and carries the prometheus.io/* annotations; port " + $TempPorts.prometheus + " not occupied by other software)"
@@ -358,12 +387,21 @@ if ($script:FailedStep -eq "") {
             Add-Step "S6a drill: alert fired on service down" "PASS" ("CtdsBackendDown firing observed after backend scaled to 0")
 
             # Alertmanager received the routed alert (default route, grouped).
+            # Polled, not single-shot: firing may be observed within the
+            # group_wait window, delivery lags up to ~group_wait seconds.
             Start-Forward "svc/ctds-alertmanager" ($TempPorts.alertmanager.ToString() + ":9093") $pf
             [System.IO.File]::WriteAllLines($pfPidFile, [string[]]($pf + $pfPermanent))
             Start-Sleep -Seconds 4
-            $out, $code = Invoke-Native ("curl.exe -s --max-time 10 """ + $amBase + "/api/v2/alerts"" 2>&1")
-            $amBody = ($out | ForEach-Object { "$_" }) -join ""
-            $amOk = ($code -eq 0) -and ($amBody -match '"CtdsBackendDown"')
+            $amOk = $false
+            $amBody = ""
+            $amWaited = 0
+            while (-not $amOk -and $amWaited -lt 60) {
+                Start-Sleep -Seconds 10
+                $amWaited += 10
+                $out, $code = Invoke-Native ("curl.exe -s --max-time 10 """ + $amBase + "/api/v2/alerts"" 2>&1")
+                $amBody = ($out | ForEach-Object { "$_" }) -join ""
+                $amOk = ($code -eq 0) -and ($amBody -match '"CtdsBackendDown"')
+            }
             if ($amOk) {
                 Add-Step "S6b drill: alert routed to Alertmanager" "PASS" "alert visible via Alertmanager API (default route ctds-default)"
             } else {
@@ -420,7 +458,9 @@ if ($script:FailedStep -eq "") {
                     $waited += 15
                     $out, $code = Invoke-Native ("curl.exe -s --max-time 10 """ + $promBase + "/api/v1/alerts"" 2>&1")
                     $body = ($out | ForEach-Object { "$_" }) -join ""
-                    if (-not ($body -match '\"alertname\":\"CtdsBackendDown\"' -and $body -match '"state":"firing"')) { $resolved = $true; break }
+                    # Require a healthy API answer: an empty body from a
+                    # failed curl must NOT count as "resolved" (fake PASS).
+                    if ($code -eq 0 -and -not ($body -match '\"alertname\":\"CtdsBackendDown\"' -and $body -match '"state":"firing"')) { $resolved = $true; break }
                     Write-Host ("    ...waiting (" + $waited + "s)")
                 }
                 if ($resolved) {

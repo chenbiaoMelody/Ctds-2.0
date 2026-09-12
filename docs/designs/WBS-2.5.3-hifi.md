@@ -1,6 +1,6 @@
 # WBS-2.5.3 监控告警基座 — 高保真设计（定稿确认稿 = 编码契约）
 
-- 状态：**待 PO 定稿确认**（确认后进入编码；与本稿不一致 = 打回项）
+- 状态：**已批准（2026-09-12/13，PO 定稿确认"确认"——§10 四问全部通过；签署记录见 §11；编码期实测补正见 §12，沿 ADR-013 §8"历史正文不改、补正留痕"先例）**
 - 低保真：`docs/designs/WBS-2.5.3-lofi.md`（方向已确认，2026-09-12"都按推荐"：部署形态 A 朴素清单三件套 / 指标范围 A 仅平台服务 / 交付通道 A 独立 monitoring.ps1 / 演练接受 / 单卡交付接受 / 依赖 5 项批准）
 
 ## 1. 部署拓扑契约（全部落 `deploy/k8s-monitoring/`，kubectl apply 幂等）
@@ -98,3 +98,20 @@
 2. Grafana 匿名只读 + admin 出厂默认（生产化再接配置中心）口径是否接受？
 3. monitoring.ps1 检测到应用未部署时"提示先跑 deploy.ps1 并停止"（不代部署）是否认可？
 4. 测试先行两步走（失败测试先提交确认）是否照旧？
+
+## 11. 定稿确认记录（2026-09-12/13）
+
+PO 对 §10 四问的答复：**"确认"**（1 契约值照 §1~§7 执行、2 Grafana 匿名只读 + admin 出厂默认接受、3 应用未部署时提示先跑 deploy.ps1 不代部署认可、4 测试先行两步走照旧）。本节为该确认的落库留痕；确认发生在会话对话中，评审①发现 hifi 状态行漏签后补录。
+
+## 12. 实测补正说明（编码与集群实测期间产生，历史正文 §1~§9 不改）
+
+| # | 正文原文 | 实测补正 | 理由（实测留痕 = 提交 3a78195） |
+| --- | --- | --- | --- |
+| 1 | §1 临时转发"9090/9093→本地随机口" | 固定端口 19090/19093（S1 自检占用、runbook §7 失败表一致） | cmd /c 内随机端口取回与冒烟判据拼装复杂化，固定端口 + 自检占用检测（§12-7）等价更简 |
+| 2 | §2 测试"MockMvc 三断言" | `RANDOM_PORT` + `TestRestTemplate` + `@AutoConfigureObservability`（断言语义三条全保留） | scrape 端点在 MOCK 环境不映射（实测 404 假阴性）；`@SpringBootTest` 默认禁用全部指标导出器（实测 simpleMeterRegistry 兜底）——ADR-014 §3.2 已同步 |
+| 3 | §3 错误率表达式无 job 过滤 | 分子分母均加 `job="ctds-backend"` | job 标签来自 relabel（§3 自己的机制），不过滤会聚合无关目标；实配为准 |
+| 4 | §5 数据源 `…svc:9090` | `…svc.cluster.local:9090` | 集群内同义，grafana-config.yaml 实配为准 |
+| 5 | §6 六步判据 | 实际七步：S1 前提自检（增 curl + 端口占用检测）→ S2 **镜像装载节点**（`docker save → 节点 ctr import`，沿 2.5.2 A4-pre 实测口径，原六步表遗漏）→ S3 apply（**namespace.yaml 先单独 apply** 防字典序竞态 + Prometheus rollout restart 保 ConfigMap 确定性装载）→ S3b rollout ×3 → S4 指标冒烟（**轮询重试** + **两条规则装载 health=ok 校验**，评审④P2 处置）→ S5 看板冒烟 → S6 演练（S6b 改轮询、S6d 校验 curl 退出码防假 PASS）→ S7 报告 | 集群实测中逐项暴露的必要补全；§8 映射表按 S1~S7 重新对应 |
+| 6 | §9 "6 清单" | 8 份 yaml（+`namespace.yaml`、`prometheus-rbac.yaml`） | 实测：默认 ServiceAccount 无权 list pods（kind 默认 RBAC），vanilla 注解发现须最小 RBAC 配套——ADR-014 §2 已同步 |
+| 7 | §7 "30082 被占→自检步提示占用者" | 已实现：S1 用 Get-NetTCPConnection 检 30082/19090/19093，占用者为本脚本历史 kubectl 转发则放行（复跑场景），否则 FAIL 并提示 | 评审①P3 处置 |
+| 8 | （规格外实现声明） | ① apply 后 rollout restart prometheus；② 演练中途失败强制恢复副本安全网；③ S6b/S6d 检查与 S4 冒烟改轮询 | 保护性行为，防假 PASS/防资源滞留；已回写 §12 与 ADR-014 |

@@ -30,9 +30,9 @@
 
 | 镜像坐标 | 锁定 tag | 用途 | 许可证 | 核验来源与日期 | 审批记录 | 引入任务 |
 | --- | --- | --- | --- | --- | --- | --- |
-| `prom/prometheus` | v3.13.3（3.x 当前 LTS；普通版 3.14 不采用，基座求稳） | 指标采集与时序库（ADR-014 §3.1） | Apache-2.0 | docker pull 实测成功，digest `sha256:6976aa8a…`；版本线 prometheus.io/download + endoflife.date/prometheus（2026-09-12） | PO 预授权：WBS-2.5.3 lofi 六问"都按推荐"（问题 6 依赖批准，2026-09-12）+ hifi 定稿"确认"；申报表见 `docs/designs/WBS-2.5.3-lofi.md` §2 | WBS 2.5.3 |
-| `prom/alertmanager` | v0.34.0（GitHub Releases 最新稳定） | 告警路由/分组/静默（ADR-014 §3.4） | Apache-2.0 | docker pull 实测成功，digest `sha256:690c7b52…`（2026-09-12） | 同上 | WBS 2.5.3 |
-| `grafana/grafana` | 13.2.1（当前稳定，2026-09-01；标准支持至 2027-05） | 基础看板（ADR-014 §3.5） | AGPL-3.0（自部署使用，不修改其源码分发） | docker pull 实测成功，digest `sha256:f772d434…`（daocloud 通道卡死，经 1ms 加速域名拉取后 retag 回官方坐标，digest 同一）；版本线 grafana.com/download（2026-09-12） | 同上 | WBS 2.5.3 |
+| `prom/prometheus` | v3.13.3（3.x 当前 LTS；普通版 3.14 不采用，基座求稳） | 指标采集与时序库（ADR-014 §3.1） | Apache-2.0 | docker pull 实测成功，完整 digest `sha256:6976aa8a60fec930796ce5772b8d12da7a318a5daa8d40d69c5c7819a05eeed7`；版本线 prometheus.io/download + endoflife.date/prometheus（2026-09-12） | PO 预授权：WBS-2.5.3 lofi 六问"都按推荐"（问题 6 依赖批准，2026-09-12）+ hifi 定稿"确认"；申报表见 `docs/designs/WBS-2.5.3-lofi.md` §2 | WBS 2.5.3 |
+| `prom/alertmanager` | v0.34.0（GitHub Releases 最新稳定） | 告警路由/分组/静默（ADR-014 §3.4） | Apache-2.0 | docker pull 实测成功，完整 digest `sha256:690c7b525f4367aa91f73e2f91c632206d32e97c6384bdbf2fb7a861b420340d`（2026-09-12） | 同上 | WBS 2.5.3 |
+| `grafana/grafana` | 13.2.1（当前稳定，2026-09-01；标准支持至 2027-05） | 基础看板（ADR-014 §3.5） | AGPL-3.0（自部署使用，不修改其源码分发） | docker pull 实测成功，完整 digest `sha256:f772d434e8fab0049deb2b1b30abd43342bcfca1537614aa8d36080232cf4283`（daocloud 通道卡死，经 1ms 加速域名拉取后 retag 回官方坐标，digest 同一）；版本线 grafana.com/download（2026-09-12） | 同上 | WBS 2.5.3 |
 
 ## 前端 npm 依赖（WBS 2.4.9，frontend/）
 
