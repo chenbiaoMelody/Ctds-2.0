@@ -1,0 +1,81 @@
+# Prometheus server (WBS 2.5.3, spec: ADR-014). Image pinned to the current
+# 3.x LTS line; data in emptyDir (dev/test baseline, wiped on pod rebuild).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ctds-prometheus
+  namespace: ctds-monitoring
+  labels:
+    app.kubernetes.io/part-of: ctds
+    app.kubernetes.io/name: ctds-prometheus
+    app.kubernetes.io/component: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ctds-prometheus
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: ctds
+        app.kubernetes.io/name: ctds-prometheus
+        app.kubernetes.io/component: monitoring
+    spec:
+      containers:
+        - name: ctds-prometheus
+          image: prom/prometheus:v3.13.3
+          args:
+            - --config.file=/etc/prometheus/prometheus.yml
+            - --storage.tsdb.path=/prometheus
+            - --storage.tsdb.retention.time=24h
+          ports:
+            - containerPort: 9090
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: 9090
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /-/healthy
+              port: 9090
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"
+          volumeMounts:
+            - name: config
+              mountPath: /etc/prometheus
+            - name: data
+              mountPath: /prometheus
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+      volumes:
+        - name: config
+          configMap:
+            name: ctds-prometheus-config
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ctds-prometheus
+  namespace: ctds-monitoring
+  labels:
+    app.kubernetes.io/part-of: ctds
+    app.kubernetes.io/name: ctds-prometheus
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: ctds-prometheus
+  ports:
+    - port: 9090
+      targetPort: 9090

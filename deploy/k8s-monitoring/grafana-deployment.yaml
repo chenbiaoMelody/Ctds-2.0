@@ -1,0 +1,105 @@
+# Grafana (WBS 2.5.3, spec: ADR-014). Anonymous Viewer access (business users
+# open the dashboard with zero friction); admin credentials stay at the image
+# default (first login forces a change) - no secret material in this repo,
+# production task must switch to a config center. Base Service is ClusterIP;
+# NodePort 30082 is patched on the live object by monitoring.ps1 (ADR-013 §8.5).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ctds-grafana
+  namespace: ctds-monitoring
+  labels:
+    app.kubernetes.io/part-of: ctds
+    app.kubernetes.io/name: ctds-grafana
+    app.kubernetes.io/component: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ctds-grafana
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: ctds
+        app.kubernetes.io/name: ctds-grafana
+        app.kubernetes.io/component: monitoring
+    spec:
+      containers:
+        - name: ctds-grafana
+          image: grafana/grafana:13.2.1
+          env:
+            - name: GF_AUTH_ANONYMOUS_ENABLED
+              value: "true"
+            - name: GF_AUTH_ANONYMOUS_ORG_ROLE
+              value: Viewer
+          ports:
+            - containerPort: 3000
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          volumeMounts:
+            - name: datasource-config
+              mountPath: /etc/grafana/provisioning/datasources
+            - name: dashboard-provider
+              mountPath: /etc/grafana/provisioning/dashboards
+            - name: grafana-data
+              mountPath: /var/lib/grafana
+            - name: dashboards
+              mountPath: /var/lib/grafana/dashboards
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 472
+        fsGroup: 472
+      volumes:
+        - name: datasource-config
+          configMap:
+            name: ctds-grafana-config
+            items:
+              - key: ctds-datasource.yaml
+                path: ctds-datasource.yaml
+        - name: dashboard-provider
+          configMap:
+            name: ctds-grafana-config
+            items:
+              - key: ctds-provider.yaml
+                path: ctds-provider.yaml
+        - name: dashboards
+          configMap:
+            name: ctds-grafana-config
+            items:
+              - key: ctds-baseline.json
+                path: ctds-baseline.json
+        - name: grafana-data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ctds-grafana
+  namespace: ctds-monitoring
+  labels:
+    app.kubernetes.io/part-of: ctds
+    app.kubernetes.io/name: ctds-grafana
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: ctds-grafana
+  ports:
+    - port: 3000
+      targetPort: 3000

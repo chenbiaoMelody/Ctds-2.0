@@ -1,0 +1,8 @@
+# C-TDS monitoring stack namespace (WBS 2.5.3, spec: ADR-014).
+# Isolates Prometheus / Alertmanager / Grafana from platform workloads in default.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ctds-monitoring
+  labels:
+    app.kubernetes.io/part-of: ctds

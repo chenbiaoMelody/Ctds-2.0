@@ -21,6 +21,18 @@
 | `org.testcontainers:mysql` | 1.21.4（同上 BOM 管理；**test scope**） | MySQL 8 容器模块（MySQLContainer，镜像显式标签 mysql:8.0，ADR-010 禁 latest） | Apache-2.0 | 与 junit-jupiter 同族同版（官方 metadata 交叉 + BOM 托管 + 本地仓库 1.21.4 构件缓存三重一致，2026-09-12） | 同上 | WBS 2.4.11 |
 | `org.springframework.boot:spring-boot-testcontainers` | 3.5.16（Boot BOM 同版本管理；**test scope**） | @ServiceConnection 容器连接参数自动注入（Spring Boot 3.1+ 官方集成） | Apache-2.0 | Boot BOM 实测（与项目 Boot 父版本一致），2026-09-12 | 同上 | WBS 2.4.11 |
 | `org.cyclonedx:cyclonedx-maven-plugin` | 2.9.3（**不进 build 生命周期**：由 `scripts/pipeline/nightly-build.ps1` 以全坐标带版本命令行调用，不写 pom；版本唯一出处 = 脚本 + ADR-012 §3.3 + 本行） | 后端 SBOM 材料清单产出（makeAggregateBom 聚合全模块，WBS 2.2.6 nightly 流水线 N5 阶段） | Apache-2.0 | repo1.maven.org 官方 `maven-metadata.xml` 实测 latest/release=2.9.3（2026-09-12） | PO 预授权：WBS-2.2.6 lofi 问题 2"确认"（AskUserQuestion 即时选定"确认进入编码"，2026-09-12），判定留痕见 `docs/designs/WBS-2.2.6-lofi.md` §6 | WBS 2.2.6 |
+| `org.springframework.boot:spring-boot-starter-actuator` | 3.5.16（Spring Boot 3.5.16 BOM 统一管理，pom 不显式锁版；经根 parent 继承） | 平台服务指标/健康端点暴露（WBS 2.5.3 / ADR-014 §3.2；暴露面收敛 application.yml `management.endpoints.web.exposure.include: health,prometheus` 最小暴露面） | Apache-2.0 | 阿里云镜像 mvn dependency:tree 实测解析 3.5.16（Boot BOM，2026-09-12）；MetricsEndpointTest 实测 /actuator/prometheus 200 | PO 预授权：WBS-2.5.3 lofi 六问"都按推荐"（问题 6 依赖批准，2026-09-12）+ hifi 定稿"确认"；申报表见 `docs/designs/WBS-2.5.3-lofi.md` §2 | WBS 2.5.3 |
+| `io.micrometer:micrometer-registry-prometheus` | 1.15.12（Spring Boot 3.5.16 BOM 管理，pom 不显式锁版） | JVM/HTTP 指标转 Prometheus 抓取格式（Boot 官方集成，Micrometer 同族；ADR-014 §3.2） | Apache-2.0 | 阿里云镜像 mvn dependency:tree 实测解析 1.15.12（Boot BOM，2026-09-12）；与 starter-actuator 同族配套 | 同上 | WBS 2.5.3 |
+
+## 容器镜像依赖（WBS 2.5.3，deploy/k8s-monitoring/，ADR-014）
+
+> 监控栈容器镜像：版本写死在 K8s 模板（禁 latest，ADR-013 精神），核验口径 = **docker pull 实测入库**（本机网络直连 registry-1.docker.io 不通，Docker Desktop 守护进程经已配置加速器拉取成功为最硬核验；manifest inspect/curl 直连在本机必然超时，不作数）。版本线以官方发布源交叉确认。
+
+| 镜像坐标 | 锁定 tag | 用途 | 许可证 | 核验来源与日期 | 审批记录 | 引入任务 |
+| --- | --- | --- | --- | --- | --- | --- |
+| `prom/prometheus` | v3.13.3（3.x 当前 LTS；普通版 3.14 不采用，基座求稳） | 指标采集与时序库（ADR-014 §3.1） | Apache-2.0 | docker pull 实测成功，digest `sha256:6976aa8a…`；版本线 prometheus.io/download + endoflife.date/prometheus（2026-09-12） | PO 预授权：WBS-2.5.3 lofi 六问"都按推荐"（问题 6 依赖批准，2026-09-12）+ hifi 定稿"确认"；申报表见 `docs/designs/WBS-2.5.3-lofi.md` §2 | WBS 2.5.3 |
+| `prom/alertmanager` | v0.34.0（GitHub Releases 最新稳定） | 告警路由/分组/静默（ADR-014 §3.4） | Apache-2.0 | docker pull 实测成功，digest `sha256:690c7b52…`（2026-09-12） | 同上 | WBS 2.5.3 |
+| `grafana/grafana` | 13.2.1（当前稳定，2026-09-01；标准支持至 2027-05） | 基础看板（ADR-014 §3.5） | AGPL-3.0（自部署使用，不修改其源码分发） | docker pull 实测成功，digest `sha256:f772d434…`（daocloud 通道卡死，经 1ms 加速域名拉取后 retag 回官方坐标，digest 同一）；版本线 grafana.com/download（2026-09-12） | 同上 | WBS 2.5.3 |
 
 ## 前端 npm 依赖（WBS 2.4.9，frontend/）
 

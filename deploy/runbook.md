@@ -69,3 +69,49 @@ kubectl get all
 ```
 
 镜像如需一并删除：`docker rmi <镜像tag>`。内置 Kubernetes 可保留（后续监控告警任务复用），也可在 Docker Desktop 设置里关闭。
+
+## 7. 监控告警基座怎么看（WBS 2.5.3）
+
+> 前提：平台应用已按 §3 部署（监控看板需要应用数据，告警演练需要应用在跑）。监控栈由独立脚本管理，生命周期与 §3 的应用部署互相独立。
+
+### 一键部署监控
+
+```bat
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\deploy\monitoring.ps1
+```
+
+结尾看到 `[MONITOR] PASS` 即成功，报告落盘 `build-output/monitoring/<时间戳>/monitoring-report.md`。脚本会顺带做一次**告警演练**：把平台后端临时缩到 0（约 1~2 分钟不可用，仅本机）→ 验证告警真的响了 → 自动恢复。全程无需人工干预。
+
+### 怎么看结果
+
+| 看什么 | 入口 | 预期 |
+| --- | --- | --- |
+| 平台基础看板 | 浏览器打开 `http://localhost:30082` | 免登录直接看（匿名访客），"服务存活"是绿色"运行中" |
+| 部署报告 | `build-output/monitoring/<时间戳>/monitoring-report.md` | 各步骤全 PASS，含演练四步留痕 |
+| 集群里的监控资源 | `kubectl -n ctds-monitoring get pods` | prometheus / alertmanager / grafana 三个 Running |
+| 告警规则 | `kubectl -n ctds-monitoring get configmap ctds-prometheus-config` | 服务下线 + 错误率两条规则 |
+
+### 排查用（一般成员用不到）
+
+Prometheus / Alertmanager 的管理界面不常驻；需要看时手动拉转发，用完 Ctrl+C：
+
+```bat
+kubectl -n ctds-monitoring port-forward svc/ctds-prometheus 9090:9090
+kubectl -n ctds-monitoring port-forward svc/ctds-alertmanager 9093:9093
+```
+
+### 监控常见失败对照表
+
+| 现象（脚本报错） | 原因 | 处理 |
+| --- | --- | --- |
+| `platform app deployed` 检查失败 | 平台应用还没部署 | 先跑 §3 一键部署（监控不代部署应用） |
+| `local image exists` 检查失败 | 监控镜像没拉下来 | `docker pull prom/prometheus:v3.13.3` 等（镜像加速器不通时换加速域名拉取后 retag，见 ADR-014） |
+| 指标冒烟不通 | 后端没带抓取注解或指标端点被改坏 | 检查 `deploy/k8s/backend-deployment.yaml` 的 prometheus.io/* 三条注解是否在 |
+| 演示卡在 firing/超时 | 集群负载或时间窗问题 | 重跑脚本（apply 幂等，演练自动重做） |
+| 30082/19090/19093 端口占用 | 其他软件占用 | 占用者退出后重跑 |
+
+### 清理监控（不动平台应用）
+
+```bat
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\deploy\monitoring.ps1 -Teardown
+```

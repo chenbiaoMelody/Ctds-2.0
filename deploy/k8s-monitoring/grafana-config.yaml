@@ -1,0 +1,102 @@
+# Grafana provisioning + baseline dashboard (WBS 2.5.3, spec: ADR-014).
+# One ConfigMap, three mount targets: datasource provisioning, dashboard
+# provider, dashboard JSON. Anonymous Viewer is enabled on the Deployment.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ctds-grafana-config
+  namespace: ctds-monitoring
+  labels:
+    app.kubernetes.io/part-of: ctds
+    app.kubernetes.io/name: ctds-grafana
+data:
+  ctds-datasource.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: ctds-prometheus
+        uid: ctds-prometheus
+        type: prometheus
+        access: proxy
+        url: http://ctds-prometheus.ctds-monitoring.svc.cluster.local:9090
+        isDefault: true
+        editable: false
+
+  ctds-provider.yaml: |
+    apiVersion: 1
+    providers:
+      - name: ctds-baseline
+        folder: C-TDS
+        type: file
+        disableDeletion: false
+        options:
+          path: /var/lib/grafana/dashboards
+
+  ctds-baseline.json: |
+    {
+      "title": "C-TDS 平台基础看板",
+      "uid": "ctds-baseline",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "10s",
+      "time": { "from": "now-30m", "to": "now" },
+      "panels": [
+        {
+          "id": 1,
+          "type": "stat",
+          "title": "服务存活（ctds-backend）",
+          "datasource": { "type": "prometheus", "uid": "ctds-prometheus" },
+          "gridPos": { "x": 0, "y": 0, "w": 6, "h": 6 },
+          "targets": [
+            { "refId": "A", "expr": "up{job=\"ctds-backend\"}" }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "mappings": [
+                { "type": "value", "options": { "1": { "text": "运行中", "color": "green" }, "0": { "text": "下线", "color": "red" } } }
+              ],
+              "thresholds": { "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 1 } ] }
+            },
+            "overrides": []
+          },
+          "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" }
+        },
+        {
+          "id": 2,
+          "type": "timeseries",
+          "title": "JVM 堆内存与 GC 耗时",
+          "datasource": { "type": "prometheus", "uid": "ctds-prometheus" },
+          "gridPos": { "x": 6, "y": 0, "w": 18, "h": 6 },
+          "targets": [
+            { "refId": "A", "expr": "jvm_memory_used_bytes{job=\"ctds-backend\",area=\"heap\"}", "legendFormat": "堆内存 {{id}}" },
+            { "refId": "B", "expr": "rate(jvm_gc_pause_seconds_sum{job=\"ctds-backend\"}[5m])", "legendFormat": "GC 耗时速率 {{gc}}" }
+          ],
+          "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+          "options": { "legend": { "displayMode": "list", "placement": "bottom" } }
+        },
+        {
+          "id": 3,
+          "type": "timeseries",
+          "title": "HTTP 请求速率（QPS）",
+          "datasource": { "type": "prometheus", "uid": "ctds-prometheus" },
+          "gridPos": { "x": 0, "y": 6, "w": 12, "h": 6 },
+          "targets": [
+            { "refId": "A", "expr": "sum(rate(http_server_requests_seconds_count{job=\"ctds-backend\"}[1m]))", "legendFormat": "总 QPS" }
+          ],
+          "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+          "options": { "legend": { "displayMode": "list", "placement": "bottom" } }
+        },
+        {
+          "id": 4,
+          "type": "timeseries",
+          "title": "HTTP 错误率与 P95 时延",
+          "datasource": { "type": "prometheus", "uid": "ctds-prometheus" },
+          "gridPos": { "x": 12, "y": 6, "w": 12, "h": 6 },
+          "targets": [
+            { "refId": "A", "expr": "100 * sum(rate(http_server_requests_seconds_count{job=\"ctds-backend\",status=~\"5..\"}[5m])) / sum(rate(http_server_requests_seconds_count{job=\"ctds-backend\"}[5m]))", "legendFormat": "5xx 错误率 %" },
+            { "refId": "B", "expr": "quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{job=\"ctds-backend\"}[5m])))", "legendFormat": "P95 时延 (s)" }
+          ],
+          "fieldConfig": { "defaults": { "unit": "percent" }, "overrides": [] },
+          "options": { "legend": { "displayMode": "list", "placement": "bottom" } }
+        }
+      ]
+    }
