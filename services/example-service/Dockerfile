@@ -14,7 +14,10 @@ RUN useradd --system --uid 1001 appuser \
 
 COPY target/example-service*.jar /app/app.jar
 
-USER appuser
+# USER 1001 (numeric): the kubelet's runAsNonRoot check can only verify a
+# numeric uid - a user name (appuser) fails container creation with
+# CreateContainerConfigError (measured in the 2.5.2 cluster drill).
+USER 1001
 
 EXPOSE 8080
 
