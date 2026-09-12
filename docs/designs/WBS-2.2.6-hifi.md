@@ -2,7 +2,7 @@
 
 - 承接：`docs/designs/WBS-2.2.6-lofi.md`（方向确认后定稿）
 - 交付物清单：`scripts/pipeline/nightly-build.ps1`、`scripts/pipeline/image-tag.ps1`、`scripts/pipeline/README.md`、`docs/adr/ADR-012-制品与镜像流水线规范.md`、frontend/package.json（+cyclonedx-npm devDep）、`docs/dependencies.md`（+2 行）、`.gitignore`（+build-output）。**根 pom 不改**（cyclonedx-maven-plugin 以全坐标带版本命令行调用，不进 build 生命周期，见 §4）。既有门禁 `scripts/gates/*` 零改动（nightly 直接以子进程复用其入口）。
-- 状态：**已确认（2026-09-12，与 lofi 同一次 AskUserQuestion 选定"确认进入编码"，确认记录见 lofi §6；确认后补正：交付物清单中"根 pom 不改"口径已生效，cyclonedx-maven-plugin 不进 build 生命周期）**
+- 状态：**已确认并验收通过（2026-09-12 确认进入编码；同日 PO 业务验收通过，裁决"合并并推送"，留痕见 lofi §6 尾注）**
 
 ## 7. 补正说明（编码与实测期）
 
