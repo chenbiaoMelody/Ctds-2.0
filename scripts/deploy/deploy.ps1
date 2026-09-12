@@ -329,6 +329,17 @@ if ($script:FailedStep -eq "") {
         $script:FailedStep = "port-forward"
         $script:FailureExcerpt = "kubectl not found on PATH"
     } else {
+        # Reap detached forwards from previous runs so reruns stay clean.
+        $pfRoot = Join-Path $RepoRoot "build-output\deploy"
+        if (Test-Path $pfRoot) {
+            foreach ($f in (Get-ChildItem $pfRoot -Recurse -Filter "port-forward.pids" -ErrorAction SilentlyContinue)) {
+                if ($f.FullName -ne $pfPidFile) {
+                    foreach ($p in (Get-Content $f.FullName -ErrorAction SilentlyContinue)) {
+                        if ($p -match "^\d+$") { Stop-Process -Id ([int]$p) -Force -ErrorAction SilentlyContinue }
+                    }
+                }
+            }
+        }
         $pf = New-Object System.Collections.Generic.List[string]
         foreach ($fw in @(@{ Svc = "svc/ctds-frontend"; Port = "30081:80" },
                            @{ Svc = "svc/ctds-backend";  Port = "30080:8080" })) {
