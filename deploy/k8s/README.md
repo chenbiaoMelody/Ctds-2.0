@@ -19,5 +19,5 @@
 - **部署对象名与镜像名解耦**：模板内统一 `ctds-backend` / `ctds-frontend`（WBS 2.5.2 label 统一），镜像名按 ADR-012（`ctds/example-service`、`ctds/frontend`），由注入脚本映射表衔接。
 - **探针用 tcpSocket 而非 HTTP**：后端业务端点有鉴权（未认证 401），HTTP 探针会假红；tcpSocket 只验证"端口在监听"，够用且无假信号。
 - **中间件不在模板内**：MySQL/Redis 等编排属后续任务；后端默认 profile 无库自足启动（WBS 2.4.10 B3 决策），模板按此口径。
-- **本模板是 base 口径（ClusterIP）**：开发/测试环境的 NodePort 访问（30080/30081）由部署工具链在副本目录内 patch，本目录不落 NodePort；生产口径（Ingress 等）属后续任务。
+- **本模板是 base 口径（ClusterIP）**：开发/测试环境的 NodePort（30080/30081）由部署工具链在副本目录内 patch（对映射 NodePort 的集群直接可访问；Docker Desktop kind 模式集群不映射 NodePort 到 localhost，由工具链的分离式 port-forward 提供宿主访问——实测留痕）；本目录不落 NodePort。生产口径（Ingress 等）属后续任务。
 - 模板已通过 kubectl 客户端侧离线校验；集群真实部署演练由 2.5.2 一键工具链承担（runbook 见 `deploy/runbook.md`）。

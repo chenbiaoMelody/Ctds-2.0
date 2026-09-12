@@ -98,4 +98,12 @@
 
 | 节点 | 结果 |
 | --- | --- |
-| PO 确认（= 编码契约） | 待确认 |
+| PO 确认（= 编码契约） | **已确认（2026-09-12，PO 两级设计一次确认"确认进入编码"，AskUserQuestion 即时选定留痕）** |
+
+## 七、实测补正说明（编码契约签署后演练中的实测发现，历史正文不改）
+
+1. **镜像分钟级 tag 回退**（对 A1 的边界补强）：`image-tag.ps1` 的 tag 含分钟时间戳，脚本现算 tag 与镜像实际 tag 可能差一分钟——自检在精确查不到时，回退认领"同仓库 + 同 git 短哈希（先剥 `-dirty` 后缀再解析）"的最新本地 tag，认领过程打印留痕；
+2. **新增 A4-pre 镜像装载步骤**（对 A4/A5 的前置补强）：新版 Docker Desktop 内置集群为 **kind 模式**（独立 containerd），不自动可见 docker 守护进程的本地镜像——不装载则全体 Pod `ImagePullBackOff`（实测根因）；步骤 = `docker save` 管道进节点 `ctr --namespace k8s.io images import`，导入后 `images ls` 验证；
+3. **backend 镜像 USER 数字化**（对 2.5.1 遗留镜像的修订）：`runAsNonRoot: true` 下 kubelet 只认**数字 uid**，镜像 `USER appuser`（用户名）触发 `CreateContainerConfigError`（实测根因）；Dockerfile 改 `USER 1001`，ADR-013 uid 1001 口径不变；
+4. **A6 冒烟通道改分离式 port-forward**（对 D6/A6 的实测修订）：kind 模式集群**不把 NodePort 映射到宿主 localhost**（NodePort patch 保留，对映射 NodePort 的集群仍有效）——冒烟与访问入口改由脚本拉起的**分离式 kubectl port-forward**（30081→80、30080→8080）提供，脚本退出后存活供浏览器访问，`-Teardown` 按 `port-forward.pids` 统一回收；
+5. 演练链为以上补正的完整实测路径：run1 自检拦截（tag 分钟差）→ run2 暴露 -dirty 哈希解析错 + 旧镜像 rollout 失败 → run3 暴露 kind 镜像隔离 → run4 暴露 USER 用户名校验错 → run5 暴露 NodePort 不映射 → 修复后全链 PASS（见开发日志终态验证）。

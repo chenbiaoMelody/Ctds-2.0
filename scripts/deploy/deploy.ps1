@@ -77,6 +77,16 @@ function Invoke-Teardown {
         Write-Host "[DEPLOY][CONFIG-ERROR] kustomization.yaml not found in copy dir: $copy"
         return 2
     }
+    # Stop detached port-forwards from any previous deploy run first.
+    $pfRoot = Join-Path $RepoRoot "build-output\deploy"
+    if (Test-Path $pfRoot) {
+        foreach ($f in (Get-ChildItem $pfRoot -Recurse -Filter "port-forward.pids" -ErrorAction SilentlyContinue)) {
+            foreach ($p in (Get-Content $f.FullName -ErrorAction SilentlyContinue)) {
+                if ($p -match "^\d+$") { Stop-Process -Id ([int]$p) -Force -ErrorAction SilentlyContinue }
+            }
+            Remove-Item $f.FullName -Force -ErrorAction SilentlyContinue
+        }
+    }
     Write-Host "[DEPLOY] tearing down resources from copy: $copy"
     $out, $code = Invoke-Native ("kubectl delete -k """ + $copy + """ --timeout=120s 2>&1")
     foreach ($l in $out) { Write-Host ("  " + $l) }
@@ -306,30 +316,52 @@ if ($script:FailedStep -eq "") {
     }
 }
 
-# ---------- A6 smoke test ----------
+# ---------- A6 detached port-forward + smoke test ----------
 $smokeResults = New-Object System.Collections.Generic.List[object]
+$pfPidFile = Join-Path $copyK8s "port-forward.pids"
 if ($script:FailedStep -eq "") {
-    Write-Host "[DEPLOY] step 6/6 smoke test via NodePort..."
-    $smokeDefs = @(
-        @{ Name = "frontend page http://localhost:30081/";               Url = "http://localhost:30081/";      Expect = "200" },
-        @{ Name = "frontend SPA deep link http://localhost:30081/login"; Url = "http://localhost:30081/login"; Expect = "200" },
-        @{ Name = "backend responds http://localhost:30080/";            Url = "http://localhost:30080/";      Expect = "ANY" }
-    )
-    foreach ($s in $smokeDefs) {
-        $out, $code = Invoke-Native ("curl.exe -s -o NUL -w %{http_code} --max-time 10 " + $s.Url)
-        $httpCode = ""
-        if ($out.Count -gt 0) { $httpCode = ("$($out[0])").Trim() }
-        $ok = ($code -eq 0) -and ($httpCode -match "^\d{3}$") -and ($s.Expect -eq "ANY" -or $httpCode -eq $s.Expect)
-        $smokeResults.Add([pscustomobject]@{ Check = $s.Name; Expected = $s.Expect; Got = $httpCode; Verdict = $(if ($ok) { "PASS" } else { "FAIL" }) })
-        if (-not $ok) {
-            $script:FailedStep = "smoke"
-            $script:FailureExcerpt = $s.Name + ": expected " + $s.Expect + ", got HTTP " + $httpCode + " (curl exit " + $code + "). If unreachable, check whether localhost ports 30080/30081 are occupied by other software."
-            break
+    Write-Host "[DEPLOY] step 6/6 port-forward + smoke test..."
+    # kind-mode clusters do NOT map NodePorts to localhost (measured in the
+    # 2.5.2 drill): serve the dev/test entries with DETACHED kubectl
+    # port-forward processes that survive this script (stopped by -Teardown).
+    $kubectl = (Get-Command kubectl -ErrorAction SilentlyContinue).Source
+    if ([string]::IsNullOrEmpty($kubectl)) {
+        $script:FailedStep = "port-forward"
+        $script:FailureExcerpt = "kubectl not found on PATH"
+    } else {
+        $pf = New-Object System.Collections.Generic.List[string]
+        foreach ($fw in @(@{ Svc = "svc/ctds-frontend"; Port = "30081:80" },
+                           @{ Svc = "svc/ctds-backend";  Port = "30080:8080" })) {
+            $proc = Start-Process -FilePath $kubectl -ArgumentList @("port-forward", $fw.Svc, $fw.Port) -WindowStyle Hidden -PassThru
+            $pf.Add([string]$proc.Id)
+            Write-Host ("  port-forward " + $fw.Port + " (pid " + $proc.Id + ")")
         }
-    }
-    if ($script:FailedStep -eq "") {
-        $summary = ($smokeResults | ForEach-Object { $_.Check + " => " + $_.Got }) -join "; "
-        Add-Step "A6 smoke test (NodePort)" "PASS" $summary
+        [System.IO.File]::WriteAllLines($pfPidFile, [string[]]$pf)
+        Start-Sleep -Seconds 4
+
+        $smokeDefs = @(
+            @{ Name = "frontend page http://localhost:30081/";               Url = "http://localhost:30081/";      Expect = "200" },
+            @{ Name = "frontend SPA deep link http://localhost:30081/login"; Url = "http://localhost:30081/login"; Expect = "200" },
+            @{ Name = "backend responds http://localhost:30080/";            Url = "http://localhost:30080/";      Expect = "ANY" }
+        )
+        foreach ($s in $smokeDefs) {
+            $out, $code = Invoke-Native ("curl.exe -s -o NUL -w %{http_code} --max-time 10 " + $s.Url)
+            $httpCode = ""
+            if ($out.Count -gt 0) { $httpCode = ("$($out[0])").Trim() }
+            $ok = ($code -eq 0) -and ($httpCode -match "^\d{3}$") -and ($s.Expect -eq "ANY" -or $httpCode -eq $s.Expect)
+            $smokeResults.Add([pscustomobject]@{ Check = $s.Name; Expected = $s.Expect; Got = $httpCode; Verdict = $(if ($ok) { "PASS" } else { "FAIL" }) })
+            if (-not $ok) {
+                $script:FailedStep = "smoke"
+                $script:FailureExcerpt = $s.Name + ": expected " + $s.Expect + ", got HTTP " + $httpCode + " (curl exit " + $code + "). If unreachable, check whether localhost ports 30080/30081 are occupied by other software."
+                break
+            }
+        }
+        if ($script:FailedStep -eq "") {
+            $summary = ($smokeResults | ForEach-Object { $_.Check + " => " + $_.Got }) -join "; "
+            Add-Step "A6 smoke test (port-forward)" "PASS" ($summary + "; forwards detached (pids: " + ($pf -join ",") + "), survive this script, stopped by -Teardown")
+        } else {
+            foreach ($p in $pf) { Stop-Process -Id $p -Force -ErrorAction SilentlyContinue }
+        }
     }
 }
 
@@ -368,7 +400,8 @@ $rep.Add("## Access entries (dev/test)")
 $rep.Add("")
 $rep.Add("- Frontend: http://localhost:30081 (SPA deep links such as /login stay on 200)")
 $rep.Add("- Backend: http://localhost:30080 (404 on / is normal: the service is answering)")
-$rep.Add("- Teardown: powershell -NoProfile -ExecutionPolicy Bypass -File scripts\deploy\deploy.ps1 -Teardown")
+$rep.Add("- Served by detached kubectl port-forward (kind-mode clusters do not map NodePorts to localhost, measured): these keep running after this script exits.")
+$rep.Add("- Teardown (removes resources AND stops the port-forwards): powershell -NoProfile -ExecutionPolicy Bypass -File scripts\deploy\deploy.ps1 -Teardown")
 if ($script:FailureExcerpt -ne "") {
     $rep.Add("")
     $rep.Add("## Failure excerpt (" + $script:FailedStep + ")")
