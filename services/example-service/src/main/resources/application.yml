@@ -11,6 +11,14 @@ spring:
 server:
   port: 8080
 
+# 指标暴露（WBS 2.5.3 / hifi §2 最小暴露面）：只开 health 与 prometheus 两个端点，
+# 其余 actuator 端点一律不开（MetricsEndpointTest env=404 守卫）；鉴权零改动（注解式按端点强制）
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+
 logging:
   file:
     name: logs/app.log

@@ -22,6 +22,12 @@ spec:
         app.kubernetes.io/part-of: ctds
         app.kubernetes.io/name: ctds-backend
         app.kubernetes.io/component: backend
+      # Prometheus 抓取发现注解（WBS 2.5.3 / ADR-014）：2.5.3 监控栈按这三条注解
+      # 自动发现抓取目标（kubernetes_sd role=pod），缺省即不抓取。
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/actuator/prometheus"
     spec:
       containers:
         - name: ctds-backend

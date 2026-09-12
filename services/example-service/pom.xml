@@ -68,6 +68,16 @@
       <artifactId>mysql-connector-j</artifactId>
       <scope>runtime</scope>
     </dependency>
+    <!-- 指标暴露（WBS 2.5.3 / ADR-014）：Boot 官方 starter，版本走 Boot BOM（dependencies.md 已登记）；
+         暴露面收敛在 application.yml management.endpoints.web.exposure.include（health,prometheus） -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.micrometer</groupId>
+      <artifactId>micrometer-registry-prometheus</artifactId>
+    </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-test</artifactId>
