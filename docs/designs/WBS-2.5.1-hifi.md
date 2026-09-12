@@ -2,7 +2,7 @@
 
 - 承接：`docs/designs/WBS-2.5.1-lofi.md`（方向确认后定稿）
 - 交付物清单：`services/example-service/Dockerfile` + `services/example-service/.dockerignore`、`frontend/Dockerfile` + `frontend/.dockerignore` + `frontend/nginx.container.conf`、`deploy/k8s/{backend-deployment,backend-service,frontend-deployment,frontend-service,kustomization}.yaml`、`deploy/k8s/README.md`、`docs/adr/ADR-013-容器化部署模板规范.md`、`docs/dependencies.md`（新增"容器基础镜像"节）。**不改**：pom、业务代码、scripts/gates、scripts/pipeline。
-- 状态：**已确认（2026-09-12，与 lofi 同一次 AskUserQuestion 选定"确认进入编码"，确认记录见 lofi §4）**
+- 状态：**已确认并验收通过（2026-09-12 确认进入编码；同日 PO 业务验收通过，裁决"合并推送"，留痕见 lofi §4 尾注）**
 
 ## 1. 业务可读行为清单（逐条，可验收口径）
 
