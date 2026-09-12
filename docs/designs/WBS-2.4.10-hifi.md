@@ -85,7 +85,7 @@ INSERT INTO demo_note (title, content) VALUES
 | --- | --- |
 | 数据库已是最新（重启/重复启动） | Flyway no-op，启动正常（幂等），零副作用 |
 | 已应用脚本被修改（校验和不符） | 启动失败，报"Detected applied migration not resolved locally / 校验和验证失败"并指明版本号（篡改防护；修复须走 ADR-009 规定的处理流程，禁止改历史脚本） |
-| 脚本版本号倒退/乱序提交 | out-of-order=false 下新低版本脚本被忽略并告警（规范要求版本号必须取 history 最大值+1）；自动化覆盖随 2.4.11 Testcontainers 补"插入低版本脚本验证被忽略"用例（评审④建议，已接受） |
+| 脚本版本号倒退/乱序提交 | out-of-order=false 下新低版本脚本被忽略并告警（规范要求版本号必须取 history 最大值+1）；自动化覆盖随 2.4.11 Testcontainers 补"插入低版本脚本验证被忽略"用例（评审④建议，已接受）——**2.4.11 编码期实测更正（2026-09-12）**：Flyway 11 validateOnMigrate 默认开启，乱序待应用脚本实际触发 `FlywayValidateException`（Detected resolved migration not applied to database）→ 服务启动 fail-fast，强于本行原记录的"忽略并告警"口径，与 ADR-009"fail-fast 优于带病运行"一致；护栏用例见 WBS-2.4.11 hifi 护栏脚本契约表 |
 | 数据库不可达（口令错/库未启动） | 服务启动失败（fail-fast），错误信息不含口令；演示端点不产生部分可用状态 |
 | 未启用 mysql profile | 数据源/Flyway/演示端点全部不装配，行为与 2.4.9 合并时点完全一致 |
 | V2 灌数据脚本重复执行 | 不会发生（flyway_schema_history 已记录版本，Flyway 跳过已应用脚本）——演示表无唯一键冲突风险 |

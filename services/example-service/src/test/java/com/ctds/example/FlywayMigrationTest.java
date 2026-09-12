@@ -7,27 +7,35 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
+import org.testcontainers.containers.MySQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
- * 条件化集成测试（WBS 2.4.10 B7，沿 2.4.7 "真实中间件在配了它的环境跑"惯例；命名用 *Test 使 surefire 默认拾取）：
- * 仅当环境变量 CTDS_IT_MYSQL_URL 存在时执行，否则跳过——默认门禁环境无 MySQL，保持全绿。
- * 断言：V1/V2 依次应用、flyway_schema_history 两行成功记录、demo_note 恰 2 行、重复迁移 no-op（幂等）。
- * 连接参数：CTDS_IT_MYSQL_URL 必填；CTDS_IT_MYSQL_USER（默认 root）/ CTDS_IT_MYSQL_PASSWORD（默认 ctds-demo）可选。
+ * 容器化集成测试（WBS 2.4.11，写法规范见 ADR-010；升级 2.4.10 的环境变量门控为容器自动供给）：
+ * 本机 Docker 运行时自动起一次性 MySQL 8 容器（随机端口/随机凭据，测后自动销毁）执行，
+ * 未运行时 disabledWithoutDocker 自动跳过——门禁不红（跳过态留痕于 mvn 输出）。
+ * 断言集与 2.4.10 定稿一致：V1/V2 依次应用、flyway_schema_history 两行成功记录、demo_note 恰 2 行、
+ * 数据标题契约、重复迁移 no-op（幂等）、demo-notes 端点 200/401 双向。
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 @AutoConfigureMockMvc
 @ActiveProfiles("mysql")
-@EnabledIfEnvironmentVariable(named = "CTDS_IT_MYSQL_URL", matches = ".+")
+@Testcontainers(disabledWithoutDocker = true)
 class FlywayMigrationTest {
+
+    /** 显式镜像标签 mysql:8.0（与 2.4.10 演练镜像同源；ADR-010 禁止 latest），库名与示例迁移目标一致 */
+    @Container
+    @ServiceConnection
+    static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:8.0")
+            .withDatabaseName("ctds_demo");
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -37,15 +45,6 @@ class FlywayMigrationTest {
 
     @Autowired
     private MockMvc mockMvc;
-
-    @DynamicPropertySource
-    static void datasource(final DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", () -> System.getenv("CTDS_IT_MYSQL_URL"));
-        registry.add("spring.datasource.username",
-                () -> System.getenv().getOrDefault("CTDS_IT_MYSQL_USER", "root"));
-        registry.add("spring.datasource.password",
-                () -> System.getenv().getOrDefault("CTDS_IT_MYSQL_PASSWORD", "ctds-demo"));
-    }
 
     @Test
     void migrationsAppliedInOrderAndNoopOnRerun() {
