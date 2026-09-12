@@ -229,9 +229,45 @@ if ($script:FailedStep -eq "") {
     }
 }
 
+# ---------- A4-pre load images into the cluster node ----------
+# The Docker Desktop built-in cluster (kind mode) has its own containerd and
+# does NOT see the docker daemon's local images - without this step every pod
+# lands in ImagePullBackOff (discovered in the 2.5.2 drill).
+if ($script:FailedStep -eq "") {
+    Write-Host "[DEPLOY] step 3/6 loading images into the cluster node..."
+    $nodeOut, $nc = Invoke-Native "kubectl get nodes --no-headers -o custom-columns=:metadata.name 2>&1"
+    $node = ""
+    if ($nc -eq 0 -and $nodeOut.Count -gt 0) { $node = ("$($nodeOut[0])").Trim() }
+    if ($node -eq "") {
+        $script:FailedStep = "image-load"
+        $script:FailureExcerpt = "could not resolve a cluster node name (kubectl get nodes)"
+    } else {
+        foreach ($m in $ModuleMap) {
+            $tag = $injectTag[$m.File]
+            $out, $code = Invoke-Native ("docker save """ + $tag + """ | docker exec -i " + $node + " ctr --namespace k8s.io images import - 2>&1")
+            if ($code -ne 0) {
+                $script:FailedStep = "image-load"
+                $script:FailureExcerpt = "docker save/import failed for " + $tag + ":`n" + (($out | Select-Object -Last 5) -join "`n")
+                break
+            }
+            $lsOut, $lc = Invoke-Native ("docker exec " + $node + " ctr --namespace k8s.io images ls 2>&1")
+            $found = ($lsOut | ForEach-Object { "$_" }) -match [regex]::Escape($tag)
+            if ($lc -ne 0 -or -not [bool]$found) {
+                $script:FailedStep = "image-load"
+                $script:FailureExcerpt = "image " + $tag + " not present in node containerd after import"
+                break
+            }
+            Write-Host ("  loaded into node: " + $tag)
+        }
+        if ($script:FailedStep -eq "") {
+            Add-Step "A4-pre image load (docker save -> node ctr import)" "PASS" ("node: " + $node + ", both module images loaded and verified")
+        }
+    }
+}
+
 # ---------- A4 server-side schema validation ----------
 if ($script:FailedStep -eq "") {
-    Write-Host "[DEPLOY] step 3/6 server-side schema validation (kubectl apply --dry-run=server)..."
+    Write-Host "[DEPLOY] step 4/6 server-side schema validation (kubectl apply --dry-run=server)..."
     $out, $code = Invoke-Native ("kubectl apply --dry-run=server -k """ + $copyK8s + """ 2>&1")
     if ($code -ne 0) {
         $script:FailedStep = "schema-validate"
@@ -244,7 +280,7 @@ if ($script:FailedStep -eq "") {
 
 # ---------- A5 apply + rollout ----------
 if ($script:FailedStep -eq "") {
-    Write-Host "[DEPLOY] step 4/6 applying to cluster and waiting for rollout..."
+    Write-Host "[DEPLOY] step 5/6 applying to cluster and waiting for rollout..."
     $out, $code = Invoke-Native ("kubectl apply -k """ + $copyK8s + """ 2>&1")
     if ($code -ne 0) {
         $script:FailedStep = "apply"
@@ -273,7 +309,7 @@ if ($script:FailedStep -eq "") {
 # ---------- A6 smoke test ----------
 $smokeResults = New-Object System.Collections.Generic.List[object]
 if ($script:FailedStep -eq "") {
-    Write-Host "[DEPLOY] step 5/6 smoke test via NodePort..."
+    Write-Host "[DEPLOY] step 6/6 smoke test via NodePort..."
     $smokeDefs = @(
         @{ Name = "frontend page http://localhost:30081/";               Url = "http://localhost:30081/";      Expect = "200" },
         @{ Name = "frontend SPA deep link http://localhost:30081/login"; Url = "http://localhost:30081/login"; Expect = "200" },
