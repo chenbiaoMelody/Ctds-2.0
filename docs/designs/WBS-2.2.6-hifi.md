@@ -9,6 +9,7 @@
 - **根 pom 不改**（原交付物清单提及"根 pom（+cyclonedx-maven-plugin）"作废）：cyclonedx-maven-plugin 以全坐标带版本命令行调用，不进 build 生命周期（§4 已载明，此处修正清单措辞）。
 - **门禁 1 处增量配置**（原"既有门禁 scripts/gates/* 零改动"表述修正）：`gates-config.json` secretsExcludePaths 追加 `build-output`。实测发现：secretsScan 全仓枚举 <1MB 文件逐个 ReadAllBytes，会读到 nightly 正在写入的阶段日志（文件被打开写入）→ 独占冲突崩溃误报 FAIL；且未来每次 nightly 对上一轮构建产物（jar/SBOM/日志，gitignore 零源码）扫描只会产生假阳性。与 node_modules 排除先例（b7330f5）同口径，任何检测阶段行为不变。留痕：ADR-012 §5。
 - **PS 5.1 实测教训（已固化进脚本注释）**：① `$ErrorActionPreference=Stop` 下原生命令向 stderr 输出（vite/npm 进度）会被升级为终止性 NativeCommandError（N4 曾假失败——vite 实际构建成功）；② `Select-Object -First 1` 会提前终止上游原生命令管道使 `$LASTEXITCODE` 变 -1（N1 探测曾全数误报）；③ 函数内 Write-Output 会污染返回值，调用方布尔判定变数组恒真、fail-fast 静默失效（第一轮曾"假 PASS"）——进展输出一律改 Write-Host，阶段体参数化传值。
+- **评审①③④处置补正（2026-09-12 第二批）**：①P2 N3-2"可运行"标注已实现（报告 backend/example-service/*.jar 加 runnable 注记）；①③P3 G-3 同秒冲突序号改为首撞 `-1`（脚本 seq 初始 0 先自增，与设计措辞对齐）；③P2 N5-2 措辞修正（两段独立 npx 命令，见上文）；③P2 输出目录契约补 `logs/`（ADR-012 §3.4 与本文件 §2 同步）；③P3 N2-2 措辞修正（-ReportPath 直落盘等价复制）；②P3 N4 失败路径补 `Set-Location $repoRoot` 消除 cwd 残留；②P3 SHA256SUMS 防篡改边界登记 ADR-012 §3.3（PENDING-CI）；②/④P3 connector-sdk 占位标注加进汇总报告 Image Tag List 节；④P3 B-7 假设（cyclonedx-npm 对 lock 不同步若只告警不退出则 LEC 不会触发停——脚本按其退出非零即停口径实现）留痕 pipeline README；③P3 Add-Stage/报告脚手架与 run-gates 同构——**不采纳现在抽取**（最小实现，两脚本各自独立可运行；下次任一触碰时抽 `scripts/common`，登记本节留痕）。
 
 ## 1. 业务可读行为清单（N1–N7 逐条，可验收口径）
 
@@ -19,7 +20,7 @@
 
 **N2 质量门禁**
 - N2-1 调用 `scripts/gates/run-gates.ps1`（既有入口、既有配置，一字不改其阶段行为）；退出码非 0 → nightly 立即停止，退出码 1，报告记 FAIL。
-- N2-2 门禁报告（若生成）复制一份进 `OUT/reports/`，汇总报告标注门禁结论与耗时。
+- N2-2 门禁报告由 `-ReportPath` 直接落盘到 `OUT/reports/gate-report.md`（复制语义等价实现），汇总报告标注门禁结论与耗时。
 
 **N3 后端打包**
 - N3-1 根目录执行 `mvn -B -ntp package -DskipTests`（测试与检查已由 N2 门禁完整跑过，此处只产构件）；失败即停（退出码 1）。
@@ -31,7 +32,7 @@
 
 **N5 SBOM 生成**
 - N5-1 后端：根 pom 执行 `mvn -B -ntp org.cyclonedx:cyclonedx-maven-plugin:2.9.3:makeAggregateBom -DskipTests`，产出聚合 BOM（XML+JSON）；收集到 `OUT/sbom/backend/`。
-- N5-2 前端：`frontend/` 内执行 `npx @cyclonedx/cyclonedx-npm --output-file <OUT>/sbom/frontend/bom.json`（另有 `--package-lock-only` 以锁定文件为准，不触发安装）；同命令补出 XML。失败即停。
+- N5-2 前端：`frontend/` 内 `npx @cyclonedx/cyclonedx-npm --output-file <OUT>/sbom/frontend/bom.json`（`--package-lock-only` 以锁定文件为准，不触发安装）；该工具单次只出一种格式，XML 以第二条独立命令加 `--output-format XML` 补出。失败即停。
 - N5-3 对每个 SBOM 文件计算 sha256 写入 `OUT/sbom/SHA256SUMS.txt`（对账口径：报告引用此文件）。
 
 **N6 镜像 tag 计算**
@@ -53,7 +54,7 @@
 | --- | --- |
 | tag 计算命令 | `pwsh/powershell scripts/pipeline/image-tag.ps1 -ModuleName <模块名>` → stdout 单行 canonical tag；`-All` → 全清单 |
 | tag 命名规范 | `ctds/<模块名>:<版本>-<yyyymmdd-hhmm>-<git短哈希>[-dirty]`（ADR-012 §命名） |
-| 输出目录契约 | `build-output/<时间戳>/{backend/<模块>/, frontend/dist/, sbom/{backend,frontend}, reports/, image-tags.txt, nightly-report.md}`（ADR-012 §目录） |
+| 输出目录契约 | `build-output/<时间戳>/{backend/<模块>/, frontend/dist/, logs/<阶段>.log, sbom/{backend,frontend}, reports/, image-tags.txt, nightly-report.md}`（ADR-012 §目录） |
 | 模块清单 | Maven：6 common + std-adapter + example-service；前端：frontend；占位：connector-sdk |
 | nightly 入口 | `powershell scripts/pipeline/nightly-build.ps1`；退出码 0=全绿 / 1=阶段失败 / 2=环境自检失败（与门禁 0/1/2 契约同形） |
 

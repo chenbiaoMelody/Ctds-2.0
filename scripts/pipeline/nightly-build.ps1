@@ -88,7 +88,7 @@ $envInfo += $dockerMsg
 # Output directory: build-output/<yyyymmdd-HHmmss>, append -N on same-second collision
 $script:StampDir = Get-Date -Format "yyyyMMdd-HHmmss"
 $script:OutDir = Join-Path $RepoRoot ("build-output\" + $script:StampDir)
-$seq = 1
+$seq = 0
 while (Test-Path $script:OutDir) {
     $seq++
     $script:OutDir = Join-Path $RepoRoot ("build-output\" + $script:StampDir + "-" + $seq)
@@ -135,12 +135,15 @@ function Write-Report([bool]$success) {
     $lines += ("Total " + $artifacts.Count + " files:")
     $artifacts | ForEach-Object {
         $rel = $_.FullName.Substring($script:OutDir.Length).TrimStart('\').Replace('\', '/')
-        $lines += ("- " + $rel + " (" + [Math]::Round($_.Length / 1KB, 1) + " KB)")
+        $note = ""
+        if ($rel -like "backend/example-service/*.jar") { $note = " (runnable: Spring Boot fat jar, spec hifi N3-2)" }
+        $lines += ("- " + $rel + " (" + [Math]::Round($_.Length / 1KB, 1) + " KB)" + $note)
     }
     if ($success) {
         $lines += ""
         $lines += "## Image Tag List"
         $lines += 'See `image-tags.txt` (naming spec ADR-012 section 3.2).'
+        $lines += "Note: connector-sdk line is a PLACEHOLDER (SDK lives in a separate repo, ADR-002) - not a pullable image tag."
         $lines += ""
         $lines += "## SBOM Reconciliation"
         $lines += 'sha256 ledger: `sbom/SHA256SUMS.txt`'
@@ -233,8 +236,8 @@ $frontendOk = Invoke-Stage "N4-frontend-build" {
     param($repoRoot, $outDir)
     Set-Location (Join-Path $repoRoot "frontend")
     & npm run build
-    if ($LASTEXITCODE -ne 0) { $script:stageCode = $LASTEXITCODE; return }
-    if (-not (Test-Path (Join-Path $repoRoot "frontend\dist\index.html"))) { $script:stageCode = 1; Write-Host "[N4][ERROR] frontend/dist/index.html not produced"; return }
+    if ($LASTEXITCODE -ne 0) { Set-Location $repoRoot; $script:stageCode = $LASTEXITCODE; return }
+    if (-not (Test-Path (Join-Path $repoRoot "frontend\dist\index.html"))) { Set-Location $repoRoot; $script:stageCode = 1; Write-Host "[N4][ERROR] frontend/dist/index.html not produced"; return }
     $dest = Join-Path $outDir "frontend\dist"
     New-Item -ItemType Directory -Path (Split-Path -Parent $dest) -Force | Out-Null
     Copy-Item -Path (Join-Path $repoRoot "frontend\dist") -Destination $dest -Recurse -Force

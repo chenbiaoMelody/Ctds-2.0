@@ -22,4 +22,5 @@ N1 环境自检 → N2 质量门禁（复用 run-gates.ps1，非 GREEN 即停）
 
 - 定时调度与远程制品库推送：**PENDING-CI**（与 frontendE2E 同口径，待 2.5.x CI 接入时平移）。
 - docker 不可用不阻断（本任务不构建镜像，仅探测记录）。
+- 前端 SBOM 以 `frontend/package-lock.json` 为准（--package-lock-only）；若 lock 与 package.json 不同步，cyclonedx-npm 的失败或告警行为以其内置口径为准——脚本按"命令退出码非零即停"实现，若该工具对轻度不同步只告警不退出，则不会阻断流水线（假设留痕，评审④）。
 - 版本锁定：`cyclonedx-maven-plugin` 2.9.3（脚本内显式坐标）、`@cyclonedx/cyclonedx-npm` 6.0.1（frontend devDependencies）；升级走依赖变更流程并同步本 README 与 dependencies.md。
