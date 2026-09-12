@@ -1,13 +1,16 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { hasPermission } from '../stores/demoRole'
+import { isDemoAuthed } from '../stores/demoAuth'
 
 /**
  * WBS-2.4.9 H3/H4 路由契约：
- * - 嵌套路由：MainLayout 为所有页面的父级布局（三区布局 H2）；
+ * - 嵌套路由：MainLayout 为所有业务页的父级布局（三区布局 H2）；
  * - 菜单由路由表驱动：子路由 meta.menu = true 自动出现在侧边栏；
  * - 权限点：meta.permission 声明所需权限点，守卫按演示角色比对；
  * - 前端拦截仅为交互体验（菜单显隐/跳转引导），越权防护的安全边界在后端鉴权；
- * - 骨架期不做真实登录校验（令牌签发归属待 3.9.1 / 2.4.12）。
+ * - 骨架期不做真实登录校验（令牌签发归属待 3.9.1）。
+ * WBS-2.4.12 增量：/login 演示登录页（B4）+ 登录守卫前置（B5/B7），
+ * 既有权限守卫逻辑不变、仅置于登录守卫之后（B6）。
  */
 
 declare module 'vue-router' {
@@ -26,6 +29,12 @@ declare module 'vue-router' {
 }
 
 const routes = [
+  {
+    path: '/login',
+    name: 'login',
+    component: () => import('../views/login/LoginView.vue'),
+    meta: { title: '登录' },
+  },
   {
     path: '/',
     component: () => import('../layouts/MainLayout.vue'),
@@ -74,6 +83,15 @@ const router = createRouter({
 })
 
 router.beforeEach((to) => {
+  // 登录守卫前置（hifi B5/B7）：未登录访问除 /login 外任何路由（含 404 兜底）→ /login；
+  // 已登录访问 /login → /dashboard（不留双入口，边界值 B-2）
+  if (to.name !== 'login' && !isDemoAuthed()) {
+    return { name: 'login' }
+  }
+  if (to.name === 'login' && isDemoAuthed()) {
+    return { name: 'dashboard' }
+  }
+  // 既有权限守卫（2.4.9 原逻辑，一字不改，B6）
   const required = to.meta.permission
   if (required && !hasPermission(required)) {
     return { name: 'dashboard', query: { denied: '1' } }

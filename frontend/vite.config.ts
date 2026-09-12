@@ -4,6 +4,8 @@ import { defineConfig } from 'vitest/config'
 // WBS-2.4.9 前端框架骨架（H1/H8/H9）：
 // - dev server 默认 5173；/api 前缀代理到 example-service（8080），供标准能力示例页真实调用 2.4.8 演示端点
 // - vitest 单测环境 = jsdom（组件渲染/守卫行为断言用）
+// WBS-2.4.12：E2E（e2e/*.spec.ts）归 Playwright 执行，vitest exclude 排除（默认 exclude 保留）
+import { defaultExclude } from 'vitest/config'
 export default defineConfig({
   plugins: [vue()],
   server: {
@@ -17,5 +19,6 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     pool: 'threads',
+    exclude: [...defaultExclude, 'e2e/**'],
   },
 })

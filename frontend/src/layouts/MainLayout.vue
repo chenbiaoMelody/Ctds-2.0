@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 import { routes } from '../router'
 import { getDemoRole, setDemoRole, hasPermission, type DemoRole } from '../stores/demoRole'
+import { signOutDemo } from '../stores/demoAuth'
 
 /**
  * WBS-2.4.9 H2 三区布局骨架：左侧菜单栏（可折叠）+ 顶部栏 + 主内容区。
@@ -12,6 +13,7 @@ import { getDemoRole, setDemoRole, hasPermission, type DemoRole } from '../store
  * - 权限点路由按演示角色过滤显示；
  * - 顶栏右侧：演示模式标识 + 角色切换（骨架期静态两角色）；
  * - 无权限访问被守卫重定向时（query.denied=1）顶栏显示提示。
+ * WBS-2.4.12 增量（B8）：顶栏新增"退出"——清演示登录态回登录页；其余布局行为零改动（B9）。
  */
 
 const route = useRoute()
@@ -53,6 +55,12 @@ function onRoleChange(role: DemoRole) {
   if (required && role !== 'admin') {
     router.push({ name: 'dashboard' })
   }
+}
+
+// WBS-2.4.12 B8：退出 = 清演示登录态（角色保留，B3）→ 回登录页
+function onSignOut() {
+  signOutDemo()
+  router.push({ name: 'login' })
 }
 </script>
 
@@ -99,6 +107,7 @@ function onRoleChange(role: DemoRole) {
             <el-option label="普通用户" value="user" />
             <el-option label="管理员" value="admin" />
           </el-select>
+          <el-button size="small" text class="signout-btn" @click="onSignOut">退出</el-button>
         </div>
       </el-header>
 

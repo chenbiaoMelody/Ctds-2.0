@@ -160,6 +160,46 @@ foreach ($stageName in @("compile", "lint", "unitTest")) {
     if ($oldJavaHome) { $env:JAVA_HOME = $oldJavaHome } else { Remove-Item Env:JAVA_HOME -ErrorAction SilentlyContinue }
 }
 
+# ---------- Frontend stages (npm; WBS 2.4.12 G1-G3, change-trace: docs/designs/WBS-2.4.12-{lofi,hifi}.md + ADR-011) ----------
+foreach ($stageName in @("frontendLint", "frontendTest", "frontendE2E")) {
+    $s = $cfg.stages.$stageName
+    if (-not $s -or -not $s.enabled) { continue }
+    # defensive allowlist: config values are joined into a cmd.exe command line (same rule as Maven stages)
+    foreach ($v in @($s.goals)) {
+        if ($v -and ($v -notmatch '^[A-Za-z0-9:._\-\s]+$')) {
+            Add-Result $stageName "FAIL" "Illegal characters in gates-config stage value (allowed: A-Za-z0-9 : . _ - space)"
+            continue
+        }
+    }
+    $workdir = Join-Path $RepoRoot "frontend"
+    if (-not (Test-Path (Join-Path $workdir "package.json"))) {
+        Add-Result $stageName "FAIL" "frontend/package.json not found"
+        continue
+    }
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = "cmd.exe"
+    $psi.Arguments = "/c npm " + $s.goals
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.WorkingDirectory = $workdir
+    $proc = [System.Diagnostics.Process]::Start($psi)
+    $outTask = $proc.StandardOutput.ReadToEndAsync()
+    $errTask = $proc.StandardError.ReadToEndAsync()
+    if (-not $proc.WaitForExit(300000)) {
+        try { $proc.Kill() } catch { }
+        Add-Result $stageName "FAIL" ("npm " + $s.goals + " timed out after 300s")
+    } elseif ($proc.ExitCode -eq 0) {
+        Add-Result $stageName "PASS" ("npm " + $s.goals + " exit 0")
+    } else {
+        $null = $outTask.Wait(10000)
+        $null = $errTask.Wait(10000)
+        $allOut = ($outTask.Result + [Environment]::NewLine + $errTask.Result) -split "`r?`n" | Where-Object { $_.Trim() -ne "" }
+        $tail = ($allOut | Select-Object -Last 6) -join " | "
+        Add-Result $stageName "FAIL" ("npm " + $s.goals + " exit " + $proc.ExitCode + ": " + $tail)
+    }
+}
+
 # ---------- Pending stages (toolchain blocked by ADR-001 approval) ----------
 foreach ($prop in $cfg.stages.PSObject.Properties) {
     $s = $prop.Value

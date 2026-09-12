@@ -1,9 +1,10 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import ElementPlus from 'element-plus'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import MainLayout from './MainLayout.vue'
 import { setDemoRole } from '../stores/demoRole'
+import { isDemoAuthed, signInDemo } from '../stores/demoAuth'
 import { routes } from '../router/index'
 
 /**
@@ -12,6 +13,8 @@ import { routes } from '../router/index'
  * - 菜单由路由表驱动，数量 = 当前角色可见菜单路由数；
  * - 权限演示：普通用户不渲染"仅管理员可见"，admin 角色渲染；
  * - 无权限重定向提示（denied=1）：提示条渲染 + 关闭后清除 query。
+ * WBS-2.4.12 增量（B8）：顶栏"退出"清登录态回登录页（本文件自建 router 实例不挂守卫，
+ * 仅验证按钮行为本身；守卫拦截行为在 router.spec 覆盖）。
  */
 const router = createRouter({ history: createMemoryHistory(), routes })
 
@@ -91,5 +94,24 @@ describe('无权限访问提示（H4 边界值）', () => {
     await router.isReady()
     const wrapper = mountLayout()
     expect(wrapper.find('.denied-tip').exists()).toBe(false)
+  })
+})
+
+describe('顶栏退出（WBS-2.4.12 B8）', () => {
+  beforeEach(() => {
+    localStorage.clear()
+  })
+
+  it('点击退出：清演示登录态（角色保留）并跳登录页', async () => {
+    signInDemo()
+    await router.push('/dashboard')
+    await router.isReady()
+    const wrapper = mountLayout()
+    await wrapper.find('.signout-btn').trigger('click')
+    // router.push 为组件内异步调用，轮询等待导航完成（flushPromises 次数对时序敏感，门禁环境曾复现不足）
+    await vi.waitFor(() => {
+      expect(router.currentRoute.value.name).toBe('login')
+    })
+    expect(isDemoAuthed()).toBe(false)
   })
 })

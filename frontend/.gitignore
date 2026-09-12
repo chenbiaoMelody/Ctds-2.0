@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 
+# Playwright E2E 失败留痕（WBS-2.4.12 B10：trace/screenshot 本地产物，不入库）
+test-results
+playwright-report
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
