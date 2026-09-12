@@ -99,5 +99,7 @@ class FlywayGuardrailTest {
         final FlywayValidateException ex = assertThrows(FlywayValidateException.class, () -> flywayFor(dir).migrate());
         assertTrue(ex.getMessage().contains("checksum"),
                 "异常消息应含 checksum（校验和不符），实际：" + ex.getMessage());
+        assertEquals(1, appliedCount("1"),
+                "fail-fast 后 V1 应保持已应用成功记录（不产生部分迁移/回写）");
     }
 }

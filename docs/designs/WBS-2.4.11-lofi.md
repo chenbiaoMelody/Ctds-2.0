@@ -26,10 +26,10 @@
 
 ### 做什么（逐条对应产出定义）
 
-1. **集成测试框架（产出定义-1）**：新建 `docs/adr/ADR-010-集成测试规范（Testcontainers 容器化）.md`，固化：容器化测试写法（`@Testcontainers(disabledWithoutDocker=true)` + `@ServiceConnection`）、镜像显式标签纪律（禁止 `latest`）、命名 `*Test`（surefire 默认拾取，2.4.10 教训）、无 Docker 环境自动跳过纪律（跳过留痕、门禁不红）、测试源集允许使用中间件客户端 API 断言（沿 ADR-009 §6）、共享基类沉淀条件（≥2 消费者）；含"备选"与"可替换性"两节过 adrFieldsCheck 门禁；
+1. **集成测试框架（产出定义-1）**：新建 `docs/adr/ADR-010-集成测试规范.md`（编码期实际落盘文件名，原稿"（Testcontainers 容器化）"后缀从简省略，更正留痕 2026-09-12），固化：容器化测试写法（`@Testcontainers(disabledWithoutDocker=true)` + `@ServiceConnection`）、镜像显式标签纪律（禁止 `latest`）、命名 `*Test`（surefire 默认拾取，2.4.10 教训）、无 Docker 环境自动跳过纪律（跳过留痕、门禁不红）、测试源集允许使用中间件客户端 API 断言（沿 ADR-009 §6）、共享基类沉淀条件（≥2 消费者）；含"备选"与"可替换性"两节过 adrFieldsCheck 门禁；
 2. **示例（产出定义-2）**：
    - **升级**既有 `FlywayMigrationTest`：环境变量门控 → Docker 容器自动供给（`MySQLContainer` 显式 `mysql:8.0` 与 2.4.10 演练镜像同源 + `@ServiceConnection`），**断言集一字不改**（V1/V2 应用、history 两行、数据标题契约、no-op 幂等、端点 200/401 双向）；
-   - **新增**护栏测试 `FlywayGuardrailTest`（承接 2.4.10 评审④与 hifi 边界值表标注的"随 2.4.11 补齐"两项）：① 乱序拒绝——已应用 V1/V3 后补低版本 V2，`out-of-order=false` 下不被执行（history 不增行）；② 篡改 fail-fast——已应用脚本被改，再迁移报校验和不符（2.4.10 人工演练第④步升级为自动回归）；此测试纯 JUnit + Testcontainers + Flyway API（不起 Spring 上下文，快），ADR-009 §6 允许测试源集使用 Flyway API；
+   - **新增**护栏测试 `FlywayGuardrailTest`（承接 2.4.10 评审④与 hifi 边界值表标注的"随 2.4.11 补齐"两项）：① 乱序拒绝——已应用 V1/V3 后补低版本 V2，`out-of-order=false` 下不被执行（history 不增行；编码期实测更正：Flyway 11 validateOnMigrate 默认开启下为 `FlywayValidateException` fail-fast，强于"静默忽略"，口径详见 hifi B4 与护栏脚本契约表，2026-09-12）；② 篡改 fail-fast——已应用脚本被改，再迁移报校验和不符（2.4.10 人工演练第④步升级为自动回归）；此测试纯 JUnit + Testcontainers + Flyway API（不起 Spring 上下文，快），ADR-009 §6 允许测试源集使用 Flyway API；
 3. **无 Docker 兼容（保护既有演示）**：默认门禁环境（Docker 未运行）容器化测试自动跳过，既有 44 测试全绿不变；Docker 运行时容器化测试真实执行（跳过态与执行态都在 mvn 输出留痕）；
 4. **依赖登记**：`docs/dependencies.md` Maven 表新增 3 项（test scope，PO 预授权见 lofi 待确认 5）。
 
@@ -44,7 +44,7 @@
 
 ### 结构组成（涉及文件清单）
 
-- `docs/adr/ADR-010-集成测试规范（Testcontainers 容器化）.md`（新建，规范正文）；
+- `docs/adr/ADR-010-集成测试规范.md`（新建，规范正文；文件名更正留痕见上"做什么-1"，2026-09-12）；
 - `services/example-service/pom.xml`（+3 test scope 依赖，版本走 Boot BOM 不显式锁版）；
 - `services/example-service/src/test/java/.../FlywayMigrationTest.java`（改造：门控机制替换，断言不变）；
 - `services/example-service/src/test/java/.../FlywayGuardrailTest.java`（新建，护栏双用例）；

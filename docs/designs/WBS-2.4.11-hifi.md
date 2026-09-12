@@ -10,12 +10,13 @@
 | 轮次 | 结论（确认/打回） | 确认人（PO） | 日期 | 意见（打回必填） |
 | --- | --- | --- | --- | --- |
 | 1 | 确认 | 项目主导者（兼任 PO；与 lofi 同批一次确认，PO 预授权按判断原则自主选定，判定留痕见 lofi"问题确认"节，AI 代录，编码完成后随交付一并请编排师复核） | 2026-09-12 | 无 |
+| 复核 | 编码期实测修订认可 | 评审①（规格与设计符合性视角，独立评审链） | 2026-09-12 | B4 断言口径（"忽略并告警"→FlywayValidateException fail-fast）与容器粒度（类级→B4 方法级）属实测事实更正（非需求变更），已行内留痕且交叉引用闭合（2.4.10 hifi 行内更正同步），评审①予以认可；判定链以此行闭合，PO 复核随交付说明继续 |
 
 ## 行为清单（8 项，逐条对应 lofi 已确认方向与计划测试）
 
 | 编号 | 行为（业务可读） | lofi 出处 | 计划测试 |
 | --- | --- | --- | --- |
-| B1 | 集成测试规范固化 `docs/adr/ADR-010-集成测试规范（Testcontainers 容器化）.md`（写法/镜像标签纪律/命名/跳过纪律/沉淀条件），含"备选"与"可替换性"两节（adrFieldsCheck 过门禁） | lofi 做什么-1 + 待确认 2 | 门禁 adrFieldsCheck PASS（9+1 ADR 全字段） |
+| B1 | 集成测试规范固化 `docs/adr/ADR-010-集成测试规范.md`（文件名编码期落盘更正留痕见 lofi 做什么-1，2026-09-12；写法/镜像标签纪律/命名/跳过纪律/隔离纪律/沉淀条件），含"备选"与"可替换性"两节（adrFieldsCheck 过门禁） | lofi 做什么-1 + 待确认 2 | 门禁 adrFieldsCheck PASS（9+1 ADR 全字段） |
 | B2 | example-service 引入 Testcontainers 三件套（版本走 Boot 3.5.16 BOM，全部 test scope），`dependencies.md` 登记 3 项（审批栏注明 PO 预授权 + lofi 问题 5） | lofi 做什么-4 + 待确认 5 | mvn test-compile PASS + dependency:tree 实测解析留痕（test scope 不进业务制品） |
 | B3 | `FlywayMigrationTest` 升级容器化：`MySQLContainer`（显式镜像 `mysql:8.0`，库名 ctds_demo，随机端口/随机口令）+ `@ServiceConnection` 自动注入连接参数；**断言集与 2.4.10 定稿完全一致**（V1/V2 依次应用、history 两行 success=1、demo_note 恰 2 行、标题契约、二次迁移 no-op、端点 200/401 双向）；环境变量门控 `CTDS_IT_MYSQL_URL/USER/PASSWORD` 移除 | lofi 做什么-2 示例① + 待确认 4 | Docker 运行时：2 用例真实执行 PASS；Docker 未运行：自动跳过留痕 |
 | B4 | 新增护栏测试 `FlywayGuardrailTest`（纯 JUnit + Testcontainers + Flyway API，不起 Spring 上下文）：①乱序拒绝——history 已应用 V1/V3 后补入低版本 V2 脚本，`migrate()` 抛 `FlywayValidateException`（Detected resolved migration not applied to database: 2，**fail-fast 阻止启动**，编码期实测更正：强于 2.4.10 hifi 原记录的"忽略并告警"口径，validateOnMigrate 默认开启所致，同条目已在 2.4.10 hifi 边界值表行内更正留痕）；②篡改 fail-fast——V1 应用后被修改，再 `migrate()` 抛 `FlywayValidateException`（消息含 Migration checksum mismatch）（ADR-009 规则 5/7 自动回归，2.4.10 人工演练第④步升级） | lofi 做什么-2 示例② | Docker 运行时：2 用例真实执行 PASS；Docker 未运行：自动跳过留痕 |
@@ -31,9 +32,9 @@
 | 镜像 | `mysql:8.0`（显式标签，与 2.4.10 演练镜像同源；禁止 `latest`——ADR-010 纪律；镜像 minor 升级随 ADR-001 变更流程） |
 | 生命周期 | `@Container` 静态字段：每个测试类起 1 个容器，类内用例共享，类结束自动销毁（Testcontainers 默认 Ryuk 看护，异常退出也无残留） |
 | 端口/凭据 | 随机宿主端口 + Testcontainers 随机生成用户/口令（密钥零入库，B7） |
-| 库名 | `ctds_demo`（与 2.4.10 示例迁移的目标库名一致，脚本零改动） |
+| 库名 | B3 = `ctds_demo`（与 2.4.10 示例迁移的目标库名一致，脚本零改动）；B4 = `ctds_guardrail`（护栏用例独立库名，与 B3 隔离） |
 | 连接注入 | B3 用 `@ServiceConnection`（spring-boot-testcontainers 自动注入 `spring.datasource.*`，覆盖 application-mysql.yml 占位符）；B4 直接取 `container.getJdbcUrl()/getUsername()/getPassword()` 构建 Flyway 实例 |
-| 容器粒度 | B3 类级容器（`@Container` static 字段，两用例共享）；B4 **方法级容器**（非 static 字段，每用例独立一次性数据库）——护栏两用例都以 V1 起步，共享库会让 `flyway_schema_history` 撞版本号（编码期实测教训，2026-09-12） |
+| 容器粒度 | B3 类级容器（`@Container` static 字段，两用例共享）；B4 **方法级容器**（非 static 字段，每用例独立一次性数据库）——护栏两用例都以 V1 起步，共享库会导致同版本号 V1 的不同脚本触发校验和冲突（`flyway_schema_history` 撞 V1，编码期实测教训，2026-09-12） |
 | Flyway 行为 | B3 沿 Spring Boot auto-config（`@ActiveProfiles("mysql")` 上下文启动即迁移）；B4 程序化构建 `Flyway.configure().dataSource(...).locations(...).outOfOrder(false).load()`，locations 指向测试临时目录（护栏脚本与生产脚本物理隔离，不触碰 `src/main/resources/db/migration`） |
 
 ## 护栏测试脚本契约（B4，测试源集内动态生成于临时目录，非 main 源集文件）
