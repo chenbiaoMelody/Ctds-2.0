@@ -122,6 +122,24 @@ foreach ($m in $ModuleMap) {
     }
     $injectTag[$m.File] = $tag
     $out, $code = Invoke-Native ("docker image inspect """ + $tag + """ --format exists 2>&1")
+    if ($code -ne 0) {
+        # Minute-rollover fallback: image-tag.ps1 bakes the build minute into
+        # the tag, so an image built a minute earlier has a different tag.
+        # Adopt the newest local tag of the same repo ending in the same git
+        # short hash - the image still corresponds to this exact code state.
+        $core = $tag -replace "-dirty$", ""
+        $gitHash = ($core -split "-")[-1]
+        $out2, $c2 = Invoke-Native ("docker images """ + $m.Image + """ --format {{.Tag}} 2>&1")
+        $cand = ($out2 | ForEach-Object { "$_" } |
+            Where-Object { $_ -match ([regex]::Escape($gitHash) + "(-dirty)?$") } |
+            Sort-Object -Descending | Select-Object -First 1)
+        if ($c2 -eq 0 -and $cand) {
+            $tag = $m.Image + ":" + $cand
+            $injectTag[$m.File] = $tag
+            Write-Host ("[DEPLOY][CHECK-FALLBACK] exact tag not found, adopting newest local tag with same git hash " + $gitHash + ": " + $tag)
+            $code = 0
+        }
+    }
     Report-Check ($code -eq 0) ("local image exists: " + $tag + " (if missing: run nightly-build.ps1, then docker build per deploy/runbook.md)")
 }
 
