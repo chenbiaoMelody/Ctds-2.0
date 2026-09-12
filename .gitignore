@@ -38,3 +38,6 @@ Desktop.ini
 
 # 门禁运行报告（本地产物，不入库）
 scripts/gates/reports/
+
+# Nightly build output (WBS 2.2.6, ADR-012; local artifacts, not committed)
+build-output/
