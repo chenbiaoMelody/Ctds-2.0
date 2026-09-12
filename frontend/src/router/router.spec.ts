@@ -122,6 +122,12 @@ describe('登录守卫（WBS-2.4.12 B5/B7/边界 B-2）', () => {
     expect(isDemoAuthed()).toBe(false)
   })
 
+  it('登录态值为非 \'1\'（如 \'0\'）：一律视为未登录（边界 B-1，评审④P2-1 补）', async () => {
+    localStorage.setItem('ctds-demo-auth', '0')
+    await router.push('/catalog')
+    expect(router.currentRoute.value.name).toBe('login')
+  })
+
   it('未登录访问未知路径：先被登录守卫拦截而非落到 404（B7）', async () => {
     signOutDemo()
     await router.push('/no-such-page')

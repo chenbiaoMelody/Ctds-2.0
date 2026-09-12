@@ -3,7 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import ElementPlus from 'element-plus'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import MainLayout from './MainLayout.vue'
-import { setDemoRole } from '../stores/demoRole'
+import { setDemoRole, getDemoRole } from '../stores/demoRole'
 import { isDemoAuthed, signInDemo } from '../stores/demoAuth'
 import { routes } from '../router/index'
 
@@ -103,6 +103,7 @@ describe('顶栏退出（WBS-2.4.12 B8）', () => {
   })
 
   it('点击退出：清演示登录态（角色保留）并跳登录页', async () => {
+    setDemoRole('admin')
     signInDemo()
     await router.push('/dashboard')
     await router.isReady()
@@ -113,5 +114,7 @@ describe('顶栏退出（WBS-2.4.12 B8）', () => {
       expect(router.currentRoute.value.name).toBe('login')
     })
     expect(isDemoAuthed()).toBe(false)
+    // B3 角色保留（评审④P3-1 补）：退出只清登录态，演示角色不受影响
+    expect(getDemoRole()).toBe('admin')
   })
 })

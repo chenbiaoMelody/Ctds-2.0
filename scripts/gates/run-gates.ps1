@@ -164,16 +164,22 @@ foreach ($stageName in @("compile", "lint", "unitTest")) {
 foreach ($stageName in @("frontendLint", "frontendTest", "frontendE2E")) {
     $s = $cfg.stages.$stageName
     if (-not $s -or -not $s.enabled) { continue }
-    # defensive allowlist: config values are joined into a cmd.exe command line (same rule as Maven stages)
+    # defensive allowlist: config values are joined into a cmd.exe command line (same rule as Maven stages);
+    # 评审②P2-1：违规必须跳过整个阶段的执行（不得检出后仍启动命令）
+    $illegal = $false
     foreach ($v in @($s.goals)) {
-        if ($v -and ($v -notmatch '^[A-Za-z0-9:._\-\s]+$')) {
-            Add-Result $stageName "FAIL" "Illegal characters in gates-config stage value (allowed: A-Za-z0-9 : . _ - space)"
-            continue
-        }
+        if ($v -and ($v -notmatch '^[A-Za-z0-9:._\-\s]+$')) { $illegal = $true }
     }
-    $workdir = Join-Path $RepoRoot "frontend"
+    if ($illegal) {
+        Add-Result $stageName "FAIL" "Illegal characters in gates-config stage value (allowed: A-Za-z0-9 : . _ - space)"
+        continue
+    }
+    # workdir 读取配置值（缺省回退 frontend；评审①P3-3/③P3-2：字段不得为死配置）
+    $stageWorkdir = "frontend"
+    if ($s.workdir) { $stageWorkdir = $s.workdir }
+    $workdir = Join-Path $RepoRoot $stageWorkdir
     if (-not (Test-Path (Join-Path $workdir "package.json"))) {
-        Add-Result $stageName "FAIL" "frontend/package.json not found"
+        Add-Result $stageName "FAIL" ("package.json not found under workdir: " + $stageWorkdir)
         continue
     }
     $psi = New-Object System.Diagnostics.ProcessStartInfo

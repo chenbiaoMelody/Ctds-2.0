@@ -43,7 +43,7 @@
 - **B10** `frontend/playwright.config.ts`：`testDir: './e2e'`；`webServer: { command: 'npm run dev', url: 'http://localhost:5173', reuseExistingServer: !process.env.CI }`（本机开发复用已起 dev server，CI 态强制新起）；`use: { baseURL: 'http://localhost:5173' }`；仅 Chromium（projects 单项）；`trace: 'retain-on-failure'` + `screenshot: 'only-on-failure'`（失败留痕目录 test-results，gitignore）。
 - **B11** npm script：`"e2e": "playwright test"`（不动既有 dev/build/test/lint 五条 script）。
 - **B12** 定位纪律（ADR-011 固化）：用 `getByRole`/`getByPlaceholder`/`getByText` 语义定位，**禁 CSS/XPath 选择器**（防实现细节耦合）。
-- **B13** 登录冒烟示例用例 = 下表 E1–E5，全部映射 B1–B9。
+- **B13** 登录冒烟示例用例 = 下表 E1–E5，全部映射 B1–B9（B7 由 E1 末步承载；B9 由既有布局用例全绿承载）。
 
 ### E2E 冒烟用例契约（login-smoke.spec.ts）
 
@@ -51,9 +51,9 @@
 | --- | --- | --- | --- | --- |
 | E1 | 未登录（全新 storage） | 打开 `/dashboard` | URL 重定向为 `/login`；登录表单（用户名/口令/登录按钮/演示口径提示）可见 | B2/B4/B5 |
 | E2 | 未登录，已在登录页 | 用户名填 `demo`，口令留空，点"登 录" | 停留 `/login`（校验提示出现）；不写登录态 | 表单校验 |
-| E3 | 未登录，已在登录页 | 用户名 `demo`、口令 `demo123`，点"登 录" | 跳转 `/dashboard`；工作台标题可见；侧边栏菜单（工作台/标准能力/数据目录）渲染 | B1/B5 |
+| E3 | 未登录，已在登录页 | 用户名 `demo`、口令 `demo123`，点"登 录" | 跳转 `/dashboard`；工作台标题可见；侧边栏菜单（工作台/标准能力/数据目录）渲染；登录态已写入；刷新后仍保持 | B1/B5/边界 B-3 |
 | E4 | 已登录（user 角色），访问 `/admin-only` | 直达 URL | 重定向 `/dashboard` 且 `denied=1` 提示可见（既有权限守卫行为，B6） | B6 |
-| E5 | 已登录 | 顶栏点"退出" | 回 `/login`；再访问 `/dashboard` 又被重定向回 `/login` | B3/B8/B5 |
+| E5 | 已登录 | 顶栏点"退出" | 回 `/login`；再访问 `/dashboard` 又被重定向回 `/login`；浏览器回退键同样被拦截 | B3/B8/B5/边界 B-4 |
 
 ### 边界值与异常行为
 
@@ -67,7 +67,7 @@
 
 ## 3. 门禁扩展契约（run-gates.ps1 + gates-config.json）
 
-- **G1** stages 新增 `frontendLint`（enabled，`npm --prefix frontend run lint`）、`frontendTest`（enabled，`npm --prefix frontend run test`）、`frontendE2E`（enabled: false，status: PENDING-CI，注记浏览器供给待 2.5.x）。
+- **G1** stages 新增 `frontendLint`（enabled，在 frontend workdir 下执行 `npm run lint`）、`frontendTest`（enabled，`npm run test`）、`frontendE2E`（enabled: false，status: PENDING-CI，注记浏览器供给待 2.5.x）。
 - **G2** PASS/FAIL 汇总口径与既有阶段一致（非零退出码 = FAIL）；frontendE2E 不计入 FAIL/PASS 门数（PENDING 同 coverage 等既有口径）。
 - **G3** 不改任何既有 Java 阶段行为与阈值（红线 3：仅按本设计确认记录 + ADR-011 留痕执行本扩展）。
 
@@ -84,9 +84,10 @@
 | `frontend/e2e/login-smoke.spec.ts` | 新建 | E1–E5 五用例；B12 定位纪律 |
 | `frontend/package.json` | 改造 | +`@playwright/test` 1.63.0（devDependencies）、+`e2e` script（B11） |
 | `frontend/.gitignore`（或仓库根 gitignore） | 改造 | +`test-results/`、`playwright-report/`（失败留痕不入库） |
-| `docs/adr/ADR-011-端到端测试规范.md` | 新建 | 8 字段全（含"备选""可替换性"）；规则：语义定位纪律（B12）、webServer 自足纪律、仅 Chromium 最小实现、失败留痕不入库、E2E 不替代单测（分层口径）、门禁 E2E 阶段 PENDING-CI 口径 |
+| `docs/adr/ADR-011-端到端测试规范.md` | 新建 | adrFieldsCheck 7 必含节全（含"备选""可替换性"）+ 头表 5 字段；规则：语义定位纪律（B12）、webServer 自足纪律、仅 Chromium 最小实现、失败留痕不入库、E2E 不替代单测（分层口径）、门禁 E2E 阶段 PENDING-CI 口径 |
 | `docs/dependencies.md` | 改造 | 前端 npm 表 +`@playwright/test` 1 行（核验来源 npmmirror 2026-09-12 实测 + 浏览器二进制来源注记） |
 | `scripts/gates/gates-config.json`、`run-gates.ps1` | 改造 | G1–G3 |
+| `frontend/vite.config.ts`、`frontend/tsconfig.node.json`、`frontend/eslint.config.js`、`frontend/package-lock.json` | 配套 | 文件契约外必要配套（评审①P3-1 登记留痕）：vitest exclude 排除 e2e、vue-tsc 纳入 playwright.config 类型检查、ESLint 覆盖 e2e 目录、npm 锁定文件 |
 
 ## 5. 验收剧本更新建议（业务语言）
 
@@ -98,3 +99,11 @@
 1. `cd frontend && npm run e2e` → 输出 `5 passed`（E1–E5），测试过程自动起停 dev server 与 Chromium；
 2. `npm run lint && npm run test` 全绿（既有单测适配后不红）；
 3. 门禁 `run-gates.ps1` GREEN（新增 frontendLint/frontendTest 两阶段 PASS）。
+
+## 7. 补正说明（4 视角评审处置留痕，2026-09-12）
+
+1. 本表 E1–E5 覆盖列与 Then 列为评审处置后的更正版（E1 增 B7 末步、E3 增 B1 直接断言与 B-3 刷新保持、E5 增 B-4 回退键拦截；实现侧同步补强，评审①P2-2/④P2-2/P2-3 处置）；E4 的 URL 断言口径收紧为 `/dashboard\?denied=1$`（评审④P3-3）；
+2. G1 原稿"npm --prefix frontend run lint"与实现方式（workdir 下执行 npm）不一致，已按实际落地方式更正，脚本读取 stages 的 workdir 字段（评审③P3-2/①P3-3 处置，字段为真实生效配置）；
+3. ADR-011 字段数原稿写"8 字段全"有误，更正为"7 必含节 + 头表 5 字段"（评审③P3-4 处置）；
+4. vite.config.ts / tsconfig.node.json / eslint.config.js / package-lock.json 为文件契约外必要配套，已补录 §4 清单（评审①P3-1 处置）；
+5. 评审①P3-5（守卫两条 if 简化写法）**不采纳**：现写法逐字对应 B5 两句表述、可追溯性好，行为等价无收益；评审②P3（e2e 纳入 lint）**采纳**（eslint.config.js + lint script 已覆盖 e2e）；评审②P2/①P3-4（allowlist 检出后仍执行的存量语义）**前端段已修复**为标志位跳过整阶段，Maven 段存量缺陷登记 ADR-011 观察项⑥随 2.5.x 处置（不在本任务顺手改既有 Java 阶段）；评审③P3-6（run-gates 两段 ~35 行重复）**缓办**——下次触碰该脚本时抽公共函数，登记开发日志。
