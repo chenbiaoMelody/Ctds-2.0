@@ -1,4 +1,6 @@
-# C-TDS backend Deployment (WBS 2.5.1, spec: ADR-013).
+# C-TDS backend Deployment (WBS 2.5.1, spec: ADR-013; label unification
+# per WBS-2.5.2: deployment-object name is ctds-backend everywhere, kept
+# decoupled from the image artifact name via the inject script's mapping).
 # IMAGE_PLACEHOLDER is injected by the 2.5.2 deployment toolchain with the
 # canonical tag from scripts/pipeline/image-tag.ps1 (naming spec: ADR-012).
 apiVersion: apps/v1
@@ -7,22 +9,22 @@ metadata:
   name: ctds-backend
   labels:
     app.kubernetes.io/part-of: ctds
-    app.kubernetes.io/name: example-service
+    app.kubernetes.io/name: ctds-backend
     app.kubernetes.io/component: backend
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app.kubernetes.io/name: example-service
+      app.kubernetes.io/name: ctds-backend
   template:
     metadata:
       labels:
         app.kubernetes.io/part-of: ctds
-        app.kubernetes.io/name: example-service
+        app.kubernetes.io/name: ctds-backend
         app.kubernetes.io/component: backend
     spec:
       containers:
-        - name: example-service
+        - name: ctds-backend
           # Image reference is injected by the 2.5.2 toolchain using the
           # canonical tag from scripts/pipeline/image-tag.ps1 (spec: ADR-012).
           # Only the `image:` field below is replaced - inject by line, not

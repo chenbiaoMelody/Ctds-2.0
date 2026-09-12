@@ -2,4 +2,5 @@
 # nginx config enter the image (spec ADR-013).
 *
 !dist/
+!nginx.main.conf
 !nginx.container.conf
