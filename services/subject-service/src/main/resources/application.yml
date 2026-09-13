@@ -1,0 +1,40 @@
+spring:
+  application:
+    name: subject-service
+  # 数据库迁移工具链（WBS 2.4.10 / ADR-009）：默认 profile 无数据库照常启动（B3 兼容性决策，同 kms）。
+  # classpath 上有 spring-boot-starter-jdbc 会激活 DataSourceAutoConfiguration 并要求配置数据源，
+  # 默认 profile 显式排除；mysql profile（application-mysql.yml）清空本排除项后数据源 + Flyway 生效。
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+
+server:
+  port: 8080
+
+# 指标暴露（ADR-014 最小暴露面）：只开 health 探活，prometheus 暴露随 2.5.x 监控基座统一接入
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+logging:
+  file:
+    name: logs/app.log
+  structured:
+    format:
+      console: logstash
+      file: logstash
+
+ctds:
+  # RBAC（WBS 2.4.5 模式 A 配置映射）：演示角色 applicant 承载申请人动作（注册/查询/撤销）；
+  # 审核员角色与权限随 3.1.5 交付
+  auth:
+    permissions:
+      applicant: subject.register,subject.read,subject.cancel
+  # 注册防重复提交（ADR-007 模式 B）：内存模式 = 零中间件依赖，演示/单测可执行；
+  # 多实例生产部署须 mode=redis 并经 redisson-spring-boot-starter 提供 Redis 连接（WBS-2.4.7 hifi B8 边界）
+  idempotency:
+    mode: memory
+  lock:
+    mode: memory

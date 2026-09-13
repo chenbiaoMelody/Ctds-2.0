@@ -29,6 +29,7 @@
     <module>std-adapter</module>
     <module>services/example-service</module>
     <module>services/kms</module>
+    <module>services/subject-service</module>
   </modules>
 
   <properties>
