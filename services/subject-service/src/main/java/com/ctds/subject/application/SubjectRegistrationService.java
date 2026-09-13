@@ -57,7 +57,8 @@ public class SubjectRegistrationService {
 
     /**
      * 注册/重报（幂等键 = 统一社会信用代码：同一申请的重复点击/重放返回首次结果，不重复建档）。
-     * 已存在主体：已驳回或待认证且已撤销 → 重报（更新可变信息、状态重置待认证）；
+     * 已存在主体：已驳回或待认证且已撤销 → 重报（更新可变信息、状态重置待认证；主体类型不随重报变更，
+     * hifi 接口契约的重报可变字段集合不含主体类型）；
      * 其余状态 → 1004B0001"该主体已注册"（不泄露已有账号任何信息）。
      */
     @Idempotent(key = "#command.uscc")
@@ -123,7 +124,7 @@ public class SubjectRegistrationService {
             final String remark, final SubjectStatus fromStatus) {
         final LocalDateTime now = LocalDateTime.now();
         final Subject updated = new Subject(current.id(), current.subjectNo(), command.subjectName(), current.uscc(),
-                SubjectType.valueOf(command.subjectType()), command.regAddress(), command.contactName(),
+                current.subjectType(), command.regAddress(), command.contactName(),
                 command.contactPhone(), command.adminAccount(), SubjectStatus.PENDING_CERT, current.createdAt(), now);
         repository.resubmit(updated, new StatusTransition(fromStatus, SubjectStatus.PENDING_CERT,
                 TriggerRole.APPLICANT, operator, remark, now));

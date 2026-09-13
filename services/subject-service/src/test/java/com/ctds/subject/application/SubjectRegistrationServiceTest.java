@@ -111,13 +111,19 @@ class SubjectRegistrationServiceTest {
     void rejectedSubjectResubmitsReusingSameRow() {
         final Subject rejected = subject(SubjectStatus.REJECTED);
         when(repository.findByUscc(USCC)).thenReturn(Optional.of(rejected));
+        // 重报请求携带不同主体类型：主体类型不在 hifi 重报可变字段集合内，必须保留原值
+        final RegisterCommand command = new RegisterCommand("修改后的名称", USCC, "GOV",
+                "杭州市XX区XX路88号", "张三", "13800001234", "admin001");
 
-        final RegistrationResult result = service.register(command("修改后的名称"));
+        final RegistrationResult result = service.register(command);
 
         assertThat(result.subjectNo()).isEqualTo(rejected.subjectNo());
         assertThat(result.status()).isEqualTo(SubjectStatus.PENDING_CERT);
+        final ArgumentCaptor<Subject> subject = ArgumentCaptor.forClass(Subject.class);
         final ArgumentCaptor<StatusTransition> transition = ArgumentCaptor.forClass(StatusTransition.class);
-        verify(repository).resubmit(any(Subject.class), transition.capture());
+        verify(repository).resubmit(subject.capture(), transition.capture());
+        assertThat(subject.getValue().subjectType()).isEqualTo(SubjectType.ENTERPRISE);
+        assertThat(subject.getValue().subjectName()).isEqualTo("修改后的名称");
         assertThat(transition.getValue().fromStatus()).isEqualTo(SubjectStatus.REJECTED);
         assertThat(transition.getValue().toStatus()).isEqualTo(SubjectStatus.PENDING_CERT);
         assertThat(transition.getValue().remark())

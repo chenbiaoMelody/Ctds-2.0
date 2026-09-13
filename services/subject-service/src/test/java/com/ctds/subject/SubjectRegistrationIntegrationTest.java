@@ -7,8 +7,10 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.ctds.common.errorcode.BizException;
 import com.ctds.subject.domain.StatusTransition;
 import com.ctds.subject.domain.Subject;
+import com.ctds.subject.domain.SubjectErrorCodes;
 import com.ctds.subject.domain.SubjectRepository;
 import com.ctds.subject.domain.SubjectStatus;
 import com.ctds.subject.domain.SubjectType;
@@ -300,6 +302,80 @@ class SubjectRegistrationIntegrationTest {
                                 + "VALUES ('S20260913999999', '重复行', ?, 'ENTERPRISE', '地址', '联系人', '13800001234', "
                                 + "'admin', 'PENDING_CERT', NOW(), NOW())", uscc(11)))
                 .isInstanceOf(DuplicateKeyException.class);
+    }
+
+    @Test
+    void duplicateKeyInRepositoryTranslatedToBusinessErrorNotDbDetails() {
+        createSubjectDirect(uscc(12), "兜底转换演示公司", SubjectStatus.PENDING_CERT, "S20260913001201");
+
+        final LocalDateTime now = LocalDateTime.now();
+        assertThatThrownBy(() -> subjectRepository.create(
+                        new Subject(null, "S20260913001202", "兜底转换演示公司", uscc(12), SubjectType.ENTERPRISE,
+                                "杭州市XX区XX路88号", "张三", "13800001234", "admin001",
+                                SubjectStatus.PENDING_CERT, now, now),
+                        new StatusTransition(null, SubjectStatus.PENDING_CERT, TriggerRole.APPLICANT,
+                                APPLICANT, null, now)))
+                .isInstanceOf(BizException.class)
+                .satisfies(e -> assertThat(((BizException) e).getErrorCode())
+                        .isEqualTo(SubjectErrorCodes.SUBJECT_ALREADY_REGISTERED))
+                .hasMessage("该主体已注册");
+    }
+
+    @Test
+    void concurrentDistinctUsccRegistrationsGetDistinctSubjectNos() throws Exception {
+        final int threads = 20;
+        final CountDownLatch ready = new CountDownLatch(threads);
+        final CountDownLatch go = new CountDownLatch(1);
+        final ExecutorService pool = Executors.newFixedThreadPool(threads);
+        final List<java.util.concurrent.Future<String>> futures = new java.util.ArrayList<>();
+        for (int i = 0; i < threads; i++) {
+            final int index = 21 + i;
+            futures.add(pool.submit(() -> {
+                ready.countDown();
+                try {
+                    go.await();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException(e);
+                }
+                try {
+                    return submitRegister(uscc(index), "并发取号演示公司" + index).get("subjectNo").asText();
+                } catch (Exception e) {
+                    throw new IllegalStateException(e);
+                }
+            }));
+        }
+        if (!ready.await(2, TimeUnit.SECONDS)) {
+            throw new AssertionError("workers did not become ready");
+        }
+        go.countDown();
+        pool.shutdown();
+        if (!pool.awaitTermination(30, TimeUnit.SECONDS)) {
+            throw new AssertionError("workers did not finish");
+        }
+        pool.shutdownNow();
+
+        final List<String> subjectNos = new java.util.ArrayList<>();
+        for (final java.util.concurrent.Future<String> future : futures) {
+            subjectNos.add(future.get());
+        }
+        assertThat(subjectNos).doesNotHaveDuplicates();
+        assertThat(subjectNos).allMatch(no -> no.matches("S\\d{14}"));
+        for (int i = 0; i < threads; i++) {
+            assertThat(countSubjects(uscc(21 + i))).isEqualTo(1);
+        }
+    }
+
+    /** 幂等窗口内同信用代码、不同内容的注册返回首次结果（ADR-016 §2.5 边界口径的固化锚点，防回归漂移）。 */
+    @Test
+    void idempotencyWindowReturnsFirstResultEvenWhenPayloadDiffers() throws Exception {
+        final JsonNode first = submitRegister(uscc(13), "幂等窗口公司A");
+        final JsonNode second = submitRegister(uscc(13), "幂等窗口公司B");
+
+        assertThat(second).isEqualTo(first);
+        assertThat(countSubjects(uscc(13))).isEqualTo(1);
+        final JsonNode detail = fetchDetail(first.get("subjectNo").asText());
+        assertThat(detail.get("subjectName").asText()).isEqualTo("幂等窗口公司A");
     }
 
     /** 仓储直造主体（含初始留痕），绕开幂等结果缓存——供重报/重复注册拒绝类用例使用。 */

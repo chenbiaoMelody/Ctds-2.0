@@ -1,6 +1,7 @@
 package com.ctds.subject.infrastructure;
 
 import com.ctds.common.errorcode.BizException;
+import com.ctds.common.errorcode.ErrorCodes;
 import com.ctds.subject.domain.StatusTransition;
 import com.ctds.subject.domain.Subject;
 import com.ctds.subject.domain.SubjectErrorCodes;
@@ -57,10 +58,10 @@ public class SubjectJdbcRepository implements SubjectRepository {
     @Override
     @Transactional
     public void resubmit(final Subject updated, final StatusTransition transition) {
-        final int updatedRows = jdbc.sql("UPDATE subject SET subject_name = ?, subject_type = ?, reg_address = ?, "
+        final int updatedRows = jdbc.sql("UPDATE subject SET subject_name = ?, reg_address = ?, "
                         + "contact_name = ?, contact_phone = ?, admin_account = ?, status = ?, updated_at = ? "
                         + "WHERE id = ?")
-                .params(updated.subjectName(), updated.subjectType().name(), updated.regAddress(),
+                .params(updated.subjectName(), updated.regAddress(),
                         updated.contactName(), updated.contactPhone(), updated.adminAccount(),
                         updated.status().name(), Timestamp.valueOf(updated.updatedAt()), updated.id())
                 .update();
@@ -119,16 +120,25 @@ public class SubjectJdbcRepository implements SubjectRepository {
                 .list();
     }
 
+    /**
+     * 当日序号原子取号：LAST_INSERT_ID(expr) 在自增的同时写入连接级返回值，自增与读取不跨语句竞态
+     * （hifi 库表设计"原子取号"契约）；事务绑定保证两条语句共用同一连接（LAST_INSERT_ID 为连接级）。
+     * 当日容量上限 999999（申请编号 6 位序号段），超出按超限错误处理而非溢出编号。
+     */
     @Override
+    @Transactional
     public int nextDailySeq(final LocalDate date) {
         jdbc.sql("INSERT INTO subject_daily_seq (seq_date, seq_val) VALUES (?, 1) "
-                        + "ON DUPLICATE KEY UPDATE seq_val = seq_val + 1")
+                        + "ON DUPLICATE KEY UPDATE seq_val = LAST_INSERT_ID(seq_val + 1)")
                 .param(Date.valueOf(date))
                 .update();
-        return jdbc.sql("SELECT seq_val FROM subject_daily_seq WHERE seq_date = ?")
-                .param(Date.valueOf(date))
+        final int seq = jdbc.sql("SELECT LAST_INSERT_ID()")
                 .query(Integer.class)
                 .single();
+        if (seq > 999_999) {
+            throw new BizException(ErrorCodes.INTERNAL_ERROR, "当日申请编号序号已达上限");
+        }
+        return seq;
     }
 
     private Optional<Subject> querySubject(final String sql, final String key) {
