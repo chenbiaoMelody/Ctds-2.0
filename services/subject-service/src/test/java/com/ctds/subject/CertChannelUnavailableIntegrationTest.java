@@ -1,5 +1,6 @@
 package com.ctds.subject;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -69,6 +70,9 @@ class CertChannelUnavailableIntegrationTest {
     @Autowired
     private MockMvc mockMvc;
 
+    @Autowired
+    private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+
     @Test
     void channelErrorReturnsServiceUnavailableWithBusinessMessage() throws Exception {
         final String subjectNo = registerSubject();
@@ -80,6 +84,15 @@ class CertChannelUnavailableIntegrationTest {
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(jsonPath("$.code").value("1004S0001"))
                 .andExpect(jsonPath("$.message").value("认证服务暂不可用，请稍后重试"));
+
+        // 无脏数据残留（规格行为 3 GWT-4 / 评审视角 4 补齐）：渠道异常时材料与渠道留痕均不落半成品
+        final Integer materials = jdbcTemplate.queryForObject(
+                "SELECT COUNT(1) FROM cert_material", Integer.class);
+        assertThat(materials).isZero();
+        final Integer channelErrors = jdbcTemplate.queryForObject(
+                "SELECT COUNT(1) FROM cert_verification_log WHERE conclusion = 'CHANNEL_ERROR' AND counted = 0",
+                Integer.class);
+        assertThat(channelErrors).isEqualTo(1);
     }
 
     private String registerSubject() throws Exception {

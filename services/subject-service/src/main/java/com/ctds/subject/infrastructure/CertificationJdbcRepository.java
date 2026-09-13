@@ -33,11 +33,11 @@ public class CertificationJdbcRepository implements CertificationRepository {
                 .params(material.subjectId(), material.materialType())
                 .update();
         jdbc.sql("INSERT INTO cert_material (subject_id, material_type, file_name, "
-                        + "content_sha256, content_cipher, ocr_raw_cipher, ocr_uscc, ocr_legal_person, "
+                        + "content_sm3, content_cipher, ocr_raw_cipher, ocr_uscc, ocr_legal_person, "
                         + "ocr_recognizable, created_at) "
                         + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
                 .params(material.subjectId(), material.materialType(), material.fileName(),
-                        material.contentSha256(), material.contentCipher(), material.ocrRawCipher(),
+                        material.contentSm3(), material.contentCipher(), material.ocrRawCipher(),
                         material.ocrUscc(), material.ocrLegalPerson(), material.ocrRecognizable() ? 1 : 0,
                         Timestamp.valueOf(material.createdAt()))
                 .update();
@@ -47,14 +47,14 @@ public class CertificationJdbcRepository implements CertificationRepository {
                 .query(Long.class)
                 .single();
         return new CertMaterial(id, material.subjectId(), material.materialType(), material.fileName(),
-                material.contentSha256(), material.contentCipher(), material.ocrRawCipher(),
+                material.contentSm3(), material.contentCipher(), material.ocrRawCipher(),
                 material.ocrUscc(), material.ocrLegalPerson(), material.ocrRecognizable(),
                 null, null, null, null, null, material.createdAt());
     }
 
     @Override
     public Optional<CertMaterial> findLatestMaterial(final long subjectId, final String materialType) {
-        return jdbc.sql("SELECT id, subject_id, material_type, file_name, content_sha256, content_cipher, "
+        return jdbc.sql("SELECT id, subject_id, material_type, file_name, content_sm3, content_cipher, "
                         + "ocr_raw_cipher, ocr_uscc, ocr_legal_person, ocr_recognizable, confirmed_name, "
                         + "confirmed_uscc, confirmed_legal_person, confirmed_reg_address, confirmed_at, created_at "
                         + "FROM cert_material WHERE subject_id = ? AND material_type = ? "
@@ -115,7 +115,7 @@ public class CertificationJdbcRepository implements CertificationRepository {
                 rs.getLong("subject_id"),
                 rs.getString("material_type"),
                 rs.getString("file_name"),
-                rs.getString("content_sha256"),
+                rs.getString("content_sm3"),
                 rs.getBytes("content_cipher"),
                 rs.getBytes("ocr_raw_cipher"),
                 rs.getString("ocr_uscc"),

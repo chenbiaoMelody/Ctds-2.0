@@ -39,16 +39,21 @@ public class MockCertificationChannel implements CertificationStandardApi {
     }
 
     @Override
+    public String channelCode() {
+        return CHANNEL_CODE;
+    }
+
+    @Override
     public OcrRecognition ocrBusinessLicense(final byte[] image, final String fileName) {
         requireChannelAvailable();
         if (image == null || image.length == 0 || fileName == null || fileName.isBlank()) {
             throw new IllegalArgumentException("image and fileName are required");
         }
         if (!fileName.contains(PRESET_IMAGE_MARKER)) {
-            return OcrRecognition.unrecognizable("无法识别请重传（模拟渠道：非预置影像）");
+            return OcrRecognition.unrecognizable(nextRequestNo(), "无法识别请重传（模拟渠道：非预置影像）");
         }
         return new OcrRecognition(true, "蓝天数据科技有限公司", "91330100MA27XW123X", "张伟",
-                "杭州市XX区XX路88号", "识别成功（模拟渠道预置影像 A1）");
+                "杭州市XX区XX路88号", nextRequestNo(), "识别成功（模拟渠道预置影像 A1）");
     }
 
     @Override

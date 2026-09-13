@@ -14,6 +14,7 @@ import com.ctds.subject.domain.SubjectRepository;
 import com.ctds.subject.domain.SubjectStatus;
 import com.ctds.subject.domain.SubjectType;
 import com.ctds.subject.domain.TriggerRole;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -48,13 +49,15 @@ public class SubjectRegistrationService {
     private final SubjectStatusService statusService;
     private final AuditRecorder auditRecorder;
     private final OwnershipGuard ownershipGuard;
+    private final Clock clock;
 
     public SubjectRegistrationService(final SubjectRepository repository, final SubjectStatusService statusService,
-            final AuditRecorder auditRecorder, final OwnershipGuard ownershipGuard) {
+            final AuditRecorder auditRecorder, final OwnershipGuard ownershipGuard, final Clock clock) {
         this.repository = repository;
         this.statusService = statusService;
         this.auditRecorder = auditRecorder;
         this.ownershipGuard = ownershipGuard;
+        this.clock = clock;
     }
 
     /**
@@ -112,7 +115,7 @@ public class SubjectRegistrationService {
     }
 
     private RegistrationResult createRegistration(final RegisterCommand command, final String operator) {
-        final LocalDateTime now = LocalDateTime.now();
+        final LocalDateTime now = LocalDateTime.now(clock);
         final String subjectNo = generateSubjectNo();
         final Subject subject = new Subject(null, subjectNo, command.subjectName(), command.uscc(),
                 SubjectType.valueOf(command.subjectType()), command.regAddress(), command.contactName(),
@@ -126,7 +129,7 @@ public class SubjectRegistrationService {
 
     private RegistrationResult resubmit(final Subject current, final RegisterCommand command, final String operator,
             final String remark, final SubjectStatus fromStatus) {
-        final LocalDateTime now = LocalDateTime.now();
+        final LocalDateTime now = LocalDateTime.now(clock);
         final Subject updated = new Subject(current.id(), current.subjectNo(), command.subjectName(), current.uscc(),
                 current.subjectType(), command.regAddress(), command.contactName(),
                 command.contactPhone(), command.adminAccount(), current.applicant(), SubjectStatus.PENDING_CERT,

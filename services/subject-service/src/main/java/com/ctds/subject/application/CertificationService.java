@@ -1,17 +1,17 @@
 package com.ctds.subject.application;
 
 import com.ctds.common.auth.AuthContext;
+import com.ctds.common.crypto.Sm3Service;
+import com.ctds.common.crypto.Sm4Service;
 import com.ctds.common.errorcode.BizException;
 import com.ctds.common.errorcode.ErrorCodes;
 import com.ctds.common.logging.AuditEvent;
 import com.ctds.common.logging.AuditOutcome;
 import com.ctds.common.logging.AuditRecorder;
-import com.ctds.common.crypto.Sm4Service;
+import com.ctds.std.StdAdapterErrorCodes;
 import com.ctds.std.certification.CertificationStandardApi;
 import com.ctds.std.certification.LegalPersonVerification;
-import com.ctds.std.certification.MockCertificationChannel;
 import com.ctds.std.certification.OcrRecognition;
-import com.ctds.std.StdAdapterErrorCodes;
 import com.ctds.subject.domain.CertMaterial;
 import com.ctds.subject.domain.CertVerificationLog;
 import com.ctds.subject.domain.CertificationRepository;
@@ -22,8 +22,6 @@ import com.ctds.subject.domain.SubjectStatus;
 import com.ctds.subject.domain.TriggerRole;
 import com.ctds.subject.domain.VerificationConclusion;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -45,6 +43,7 @@ import org.springframework.stereotype.Service;
  * 法人核验（前置校验/重试上限/跨日恢复/渠道异常 fail-fast）、认证双通过自动流转、
  * 结束认证（lofi Q1-A 裁决口径）、认证档案查询与影像查看审计。
  * 渠道调用全程留痕（渠道标识/流水号/结论/耗时，行为 7 第 3 条）；渠道异常与业务不通过严格区分（第 4 条）。
+ * 渠道标识与流水号一律取自渠道接口出口（业务代码只见接口不见具体渠道——规格行为 7 第 1 条）。
  */
 @Service
 public class CertificationService {
@@ -65,12 +64,16 @@ public class CertificationService {
     /** 系统触发方的操作人标识（认证自动流转，规格行为 4 第 1 条：无需人工触发）。 */
     private static final String SYSTEM_OPERATOR = "system";
 
+    /** 上传文件名长度上限（与 cert_material.file_name VARCHAR(256) 对齐，超长先行拒绝）。 */
+    private static final int MAX_FILE_NAME_CHARS = 256;
+
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final SubjectRepository subjectRepository;
     private final CertificationRepository certificationRepository;
     private final CertificationStandardApi certificationChannel;
     private final Sm4Service sm4Service;
+    private final Sm3Service sm3Service;
     private final OwnershipGuard ownershipGuard;
     private final SubjectStatusService statusService;
     private final AuditRecorder auditRecorder;
@@ -80,12 +83,14 @@ public class CertificationService {
     public CertificationService(final SubjectRepository subjectRepository,
             final CertificationRepository certificationRepository,
             final CertificationStandardApi certificationChannel, final Sm4Service sm4Service,
-            final OwnershipGuard ownershipGuard, final SubjectStatusService statusService,
-            final AuditRecorder auditRecorder, final CertificationProperties properties, final Clock clock) {
+            final Sm3Service sm3Service, final OwnershipGuard ownershipGuard,
+            final SubjectStatusService statusService, final AuditRecorder auditRecorder,
+            final CertificationProperties properties, final Clock clock) {
         this.subjectRepository = subjectRepository;
         this.certificationRepository = certificationRepository;
         this.certificationChannel = certificationChannel;
         this.sm4Service = sm4Service;
+        this.sm3Service = sm3Service;
         this.ownershipGuard = ownershipGuard;
         this.statusService = statusService;
         this.auditRecorder = auditRecorder;
@@ -104,21 +109,24 @@ public class CertificationService {
         final Instant start = Instant.now();
         final OcrRecognition recognition = callChannel(
                 () -> certificationChannel.ocrBusinessLicense(image, fileName),
-                subject.id(), ACTION_UPLOAD, null);
+                subject.id(), null);
         final int costMs = elapsedMs(start);
         final LocalDateTime now = LocalDateTime.now(clock);
         final byte[] imageCipher = sm4Service.encrypt(image, properties.getMaterialKeyRef());
+        final String imageDigest = sm3Service.digestHex(image);
 
         if (!recognition.recognizable()) {
-            saveMaterial(subject.id(), fileName, image, imageCipher, recognition, costMs, now);
+            saveMaterial(subject.id(), fileName, imageCipher, imageDigest, recognition, costMs, now);
             audit(operator(), ACTION_UPLOAD, subjectNo, AuditOutcome.DENIED, "ocr_unrecognizable");
             throw new BizException(SubjectErrorCodes.CERT_LICENSE_UNRECOGNIZABLE, "证照影像无法识别，请重传");
         }
-        saveMaterial(subject.id(), fileName, image, imageCipher, recognition, costMs, now);
+        final CertMaterial material =
+                saveMaterial(subject.id(), fileName, imageCipher, imageDigest, recognition, costMs, now);
         audit(operator(), ACTION_UPLOAD, subjectNo, AuditOutcome.SUCCESS, null);
-        log.info("license uploaded: subjectNo={}, materialType=BUSINESS_LICENSE", subjectNo);
-        return new LicenseUploadResult(fileName, new OcrElements(recognition.subjectName(), recognition.uscc(),
-                recognition.legalPerson(), recognition.regAddress()));
+        log.info("license uploaded: subjectNo={}, materialId={}", subjectNo, material.id());
+        return new LicenseUploadResult(material.id(), fileName, true,
+                new OcrElements(recognition.subjectName(), recognition.uscc(),
+                        recognition.legalPerson(), recognition.regAddress()));
     }
 
     /** 核对确认（行为 2 第 3~4 条）：确认信用代码与 OCR 识别值一致才生效，修改过的字段以人工确认为准。 */
@@ -165,19 +173,20 @@ public class CertificationService {
             throw new BizException(SubjectErrorCodes.CERT_LEGAL_PERSON_MISMATCH,
                     "法人信息与证照识别结果不一致，请先修正后再发起核验");
         }
+        requireIdChecksum(command.legalPersonIdNo());
         requireDailyLimitNotReached(subject);
 
         final String idCipher = sm4Service.encryptText(command.legalPersonIdNo(), properties.getMaterialKeyRef());
         final Instant start = Instant.now();
         final LegalPersonVerification verification = callChannel(
                 () -> certificationChannel.verifyLegalPerson(command.legalPersonName(), command.legalPersonIdNo()),
-                subject.id(), ACTION_VERIFY, command);
+                subject.id(), command);
         final int costMs = elapsedMs(start);
         final LocalDateTime now = LocalDateTime.now(clock);
 
         if (verification.passed()) {
             certificationRepository.appendVerification(new CertVerificationLog(null, subject.id(),
-                    CertVerificationLog.TYPE_LEGAL_PERSON, MockCertificationChannel.CHANNEL_CODE,
+                    CertVerificationLog.TYPE_LEGAL_PERSON, certificationChannel.channelCode(),
                     verification.channelRequestNo(), command.legalPersonName(), idCipher,
                     VerificationConclusion.PASS, null, costMs, false, now));
             statusService.transition(subject.id(), subject.status(), SubjectStatus.PENDING_REVIEW,
@@ -188,7 +197,7 @@ public class CertificationService {
                     SubjectStatus.PENDING_REVIEW.name(), null, remainingAttempts(subject.id()));
         }
         certificationRepository.appendVerification(new CertVerificationLog(null, subject.id(),
-                CertVerificationLog.TYPE_LEGAL_PERSON, MockCertificationChannel.CHANNEL_CODE,
+                CertVerificationLog.TYPE_LEGAL_PERSON, certificationChannel.channelCode(),
                 verification.channelRequestNo(), command.legalPersonName(), idCipher,
                 VerificationConclusion.FAIL, verification.failReason(), costMs, true, now));
         audit(operator(), ACTION_VERIFY, subjectNo, AuditOutcome.SUCCESS, "verify_failed");
@@ -272,6 +281,10 @@ public class CertificationService {
             throw new BizException(ErrorCodes.PARAM_INVALID, "证照影像大小超出上限（≤"
                     + properties.getUploadMaxBytes() / (1024 * 1024) + "MB）");
         }
+        if (fileName == null || fileName.isBlank() || fileName.length() > MAX_FILE_NAME_CHARS) {
+            throw new BizException(ErrorCodes.PARAM_INVALID, "文件名缺失或超长（最长 "
+                    + MAX_FILE_NAME_CHARS + " 字符）");
+        }
         final String extension = extensionOf(fileName);
         if (!properties.getUploadAllowedExtensions().contains(extension)) {
             throw new BizException(ErrorCodes.PARAM_INVALID, "证照影像仅支持 "
@@ -288,49 +301,79 @@ public class CertificationService {
         }
     }
 
-    /** 渠道调用统一出口：技术异常转译 fail-fast（1004S0001，不计失败次数）并落 CHANNEL_ERROR 留痕。 */
-    private <T> T callChannel(final ChannelCall<T> call, final long subjectId, final String action,
+    /**
+     * 18 位身份证号校验位验证（GB 11643-1999 mod 11-2；hifi B6"证件号校验位合法"的实现落点；
+     * 15 位旧格式只做格式校验不做校验位）。
+     */
+    private static void requireIdChecksum(final String idNo) {
+        if (idNo.length() != 18) {
+            return;
+        }
+        final int[] weights = {7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2};
+        final char[] checkChars = {'1', '0', 'X', '9', '8', '7', '6', '5', '4', '3', '2'};
+        int sum = 0;
+        for (int i = 0; i < 17; i++) {
+            final int digit = Character.digit(idNo.charAt(i), 10);
+            if (digit < 0) {
+                throw new BizException(ErrorCodes.PARAM_INVALID, "身份证号格式不正确");
+            }
+            sum += digit * weights[i];
+        }
+        if (Character.toUpperCase(idNo.charAt(17)) != checkChars[sum % 11]) {
+            throw new BizException(ErrorCodes.PARAM_INVALID, "身份证号校验位不正确");
+        }
+    }
+
+    /**
+     * 渠道调用统一出口：技术异常转译 fail-fast（1004S0001，不计失败次数）并落 CHANNEL_ERROR 留痕。
+     * 编程错误（IllegalArgumentException）原样重抛不转译；其余未预期异常记录根因日志后转译
+     * （评审修复：禁止吞异常——原始堆栈进服务端日志，出站仍为业务文案）。
+     */
+    private <T> T callChannel(final ChannelCall<T> call, final long subjectId,
             final VerificationCommand verifyCommand) {
-        final int started = (int) System.currentTimeMillis();
+        final Instant start = Instant.now();
         try {
             return call.invoke();
         } catch (final BizException e) {
             if (!StdAdapterErrorCodes.CHANNEL_UNAVAILABLE.equals(e.getErrorCode())) {
                 throw e;
             }
-            recordChannelError(subjectId, verifyCommand, started);
+            recordChannelError(subjectId, verifyCommand, elapsedMs(start));
             throw new CertChannelUnavailableException();
+        } catch (final IllegalArgumentException e) {
+            throw e;
         } catch (final RuntimeException e) {
-            recordChannelError(subjectId, verifyCommand, started);
+            log.error("certification channel unexpected failure: subjectId={}", subjectId, e);
+            recordChannelError(subjectId, verifyCommand, elapsedMs(start));
             throw new CertChannelUnavailableException();
         }
     }
 
     private void recordChannelError(final long subjectId, final VerificationCommand verifyCommand,
-            final int started) {
+            final int costMs) {
         certificationRepository.appendVerification(new CertVerificationLog(null, subjectId,
                 verifyCommand == null ? CertVerificationLog.TYPE_OCR_LICENSE : CertVerificationLog.TYPE_LEGAL_PERSON,
-                MockCertificationChannel.CHANNEL_CODE, null,
+                certificationChannel.channelCode(), null,
                 verifyCommand == null ? null : verifyCommand.legalPersonName(),
-                null, VerificationConclusion.CHANNEL_ERROR, null,
-                (int) System.currentTimeMillis() - started, false, LocalDateTime.now(clock)));
+                null, VerificationConclusion.CHANNEL_ERROR, null, costMs, false, LocalDateTime.now(clock)));
     }
 
-    private void saveMaterial(final long subjectId, final String fileName, final byte[] image,
-            final byte[] imageCipher, final OcrRecognition recognition, final int costMs,
+    private CertMaterial saveMaterial(final long subjectId, final String fileName, final byte[] imageCipher,
+            final String imageDigest, final OcrRecognition recognition, final int costMs,
             final LocalDateTime now) {
         final byte[] rawCipher = recognition.recognizable()
                 ? sm4Service.encrypt(ocrRawJson(recognition), properties.getMaterialKeyRef()) : null;
-        certificationRepository.replaceMaterial(new CertMaterial(null, subjectId,
-                CertMaterial.TYPE_BUSINESS_LICENSE, fileName, sha256Hex(image), imageCipher, rawCipher,
+        final CertMaterial material = certificationRepository.replaceMaterial(new CertMaterial(null, subjectId,
+                CertMaterial.TYPE_BUSINESS_LICENSE, fileName, imageDigest, imageCipher, rawCipher,
                 recognition.recognizable() ? recognition.uscc() : null,
                 recognition.recognizable() ? recognition.legalPerson() : null,
                 recognition.recognizable(), null, null, null, null, null, now));
         certificationRepository.appendVerification(new CertVerificationLog(null, subjectId,
-                CertVerificationLog.TYPE_OCR_LICENSE, MockCertificationChannel.CHANNEL_CODE,
-                "MOCK-OCR", null, null,
+                CertVerificationLog.TYPE_OCR_LICENSE, certificationChannel.channelCode(),
+                recognition.channelRequestNo(), null, null,
                 recognition.recognizable() ? VerificationConclusion.PASS : VerificationConclusion.UNRECOGNIZABLE,
                 recognition.recognizable() ? null : recognition.message(), costMs, false, now));
+        return material;
     }
 
     private byte[] ocrRawJson(final OcrRecognition recognition) {
@@ -347,30 +390,17 @@ public class CertificationService {
         }
     }
 
-    private static String sha256Hex(final byte[] content) {
-        try {
-            final byte[] digest = MessageDigest.getInstance("SHA-256").digest(content);
-            final StringBuilder hex = new StringBuilder(digest.length * 2);
-            for (final byte item : digest) {
-                hex.append(String.format("%02x", item));
-            }
-            return hex.toString();
-        } catch (final NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 unavailable", e);
-        }
-    }
-
     private static String imageBaseUrl(final String fileName) {
         final String extension = extensionOf(fileName);
         return "data:image/" + ("jpg".equals(extension) ? "jpeg" : extension) + ";base64,";
     }
 
     private static String extensionOf(final String fileName) {
-        if (fileName == null || !fileName.contains(".")) {
+        final int dot = fileName.lastIndexOf('.');
+        if (dot < 0 || dot == fileName.length() - 1) {
             return "";
         }
-        final String extension = fileName.substring(fileName.lastIndexOf('.') + 1).toLowerCase(Locale.ROOT);
-        return fileName.lastIndexOf('.') == fileName.length() - 1 ? "" : extension;
+        return fileName.substring(dot + 1).toLowerCase(Locale.ROOT);
     }
 
     private int remainingAttempts(final long subjectId) {

@@ -45,7 +45,7 @@ CREATE TABLE cert_material (
     subject_id        BIGINT       NOT NULL COMMENT '主体 id（subject.id）',
     material_type     VARCHAR(32)  NOT NULL COMMENT '材料类型：BUSINESS_LICENSE 营业执照',
     file_name         VARCHAR(256) NOT NULL COMMENT '上传文件名',
-    content_sha256    CHAR(64)     NOT NULL COMMENT '影像原文 SHA-256（完整性锚点，非 L4）',
+    content_sm3       CHAR(64)     NOT NULL COMMENT '影像 SM3 摘要（完整性锚点，唯一入口 common-crypto，ADR-006 Q2 裁决；4 视角评审补正）',
     content_cipher    LONGBLOB     NOT NULL COMMENT '影像 SM4 密文（ADR-006 唯一入口加密后落库）',
     ocr_raw_cipher    LONGBLOB     NULL COMMENT 'OCR 原始识别结果 JSON 的 SM4 密文（行为 2 第 5 条双要素之二）',
     ocr_uscc          VARCHAR(18)  NULL COMMENT 'OCR 识别的统一社会信用代码（差异比对锚点，组织信息非 L4）',
@@ -65,7 +65,7 @@ CREATE TABLE cert_material (
 CREATE TABLE cert_verification_log (
     id                    BIGINT       NOT NULL AUTO_INCREMENT COMMENT '技术主键',
     subject_id            BIGINT       NOT NULL COMMENT '主体 id（subject.id）',
-    verify_type           VARCHAR(32)  NOT NULL COMMENT '核验类型：LEGAL_PERSON 法人核验',
+    verify_type           VARCHAR(32)  NOT NULL COMMENT '调用类型：LEGAL_PERSON 法人核验 / OCR_LICENSE 证照 OCR（4 视角评审补正：渠道调用全程留痕含 OCR）',
     channel_code          VARCHAR(32)  NOT NULL COMMENT '渠道标识（mock-certification）',
     channel_request_no    VARCHAR(64)  NOT NULL COMMENT '渠道请求流水号',
     legal_person_name     VARCHAR(64)  NOT NULL COMMENT '提交的法人姓名',
@@ -80,9 +80,17 @@ CREATE TABLE cert_verification_log (
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '法人核验记录（渠道标识/流水号/结论三要素 + 耗时全程留痕）';
 ```
 
-- **L4 边界**：身份证号、证照影像、OCR 原始结果三项密文；`ocr_uscc`/`ocr_legal_person` 为组织/姓名比对锚点明文（SQL 比对需要，非证件号码）；影像原文完整性锚点用 SHA-256（非加密用途）。
+- **L4 边界**：身份证号、证照影像、OCR 原始结果三项密文；`ocr_uscc`/`ocr_legal_person` 为组织/姓名比对锚点明文（SQL 比对需要，非证件号码）；影像原文完整性锚点用 SM3（唯一入口 common-crypto，ADR-006 Q2 裁决）。
 - **当日失败计数 SQL 口径**：`SELECT COUNT(*) FROM cert_verification_log WHERE subject_id=? AND conclusion='FAIL' AND counted=1 AND created_at >= 当日00:00`（当日取 `Clock` 系统时区）。
 - **替换语义**：同主体同 `material_type` 重复上传 = 删除旧行插入新行（确认字段随之清空，须重新确认）；`subject.applicant` 存量回填 `legacy-demo`（lofi 待确认 4）。
+
+> **4 视角评审补正（2026-09-13，实现与本文定稿的偏差以此为准，ADR-016 §2.2/§2.3 同步）**：
+> ① `cert_verification_log` 为**认证渠道调用记录**（不只法人核验）：`verify_type` 含 `LEGAL_PERSON`/`OCR_LICENSE`，`conclusion` 增 `UNRECOGNIZABLE`，`channel_request_no`/`legal_person_name`/`legal_person_id_cipher` 允许 NULL（OCR 调用无身份证号），`counted DEFAULT 0`，渠道标识与流水号一律取自渠道接口出口（ADR-008 §7 接口补齐）；
+> ② `cert_material.content_sha256` 更名 `content_sm3`（SM3 摘要）并增 `UNIQUE KEY uk_subject_type (subject_id, material_type)` 兜底并发替换；
+> ③ 错误码表增 `1004C0002 CERT_STATE_NOT_ALLOWED`（状态门槛，见错误码表节补记行）；
+> ④ `transition()` 实现为"更新 subject.status 列 + from_status 乐观门槛 + 落留痕"同事务（原边界值表"状态门槛拒绝"至此有真实实现）；核验通过后库内 `subject.status` 即为 PENDING_REVIEW（集成测试断言持久化状态）；
+> ⑤ 归属断言出站统一 400 + 1000C0003（与"不存在"同形防枚举探测，ADR-016 §2.6 补正）；
+> ⑥ 身份证号按 GB 11643 校验位验证（B6 兑现）；配置项增 `ctds.certification.material-key-ref` 与 `reviewer` 角色映射（subject.review 归属豁免用）；界面说明书"缩略图/剩余次数常驻/尾 4 位掩码"三处以原型实际交互为准（原型不展示身份证号，脱敏更严）。
 
 ## 接口契约（编码契约 = 本表定稿）
 
@@ -147,7 +155,8 @@ CREATE TABLE cert_verification_log (
 | `1004B0004` | `CERT_LEGAL_PERSON_MISMATCH` | B→400 | 法人信息与证照识别结果不一致，请先修正后再发起核验 | 核验前置一致性校验（行为 3 第 4 条） |
 | `1004B0005` | `CERT_VERIFY_LIMIT_REACHED` | B→400 | 今日核验次数已用完，请次日再试 | 当日失败达上限（行为 3 第 3 条） |
 | `1004B0006` | `CERT_LICENSE_NOT_CONFIRMED` | B→400 | 请先完成证照上传与核对确认 | 未确认即发起核验（流程前置） |
-| `1004S0001` | `CERT_CHANNEL_UNAVAILABLE` | S→503 | 认证服务暂不可用，请稍后重试 | 渠道技术异常 fail-fast（行为 3 第 5 条；S 型→503 沿 1000 段 S 型语义） |
+| `1004C0002` | `CERT_STATE_NOT_ALLOWED` | C→400 | 当前状态不允许执行认证操作 | 状态门槛拒绝（上传/确认仅待认证；核验限待认证/认证失败；并发重复流转乐观门槛）——**4 视角评审补记（2026-09-13）** |
+| `1004S0001` | `CERT_CHANNEL_UNAVAILABLE` | S→503 | 认证服务暂不可用，请稍后重试 | 渠道技术异常 fail-fast（行为 3 第 5 条；S 型默认 500 全局脱敏，本码经本地处理器精确映射 503 并保留业务文案） |
 
 既有 `1004B0001`/`1004C0001` 与 1000 段复用不变；全部经 `BizException` 抛出，对外文案为服务端常量。
 

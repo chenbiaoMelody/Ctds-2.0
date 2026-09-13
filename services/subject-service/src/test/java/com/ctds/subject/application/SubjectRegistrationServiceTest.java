@@ -20,6 +20,7 @@ import com.ctds.subject.domain.SubjectRepository;
 import com.ctds.subject.domain.SubjectStatus;
 import com.ctds.subject.domain.SubjectType;
 import com.ctds.subject.domain.TriggerRole;
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -47,7 +48,8 @@ class SubjectRegistrationServiceTest {
         statusService = mock(SubjectStatusService.class);
         auditRecorder = mock(AuditRecorder.class);
         ownershipGuard = mock(OwnershipGuard.class);
-        service = new SubjectRegistrationService(repository, statusService, auditRecorder, ownershipGuard);
+        service = new SubjectRegistrationService(repository, statusService, auditRecorder, ownershipGuard,
+                Clock.systemDefaultZone());
     }
 
     @Test

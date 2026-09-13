@@ -13,7 +13,7 @@ CREATE TABLE cert_material (
     subject_id        BIGINT       NOT NULL COMMENT '主体 id（subject.id）',
     material_type     VARCHAR(32)  NOT NULL COMMENT '材料类型：BUSINESS_LICENSE 营业执照',
     file_name         VARCHAR(256) NOT NULL COMMENT '上传文件名',
-    content_sha256    CHAR(64)     NOT NULL COMMENT '影像原文 SHA-256（完整性锚点，非加密用途）',
+    content_sm3      CHAR(64)     NOT NULL COMMENT '影像 SM3 摘要（完整性锚点，唯一入口 common-crypto，ADR-006 Q2 裁决）',
     content_cipher    LONGBLOB     NOT NULL COMMENT '影像 SM4 密文（ADR-006 唯一入口加密后落库）',
     ocr_raw_cipher    LONGBLOB     NULL COMMENT 'OCR 原始识别结果 JSON 的 SM4 密文（L4 双要素之二）',
     ocr_uscc          VARCHAR(18)  NULL COMMENT 'OCR 识别的统一社会信用代码（差异比对锚点，组织信息非 L4）',
@@ -26,7 +26,7 @@ CREATE TABLE cert_material (
     confirmed_at      DATETIME     NULL COMMENT '确认时间',
     created_at        DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '上传时间',
     PRIMARY KEY (id),
-    KEY idx_subject_type (subject_id, material_type)
+    UNIQUE KEY uk_subject_type (subject_id, material_type)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '证照材料（一行=一张影像及 OCR 结果；重复上传替换保留最近一次）';
 
 CREATE TABLE cert_verification_log (

@@ -19,6 +19,9 @@ public interface CertificationStandardApi extends StdDomainApi {
     @Override
     StdDomainStatus status();
 
+    /** 渠道标识（规格行为 7 第 3 条留痕要素；业务侧原样落库，不得硬编码具体渠道名）。 */
+    String channelCode();
+
     /**
      * 营业执照 OCR 识别（规格行为 2）：识别证照要素供业务回填核对。
      * 不可识别返回 recognizable=false（业务提示重传），不抛业务异常；

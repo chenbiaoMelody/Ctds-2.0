@@ -72,8 +72,24 @@ public class SubjectJdbcRepository implements SubjectRepository {
         insertTransition(updated.id(), transition);
     }
 
+    /**
+     * 追加流转留痕并同步更新主体状态列（WBS-3.1.3 评审修复：流转必须落库 subject.status，
+     * 否则核验通过/结束认证后库内状态原地不动、审核端查不到待审核主体）。
+     * 状态门槛 = UPDATE 带 from_status 前置条件（乐观并发控制）：并发重复流转只有第一个事务成功，
+     * 其余 0 行 → 1004C0002（hifi 边界值"transition() 状态门槛拒绝"的实现落点）。
+     * from_status 为 null（注册建档 NONE）不经本方法（create 走 insertTransition 直插）。
+     */
     @Override
+    @Transactional
     public void appendTransition(final long subjectId, final StatusTransition transition) {
+        final int updatedRows = jdbc.sql("UPDATE subject SET status = ?, updated_at = ? "
+                        + "WHERE id = ? AND status = ?")
+                .params(transition.toStatus().name(), Timestamp.valueOf(transition.createdAt()),
+                        subjectId, transition.fromStatus().name())
+                .update();
+        if (updatedRows == 0) {
+            throw new BizException(SubjectErrorCodes.CERT_STATE_NOT_ALLOWED, "当前状态不允许执行认证操作");
+        }
         insertTransition(subjectId, transition);
     }
 

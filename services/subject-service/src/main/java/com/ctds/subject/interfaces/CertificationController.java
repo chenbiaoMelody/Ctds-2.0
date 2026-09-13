@@ -2,7 +2,6 @@ package com.ctds.subject.interfaces;
 
 import com.ctds.common.api.ApiResult;
 import com.ctds.common.auth.RequirePermission;
-import com.ctds.subject.application.CertChannelUnavailableException;
 import com.ctds.subject.application.CertificationActionResult;
 import com.ctds.subject.application.CertificationProfile;
 import com.ctds.subject.application.CertificationService;
@@ -12,16 +11,10 @@ import com.ctds.subject.application.ImageView;
 import com.ctds.subject.application.LicenseUploadResult;
 import com.ctds.subject.application.VerificationCommand;
 import com.ctds.subject.application.VerificationResult;
-import com.ctds.subject.domain.SubjectErrorCodes;
 import com.ctds.subject.interfaces.dto.ConfirmationRequest;
 import com.ctds.subject.interfaces.dto.VerificationRequest;
 import jakarta.validation.Valid;
-import org.springframework.core.Ordered;
-import org.springframework.core.annotation.Order;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -29,7 +22,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 
@@ -97,22 +89,5 @@ public class CertificationController {
     @RequirePermission("subject.certify")
     public ApiResult<CertificationActionResult> abandonCertification(@PathVariable final String subjectNo) {
         return ApiResult.ok(certificationService.abandonCertification(subjectNo));
-    }
-
-    /**
-     * 渠道不可用精确出站（规格行为 3 第 5 条）：503 + 业务文案"认证服务暂不可用，请稍后重试"。
-     * 本地处理器优先于全局 S 型脱敏（@Order 先于 common GlobalExceptionHandler，common 组件零改动）。
-     */
-    @Order(Ordered.HIGHEST_PRECEDENCE)
-    @RestControllerAdvice
-    static class CertChannelExceptionHandler {
-
-        @ExceptionHandler(CertChannelUnavailableException.class)
-        public ResponseEntity<ApiResult<Void>> onChannelUnavailable(
-                final CertChannelUnavailableException ex) {
-            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
-                    .body(new ApiResult<>(SubjectErrorCodes.CERT_CHANNEL_UNAVAILABLE.value(), ex.getMessage(),
-                            ApiResult.currentTraceId(), null));
-        }
     }
 }

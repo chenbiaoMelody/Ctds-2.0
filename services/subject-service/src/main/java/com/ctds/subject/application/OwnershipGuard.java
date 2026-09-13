@@ -1,9 +1,8 @@
 package com.ctds.subject.application;
 
 import com.ctds.common.auth.AccessControl;
-import com.ctds.common.auth.AuthAdvice;
 import com.ctds.common.auth.AuthContext;
-import com.ctds.common.auth.AuthException;
+import com.ctds.common.errorcode.BizException;
 import com.ctds.common.errorcode.ErrorCodes;
 import com.ctds.common.logging.AuditEvent;
 import com.ctds.common.logging.AuditOutcome;
@@ -15,8 +14,9 @@ import org.springframework.stereotype.Component;
 /**
  * 对象级归属断言（WBS-3.1.3，ADR-016 §2.6 裁决方案①）：一切按申请编号的操作
  * （查询/撤销/上传/确认/核验/档案查询/影像查看/结束认证）先断言
- * "当前身份 = 申请人本人 或 持 subject.review 权限（审核员豁免，3.1.5 复用同一口径）"，
- * 不匹配 → 403 + 拒绝审计留痕（双向用例纪律：本人可操作 + 他人被拒，章程 4）。
+ * "当前身份 = 申请人本人 或 持 subject.review 权限（审核员豁免，3.1.5 复用同一口径）"。
+ * 出站统一 404"申请编号不存在"（评审修复：不区分"不存在"与"存在但非本人"，防申请编号枚举探测；
+ * DENIED 审计照常落痕，安全团队可回溯）。功能级无权限仍由 @RequirePermission 403 拦截在前。
  */
 @Component
 public class OwnershipGuard {
@@ -36,8 +36,8 @@ public class OwnershipGuard {
     }
 
     /**
-     * 断言当前身份可操作该主体档案：申请人本人或持审核权限，否则 403（复用平台鉴权出站口径）
-     * 并落 DENIED 审计（ADR-016 §2.6：拒绝留痕）。
+     * 断言当前身份可操作该主体档案：申请人本人或持审核权限，否则统一 404（防存在性探测，
+     * 评审视角 2 修复）并落 DENIED 审计（ADR-016 §2.6：拒绝留痕，actor+reason 可回溯）。
      *
      * @param subject 被操作主体
      * @param action  审计动作标识（如 subject.read / certification.verify）
@@ -49,7 +49,7 @@ public class OwnershipGuard {
         }
         auditRecorder.record(AuditEvent.of(operator, action, "subject", subject.subjectNo(),
                 AuditOutcome.DENIED, Map.of("reason", OWNERSHIP_DENIED_REASON)));
-        throw new AuthException(ErrorCodes.FORBIDDEN, AuthAdvice.FORBIDDEN_MESSAGE);
+        throw new BizException(ErrorCodes.RESOURCE_NOT_FOUND, "申请编号不存在");
     }
 
     private boolean isOwnerOrReviewer(final String operator, final Subject subject) {

@@ -3,8 +3,10 @@ package com.ctds.subject.domain;
 import java.time.LocalDateTime;
 
 /**
- * 证照材料（一行 = 一张影像及 OCR 结果；重复上传替换保留最近一次——hifi 库表设计契约）。
+ * 证照材料（一行 = 一张影像及 OCR 结果；重复上传替换保留最近一次——hifi 库表设计契约，
+ * (subject_id, material_type) 唯一键兜底并发替换窗口）。
  * L4 边界：contentCipher（影像）与 ocrRawCipher（OCR 原始结果）为 SM4 密文；
+ * contentSm3 为影像 SM3 完整性摘要（唯一入口 common-crypto，ADR-006 Q2 裁决）；
  * ocrUscc / ocrLegalPerson 为比对锚点明文（组织信息/姓名，非证件号码，hifi 库表设计节）。
  */
 public record CertMaterial(
@@ -12,7 +14,7 @@ public record CertMaterial(
         long subjectId,
         String materialType,
         String fileName,
-        String contentSha256,
+        String contentSm3,
         byte[] contentCipher,
         byte[] ocrRawCipher,
         String ocrUscc,
