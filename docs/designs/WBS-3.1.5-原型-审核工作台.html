@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>WBS-3.1.5 线框原型 · 审核工作台（低保真）</title>
+<style>
+  /* 低保真线框：只表达信息架构与操作流，不做视觉定稿（高保真阶段定稿） */
+  body { font-family: sans-serif; margin: 0; background: #f5f5f5; }
+  .frame { border: 2px dashed #999; margin: 16px; padding: 12px; }
+  .frame h2 { margin-top: 0; }
+  .layout { display: flex; gap: 12px; }
+  .side { width: 160px; border: 1px dashed #999; padding: 8px; min-height: 300px; }
+  .main { flex: 1; border: 1px dashed #999; padding: 8px; }
+  table { border-collapse: collapse; width: 100%; background: #fff; }
+  th, td { border: 1px solid #bbb; padding: 6px 8px; font-size: 13px; text-align: left; }
+  th { background: #eee; }
+  .btn { display: inline-block; border: 1px solid #666; padding: 3px 10px; margin: 2px; font-size: 13px; background: #fff; text-decoration: none; color: #000; }
+  .note { color: #888; font-size: 12px; }
+  .field { margin: 4px 0; font-size: 13px; }
+  .label { display: inline-block; width: 110px; color: #555; }
+  .section { border: 1px dashed #aaa; padding: 6px; margin: 6px 0; background: #fff; }
+  .placeholder { color: #aaa; font-style: italic; }
+</style>
+</head>
+<body>
+
+<div class="frame">
+  <h2>画面 1：待审核清单（/review）</h2>
+  <div class="layout">
+    <div class="side">
+      <div class="field"><b>侧边菜单</b>（按权限显隐）</div>
+      <div class="field">工作台</div>
+      <div class="field">标准能力</div>
+      <div class="field">数据目录</div>
+      <div class="field"><b>主体审核</b> ◀（仅 subject.review 权限角色可见）</div>
+    </div>
+    <div class="main">
+      <div class="field"><b>待审核主体清单</b>（状态固定 = 待审核；分页）</div>
+      <table>
+        <tr><th>申请编号</th><th>主体名称</th><th>主体类型</th><th>申请时间</th><th>操作</th></tr>
+        <tr><td>S20260913...</td><td>蓝天数据科技有限公司</td><td>企业</td><td>2026-09-13 10:00</td><td><a class="btn" href="#detail">查看档案</a></td></tr>
+        <tr><td>S20260913...</td><td>市大数据管理局</td><td>政府部门</td><td>2026-09-13 10:05</td><td><a class="btn" href="#detail">查看档案</a></td></tr>
+      </table>
+      <div class="field note">分页控件：上一页 / 下一页 / 页码（common-pagination 对齐）</div>
+    </div>
+  </div>
+</div>
+
+<div class="frame" id="detail">
+  <h2>画面 2：认证档案与审核操作（/review/:subjectNo）</h2>
+  <div class="main">
+    <div class="field"><span class="label">申请编号</span> S20260913...　<span class="label">主体名称</span> 蓝天数据科技有限公司（企业）　<span class="label">状态</span> 待审核</div>
+
+    <div class="section"><b>注册信息</b>
+      <div class="field"><span class="label">统一社会信用代码</span> 91330100MA27XW123X（<span class="placeholder">敏感字段脱敏口径随高保真</span>）</div>
+      <div class="field"><span class="label">注册地址 / 联系人 / 电话 / 管理员账号</span> ……</div>
+    </div>
+
+    <div class="section"><b>证照影像（可放大查看原始影像——行为 5 第 1 条）</b>
+      <div class="placeholder">[ 营业执照影像缩略图 ]　点击放大 → 影像查看弹层（调既有影像查看端点）</div>
+      <div class="field note">政务主体本区显示：证书文件名 + 验证结论 + 验证流水（时间/渠道/耗时/原因），不提供原件下载（待确认问题 2 采 A 口径）；不显示法人核验段</div>
+    </div>
+
+    <div class="section"><b>OCR 识别结果</b>
+      <div class="field"><span class="label">识别要素</span> 名称/信用代码/……（与申请人确认值对照展示）</div>
+    </div>
+
+    <div class="section"><b>核验记录</b>
+      <div class="field">法人核验：通过（2026-09-13 09:58）；认证流水：N 条（渠道/结论/耗时）</div>
+    </div>
+
+    <div class="section"><b>审核操作（二选一——行为 5 第 2 条）</b>
+      <a class="btn" href="#">通过（转"已入驻"）</a>
+      <a class="btn" href="#">驳回（转"已驳回"）</a>
+      <div class="field note">驳回点击后弹出理由输入框（必填校验，空提交被拒）；通过/驳回均二次确认；操作后返回清单并刷新状态</div>
+      <div class="field note">非授权角色：菜单不可见 + 直接调接口被 403 拒绝并留拒绝审计（后端强制，前端拦截仅为体验）</div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
