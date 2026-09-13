@@ -67,6 +67,31 @@ const routes = [
         component: () => import('../views/admin-only/IndexView.vue'),
         meta: { title: '仅管理员可见', menu: true, menuOrder: 4, icon: 'Lock', permission: 'demo:admin' },
       },
+      // WBS-3.1.5 主体审核后台：真实 Vue 页面（3.1.3 lofi Q2 裁决随界面包交付）
+      {
+        path: 'subject/register',
+        name: 'subject-register',
+        component: () => import('../views/subject/RegisterView.vue'),
+        meta: { title: '主体入驻', menu: true, menuOrder: 5, icon: 'OfficeBuilding' },
+      },
+      {
+        path: 'subject/certification/:subjectNo',
+        name: 'subject-certification',
+        component: () => import('../views/subject/CertificationView.vue'),
+        meta: { title: '认证与档案' },
+      },
+      {
+        path: 'review',
+        name: 'review-queue',
+        component: () => import('../views/review/QueueView.vue'),
+        meta: { title: '主体审核', menu: true, menuOrder: 6, icon: 'Checked', permission: 'subject.review' },
+      },
+      {
+        path: 'review/:subjectNo',
+        name: 'review-detail',
+        component: () => import('../views/review/DetailView.vue'),
+        meta: { title: '审核详情' },
+      },
       {
         path: ':pathMatch(.*)*',
         name: 'not-found',

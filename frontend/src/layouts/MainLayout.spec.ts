@@ -49,20 +49,22 @@ describe('权限菜单显隐（H4）', () => {
     localStorage.clear()
   })
 
-  it('普通用户：菜单渲染 3 项，不含"仅管理员可见"', () => {
+  it('普通用户：菜单渲染 4 项，不含权限保护菜单（WBS-3.1.5 新增主体入驻菜单）', () => {
     setDemoRole('user')
     const wrapper = mountLayout()
     const items = wrapper.findAll('.el-menu-item')
-    expect(items.length).toBe(3)
+    expect(items.length).toBe(4)
     expect(wrapper.text()).not.toContain('仅管理员可见')
+    expect(wrapper.text()).not.toContain('主体审核')
   })
 
-  it('admin 角色：菜单渲染 4 项，含"仅管理员可见"', () => {
+  it('admin 角色：菜单渲染 6 项，含"仅管理员可见"与"主体审核"（WBS-3.1.5 admin 兼任审核员）', () => {
     setDemoRole('admin')
     const wrapper = mountLayout()
     const items = wrapper.findAll('.el-menu-item')
-    expect(items.length).toBe(4)
+    expect(items.length).toBe(6)
     expect(wrapper.text()).toContain('仅管理员可见')
+    expect(wrapper.text()).toContain('主体审核')
   })
 })
 

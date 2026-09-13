@@ -30,10 +30,15 @@ describe('路由表结构（H3）', () => {
     }
   })
 
-  it('权限演示路由声明了权限点，其余菜单路由未声明', () => {
+  it('权限路由声明权限点，其余菜单路由未声明（WBS-3.1.5：权限路由扩为 admin-only 与 review-queue）', () => {
     const adminRoute = children.find((r) => r.name === 'admin-only')
     expect(adminRoute?.meta?.permission).toBe('demo:admin')
-    const normalRoutes = children.filter((r) => r.meta?.menu === true && r.name !== 'admin-only')
+    const reviewRoute = children.find((r) => r.name === 'review-queue')
+    expect(reviewRoute?.meta?.permission).toBe('subject.review')
+    const permissionRouteNames = ['admin-only', 'review-queue']
+    const normalRoutes = children.filter(
+      (r) => r.meta?.menu === true && !permissionRouteNames.includes(String(r.name)),
+    )
     for (const r of normalRoutes) {
       expect(r.meta?.permission).toBeUndefined()
     }
