@@ -19,6 +19,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.List;
@@ -376,6 +377,15 @@ class SubjectRegistrationIntegrationTest {
         assertThat(countSubjects(uscc(13))).isEqualTo(1);
         final JsonNode detail = fetchDetail(first.get("subjectNo").asText());
         assertThat(detail.get("subjectName").asText()).isEqualTo("幂等窗口公司A");
+    }
+
+    /** 当日序号首次取号 = 1（LAST_INSERT_ID 新插入路径返回 0 的边界，实测引入回归后修复），再取递增。 */
+    @Test
+    void dailySeqFirstTakeReturnsOneAndIncrements() {
+        final LocalDate futureDate = LocalDate.now().plusYears(1);
+
+        assertThat(subjectRepository.nextDailySeq(futureDate)).isEqualTo(1);
+        assertThat(subjectRepository.nextDailySeq(futureDate)).isEqualTo(2);
     }
 
     /** 仓储直造主体（含初始留痕），绕开幂等结果缓存——供重报/重复注册拒绝类用例使用。 */

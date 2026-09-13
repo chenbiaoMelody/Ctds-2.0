@@ -123,12 +123,14 @@ public class SubjectJdbcRepository implements SubjectRepository {
     /**
      * 当日序号原子取号：LAST_INSERT_ID(expr) 在自增的同时写入连接级返回值，自增与读取不跨语句竞态
      * （hifi 库表设计"原子取号"契约）；事务绑定保证两条语句共用同一连接（LAST_INSERT_ID 为连接级）。
+     * 新插入路径写 LAST_INSERT_ID(1)（首次序号 = 1，且覆盖连接池残留的上一轮取号值）；
+     * 重复键走 UPDATE 路径写 LAST_INSERT_ID(seq_val + 1)——两条路径均产生本连接确定值。
      * 当日容量上限 999999（申请编号 6 位序号段），超出按超限错误处理而非溢出编号。
      */
     @Override
     @Transactional
     public int nextDailySeq(final LocalDate date) {
-        jdbc.sql("INSERT INTO subject_daily_seq (seq_date, seq_val) VALUES (?, 1) "
+        jdbc.sql("INSERT INTO subject_daily_seq (seq_date, seq_val) VALUES (?, LAST_INSERT_ID(1)) "
                         + "ON DUPLICATE KEY UPDATE seq_val = LAST_INSERT_ID(seq_val + 1)")
                 .param(Date.valueOf(date))
                 .update();
