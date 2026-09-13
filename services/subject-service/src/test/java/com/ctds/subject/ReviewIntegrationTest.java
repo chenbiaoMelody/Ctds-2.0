@@ -110,7 +110,12 @@ class ReviewIntegrationTest {
                         + "AND trigger_role = 'REVIEWER' AND operator = ? AND remark = '审核通过'",
                 Integer.class, subjectNo, REVIEWER);
         assertThat(transitions).isEqualTo(1);
-        awaitEvent("certification.review.approve", "SUCCESS", REVIEWER);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT created_at FROM subject_status_log WHERE subject_id = "
+                        + "(SELECT id FROM subject WHERE subject_no = ?) "
+                        + "AND to_status = 'ADMITTED' AND trigger_role = 'REVIEWER'",
+                java.sql.Timestamp.class, subjectNo)).isNotNull();
+        awaitEvent("certification.review.approve", "SUCCESS", REVIEWER, subjectNo);
     }
 
     @Test
@@ -148,19 +153,20 @@ class ReviewIntegrationTest {
                         + "AND remark = '审核驳回：证照材料不齐全，请补正后重新申请'",
                 Integer.class, subjectNo);
         assertThat(transitions).isEqualTo(1);
-        awaitEvent("certification.review.reject", "SUCCESS", REVIEWER);
+        awaitEvent("certification.review.reject", "SUCCESS", REVIEWER, subjectNo);
     }
 
     @Test
     void stateGateBlocksReviewOnNonPendingReviewStatuses() throws Exception {
-        // 待认证（注册后未提交证书）→ 1004C0002
+        // 待认证（注册后未提交证书）→ 1004C0002 + DENIED 审计（hifi E3）
         final String pendingCert = registerGovSubject("91330100MA27XW1404", "门槛待认证演示局");
         assertThat(subjectStatus(pendingCert)).isEqualTo("PENDING_CERT");
         reject(pendingCert).andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("1004C0002"));
         assertThat(subjectStatus(pendingCert)).isEqualTo("PENDING_CERT");
+        awaitEvent("certification.review.reject", "DENIED", REVIEWER, pendingCert);
 
-        // 已入驻：通过后再通过 / 再驳回均被门槛拒绝
+        // 已入驻：通过后再通过 / 再驳回均被门槛拒绝（各落 DENIED 审计）
         final String admitted = createPendingGovSubject("91330100MA27XW1405", "门槛已入驻演示局");
         approve(admitted).andExpect(status().isOk());
         approve(admitted).andExpect(status().isBadRequest())
@@ -168,6 +174,16 @@ class ReviewIntegrationTest {
         reject(admitted).andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("1004C0002"));
         assertThat(subjectStatus(admitted)).isEqualTo("ADMITTED");
+        awaitEvent("certification.review.approve", "DENIED", REVIEWER, admitted);
+
+        // 已驳回（B5 第四态）：驳回后再调任一审核端点均被门槛拒绝
+        final String rejected = createPendingGovSubject("91330100MA27XW1414", "门槛已驳回演示局");
+        reject(rejected).andExpect(status().isOk());
+        assertThat(subjectStatus(rejected)).isEqualTo("REJECTED");
+        approve(rejected).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("1004C0002"));
+        reject(rejected).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("1004C0002"));
 
         // 认证失败（结束认证后）→ 1004C0002
         final String certFailed = registerEnterpriseSubject("91330100MA27X8AB0C", "门槛认证失败演示公司");
@@ -184,7 +200,9 @@ class ReviewIntegrationTest {
     void concurrentReviewExactlyOneWinner() throws Exception {
         final String subjectNo = createPendingGovSubject("91330100MA27XW1406", "并发审核演示局");
 
-        // 双审核员并发（一通过一驳回）：乐观状态门槛保证恰一人成功（TOCTOU 观察项固化）
+        // 双审核员并发（一通过一驳回）：乐观状态门槛保证恰一人成功（TOCTOU 观察项固化）。
+        // 注：门槛锚定为概率性而非确定性——若败者的前置读取发生在胜者提交之后，由 requirePendingReview
+        // 前置检查兜拒；两读先于两写时（latch 握手下高概率）由仓储 WHERE 门槛兜拒，本用例即红。
         final CountDownLatch ready = new CountDownLatch(2);
         final CountDownLatch start = new CountDownLatch(1);
         final ExecutorService pool = Executors.newFixedThreadPool(2);
@@ -271,7 +289,7 @@ class ReviewIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"越权\"}"))
                 .andExpect(status().isForbidden());
         assertThat(subjectStatus(subjectNo)).isEqualTo("PENDING_REVIEW");
-        awaitEvent("rbac.check", "DENIED", NO_REVIEW_ROLE);
+        awaitEvent("rbac.check", "DENIED", NO_REVIEW_ROLE, null);
     }
 
     @Test
@@ -375,7 +393,8 @@ class ReviewIntegrationTest {
                 .andExpect(status().isOk());
     }
 
-    private JsonNode awaitEvent(final String action, final String outcome, final String actor) throws Exception {
+    private JsonNode awaitEvent(final String action, final String outcome, final String actor,
+            final String targetId) throws Exception {
         for (int i = 0; i < 40; i++) {
             if (Files.exists(auditDir)) {
                 try (Stream<Path> files = Files.list(auditDir)) {
@@ -385,8 +404,11 @@ class ReviewIntegrationTest {
                         for (final String line : Files.readAllLines(file)) {
                             if (line.contains("\"" + action + "\"")) {
                                 final JsonNode event = MAPPER.readTree(line);
+                                // 按 targetId（申请编号）过滤，防同目录前序用例同类事件"顶替"通过
                                 if (outcome.equals(event.path("outcome").asText())
-                                        && actor.equals(event.path("actor").asText())) {
+                                        && actor.equals(event.path("actor").asText())
+                                        && (targetId == null
+                                                || targetId.equals(event.path("targetId").asText()))) {
                                     return event;
                                 }
                             }
@@ -396,6 +418,7 @@ class ReviewIntegrationTest {
             }
             Thread.sleep(100);
         }
-        throw new AssertionError("audit event not found: " + action + " / " + outcome + " / " + actor);
+        throw new AssertionError("audit event not found: " + action + " / " + outcome + " / " + actor
+                + " / " + targetId);
     }
 }

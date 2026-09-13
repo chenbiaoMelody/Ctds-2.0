@@ -32,7 +32,7 @@
 | --- | --- | --- | --- | --- |
 | GET | `/api/v1/subject/review/queue` | query：`pageNum`（默认 1）、`pageSize`（默认 10，上限 100） | `ApiResult<PageResult<ReviewQueueItem>>` | 固定 status=PENDING_REVIEW，按申请时间升序 |
 | POST | `/api/v1/subject/registrations/{subjectNo}/review/approval` | 无 body | `ApiResult<ReviewActionResult>` | 通过：转已入驻 |
-| POST | `/api/v1/subject/registrations/{subjectNo}/review/rejection` | body：`{ "reason": string }`（`@NotBlank` + 长度 ≤ 200） | `ApiResult<ReviewActionResult>` | 驳回：转已驳回，理由入留痕备注 |
+| POST | `/api/v1/subject/registrations/{subjectNo}/review/rejection` | body：`{ "reason": string }`（业务上限 = 配置参数 `review-reason-max-length` 默认 200，服务层校验；DTO `@Size(max=512)` 为传输面兜底；**硬上限 251** = 留痕列 VARCHAR(256) 减"审核驳回："前缀，调大配置将致落库失败） | `ApiResult<ReviewActionResult>` | 驳回：转已驳回，理由入留痕备注 |
 
 ### 响应记录（应用层 record）
 
@@ -47,7 +47,7 @@ ReviewActionResult(String subjectNo, String status)   // status = ADMITTED / REJ
   `TriggerRole.REVIEWER`（3.1.3 预留枚举）；留痕备注：通过 = "审核通过"，驳回 = "审核驳回：" + 理由。
 - 审计动作常量（新增于应用服务，沿既有命名域）：`ACTION_REVIEW_APPROVE = "certification.review.approve"`、
   `ACTION_REVIEW_REJECT = "certification.review.reject"`。
-- 仓储新增方法：`SubjectRepository.findByStatus(SubjectStatus, PageQuery)` → `PageResult<Subject>`（JdbcClient 分页查询）。
+- 仓储新增方法（**实现补正，4 视角评审**：原契约为 `findByStatus(SubjectStatus, PageQuery) → PageResult<Subject>`；因架构门禁 LayerRulesTest 限定领域层不得依赖 common-pagination，收敛为 `countByStatus(SubjectStatus) → long` + `findByStatus(SubjectStatus, int offset, int limit) → List<Subject>`（申请时间升序稳定排序），`PageResult` 组装归应用层 `ReviewService.queue()`——语义等价，偏离已在 `SubjectRepository` javadoc 留痕）。
 
 ## 前端设计（真实 Vue 页面，Element Plus + 既有骨架）
 
@@ -94,7 +94,7 @@ ReviewActionResult(String subjectNo, String status)   // status = ADMITTED / REJ
 | E3 | 已入驻/已驳回/待认证/认证失败主体调审核端点 | 400 + 1004C0002，出审计 DENIED |
 | E4 | 并发双审核同一主体（一通过一驳回） | 恰一个成功、一个 1004C0002（乐观门槛；latch 握手防 sleep） |
 | E5 | 无 subject.review 权限调清单/通过/驳回 | 403 + 拒绝审计（common-auth 既有口径） |
-| E6 | pageNum=0 / pageSize>100 | 按 PageQuery 默认规约收敛（默认 1 / 上限 100） |
+| E6 | pageNum=0 / pageSize>100 | **400 参数校验拒绝**（实现补正，4 视角评审：common-pagination `PageQuery.of` 为拒绝语义，非收敛；未传参数默认 pageNum=1 / pageSize=10） |
 | E7 | 上传文件名含控制字符/超长 | 归一化后落库与档案展示（B8①），上传行为本身不受影响 |
 | E8 | 清单无待审核主体 | 空页（total=0），非错误 |
 
@@ -118,7 +118,7 @@ ReviewActionResult(String subjectNo, String status)   // status = ADMITTED / REJ
 | 未授权角色调用 → 拒绝并留拒绝记录 | B6/E5 | 集成 403 + 审计 | 界面说明注记（非授权菜单不可见） |
 | 清单与档案可见、影像可放大 | B1/B2/B9 | 集成清单过滤 + Vitest 渲染 | S3 步骤 4 前半 |
 | 并发门槛（行为 4 状态机完整性） | B5/E4 | 集成并发用例 | —（质量门） |
-| 剧本更新 | — | — | 建议：S1 末尾补"审核员执行'通过'→ 已入驻"一步、S2 补"驳回→修改重报"可选步骤；随交付说明提交 PO 审批 |
+| 剧本更新 | — | — | **实现补正（4 视角评审）**：剧本 V1.0 已含 S1 步骤 8~10 与 S2 步骤 5~7，无需新增步骤；真实缺口 = ①S1 步骤 9"档案中新增审核记录"的屏幕可见性（随审核详情页"流转留痕"分区交付兑现）②S2 步骤 7 幂等窗口注记（重报落在注册后 600s 内会返回首次结果，剧本加判定说明）——随交付说明提交 PO 审批 |
 
 ## 规格缺口声明
 

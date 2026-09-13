@@ -90,7 +90,7 @@ const routes = [
         path: 'review/:subjectNo',
         name: 'review-detail',
         component: () => import('../views/review/DetailView.vue'),
-        meta: { title: '审核详情' },
+        meta: { title: '审核详情', permission: 'subject.review' },
       },
       {
         path: ':pathMatch(.*)*',

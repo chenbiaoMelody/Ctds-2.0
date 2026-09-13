@@ -27,7 +27,10 @@ public class CertificationProperties {
     /** SM4 密钥编号（L4 字段加密唯一入口 common-crypto 的 keyRef，密钥材料不入库）。 */
     private String materialKeyRef = "subject-cert-material";
 
-    /** 审核驳回理由长度上限（WBS-3.1.5 hifi 配置项表；规格行为 5 第 2 条"必填"的细化参数）。 */
+    /**
+     * 审核驳回理由长度上限（WBS-3.1.5 hifi 配置项表；规格行为 5 第 2 条"必填"的细化参数）。
+     * 硬上限 251：理由以"审核驳回："前缀入 subject_status_log.remark（VARCHAR(256)），调大将致落库失败。
+     */
     private int reviewReasonMaxLength = 200;
 
     public int getReviewReasonMaxLength() {

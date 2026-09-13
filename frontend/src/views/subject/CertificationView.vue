@@ -19,6 +19,7 @@ import {
   type CertificationProfile,
   type SubjectDetail,
 } from '../../api/subject'
+import { STATUS_LABELS, STATUS_TYPES, subjectTypeLabel } from '../../constants/subject'
 
 const route = useRoute()
 const subjectNo = computed(() => String(route.params.subjectNo))
@@ -30,21 +31,6 @@ const detail = ref<SubjectDetail | null>(null)
 
 const subjectType = computed(() => detail.value?.subject.subjectType ?? 'ENTERPRISE')
 const isGov = computed(() => subjectType.value === 'GOV')
-
-const STATUS_TYPES: Record<string, string> = {
-  PENDING_CERT: 'warning',
-  PENDING_REVIEW: 'primary',
-  ADMITTED: 'success',
-  REJECTED: 'danger',
-  CERT_FAILED: 'info',
-}
-const STATUS_LABELS: Record<string, string> = {
-  PENDING_CERT: '待认证',
-  PENDING_REVIEW: '待审核',
-  ADMITTED: '已入驻',
-  REJECTED: '已驳回',
-  CERT_FAILED: '认证失败',
-}
 
 const statusLabel = computed(() =>
   profile.value ? (STATUS_LABELS[profile.value.status] ?? profile.value.status) : '',
@@ -87,7 +73,13 @@ function errorMessage(error: unknown, fallback: string): string {
 async function doUploadLicense(options: UploadRequestOptions): Promise<unknown> {
   submitting.value = true
   try {
-    await uploadLicense(subjectNo.value, options.file)
+    const result = await uploadLicense(subjectNo.value, options.file)
+    if (result.ocrResult) {
+      confirmForm.subjectName = result.ocrResult.subjectName
+      confirmForm.uscc = result.ocrResult.uscc
+      confirmForm.legalPerson = result.ocrResult.legalPerson
+      confirmForm.regAddress = result.ocrResult.regAddress
+    }
     ElMessage.success('上传成功，OCR 识别要素已回填')
     await load()
   } catch (error) {
@@ -155,7 +147,7 @@ onMounted(() => {
         <span class="label">申请编号</span>{{ subjectNo }}
         <el-tag :type="statusType" class="tag">{{ statusLabel }}</el-tag>
       </p>
-      <p v-if="detail"><span class="label">主体名称</span>{{ detail.subject.subjectName }}（{{ detail.subject.subjectType === 'GOV' ? '政府部门' : '企业' }}）</p>
+      <p v-if="detail"><span class="label">主体名称</span>{{ detail.subject.subjectName }}（{{ subjectTypeLabel(detail.subject.subjectType) }}）</p>
       <el-alert
         v-if="rejectReason"
         class="reject-tip"

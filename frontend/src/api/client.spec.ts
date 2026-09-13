@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { apiJson, ApiError, demoRolesHeader, getDemoSubject } from './client'
+import { apiJson, apiUpload, ApiError, demoRolesHeader, getDemoSubject } from './client'
 import { setDemoRole } from '../stores/demoRole'
 
 /**
@@ -51,5 +51,19 @@ describe('api/client', () => {
   it('普通用户 roles 仅 applicant', () => {
     setDemoRole('user')
     expect(demoRolesHeader()).toBe('applicant')
+  })
+
+  it('apiUpload 以 multipart FormData 携带文件与身份头', async () => {
+    const fetchMock = vi.fn(() =>
+      Promise.resolve({ json: () => Promise.resolve({ code: '0', data: { fileName: 'A1.jpg' } }) }),
+    )
+    vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch)
+    const file = new File(['image'], 'A1.jpg')
+    await expect(apiUpload('/api/upload', file)).resolves.toEqual({ fileName: 'A1.jpg' })
+    const [path, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(path).toBe('/api/upload')
+    expect(init.body).toBeInstanceOf(FormData)
+    const headers = init.headers as Record<string, string>
+    expect(headers['X-Ctds-Subject']).toBe(getDemoSubject())
   })
 })

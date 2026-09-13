@@ -59,6 +59,7 @@ async function submit(): Promise<void> {
         <el-form-item label="主体类型" prop="subjectType">
           <el-radio-group v-model="form.subjectType">
             <el-radio value="ENTERPRISE">企业</el-radio>
+            <el-radio value="INSTITUTION">机构</el-radio>
             <el-radio value="GOV">政府部门</el-radio>
           </el-radio-group>
         </el-form-item>

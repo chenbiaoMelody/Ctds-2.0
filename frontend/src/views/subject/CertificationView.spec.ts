@@ -109,4 +109,55 @@ describe('认证与档案页（WBS-3.1.5 界面化）', () => {
     const wrapper = await mountPage()
     expect(wrapper.text()).toContain('驳回理由：审核驳回：材料不齐全')
   })
+
+  it('政务主体提交证书文件触发政务端点（B10 上传交互）', async () => {
+    const { submitGovCertificate } = await import('../../api/subject')
+    vi.mocked(submitGovCertificate).mockResolvedValue({
+      conclusion: 'PASS',
+      status: 'PENDING_REVIEW',
+      failReason: null,
+    })
+    mockedProfile.mockResolvedValue(
+      baseProfile({
+        govCa: { uploaded: false, fileName: '', lastConclusion: null, lastFailReason: null, lastSubmittedAt: null },
+      }) as never,
+    )
+    mockedDetail.mockResolvedValue(baseDetail('GOV') as never)
+    const wrapper = await mountPage()
+    const input = wrapper.find('input[type="file"]')
+    const file = new File(['cert'], 'A3.cer')
+    Object.defineProperty(input.element, 'files', { value: [file] })
+    await input.trigger('change')
+    await flushPromises()
+    expect(submitGovCertificate).toHaveBeenCalledWith('S20260913000002', file)
+  })
+
+  it('企业主体上传执照后出现核对确认区并收到 OCR 要素（回填链路锚定）', async () => {
+    const { uploadLicense } = await import('../../api/subject')
+    vi.mocked(uploadLicense).mockResolvedValue({
+      fileName: 'A1.jpg',
+      recognizable: true,
+      ocrResult: { subjectName: '蓝天数据科技有限公司', uscc: '91330100MA27XW123X', legalPerson: '张伟', regAddress: '杭州市XX区' },
+    })
+    mockedProfile.mockResolvedValue(
+      baseProfile({
+        license: {
+          uploaded: true,
+          recognizable: true,
+          confirmed: false,
+          confirmedAt: null,
+          confirmedResult: null,
+        },
+      }) as never,
+    )
+    mockedDetail.mockResolvedValue(baseDetail('ENTERPRISE') as never)
+    const wrapper = await mountPage()
+    const input = wrapper.find('input[type="file"]')
+    const file = new File(['image'], 'A1.jpg')
+    Object.defineProperty(input.element, 'files', { value: [file] })
+    await input.trigger('change')
+    await flushPromises()
+    expect(uploadLicense).toHaveBeenCalledWith('S20260913000002', file)
+    expect(wrapper.text()).toContain('核对确认')
+  })
 })

@@ -8,6 +8,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { fetchReviewQueue, type ReviewQueueItem } from '../../api/subject'
 import { ApiError } from '../../api/client'
+import { subjectTypeLabel } from '../../constants/subject'
 
 const router = useRouter()
 const loading = ref(false)
@@ -33,12 +34,6 @@ function openDetail(row: ReviewQueueItem): void {
   void router.push(`/review/${row.subjectNo}`)
 }
 
-function typeLabel(subjectType: string): string {
-  if (subjectType === 'GOV') return '政府部门'
-  if (subjectType === 'ENTERPRISE') return '企业'
-  return '机构'
-}
-
 onMounted(() => {
   void load()
 })
@@ -53,7 +48,7 @@ onMounted(() => {
         <el-table-column prop="subjectNo" label="申请编号" width="180" />
         <el-table-column prop="subjectName" label="主体名称" min-width="200" />
         <el-table-column label="主体类型" width="120">
-          <template #default="scope">{{ typeLabel(scope.row.subjectType) }}</template>
+          <template #default="scope">{{ subjectTypeLabel(scope.row.subjectType) }}</template>
         </el-table-column>
         <el-table-column prop="createdAt" label="申请时间" width="180" />
         <el-table-column label="操作" width="120">

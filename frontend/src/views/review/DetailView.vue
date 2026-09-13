@@ -12,9 +12,12 @@ import {
   approveSubject,
   fetchLicenseImage,
   fetchProfile,
+  fetchSubjectDetail,
   rejectSubject,
   type CertificationProfile,
+  type SubjectDetail,
 } from '../../api/subject'
+import { STATUS_LABELS, STATUS_TYPES, subjectTypeLabel } from '../../constants/subject'
 
 const route = useRoute()
 const router = useRouter()
@@ -22,28 +25,25 @@ const subjectNo = computed(() => String(route.params.subjectNo))
 
 const loading = ref(false)
 const profile = ref<CertificationProfile | null>(null)
+const detail = ref<SubjectDetail | null>(null)
 const imageVisible = ref(false)
 const imageDataUrl = ref('')
 const rejectVisible = ref(false)
 const rejectReason = ref('')
 const submitting = ref(false)
 
-const STATUS_LABELS: Record<string, string> = {
-  PENDING_CERT: '待认证',
-  PENDING_REVIEW: '待审核',
-  ADMITTED: '已入驻',
-  REJECTED: '已驳回',
-  CERT_FAILED: '认证失败',
-}
-
 const statusLabel = computed(() =>
   profile.value ? (STATUS_LABELS[profile.value.status] ?? profile.value.status) : '',
+)
+const statusType = computed(() =>
+  profile.value ? (STATUS_TYPES[profile.value.status] ?? 'info') : 'info',
 )
 
 async function load(): Promise<void> {
   loading.value = true
   try {
     profile.value = await fetchProfile(subjectNo.value)
+    detail.value = await fetchSubjectDetail(subjectNo.value)
   } catch (error) {
     ElMessage.error(error instanceof ApiError ? error.message : '档案加载失败，请稍后重试')
   } finally {
@@ -74,7 +74,7 @@ async function approve(): Promise<void> {
   try {
     await approveSubject(subjectNo.value)
     ElMessage.success('审核通过，主体已入驻')
-    await load()
+    backToQueue()
   } catch (error) {
     handleReviewError(error)
   } finally {
@@ -134,7 +134,17 @@ onMounted(() => {
       <el-card shadow="never" class="block">
         <template #header>基本信息</template>
         <p><span class="label">申请编号</span>{{ profile.subjectNo }}</p>
-        <p><span class="label">当前状态</span><el-tag>{{ statusLabel }}</el-tag></p>
+        <p><span class="label">当前状态</span><el-tag :type="statusType">{{ statusLabel }}</el-tag></p>
+      </el-card>
+
+      <!-- 注册信息（规格行为 5 第 1 条：审核员可见注册信息的完整档案） -->
+      <el-card v-if="detail" shadow="never" class="block">
+        <template #header>注册信息</template>
+        <p><span class="label">主体名称</span>{{ detail.subject.subjectName }}</p>
+        <p><span class="label">主体类型</span>{{ subjectTypeLabel(detail.subject.subjectType) }}</p>
+        <p><span class="label">统一社会信用代码</span>{{ detail.subject.uscc }}</p>
+        <p><span class="label">注册地址</span>{{ detail.subject.regAddress }}</p>
+        <p><span class="label">联系人</span>{{ detail.subject.contactName }}（{{ detail.subject.contactPhone }}）</p>
       </el-card>
 
       <el-card v-if="profile.license && profile.license.uploaded" shadow="never" class="block">
@@ -184,6 +194,21 @@ onMounted(() => {
         <template #header>审核操作（二选一）</template>
         <el-button type="success" :loading="submitting" @click="approve">通过（转已入驻）</el-button>
         <el-button type="danger" plain :loading="submitting" @click="openRejectDialog">驳回（转已驳回）</el-button>
+      </el-card>
+
+      <!-- 流转留痕（行为 4 第 2 条四要素；审核结论与操作者、时间闭环——剧本 S1 步骤 9 可见性） -->
+      <el-card v-if="detail" shadow="never" class="block">
+        <template #header>流转留痕</template>
+        <el-table :data="detail.transitions" empty-text="暂无流转记录">
+          <el-table-column label="前状态" width="120">
+            <template #default="scope">{{ scope.row.fromStatus ?? '—' }}</template>
+          </el-table-column>
+          <el-table-column prop="toStatus" label="后状态" width="150" />
+          <el-table-column prop="triggerRole" label="触发方" width="110" />
+          <el-table-column prop="operator" label="操作人" width="150" />
+          <el-table-column prop="createdAt" label="时间" width="180" />
+          <el-table-column prop="remark" label="备注" min-width="200" />
+        </el-table>
       </el-card>
     </template>
 

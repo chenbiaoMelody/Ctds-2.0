@@ -115,7 +115,10 @@ export function fetchProfile(subjectNo: string): Promise<CertificationProfile> {
   return apiJson(`/api/v1/subject/registrations/${subjectNo}/certification`)
 }
 
-export function uploadLicense(subjectNo: string, file: File): Promise<{ fileName: string; recognizable: boolean }> {
+export function uploadLicense(
+  subjectNo: string,
+  file: File,
+): Promise<{ fileName: string; recognizable: boolean; ocrResult: OcrElements | null }> {
   return apiUpload(`/api/v1/subject/registrations/${subjectNo}/certification/license`, file)
 }
 

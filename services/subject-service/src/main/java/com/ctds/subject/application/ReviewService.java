@@ -52,7 +52,7 @@ public class ReviewService {
             return PageResult.empty(query);
         }
         final List<Subject> rows = subjectRepository.findByStatus(SubjectStatus.PENDING_REVIEW,
-                (query.pageNum() - 1) * query.pageSize(), query.pageSize());
+                (int) query.offset(), query.pageSize());
         final List<ReviewQueueItem> items = rows.stream()
                 .map(subject -> new ReviewQueueItem(subject.subjectNo(), subject.subjectName(),
                         subject.subjectType().name(), subject.createdAt()))
@@ -63,7 +63,7 @@ public class ReviewService {
     /** 通过（行为 5 第 2 条）：待审核 → 已入驻，留痕"审核通过"。 */
     public ReviewActionResult approve(final String subjectNo) {
         final Subject subject = requireSubject(subjectNo);
-        requirePendingReview(subject);
+        requirePendingReview(subject, ACTION_REVIEW_APPROVE);
         statusService.transition(subject.id(), SubjectStatus.PENDING_REVIEW, SubjectStatus.ADMITTED,
                 TriggerRole.REVIEWER, ops.operator(), APPROVE_REMARK);
         ops.audit(ops.operator(), ACTION_REVIEW_APPROVE, subjectNo, AuditOutcome.SUCCESS, null);
@@ -80,7 +80,7 @@ public class ReviewService {
             throw new BizException(ErrorCodes.PARAM_INVALID, "驳回理由长度不能超过" + maxLength + "字");
         }
         final Subject subject = requireSubject(subjectNo);
-        requirePendingReview(subject);
+        requirePendingReview(subject, ACTION_REVIEW_REJECT);
         statusService.transition(subject.id(), SubjectStatus.PENDING_REVIEW, SubjectStatus.REJECTED,
                 TriggerRole.REVIEWER, ops.operator(), REJECT_REMARK_PREFIX + reason);
         ops.audit(ops.operator(), ACTION_REVIEW_REJECT, subjectNo, AuditOutcome.SUCCESS, null);
@@ -95,11 +95,13 @@ public class ReviewService {
     }
 
     /**
-     * 状态前置门槛（业务文案口径：审核操作）；并发窗口由 transition 的乐观状态门槛兜底
-     * （两审核同时提交时仅一人成功，败者 1004C0002——WBS-3.1.5 hifi E4）。
+     * 状态前置门槛（业务文案口径：审核操作）：非待审核即拒绝并落 DENIED 审计（hifi E3，
+     * 沿认证域拒绝留痕先例）；并发窗口由 transition 的乐观状态门槛兜底（两审核同时提交时
+     * 仅一人成功，败者 1004C0002——WBS-3.1.5 hifi E4）。
      */
-    private void requirePendingReview(final Subject subject) {
+    private void requirePendingReview(final Subject subject, final String action) {
         if (subject.status() != SubjectStatus.PENDING_REVIEW) {
+            ops.audit(ops.operator(), action, subject.subjectNo(), AuditOutcome.DENIED, "state_not_allowed");
             throw new BizException(SubjectErrorCodes.CERT_STATE_NOT_ALLOWED, "当前状态不允许执行审核操作");
         }
     }

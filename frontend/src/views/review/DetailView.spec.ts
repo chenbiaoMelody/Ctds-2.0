@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import ElementPlus from 'element-plus'
 import DetailView from './DetailView.vue'
-import { fetchProfile, fetchLicenseImage, approveSubject, rejectSubject } from '../../api/subject'
+import { fetchProfile, fetchSubjectDetail, fetchLicenseImage, approveSubject, rejectSubject } from '../../api/subject'
 
 /**
  * WBS-3.1.5 审核详情页测试：档案分区渲染（政务段/核验段互斥——规格行为 6"全程不出现"的界面兑现）、
@@ -15,12 +15,14 @@ vi.mock('vue-router', () => ({
 
 vi.mock('../../api/subject', () => ({
   fetchProfile: vi.fn(),
+  fetchSubjectDetail: vi.fn(),
   fetchLicenseImage: vi.fn(),
   approveSubject: vi.fn(),
   rejectSubject: vi.fn(),
 }))
 
 const mockedProfile = vi.mocked(fetchProfile)
+const mockedDetail = vi.mocked(fetchSubjectDetail)
 const mockedImage = vi.mocked(fetchLicenseImage)
 const mockedApprove = vi.mocked(approveSubject)
 const mockedReject = vi.mocked(rejectSubject)
@@ -55,7 +57,32 @@ const pendingGovProfile = {
   remainingAttemptsToday: null,
 }
 
+const subjectDetail = {
+  subject: {
+    subjectNo: 'S20260913000001',
+    subjectName: '蓝天数据科技有限公司',
+    uscc: '91330100MA27XW123X',
+    subjectType: 'ENTERPRISE',
+    regAddress: '杭州市XX区',
+    contactName: '张三',
+    contactPhone: '13800001234',
+    adminAccount: 'admin001',
+    status: 'PENDING_REVIEW',
+  },
+  transitions: [
+    {
+      fromStatus: 'PENDING_CERT',
+      toStatus: 'PENDING_REVIEW',
+      triggerRole: 'SYSTEM',
+      operator: 'SYSTEM',
+      remark: '政务 CA 证书验证通过，自动流转',
+      createdAt: '2026-09-13T10:00:00',
+    },
+  ],
+}
+
 const mountPage = async () => {
+  mockedDetail.mockResolvedValue(subjectDetail as never)
   const wrapper = mount(DetailView, { global: { plugins: [ElementPlus] } })
   await flushPromises()
   return wrapper
@@ -68,7 +95,8 @@ describe('审核工作台详情页（WBS-3.1.5）', () => {
     expect(wrapper.text()).toContain('核验记录')
     expect(wrapper.text()).toContain('当日剩余核验次数')
     expect(wrapper.text()).toContain('审核操作')
-    expect(wrapper.text()).not.toContain('政务 CA 证书验证')
+    // 负向断言用政务卡独有字段（证书文件名），避免与留痕备注文案撞车
+    expect(wrapper.text()).not.toContain('证书文件名')
   })
 
   it('政务主体档案：显示政务证书验证段，不显示核验记录段（行为 6 界面兑现）', async () => {
@@ -110,5 +138,30 @@ describe('审核工作台详情页（WBS-3.1.5）', () => {
     await buttons[0].trigger('click')
     await flushPromises()
     expect(mockedApprove).toHaveBeenCalledWith('S20260913000001')
+  })
+
+  it('注册信息分区与流转留痕渲染（行为 5 第 1 条 + 剧本 S1 步骤 9 可见性）', async () => {
+    mockedProfile.mockResolvedValue(pendingEnterpriseProfile as never)
+    const wrapper = await mountPage()
+    expect(wrapper.text()).toContain('注册信息')
+    expect(wrapper.text()).toContain('蓝天数据科技有限公司')
+    expect(wrapper.text()).toContain('91330100MA27XW123X')
+    expect(wrapper.text()).toContain('流转留痕')
+    expect(wrapper.text()).toContain('政务 CA 证书验证通过，自动流转')
+  })
+
+  it('填写驳回理由后确认驳回，调用驳回端点（正向路径）', async () => {
+    mockedProfile.mockResolvedValue(pendingEnterpriseProfile as never)
+    mockedReject.mockResolvedValue({ subjectNo: 'S20260913000001', status: 'REJECTED' })
+    const wrapper = await mountPage()
+    const buttons = wrapper.findAll('button').filter((b) => b.text().includes('驳回'))
+    await buttons[0].trigger('click')
+    await flushPromises()
+    const textarea = wrapper.find('.el-dialog textarea')
+    await textarea.setValue('证照材料不齐全')
+    const confirm = wrapper.findAll('button').filter((b) => b.text().includes('确认驳回'))
+    await confirm[0].trigger('click')
+    await flushPromises()
+    expect(mockedReject).toHaveBeenCalledWith('S20260913000001', '证照材料不齐全')
   })
 })

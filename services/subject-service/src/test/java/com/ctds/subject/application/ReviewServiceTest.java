@@ -18,6 +18,7 @@ import com.ctds.common.logging.AuditOutcome;
 import com.ctds.common.pagination.PageQuery;
 import com.ctds.common.pagination.PageResult;
 import com.ctds.subject.domain.Subject;
+import com.ctds.subject.domain.SubjectErrorCodes;
 import com.ctds.subject.domain.SubjectRepository;
 import com.ctds.subject.domain.SubjectStatus;
 import com.ctds.subject.domain.SubjectType;
@@ -81,6 +82,40 @@ class ReviewServiceTest {
                 .extracting(e -> ((BizException) e).getErrorCode().value())
                 .isEqualTo(ErrorCodes.RESOURCE_NOT_FOUND.value());
         verify(statusService, never()).transition(anyLong(), any(), any(), any(), anyString(), anyString());
+    }
+
+    @Test
+    void approveOnAdmittedStateRejectedByGateWithDeniedAudit() {
+        // 3.1.4 教训固化：状态门槛必须有拒绝态负向用例——删掉 requirePendingReview 本用例必红
+        final Subject admitted = new Subject(1L, SUBJECT_NO, "演示公司", "91330100MA27XW123X",
+                SubjectType.ENTERPRISE, "杭州市XX区XX路88号", "张三", "13800001234", "admin001", "applicant-01",
+                SubjectStatus.ADMITTED, LocalDateTime.now(), LocalDateTime.now());
+        when(subjectRepository.findBySubjectNo(SUBJECT_NO)).thenReturn(Optional.of(admitted));
+
+        assertThatThrownBy(() -> service.approve(SUBJECT_NO))
+                .isInstanceOf(BizException.class)
+                .extracting(e -> ((BizException) e).getErrorCode().value())
+                .isEqualTo(SubjectErrorCodes.CERT_STATE_NOT_ALLOWED.value());
+        verify(statusService, never()).transition(anyLong(), any(), any(), any(), anyString(), anyString());
+        verify(ops).audit(eq(REVIEWER), eq(ReviewService.ACTION_REVIEW_APPROVE),
+                eq(SUBJECT_NO), eq(AuditOutcome.DENIED), eq("state_not_allowed"));
+    }
+
+    @Test
+    void rejectOnRejectedStateRejectedByGateWithDeniedAudit() {
+        // 已驳回态（B5 第四态）同样被门槛拒绝——非待审核四态共用同一前置门槛
+        final Subject rejected = new Subject(1L, SUBJECT_NO, "演示公司", "91330100MA27XW123X",
+                SubjectType.ENTERPRISE, "杭州市XX区XX路88号", "张三", "13800001234", "admin001", "applicant-01",
+                SubjectStatus.REJECTED, LocalDateTime.now(), LocalDateTime.now());
+        when(subjectRepository.findBySubjectNo(SUBJECT_NO)).thenReturn(Optional.of(rejected));
+
+        assertThatThrownBy(() -> service.reject(SUBJECT_NO, "再次驳回"))
+                .isInstanceOf(BizException.class)
+                .extracting(e -> ((BizException) e).getErrorCode().value())
+                .isEqualTo(SubjectErrorCodes.CERT_STATE_NOT_ALLOWED.value());
+        verify(statusService, never()).transition(anyLong(), any(), any(), any(), anyString(), anyString());
+        verify(ops).audit(eq(REVIEWER), eq(ReviewService.ACTION_REVIEW_REJECT),
+                eq(SUBJECT_NO), eq(AuditOutcome.DENIED), eq("state_not_allowed"));
     }
 
     @Test

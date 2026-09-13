@@ -50,10 +50,11 @@ describe('审核工作台清单页（WBS-3.1.5）', () => {
     expect(wrapper.text()).toContain('暂无待审核主体')
   })
 
-  it('清单加载失败时展示业务文案（错误码透传）', async () => {
-    mockedQueue.mockRejectedValue(new (await import('../../api/client')).ApiError('1000S0001', '服务暂不可用'))
-    const wrapper = await mountPage()
+  it('清单加载失败时展示业务文案（错误码透传，删掉错误分支本用例必红）', async () => {
+    const { ApiError } = await import('../../api/client')
+    mockedQueue.mockRejectedValue(new ApiError('1000S0001', '认证服务暂不可用请稍后重试'))
+    await mountPage()
     await flushPromises()
-    expect(wrapper.text()).toContain('主体审核')
+    expect(document.body.textContent).toContain('认证服务暂不可用请稍后重试')
   })
 })
