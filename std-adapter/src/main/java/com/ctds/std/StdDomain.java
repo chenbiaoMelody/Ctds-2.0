@@ -13,7 +13,13 @@ public enum StdDomain {
     DID_INTEROP("did", "跨空间身份互认"),
 
     /** 测评证据：信通院测评证据采集与互联互通契约测试自动轨（章程 G1 门禁，M2 起建设）。 */
-    EVIDENCE("evidence", "测评证据");
+    EVIDENCE("evidence", "测评证据"),
+
+    /**
+     * 实名认证：营业执照 OCR、法人核验、政务 CA 证书验证（PRD C-1.1，规格 C-1.1 行为 7 收口本模块；
+     * OCR 与法人核验协议方法随 WBS-3.1.3 冻结，政务 CA 方法随 WBS-3.1.4 同域扩展——ADR-008 补记 2026-09-13）。
+     */
+    CERTIFICATION("certification", "实名认证");
 
     private final String code;
     private final String displayName;

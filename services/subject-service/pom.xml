@@ -33,6 +33,16 @@
       <groupId>com.ctds</groupId>
       <artifactId>common-idempotency</artifactId>
     </dependency>
+    <!-- L4 字段加密唯一入口（WBS-3.1.3，ADR-006）：证照影像/OCR 原始结果/身份证号 SM4 加密落库 -->
+    <dependency>
+      <groupId>com.ctds</groupId>
+      <artifactId>common-crypto</artifactId>
+    </dependency>
+    <!-- 认证渠道收口（WBS-3.1.3，ADR-008）：业务代码只见 CertificationStandardApi 接口 -->
+    <dependency>
+      <groupId>com.ctds</groupId>
+      <artifactId>std-adapter</artifactId>
+    </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-web</artifactId>

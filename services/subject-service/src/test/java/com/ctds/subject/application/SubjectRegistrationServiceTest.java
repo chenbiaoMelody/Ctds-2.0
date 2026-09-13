@@ -38,6 +38,7 @@ class SubjectRegistrationServiceTest {
     private SubjectRepository repository;
     private SubjectStatusService statusService;
     private AuditRecorder auditRecorder;
+    private OwnershipGuard ownershipGuard;
     private SubjectRegistrationService service;
 
     @BeforeEach
@@ -45,7 +46,8 @@ class SubjectRegistrationServiceTest {
         repository = mock(SubjectRepository.class);
         statusService = mock(SubjectStatusService.class);
         auditRecorder = mock(AuditRecorder.class);
-        service = new SubjectRegistrationService(repository, statusService, auditRecorder);
+        ownershipGuard = mock(OwnershipGuard.class);
+        service = new SubjectRegistrationService(repository, statusService, auditRecorder, ownershipGuard);
     }
 
     @Test
@@ -203,7 +205,8 @@ class SubjectRegistrationServiceTest {
 
     private Subject subject(final SubjectStatus status) {
         return new Subject(7L, SUBJECT_NO, "原主体名称", USCC, SubjectType.ENTERPRISE, "原注册地址", "李四",
-                "13900005678", "old-admin", status, LocalDateTime.now().minusDays(1), LocalDateTime.now());
+                "13900005678", "old-admin", "applicant-01", status,
+                LocalDateTime.now().minusDays(1), LocalDateTime.now());
     }
 
     private StatusTransition registerTransition() {

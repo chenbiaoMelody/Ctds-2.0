@@ -38,11 +38,12 @@ public class SubjectJdbcRepository implements SubjectRepository {
     public void create(final Subject subject, final StatusTransition initialTransition) {
         try {
             jdbc.sql("INSERT INTO subject (subject_no, subject_name, uscc, subject_type, reg_address, "
-                            + "contact_name, contact_phone, admin_account, status, created_at, updated_at) "
-                            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+                            + "contact_name, contact_phone, admin_account, applicant, status, created_at, updated_at) "
+                            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
                     .params(subject.subjectNo(), subject.subjectName(), subject.uscc(),
                             subject.subjectType().name(), subject.regAddress(), subject.contactName(),
-                            subject.contactPhone(), subject.adminAccount(), subject.status().name(),
+                            subject.contactPhone(), subject.adminAccount(), subject.applicant(),
+                            subject.status().name(),
                             Timestamp.valueOf(subject.createdAt()), Timestamp.valueOf(subject.updatedAt()))
                     .update();
         } catch (final DuplicateKeyException e) {
@@ -79,14 +80,14 @@ public class SubjectJdbcRepository implements SubjectRepository {
     @Override
     public Optional<Subject> findBySubjectNo(final String subjectNo) {
         return querySubject("SELECT id, subject_no, subject_name, uscc, subject_type, reg_address, contact_name, "
-                + "contact_phone, admin_account, status, created_at, updated_at FROM subject "
+                + "contact_phone, admin_account, applicant, status, created_at, updated_at FROM subject "
                 + "WHERE subject_no = ?", subjectNo);
     }
 
     @Override
     public Optional<Subject> findByUscc(final String uscc) {
         return querySubject("SELECT id, subject_no, subject_name, uscc, subject_type, reg_address, contact_name, "
-                + "contact_phone, admin_account, status, created_at, updated_at FROM subject "
+                + "contact_phone, admin_account, applicant, status, created_at, updated_at FROM subject "
                 + "WHERE uscc = ?", uscc);
     }
 
@@ -156,6 +157,7 @@ public class SubjectJdbcRepository implements SubjectRepository {
                         rs.getString("contact_name"),
                         rs.getString("contact_phone"),
                         rs.getString("admin_account"),
+                        rs.getString("applicant"),
                         SubjectStatus.valueOf(rs.getString("status")),
                         rs.getTimestamp("created_at").toLocalDateTime(),
                         rs.getTimestamp("updated_at").toLocalDateTime()))

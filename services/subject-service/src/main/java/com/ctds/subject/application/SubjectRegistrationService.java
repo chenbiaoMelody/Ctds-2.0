@@ -47,12 +47,14 @@ public class SubjectRegistrationService {
     private final SubjectRepository repository;
     private final SubjectStatusService statusService;
     private final AuditRecorder auditRecorder;
+    private final OwnershipGuard ownershipGuard;
 
     public SubjectRegistrationService(final SubjectRepository repository, final SubjectStatusService statusService,
-            final AuditRecorder auditRecorder) {
+            final AuditRecorder auditRecorder, final OwnershipGuard ownershipGuard) {
         this.repository = repository;
         this.statusService = statusService;
         this.auditRecorder = auditRecorder;
+        this.ownershipGuard = ownershipGuard;
     }
 
     /**
@@ -82,12 +84,13 @@ public class SubjectRegistrationService {
         throw new BizException(SubjectErrorCodes.SUBJECT_ALREADY_REGISTERED, "该主体已注册");
     }
 
-    /** 撤销申请（仅待认证且未撤销过可撤销；撤销 = 撤销留痕，状态保持待认证，lofi Q3-A）。 */
+    /** 撤销申请（仅待认证且未撤销过可撤销；归属断言 ADR-016 §2.6；撤销 = 撤销留痕，lofi Q3-A）。 */
     public CancellationResult cancel(final String subjectNo) {
         requireSubjectNo(subjectNo);
         final Subject subject = repository.findBySubjectNo(subjectNo)
                 .orElseThrow(() -> new BizException(ErrorCodes.RESOURCE_NOT_FOUND, "申请编号不存在"));
         final String operator = operator();
+        ownershipGuard.requireOwnerOrReviewer(subject, ACTION_CANCEL);
         if (subject.status() != SubjectStatus.PENDING_CERT || isCancelled(subject.id())) {
             audit(operator, ACTION_CANCEL, subjectNo, AuditOutcome.DENIED, "cancel_not_allowed");
             throw new BizException(SubjectErrorCodes.SUBJECT_CANCEL_NOT_ALLOWED, "当前状态不可撤销");
@@ -99,11 +102,12 @@ public class SubjectRegistrationService {
         return new CancellationResult(subjectNo, subject.status(), true);
     }
 
-    /** 进度查询：注册信息（联系电话脱敏展示）+ 当前状态 + 全部流转留痕（规格行为 4 第 2 条）。 */
+    /** 进度查询：注册信息（联系电话脱敏展示）+ 当前状态 + 全部流转留痕（规格行为 4 第 2 条；归属断言 §2.6）。 */
     public SubjectDetail detail(final String subjectNo) {
         requireSubjectNo(subjectNo);
         final Subject subject = repository.findBySubjectNo(subjectNo)
                 .orElseThrow(() -> new BizException(ErrorCodes.RESOURCE_NOT_FOUND, "申请编号不存在"));
+        ownershipGuard.requireOwnerOrReviewer(subject, "subject.read");
         return new SubjectDetail(subject, repository.findTransitions(subject.id()));
     }
 
@@ -112,7 +116,7 @@ public class SubjectRegistrationService {
         final String subjectNo = generateSubjectNo();
         final Subject subject = new Subject(null, subjectNo, command.subjectName(), command.uscc(),
                 SubjectType.valueOf(command.subjectType()), command.regAddress(), command.contactName(),
-                command.contactPhone(), command.adminAccount(), SubjectStatus.PENDING_CERT, now, now);
+                command.contactPhone(), command.adminAccount(), operator, SubjectStatus.PENDING_CERT, now, now);
         repository.create(subject, new StatusTransition(null, SubjectStatus.PENDING_CERT, TriggerRole.APPLICANT,
                 operator, null, now));
         audit(operator, ACTION_REGISTER, subjectNo, AuditOutcome.SUCCESS, null);
@@ -125,7 +129,8 @@ public class SubjectRegistrationService {
         final LocalDateTime now = LocalDateTime.now();
         final Subject updated = new Subject(current.id(), current.subjectNo(), command.subjectName(), current.uscc(),
                 current.subjectType(), command.regAddress(), command.contactName(),
-                command.contactPhone(), command.adminAccount(), SubjectStatus.PENDING_CERT, current.createdAt(), now);
+                command.contactPhone(), command.adminAccount(), current.applicant(), SubjectStatus.PENDING_CERT,
+                current.createdAt(), now);
         repository.resubmit(updated, new StatusTransition(fromStatus, SubjectStatus.PENDING_CERT,
                 TriggerRole.APPLICANT, operator, remark, now));
         audit(operator, ACTION_REGISTER, current.subjectNo(), AuditOutcome.SUCCESS, "resubmit");

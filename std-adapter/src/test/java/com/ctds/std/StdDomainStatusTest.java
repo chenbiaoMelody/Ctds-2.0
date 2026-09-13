@@ -11,11 +11,13 @@ import org.junit.jupiter.api.Test;
 class StdDomainStatusTest {
 
     @Test
-    void 三标准域固定且契约字段完整() {
-        assertThat(StdDomain.values()).hasSize(3);
+    void 标准域固定且契约字段完整() {
+        // 域清单 = ADR-008 契约：WBS-3.1.3 补记新增第四值 CERTIFICATION（2026-09-13）
+        assertThat(StdDomain.values()).hasSize(4);
         assertThat(StdDomain.INTERCONNECT.code()).isEqualTo("interconnect");
         assertThat(StdDomain.DID_INTEROP.code()).isEqualTo("did");
         assertThat(StdDomain.EVIDENCE.code()).isEqualTo("evidence");
+        assertThat(StdDomain.CERTIFICATION.code()).isEqualTo("certification");
         for (final StdDomain domain : StdDomain.values()) {
             assertThat(domain.displayName()).isNotBlank();
         }

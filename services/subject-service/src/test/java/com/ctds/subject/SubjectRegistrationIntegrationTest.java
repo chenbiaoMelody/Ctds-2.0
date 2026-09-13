@@ -312,7 +312,7 @@ class SubjectRegistrationIntegrationTest {
         final LocalDateTime now = LocalDateTime.now();
         assertThatThrownBy(() -> subjectRepository.create(
                         new Subject(null, "S20260913001202", "兜底转换演示公司", uscc(12), SubjectType.ENTERPRISE,
-                                "杭州市XX区XX路88号", "张三", "13800001234", "admin001",
+                                "杭州市XX区XX路88号", "张三", "13800001234", "admin001", APPLICANT,
                                 SubjectStatus.PENDING_CERT, now, now),
                         new StatusTransition(null, SubjectStatus.PENDING_CERT, TriggerRole.APPLICANT,
                                 APPLICANT, null, now)))
@@ -394,7 +394,7 @@ class SubjectRegistrationIntegrationTest {
         final LocalDateTime now = LocalDateTime.now();
         subjectRepository.create(
                 new Subject(null, subjectNo, subjectName, uscc, SubjectType.ENTERPRISE, "杭州市XX区XX路88号",
-                        "张三", "13800001234", "admin001", status, now, now),
+                        "张三", "13800001234", "admin001", APPLICANT, status, now, now),
                 new StatusTransition(null, status, TriggerRole.APPLICANT, APPLICANT, null, now));
     }
 

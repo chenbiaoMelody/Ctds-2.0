@@ -7,6 +7,11 @@ spring:
   autoconfigure:
     exclude:
       - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+  # 证照影像上传（WBS-3.1.3 hifi 配置项表）：容器上限略大于业务上限（5MB），应用层先行校验并给业务文案
+  servlet:
+    multipart:
+      max-file-size: 6MB
+      max-request-size: 7MB
 
 server:
   port: 8080
@@ -27,11 +32,28 @@ logging:
       file: logstash
 
 ctds:
-  # RBAC（WBS 2.4.5 模式 A 配置映射）：演示角色 applicant 承载申请人动作（注册/查询/撤销）；
-  # 审核员角色与权限随 3.1.5 交付
+  # RBAC（WBS 2.4.5 模式 A 配置映射）：演示角色 applicant 承载申请人动作（注册/查询/撤销/认证）；
+  # reviewer 为归属断言豁免角色（ADR-016 §2.6，subject.review 审核端点随 3.1.5 交付）
   auth:
     permissions:
-      applicant: subject.register,subject.read,subject.cancel
+      applicant: subject.register,subject.read,subject.cancel,subject.certify
+      reviewer: subject.read,subject.review
+  # L4 加密唯一入口（ADR-006）：密钥文件经环境变量注入（*.keys，密钥零入库）；
+  # 运行期接 KMS（ADR-015）= 设环境变量 CTDS_CRYPTO_KMS_BASEURL（属性存在即启用并覆盖本地文件实现）
+  crypto:
+    local:
+      key-file: ${CTDS_SM4_KEY_FILE:}
+  # 实名认证参数（WBS-3.1.3 hifi 配置项表；verify-daily-limit = 规格 §7 Q3 业务可调参数）
+  certification:
+    verify-daily-limit: 5
+    upload-max-bytes: 5242880
+    upload-allowed-extensions: jpg,jpeg,png
+    material-key-ref: subject-cert-material
+  # 模拟认证渠道异常注入开关（演示/测试 fail-fast 口径，hifi B8）
+  std:
+    certification:
+      mock:
+        channel-error: false
   # 注册防重复提交（ADR-007 模式 B）：内存模式 = 零中间件依赖，演示/单测可执行；
   # 多实例生产部署须 mode=redis 并经 redisson-spring-boot-starter 提供 Redis 连接（WBS-2.4.7 hifi B8 边界）
   idempotency:
