@@ -42,4 +42,15 @@ public interface CertificationStandardApi extends StdDomainApi {
      * @param legalPersonIdNo 法人身份证号（必填，仅用于本次核验）
      */
     LegalPersonVerification verifyLegalPerson(String legalPersonName, String legalPersonIdNo);
+
+    /**
+     * 政务 CA 证书验证（WBS-3.1.4，规格行为 6 第 2 条）：有效期、证书链、单位身份要素由渠道校验，
+     * 业务侧只收结论（校验职责收口本模块，不做本地证书解析）。
+     * 业务不通过返回 passed=false + 流水号 + 业务可读原因（不计失败次数，可重新提交换证）；
+     * 渠道技术异常抛 {@link com.ctds.std.StdAdapterErrorCodes#CHANNEL_UNAVAILABLE}（fail-fast 口径同上）。
+     *
+     * @param certBytes 证书文件字节（必填非空）
+     * @param fileName  证书文件名（必填；模拟渠道以文件名匹配预置规则）
+     */
+    GovCaVerification verifyGovCaCertificate(byte[] certBytes, String fileName);
 }

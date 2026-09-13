@@ -26,6 +26,8 @@ public final class SubjectErrorCodes {
     public static final ErrorCode CERT_LICENSE_NOT_CONFIRMED = ErrorCode.of("1004B0006");
     /** 当前状态不允许执行认证操作（状态门槛）。→ 400 */
     public static final ErrorCode CERT_STATE_NOT_ALLOWED = ErrorCode.of("1004C0002");
+    /** 主体类型与认证流程不匹配（WBS-3.1.4 通道互斥：政务主体调企业端点 / 企业主体调政务端点，双向同码）。→ 400 */
+    public static final ErrorCode CERT_CHANNEL_TYPE_MISMATCH = ErrorCode.of("1004B0007");
     /** 认证渠道不可用（fail-fast，可重试，不计核验失败次数）。→ 503（精确映射见 CertificationExceptionHandler） */
     public static final ErrorCode CERT_CHANNEL_UNAVAILABLE = ErrorCode.of("1004S0001");
     /** 渠道不可用出站文案（S 型码经本地处理器精确映射 503 并保留本文案，不走全局脱敏）。 */

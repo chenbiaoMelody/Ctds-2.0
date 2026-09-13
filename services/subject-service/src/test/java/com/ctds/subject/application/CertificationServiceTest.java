@@ -20,6 +20,7 @@ import com.ctds.common.errorcode.ErrorCodes;
 import com.ctds.common.logging.AuditRecorder;
 import com.ctds.std.StdAdapterErrorCodes;
 import com.ctds.std.certification.CertificationStandardApi;
+import com.ctds.std.certification.GovCaVerification;
 import com.ctds.std.certification.LegalPersonVerification;
 import com.ctds.std.certification.OcrRecognition;
 import com.ctds.subject.domain.CertMaterial;
@@ -393,5 +394,154 @@ class CertificationServiceTest {
                 "sm3", "cipher".getBytes(), "raw".getBytes(), ocrUscc, "张伟",
                 true, "认证演示公司", "91330100MA27X8AB01", "张伟", "杭州市XX区XX路88号",
                 LocalDateTime.now(), LocalDateTime.now());
+    }
+
+    // ==== 政务 CA 通道（WBS-3.1.4，规格行为 6 / hifi B1~B9 单测层） ====
+
+    private static final String GOV_SUBJECT_NO = "S20260913000902";
+
+    /** 政府部门主体（每次用例独立建档，避免污染共享 subject 桩）。 */
+    private Subject govSubject() {
+        final Subject gov = new Subject(10L, GOV_SUBJECT_NO, "市大数据管理局", "91330100MA27XW123X",
+                SubjectType.GOV, "杭州市XX区XX路88号", "王局", "13800005678", "govadmin", APPLICANT,
+                SubjectStatus.PENDING_CERT, LocalDateTime.now(), LocalDateTime.now());
+        when(subjectRepository.findBySubjectNo(GOV_SUBJECT_NO)).thenReturn(Optional.of(gov));
+        return gov;
+    }
+
+    @Test
+    void govCaPassAutoTransitionsToPendingReviewAndStoresEncryptedMaterial() {
+        final Subject gov = govSubject();
+        when(channel.verifyGovCaCertificate(any(), anyString())).thenReturn(
+                new GovCaVerification(true, "MOCK-GOV-1", null, "市大数据管理局", "91330100MA27XW123X", null));
+        final byte[] cert = "fake-gov-cert-bytes".getBytes(StandardCharsets.US_ASCII);
+
+        final GovCaCertificationResult result = service.submitGovCaCertificate(GOV_SUBJECT_NO, cert, "A3.cer");
+
+        verify(ownershipGuard).requireOwnerOrReviewer(gov, CertificationService.ACTION_GOV_SUBMIT);
+        assertThat(result.conclusion()).isEqualTo(VerificationConclusion.PASS.name());
+        assertThat(result.status()).isEqualTo(SubjectStatus.PENDING_REVIEW);
+        assertThat(result.failReason()).isNull();
+        // 材料落库：GOV_CA_CERT 类型 + 密文形态 + SM3 摘要（L4，hifi B6）
+        final ArgumentCaptor<CertMaterial> material = ArgumentCaptor.forClass(CertMaterial.class);
+        verify(certificationRepository).replaceMaterial(material.capture());
+        assertThat(material.getValue().materialType()).isEqualTo(CertMaterial.TYPE_GOV_CA_CERT);
+        assertThat(material.getValue().contentCipher()).isNotEqualTo(cert);
+        assertThat(sm4Service.decrypt(material.getValue().contentCipher(), KEY_REF)).isEqualTo(cert);
+        assertThat(material.getValue().contentSm3()).hasSize(64).matches("[0-9a-f]{64}");
+        assertThat(material.getValue().ocrRecognizable()).isTrue();
+        // 留痕三要素（渠道标识/流水号取自接口出口）+ counted 恒 0（政务无失败次数概念）
+        final ArgumentCaptor<CertVerificationLog> govLog = ArgumentCaptor.forClass(CertVerificationLog.class);
+        verify(certificationRepository).appendVerification(govLog.capture());
+        assertThat(govLog.getValue().verifyType()).isEqualTo(CertVerificationLog.TYPE_GOV_CA);
+        assertThat(govLog.getValue().channelCode()).isEqualTo(CHANNEL_CODE);
+        assertThat(govLog.getValue().channelRequestNo()).isEqualTo("MOCK-GOV-1");
+        assertThat(govLog.getValue().counted()).isFalse();
+        // 通过自动流转（SYSTEM 触发 + 留痕备注），不自动入驻
+        verify(statusService).transition(eq(10L), eq(SubjectStatus.PENDING_CERT),
+                eq(SubjectStatus.PENDING_REVIEW), eq(TriggerRole.SYSTEM), anyString(),
+                eq(CertificationService.GOV_TRANSITION_REMARK));
+    }
+
+    @Test
+    void govCaFailStaysPendingCertWithReasonAndCanResubmit() {
+        govSubject();
+        when(channel.verifyGovCaCertificate(any(), anyString())).thenReturn(
+                new GovCaVerification(false, "MOCK-GOV-2", "证书已过期（模拟渠道预置 A4）", null, null, null));
+
+        final GovCaCertificationResult result =
+                service.submitGovCaCertificate(GOV_SUBJECT_NO, "cert".getBytes(), "A4.cer");
+
+        assertThat(result.conclusion()).isEqualTo(VerificationConclusion.FAIL.name());
+        assertThat(result.status()).isEqualTo(SubjectStatus.PENDING_CERT);
+        assertThat(result.failReason()).contains("过期");
+        verify(statusService, never()).transition(anyLong(), any(), any(), any(), any(), any());
+        final ArgumentCaptor<CertVerificationLog> govLog = ArgumentCaptor.forClass(CertVerificationLog.class);
+        verify(certificationRepository).appendVerification(govLog.capture());
+        assertThat(govLog.getValue().conclusion()).isEqualTo(VerificationConclusion.FAIL);
+        assertThat(govLog.getValue().failReason()).contains("过期");
+        assertThat(govLog.getValue().counted()).isFalse();
+    }
+
+    @Test
+    void govSubjectRejectedOnEnterpriseEndpointsBothWays() {
+        govSubject();
+
+        // 政务主体调企业端点（上传/确认/核验）一律 1004B0007（hifi B5 双向互斥）
+        assertThatThrownBy(() -> service.uploadLicense(GOV_SUBJECT_NO, "img".getBytes(), "A1.jpg"))
+                .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getErrorCode())
+                        .isEqualTo(SubjectErrorCodes.CERT_CHANNEL_TYPE_MISMATCH));
+        assertThatThrownBy(() -> service.confirmLicense(GOV_SUBJECT_NO,
+                        new ConfirmationCommand("市大数据管理局", "91330100MA27XW123X", "张伟", "地址")))
+                .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getErrorCode())
+                        .isEqualTo(SubjectErrorCodes.CERT_CHANNEL_TYPE_MISMATCH));
+        assertThatThrownBy(() -> service.verifyLegalPerson(GOV_SUBJECT_NO,
+                        new VerificationCommand("张伟", ID_OK)))
+                .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getErrorCode())
+                        .isEqualTo(SubjectErrorCodes.CERT_CHANNEL_TYPE_MISMATCH));
+        verify(channel, never()).ocrBusinessLicense(any(), anyString());
+        verify(channel, never()).verifyLegalPerson(anyString(), anyString());
+        // 反向：企业主体调政务端点同码拒绝
+        assertThatThrownBy(() -> service.submitGovCaCertificate(SUBJECT_NO, "cert".getBytes(), "A3.cer"))
+                .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getErrorCode())
+                        .isEqualTo(SubjectErrorCodes.CERT_CHANNEL_TYPE_MISMATCH));
+        verify(channel, never()).verifyGovCaCertificate(any(), anyString());
+    }
+
+    @Test
+    void govCaChannelErrorFailsFastWithoutMaterialAndCountsNothing() {
+        govSubject();
+        when(channel.verifyGovCaCertificate(any(), anyString()))
+                .thenThrow(StdAdapterErrorCodes.channelUnavailable());
+
+        assertThatThrownBy(() -> service.submitGovCaCertificate(GOV_SUBJECT_NO, "cert".getBytes(), "A3.cer"))
+                .isInstanceOf(CertChannelUnavailableException.class);
+
+        // 无半完成状态：材料不落；留痕 CHANNEL_ERROR 行照落且不计失败（行为 7 第 4 条同口径）
+        verify(certificationRepository, never()).replaceMaterial(any());
+        final ArgumentCaptor<CertVerificationLog> govLog = ArgumentCaptor.forClass(CertVerificationLog.class);
+        verify(certificationRepository).appendVerification(govLog.capture());
+        assertThat(govLog.getValue().conclusion()).isEqualTo(VerificationConclusion.CHANNEL_ERROR);
+        assertThat(govLog.getValue().verifyType()).isEqualTo(CertVerificationLog.TYPE_GOV_CA);
+        assertThat(govLog.getValue().channelRequestNo()).isNull();
+        verify(statusService, never()).transition(anyLong(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void govCaFileValidationRejectsEmptyOversizedAndWrongExtension() {
+        govSubject();
+
+        assertThatThrownBy(() -> service.submitGovCaCertificate(GOV_SUBJECT_NO, null, "A3.cer"))
+                .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getErrorCode())
+                        .isEqualTo(ErrorCodes.PARAM_INVALID));
+        assertThatThrownBy(() -> service.submitGovCaCertificate(GOV_SUBJECT_NO, new byte[3], "A3.exe"))
+                .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getErrorCode())
+                        .isEqualTo(ErrorCodes.PARAM_INVALID));
+        properties.setGovCertMaxBytes(2);
+        assertThatThrownBy(() -> service.submitGovCaCertificate(GOV_SUBJECT_NO, "cert".getBytes(), "A3.cer"))
+                .isInstanceOfSatisfying(BizException.class, e -> assertThat(e.getErrorCode())
+                        .isEqualTo(ErrorCodes.PARAM_INVALID));
+    }
+
+    @Test
+    void govProfileReturnsGovCaSectionWithoutDailyAttempts() {
+        govSubject();
+        when(certificationRepository.findLatestMaterial(10L, CertMaterial.TYPE_GOV_CA_CERT))
+                .thenReturn(Optional.of(new CertMaterial(7L, 10L, CertMaterial.TYPE_GOV_CA_CERT, "A3.cer",
+                        "sm3", "cipher".getBytes(), "raw".getBytes(), "91330100MA27XW123X", null,
+                        true, null, null, null, null, null, LocalDateTime.now())));
+        when(certificationRepository.findVerifications(10L)).thenReturn(java.util.List.of(
+                new CertVerificationLog(null, 10L, CertVerificationLog.TYPE_GOV_CA, CHANNEL_CODE,
+                        "MOCK-GOV-1", null, null, VerificationConclusion.PASS, null, 12, false,
+                        LocalDateTime.now())));
+
+        final CertificationProfile profile = service.profile(GOV_SUBJECT_NO);
+
+        assertThat(profile.govCa()).isNotNull();
+        assertThat(profile.govCa().uploaded()).isTrue();
+        assertThat(profile.govCa().fileName()).isEqualTo("A3.cer");
+        assertThat(profile.govCa().lastConclusion()).isEqualTo(VerificationConclusion.PASS.name());
+        assertThat(profile.remainingAttemptsToday()).isNull();
+        assertThat(profile.license().uploaded()).isFalse();
     }
 }

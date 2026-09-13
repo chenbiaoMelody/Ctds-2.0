@@ -9,12 +9,13 @@ import java.util.List;
  *
  * @param subjectNo              申请编号
  * @param status                主体当前状态
- * @param license                证照材料状态
+ * @param license                证照材料状态（政务主体为空态）
+ * @param govCa                  政务 CA 材料状态（WBS-3.1.4；企业/机构主体为 null）
  * @param verifications          渠道调用记录（结论/原因/时间）
- * @param remainingAttemptsToday 当日剩余核验次数
+ * @param remainingAttemptsToday 当日剩余核验次数（政务主体无失败次数概念，返回 null）
  */
 public record CertificationProfile(String subjectNo, SubjectStatus status, LicenseProfile license,
-        List<VerificationEntry> verifications, int remainingAttemptsToday) {
+        GovCaProfile govCa, List<VerificationEntry> verifications, Integer remainingAttemptsToday) {
 
     /** 证照材料状态。 */
     public record LicenseProfile(boolean uploaded, boolean recognizable, boolean confirmed,
@@ -24,6 +25,11 @@ public record CertificationProfile(String subjectNo, SubjectStatus status, Licen
         public static LicenseProfile empty() {
             return new LicenseProfile(false, false, false, null, null);
         }
+    }
+
+    /** 政务 CA 材料状态（WBS-3.1.4 hifi 接口契约：最近一次提交与最近结论）。 */
+    public record GovCaProfile(boolean uploaded, String fileName, String lastConclusion,
+            String lastFailReason, LocalDateTime lastSubmittedAt) {
     }
 
     /** 渠道调用记录条目（不含身份证号与密文，档案展示口径）。 */

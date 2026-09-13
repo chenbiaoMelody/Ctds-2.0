@@ -75,4 +75,43 @@ class MockCertificationChannelTest {
         assertThatThrownBy(() -> channel.verifyLegalPerson(" ", ""))
                 .isInstanceOf(IllegalArgumentException.class);
     }
+
+    @Test
+    void 政务CA有效证书A3验证通过且单位要素固定() {
+        final GovCaVerification result = channel.verifyGovCaCertificate(new byte[]{1}, "政务证书A3.cer");
+
+        assertThat(result.passed()).isTrue();
+        assertThat(result.failReason()).isNull();
+        assertThat(result.unitName()).isEqualTo("市大数据管理局");
+        assertThat(result.channelRequestNo()).startsWith("MOCK-");
+    }
+
+    @Test
+    void 政务CA过期证书A4拒绝并附明确原因() {
+        final GovCaVerification result = channel.verifyGovCaCertificate(new byte[]{1}, "政务证书A4.cer");
+
+        assertThat(result.passed()).isFalse();
+        assertThat(result.failReason()).contains("过期");
+        assertThat(result.channelRequestNo()).startsWith("MOCK-");
+    }
+
+    @Test
+    void 政务CA非预置证书拒绝且不产生部分要素() {
+        final GovCaVerification result = channel.verifyGovCaCertificate(new byte[]{1}, "其他证书.pem");
+
+        assertThat(result.passed()).isFalse();
+        assertThat(result.failReason()).isNotBlank();
+        assertThat(result.unitName()).isNull();
+    }
+
+    @Test
+    void 政务CA异常注入与空入参口径与既有方法一致() {
+        final MockCertificationChannel broken = new MockCertificationChannel(true);
+
+        assertThatThrownBy(() -> broken.verifyGovCaCertificate(new byte[]{1}, "A3.cer"))
+                .isInstanceOfSatisfying(BizException.class,
+                        e -> assertThat(e.getErrorCode()).isEqualTo(StdAdapterErrorCodes.CHANNEL_UNAVAILABLE));
+        assertThatThrownBy(() -> channel.verifyGovCaCertificate(null, "A3.cer"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
 }

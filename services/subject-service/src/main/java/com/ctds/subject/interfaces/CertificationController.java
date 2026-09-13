@@ -7,6 +7,7 @@ import com.ctds.subject.application.CertificationProfile;
 import com.ctds.subject.application.CertificationService;
 import com.ctds.subject.application.ConfirmationCommand;
 import com.ctds.subject.application.ConfirmationResult;
+import com.ctds.subject.application.GovCaCertificationResult;
 import com.ctds.subject.application.ImageView;
 import com.ctds.subject.application.LicenseUploadResult;
 import com.ctds.subject.application.VerificationCommand;
@@ -68,6 +69,16 @@ public class CertificationController {
             @Valid @RequestBody final VerificationRequest request) {
         return ApiResult.ok(certificationService.verifyLegalPerson(subjectNo,
                 new VerificationCommand(request.legalPersonName(), request.legalPersonIdNo())));
+    }
+
+    /** 政务 CA 证书提交与验证（WBS-3.1.4，规格行为 6：一步完成，通过自动流转待审核；不挂幂等——换证重试须真执行）。 */
+    @PostMapping(path = "/gov-ca-certificate", consumes = MediaType.MULTIPART_FORM_DATA_VALUE,
+            produces = MediaType.APPLICATION_JSON_VALUE)
+    @RequirePermission("subject.certify")
+    public ApiResult<GovCaCertificationResult> submitGovCaCertificate(@PathVariable final String subjectNo,
+            @RequestParam("file") final MultipartFile file) throws IOException {
+        return ApiResult.ok(certificationService.submitGovCaCertificate(subjectNo, file.getBytes(),
+                file.getOriginalFilename()));
     }
 
     /** 认证进度档案（身份证号等 L4 字段不回显）。 */

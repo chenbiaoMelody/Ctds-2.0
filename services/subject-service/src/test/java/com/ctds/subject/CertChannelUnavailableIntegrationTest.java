@@ -85,14 +85,57 @@ class CertChannelUnavailableIntegrationTest {
                 .andExpect(jsonPath("$.code").value("1004S0001"))
                 .andExpect(jsonPath("$.message").value("认证服务暂不可用，请稍后重试"));
 
-        // 无脏数据残留（规格行为 3 GWT-4 / 评审视角 4 补齐）：渠道异常时材料与渠道留痕均不落半成品
+        // 无脏数据残留（规格行为 3 GWT-4 / 评审视角 4 补齐）：渠道异常时材料不落半成品；
+        // 渠道留痕按调用类型过滤计数（WBS-3.1.4 增政务通道用例后全局计数不再单一）
         final Integer materials = jdbcTemplate.queryForObject(
                 "SELECT COUNT(1) FROM cert_material", Integer.class);
         assertThat(materials).isZero();
-        final Integer channelErrors = jdbcTemplate.queryForObject(
-                "SELECT COUNT(1) FROM cert_verification_log WHERE conclusion = 'CHANNEL_ERROR' AND counted = 0",
+        final Integer ocrErrors = jdbcTemplate.queryForObject(
+                "SELECT COUNT(1) FROM cert_verification_log "
+                        + "WHERE conclusion = 'CHANNEL_ERROR' AND counted = 0 AND verify_type = 'OCR_LICENSE'",
                 Integer.class);
-        assertThat(channelErrors).isEqualTo(1);
+        assertThat(ocrErrors).isEqualTo(1);
+    }
+
+    /** WBS-3.1.4：政务 CA 通道同一异常注入口径（hifi B4：CHANNEL_ERROR 留痕 + fail-fast，无半成品材料）。 */
+    @Test
+    void govCaChannelErrorReturnsServiceUnavailableWithBusinessMessage() throws Exception {
+        final String subjectNo = registerGovSubject();
+
+        mockMvc.perform(multipart(BASE + "/" + subjectNo + "/certification/gov-ca-certificate")
+                        .file(new MockMultipartFile("file", "A3.cer",
+                                MediaType.APPLICATION_OCTET_STREAM_VALUE,
+                                "cert".getBytes(StandardCharsets.US_ASCII)))
+                        .header("X-Ctds-Subject", APPLICANT).header("X-Ctds-Roles", "applicant"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("1004S0001"))
+                .andExpect(jsonPath("$.message").value("认证服务暂不可用，请稍后重试"));
+
+        assertThat(subjectStatus(subjectNo)).isEqualTo("PENDING_CERT");
+        final Integer govErrors = jdbcTemplate.queryForObject(
+                "SELECT COUNT(1) FROM cert_verification_log "
+                        + "WHERE conclusion = 'CHANNEL_ERROR' AND counted = 0 AND verify_type = 'GOV_CA'",
+                Integer.class);
+        assertThat(govErrors).isEqualTo(1);
+    }
+
+    private String subjectStatus(final String subjectNo) {
+        return jdbcTemplate.queryForObject(
+                "SELECT status FROM subject WHERE subject_no = ?", String.class, subjectNo);
+    }
+
+    private String registerGovSubject() throws Exception {
+        final MvcResult mvcResult = mockMvc.perform(post(BASE)
+                        .header("X-Ctds-Subject", APPLICANT).header("X-Ctds-Roles", "applicant")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"subjectName\":\"政务渠道异常演示局\",\"uscc\":\"11330100MA27XW1306\","
+                                + "\"subjectType\":\"GOV\",\"regAddress\":\"杭州市XX区XX路88号\","
+                                + "\"contactName\":\"王科\",\"contactPhone\":\"13800005678\","
+                                + "\"adminAccount\":\"govadmin\"}"))
+                .andExpect(status().isOk())
+                .andReturn();
+        return new ObjectMapper().readTree(mvcResult.getResponse().getContentAsString())
+                .get("data").get("subjectNo").asText();
     }
 
     private String registerSubject() throws Exception {

@@ -18,6 +18,12 @@ public class CertificationProperties {
     /** 证照影像格式白名单（lofi 待确认 5：jpg/jpeg/png）。 */
     private List<String> uploadAllowedExtensions = List.of("jpg", "jpeg", "png");
 
+    /** 政务 CA 证书文件大小上限字节（WBS-3.1.4 lofi Q4-A：默认 2MB）。 */
+    private long govCertMaxBytes = 2 * 1024 * 1024;
+
+    /** 政务 CA 证书文件格式白名单（WBS-3.1.4 lofi Q4-A：cer/crt/pem）。 */
+    private List<String> govCertAllowedExtensions = List.of("cer", "crt", "pem");
+
     /** SM4 密钥编号（L4 字段加密唯一入口 common-crypto 的 keyRef，密钥材料不入库）。 */
     private String materialKeyRef = "subject-cert-material";
 
@@ -43,6 +49,22 @@ public class CertificationProperties {
 
     public void setUploadAllowedExtensions(final List<String> value) {
         this.uploadAllowedExtensions = value;
+    }
+
+    public long getGovCertMaxBytes() {
+        return govCertMaxBytes;
+    }
+
+    public void setGovCertMaxBytes(final long value) {
+        this.govCertMaxBytes = value;
+    }
+
+    public List<String> getGovCertAllowedExtensions() {
+        return govCertAllowedExtensions;
+    }
+
+    public void setGovCertAllowedExtensions(final List<String> value) {
+        this.govCertAllowedExtensions = value;
     }
 
     public String getMaterialKeyRef() {

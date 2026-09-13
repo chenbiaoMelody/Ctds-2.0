@@ -27,8 +27,10 @@ public record CertMaterial(
         LocalDateTime confirmedAt,
         LocalDateTime createdAt) {
 
-    /** 营业执照材料类型（规格行为 2；政务 CA 材料随 3.1.4 另立类型）。 */
+    /** 营业执照材料类型（规格行为 2）。 */
     public static final String TYPE_BUSINESS_LICENSE = "BUSINESS_LICENSE";
+    /** 政务 CA 证书材料类型（WBS-3.1.4，规格行为 6 第 5 条 L4 管控；复用本表新增值，ADR-016 §2.3 补记）。 */
+    public static final String TYPE_GOV_CA_CERT = "GOV_CA_CERT";
 
     /** 申请人是否已完成核对确认。 */
     public boolean confirmed() {

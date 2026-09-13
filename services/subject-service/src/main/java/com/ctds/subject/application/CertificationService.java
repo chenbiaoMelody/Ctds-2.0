@@ -7,6 +7,7 @@ import com.ctds.common.errorcode.ErrorCodes;
 import com.ctds.common.logging.AuditOutcome;
 import com.ctds.std.StdAdapterErrorCodes;
 import com.ctds.std.certification.CertificationStandardApi;
+import com.ctds.std.certification.GovCaVerification;
 import com.ctds.std.certification.LegalPersonVerification;
 import com.ctds.std.certification.OcrRecognition;
 import com.ctds.subject.domain.CertMaterial;
@@ -16,6 +17,7 @@ import com.ctds.subject.domain.Subject;
 import com.ctds.subject.domain.SubjectErrorCodes;
 import com.ctds.subject.domain.SubjectRepository;
 import com.ctds.subject.domain.SubjectStatus;
+import com.ctds.subject.domain.SubjectType;
 import com.ctds.subject.domain.TriggerRole;
 import com.ctds.subject.domain.VerificationConclusion;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -53,10 +55,13 @@ public class CertificationService {
     static final String ACTION_VERIFY = "certification.verify";
     static final String ACTION_IMAGE_VIEW = "certification.image.view";
     static final String ACTION_ABANDON = "certification.abandon";
+    static final String ACTION_GOV_SUBMIT = "certification.gov.submit";
 
     /** 认证通过自动流转与结束认证的留痕备注（流转四要素口径，规格行为 4 第 2 条）。 */
     static final String AUTO_TRANSITION_REMARK = "证照确认与法人核验通过，自动流转";
     static final String ABANDON_REMARK = "申请人结束认证";
+    /** 政务 CA 验证通过的自动流转留痕备注（WBS-3.1.4，规格行为 6 第 2 条；不免人工审核——Q2 裁决）。 */
+    static final String GOV_TRANSITION_REMARK = "政务 CA 证书验证通过，自动流转";
 
     /** 系统触发方的操作人标识（认证自动流转，规格行为 4 第 1 条：无需人工触发）。 */
     private static final String SYSTEM_OPERATOR = "system";
@@ -101,12 +106,13 @@ public class CertificationService {
         final Subject subject = requireSubject(subjectNo);
         ownershipGuard.requireOwnerOrReviewer(subject, ACTION_UPLOAD);
         requirePendingCert(subject);
+        requireEnterpriseChannel(subject, ACTION_UPLOAD);
         requireImage(image, fileName);
 
         final Instant start = Instant.now();
         final OcrRecognition recognition = callChannel(
                 () -> certificationChannel.ocrBusinessLicense(image, fileName),
-                subject.id(), null);
+                subject.id(), CertVerificationLog.TYPE_OCR_LICENSE, null);
         final int costMs = elapsedMs(start);
         final LocalDateTime now = LocalDateTime.now(clock);
         final byte[] imageCipher = sm4Service.encrypt(image, properties.getMaterialKeyRef());
@@ -132,6 +138,7 @@ public class CertificationService {
         final Subject subject = requireSubject(subjectNo);
         ownershipGuard.requireOwnerOrReviewer(subject, ACTION_CONFIRM);
         requirePendingCert(subject);
+        requireEnterpriseChannel(subject, ACTION_CONFIRM);
         requireText(command.subjectName(), "主体名称");
         requireText(command.uscc(), "统一社会信用代码");
         requireText(command.legalPerson(), "法定代表人");
@@ -158,6 +165,7 @@ public class CertificationService {
         if (subject.status() != SubjectStatus.PENDING_CERT && subject.status() != SubjectStatus.CERT_FAILED) {
             throw new BizException(SubjectErrorCodes.CERT_STATE_NOT_ALLOWED, "当前状态不允许执行认证操作");
         }
+        requireEnterpriseChannel(subject, ACTION_VERIFY);
         requireText(command.legalPersonName(), "法人姓名");
         requireText(command.legalPersonIdNo(), "法人身份证号");
 
@@ -177,7 +185,7 @@ public class CertificationService {
         final Instant start = Instant.now();
         final LegalPersonVerification verification = callChannel(
                 () -> certificationChannel.verifyLegalPerson(command.legalPersonName(), command.legalPersonIdNo()),
-                subject.id(), command);
+                subject.id(), CertVerificationLog.TYPE_LEGAL_PERSON, command.legalPersonName());
         final int costMs = elapsedMs(start);
         final LocalDateTime now = LocalDateTime.now(clock);
 
@@ -203,11 +211,22 @@ public class CertificationService {
                 verification.failReason(), remainingAttempts(subject.id()));
     }
 
-    /** 认证进度档案（行为 3 第 2 条 / 行为 4 第 2 条）：身份证号等 L4 字段不回显。 */
+    /** 认证进度档案（行为 3 第 2 条 / 行为 4 第 2 条 / 行为 6 验收-3）：L4 字段不回显；
+     * 政务主体返回 govCa 段且无"当日剩余次数"概念（hifi 接口契约）。 */
     public CertificationProfile profile(final String subjectNo) {
         ops.requireSubjectNo(subjectNo);
         final Subject subject = requireSubject(subjectNo);
         ownershipGuard.requireOwnerOrReviewer(subject, "certification.profile");
+        final List<CertificationProfile.VerificationEntry> entries =
+                certificationRepository.findVerifications(subject.id()).stream()
+                        .map(item -> new CertificationProfile.VerificationEntry(item.conclusion(),
+                                item.failReason(), item.createdAt()))
+                        .collect(Collectors.toList());
+        if (subject.subjectType() == SubjectType.GOV) {
+            return new CertificationProfile(subjectNo, subject.status(),
+                    CertificationProfile.LicenseProfile.empty(),
+                    govCaProfile(subject.id()), entries, null);
+        }
         final CertMaterial material =
                 certificationRepository.findLatestMaterial(subject.id(), CertMaterial.TYPE_BUSINESS_LICENSE)
                         .orElse(null);
@@ -219,12 +238,7 @@ public class CertificationService {
                                 ? new OcrElements(material.confirmedName(), material.confirmedUscc(),
                                         material.confirmedLegalPerson(), material.confirmedRegAddress())
                                 : null);
-        final List<CertificationProfile.VerificationEntry> entries =
-                certificationRepository.findVerifications(subject.id()).stream()
-                        .map(item -> new CertificationProfile.VerificationEntry(item.conclusion(),
-                                item.failReason(), item.createdAt()))
-                        .collect(Collectors.toList());
-        return new CertificationProfile(subjectNo, subject.status(), license, entries,
+        return new CertificationProfile(subjectNo, subject.status(), license, null, entries,
                 remainingAttempts(subject.id()));
     }
 
@@ -253,6 +267,45 @@ public class CertificationService {
         return new CertificationActionResult(subjectNo, SubjectStatus.CERT_FAILED);
     }
 
+    /**
+     * 政务 CA 证书提交与验证（WBS-3.1.4，规格行为 6；lofi Q2-A 单端点一步口径）：
+     * 前置校验（状态/通道互斥/文件）→ 渠道验证 → 材料与留痕落库 → 通过自动流转待审核（不免人工审核，Q2 裁决）。
+     * 业务不通过是结论非异常（FAIL + 明确原因，主体停留待认证可重新提交换证）；
+     * 政务通道不设失败次数上限（lofi Q3-A：规格行为 6 未定义），留痕兜底。
+     */
+    public GovCaCertificationResult submitGovCaCertificate(final String subjectNo, final byte[] certBytes,
+            final String fileName) {
+        ops.requireSubjectNo(subjectNo);
+        final Subject subject = requireSubject(subjectNo);
+        ownershipGuard.requireOwnerOrReviewer(subject, ACTION_GOV_SUBMIT);
+        if (subject.status() != SubjectStatus.PENDING_CERT && subject.status() != SubjectStatus.CERT_FAILED) {
+            throw new BizException(SubjectErrorCodes.CERT_STATE_NOT_ALLOWED, "当前状态不允许执行认证操作");
+        }
+        requireGovChannel(subject, ACTION_GOV_SUBMIT);
+        requireCertFile(certBytes, fileName);
+
+        final Instant start = Instant.now();
+        final GovCaVerification verification = callChannel(
+                () -> certificationChannel.verifyGovCaCertificate(certBytes, fileName),
+                subject.id(), CertVerificationLog.TYPE_GOV_CA, null);
+        final int costMs = elapsedMs(start);
+        final LocalDateTime now = LocalDateTime.now(clock);
+        saveGovCertMaterial(subject.id(), fileName, certBytes, verification, costMs, now);
+
+        if (!verification.passed()) {
+            ops.audit(ops.operator(), ACTION_GOV_SUBMIT, subjectNo, AuditOutcome.SUCCESS, "gov_verify_failed");
+            log.info("gov ca verification failed: subjectNo={}", subjectNo);
+            return new GovCaCertificationResult(subjectNo, VerificationConclusion.FAIL.name(),
+                    subject.status(), verification.failReason());
+        }
+        statusService.transition(subject.id(), subject.status(), SubjectStatus.PENDING_REVIEW,
+                TriggerRole.SYSTEM, SYSTEM_OPERATOR, GOV_TRANSITION_REMARK);
+        ops.audit(ops.operator(), ACTION_GOV_SUBMIT, subjectNo, AuditOutcome.SUCCESS, null);
+        log.info("gov ca verified: subjectNo={} -> PENDING_REVIEW", subjectNo);
+        return new GovCaCertificationResult(subjectNo, VerificationConclusion.PASS.name(),
+                SubjectStatus.PENDING_REVIEW, null);
+    }
+
     private Subject requireSubject(final String subjectNo) {
         return subjectRepository.findBySubjectNo(subjectNo)
                 .orElseThrow(() -> new BizException(ErrorCodes.RESOURCE_NOT_FOUND, "申请编号不存在"));
@@ -268,6 +321,95 @@ public class CertificationService {
         if (subject.status() != SubjectStatus.PENDING_CERT) {
             throw new BizException(SubjectErrorCodes.CERT_STATE_NOT_ALLOWED, "当前状态不允许执行认证操作");
         }
+    }
+
+    /** 通道互斥（WBS-3.1.4 hifi B5）：政府部门主体不适用企业认证流程（规格行为 6 第 1 条），双向同码 1004B0007。 */
+    private void requireEnterpriseChannel(final Subject subject, final String action) {
+        if (subject.subjectType() == SubjectType.GOV) {
+            ops.audit(ops.operator(), action, subject.subjectNo(), AuditOutcome.DENIED, "channel_type_mismatch");
+            throw new BizException(SubjectErrorCodes.CERT_CHANNEL_TYPE_MISMATCH,
+                    "主体类型与认证流程不匹配，请使用对应主体的认证方式");
+        }
+    }
+
+    /** 通道互斥反向门槛：政务 CA 通道仅政府部门主体可用（规格行为 6 第 1 条）。 */
+    private void requireGovChannel(final Subject subject, final String action) {
+        if (subject.subjectType() != SubjectType.GOV) {
+            ops.audit(ops.operator(), action, subject.subjectNo(), AuditOutcome.DENIED, "channel_type_mismatch");
+            throw new BizException(SubjectErrorCodes.CERT_CHANNEL_TYPE_MISMATCH,
+                    "主体类型与认证流程不匹配，请使用对应主体的认证方式");
+        }
+    }
+
+    /** 政务证书文件校验（lofi Q4-A 定参：≤2MB、cer/crt/pem、文件名 ≤256）。 */
+    private void requireCertFile(final byte[] certBytes, final String fileName) {
+        if (certBytes == null || certBytes.length == 0) {
+            throw new BizException(ErrorCodes.PARAM_INVALID, "政务 CA 证书文件为空");
+        }
+        if (certBytes.length > properties.getGovCertMaxBytes()) {
+            throw new BizException(ErrorCodes.PARAM_INVALID, "政务 CA 证书文件大小超出上限（≤"
+                    + properties.getGovCertMaxBytes() / (1024 * 1024) + "MB）");
+        }
+        if (fileName == null || fileName.isBlank() || fileName.length() > MAX_FILE_NAME_CHARS) {
+            throw new BizException(ErrorCodes.PARAM_INVALID, "文件名缺失或超长（最长 "
+                    + MAX_FILE_NAME_CHARS + " 字符）");
+        }
+        final String extension = extensionOf(fileName);
+        if (!properties.getGovCertAllowedExtensions().contains(extension)) {
+            throw new BizException(ErrorCodes.PARAM_INVALID, "政务 CA 证书仅支持 "
+                    + String.join("/", properties.getGovCertAllowedExtensions()) + " 格式");
+        }
+    }
+
+    /** 政务证书材料落库（复用 cert_material 表 GOV_CA_CERT 类型；文件密文 + SM3 + 验证要素密文，hifi 库表节）。 */
+    private void saveGovCertMaterial(final long subjectId, final String fileName, final byte[] certBytes,
+            final GovCaVerification verification, final int costMs, final LocalDateTime now) {
+        final byte[] certCipher = sm4Service.encrypt(certBytes, properties.getMaterialKeyRef());
+        final String certDigest = sm3Service.digestHex(certBytes);
+        final byte[] rawCipher = sm4Service.encrypt(govVerifyRawJson(verification),
+                properties.getMaterialKeyRef());
+        certificationRepository.replaceMaterial(new CertMaterial(null, subjectId,
+                CertMaterial.TYPE_GOV_CA_CERT, fileName, certDigest, certCipher, rawCipher,
+                verification.unitCode(), null, verification.passed(),
+                null, null, null, null, null, now));
+        certificationRepository.appendVerification(new CertVerificationLog(null, subjectId,
+                CertVerificationLog.TYPE_GOV_CA, certificationChannel.channelCode(),
+                verification.channelRequestNo(), null, null,
+                verification.passed() ? VerificationConclusion.PASS : VerificationConclusion.FAIL,
+                verification.failReason(), costMs, false, now));
+    }
+
+    /** 政务验证要素密文 JSON（组织信息非 L4 但统一密文落 ocr_raw_cipher，hifi 库表节口径）。 */
+    private byte[] govVerifyRawJson(final GovCaVerification verification) {
+        try {
+            final Map<String, String> raw = new LinkedHashMap<>();
+            raw.put("unitName", verification.unitName());
+            raw.put("unitCode", verification.unitCode());
+            raw.put("message", verification.message());
+            return MAPPER.writeValueAsBytes(raw);
+        } catch (final java.io.IOException e) {
+            throw new IllegalStateException("gov ca verification raw serialization failed", e);
+        }
+    }
+
+    /** 政务 CA 档案段（GOV 主体）：最近一次材料 + 最近一条 GOV_CA 留痕结论。 */
+    private CertificationProfile.GovCaProfile govCaProfile(final long subjectId) {
+        final CertMaterial material =
+                certificationRepository.findLatestMaterial(subjectId, CertMaterial.TYPE_GOV_CA_CERT)
+                        .orElse(null);
+        if (material == null) {
+            return null;
+        }
+        CertificationProfile.VerificationEntry last = null;
+        for (final CertVerificationLog item : certificationRepository.findVerifications(subjectId)) {
+            if (CertVerificationLog.TYPE_GOV_CA.equals(item.verifyType())) {
+                last = new CertificationProfile.VerificationEntry(item.conclusion(), item.failReason(),
+                        item.createdAt());
+            }
+        }
+        return new CertificationProfile.GovCaProfile(true, material.fileName(),
+                last == null ? null : last.conclusion().name(),
+                last == null ? null : last.failReason(), material.createdAt());
     }
 
     private void requireImage(final byte[] image, final String fileName) {
@@ -327,7 +469,7 @@ public class CertificationService {
      * （评审修复：禁止吞异常——原始堆栈进服务端日志，出站仍为业务文案）。
      */
     private <T> T callChannel(final ChannelCall<T> call, final long subjectId,
-            final VerificationCommand verifyCommand) {
+            final String errorVerifyType, final String errorPersonName) {
         final Instant start = Instant.now();
         try {
             return call.invoke();
@@ -335,23 +477,23 @@ public class CertificationService {
             if (!StdAdapterErrorCodes.CHANNEL_UNAVAILABLE.equals(e.getErrorCode())) {
                 throw e;
             }
-            recordChannelError(subjectId, verifyCommand, elapsedMs(start));
+            recordChannelError(subjectId, errorVerifyType, errorPersonName, elapsedMs(start));
             throw new CertChannelUnavailableException();
         } catch (final IllegalArgumentException e) {
             throw e;
         } catch (final RuntimeException e) {
             log.error("certification channel unexpected failure: subjectId={}", subjectId, e);
-            recordChannelError(subjectId, verifyCommand, elapsedMs(start));
+            recordChannelError(subjectId, errorVerifyType, errorPersonName, elapsedMs(start));
             throw new CertChannelUnavailableException();
         }
     }
 
-    private void recordChannelError(final long subjectId, final VerificationCommand verifyCommand,
+    private void recordChannelError(final long subjectId, final String verifyType, final String personName,
             final int costMs) {
         certificationRepository.appendVerification(new CertVerificationLog(null, subjectId,
-                verifyCommand == null ? CertVerificationLog.TYPE_OCR_LICENSE : CertVerificationLog.TYPE_LEGAL_PERSON,
+                verifyType,
                 certificationChannel.channelCode(), null,
-                verifyCommand == null ? null : verifyCommand.legalPersonName(),
+                personName,
                 null, VerificationConclusion.CHANNEL_ERROR, null, costMs, false, LocalDateTime.now(clock)));
     }
 

@@ -24,4 +24,6 @@ public record CertVerificationLog(
     public static final String TYPE_LEGAL_PERSON = "LEGAL_PERSON";
     /** 证照 OCR 调用类型（规格行为 7 第 3 条：任一次渠道调用全程留痕）。 */
     public static final String TYPE_OCR_LICENSE = "OCR_LICENSE";
+    /** 政务 CA 证书验证调用类型（WBS-3.1.4，规格行为 6 第 2 条；counted 恒 0——无失败次数概念）。 */
+    public static final String TYPE_GOV_CA = "GOV_CA";
 }

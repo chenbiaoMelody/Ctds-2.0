@@ -48,6 +48,8 @@ ctds:
     verify-daily-limit: 5
     upload-max-bytes: 5242880
     upload-allowed-extensions: jpg,jpeg,png
+    gov-cert-max-bytes: 2097152
+    gov-cert-allowed-extensions: cer,crt,pem
     material-key-ref: subject-cert-material
   # 模拟认证渠道异常注入开关（演示/测试 fail-fast 口径，hifi B8）
   std:
