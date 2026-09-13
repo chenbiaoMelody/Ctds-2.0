@@ -91,6 +91,9 @@ class GovCaCertificationIntegrationTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    @Autowired
+    private com.ctds.common.crypto.Sm3Service sm3Service;
+
     @Test
     void govCaValidCertPassesToPendingReviewWithFullAuditTrail() throws Exception {
         final String subjectNo = registerGovSubject("91330100MA27XW1301", "政务全链路演示局");
@@ -111,9 +114,9 @@ class GovCaCertificationIntegrationTest {
                         + "AND trigger_role = 'SYSTEM' AND remark = '政务 CA 证书验证通过，自动流转'",
                 Integer.class, subjectNo);
         assertThat(transitions).isEqualTo(1);
-        // 留痕三要素：verify_type=GOV_CA + 渠道标识/流水号取自接口出口 + 不计失败
+        // 留痕三要素：verify_type=GOV_CA + 渠道标识/流水号取自接口出口 + 不计失败 + 耗时留痕
         final Map<String, Object> logRow = jdbcTemplate.queryForMap(
-                "SELECT channel_code, channel_request_no, conclusion, counted FROM cert_verification_log "
+                "SELECT channel_code, channel_request_no, conclusion, counted, cost_ms FROM cert_verification_log "
                         + "WHERE subject_id = (SELECT id FROM subject WHERE subject_no = ?) "
                         + "AND verify_type = 'GOV_CA'",
                 subjectNo);
@@ -121,16 +124,19 @@ class GovCaCertificationIntegrationTest {
         assertThat((String) logRow.get("channel_request_no")).startsWith("MOCK-");
         assertThat(logRow.get("conclusion")).isEqualTo("PASS");
         assertThat((int) logRow.get("counted")).isZero();
-        // 证书文件密文落库（L4）：密文形态 + SM3 与原文一致（hifi B6）
+        assertThat((int) logRow.get("cost_ms")).isGreaterThanOrEqualTo(0);
+        // 证书文件密文落库（L4）：密文形态 + SM3 与原文现算一致 + 验证要素密文不含明文（评审视角 1/4 补齐）
         final Map<String, Object> materialRow = jdbcTemplate.queryForMap(
-                "SELECT material_type, file_name, content_cipher, content_sm3, ocr_recognizable "
+                "SELECT material_type, file_name, content_cipher, content_sm3, ocr_raw_cipher, ocr_recognizable "
                         + "FROM cert_material WHERE subject_id = (SELECT id FROM subject WHERE subject_no = ?)",
                 subjectNo);
         assertThat(materialRow.get("material_type")).isEqualTo("GOV_CA_CERT");
         assertThat(materialRow.get("file_name")).isEqualTo("A3.cer");
         assertThat(new String((byte[]) materialRow.get("content_cipher"), StandardCharsets.ISO_8859_1))
                 .doesNotContain("fake-gov-ca-cert-a3");
-        assertThat((String) materialRow.get("content_sm3")).hasSize(64).matches("[0-9a-f]{64}");
+        assertThat((String) materialRow.get("content_sm3")).isEqualTo(sm3Service.digestHex(cert));
+        assertThat(new String((byte[]) materialRow.get("ocr_raw_cipher"), StandardCharsets.ISO_8859_1))
+                .doesNotContain("市大数据管理局");
         assertThat((int) materialRow.get("ocr_recognizable")).isEqualTo(1);
     }
 
@@ -154,9 +160,29 @@ class GovCaCertificationIntegrationTest {
         assertThat(subjectStatus(subjectNo)).isEqualTo("PENDING_REVIEW");
         final Integer materialCount = jdbcTemplate.queryForObject(
                 "SELECT COUNT(1) FROM cert_material WHERE subject_id = "
-                        + "(SELECT id FROM subject WHERE subject_no = ?) AND material_type = 'GOV_CA_CERT'",
+                        + "(SELECT id FROM subject WHERE subject_no = ?) "
+                        + "AND material_type = 'GOV_CA_CERT' AND file_name = 'A3.cer'",
                 Integer.class, subjectNo);
         assertThat(materialCount).isEqualTo(1);
+    }
+
+    @Test
+    void govCaSubmissionBlockedOnceAlreadyInReviewState() throws Exception {
+        // 评审视角 4 必修①：已流转待审核后再提交 → 状态门槛 1004C0002，库内状态不被扰动
+        final String subjectNo = registerGovSubject("91330100MA27XW1309", "门槛演示局");
+        submitGovCert(subjectNo, "valid-cert".getBytes(StandardCharsets.US_ASCII), "A3.cer", APPLICANT)
+                .andExpect(status().isOk());
+        assertThat(subjectStatus(subjectNo)).isEqualTo("PENDING_REVIEW");
+
+        submitGovCert(subjectNo, "another-cert".getBytes(StandardCharsets.US_ASCII), "A3.cer", APPLICANT)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("1004C0002"));
+        assertThat(subjectStatus(subjectNo)).isEqualTo("PENDING_REVIEW");
+        final Integer govLogCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(1) FROM cert_verification_log WHERE subject_id = "
+                        + "(SELECT id FROM subject WHERE subject_no = ?) AND verify_type = 'GOV_CA'",
+                Integer.class, subjectNo);
+        assertThat(govLogCount).isEqualTo(1);
     }
 
     @Test
@@ -179,6 +205,20 @@ class GovCaCertificationIntegrationTest {
 
         final JsonNode denied = awaitEvent("certification.gov.submit", "DENIED", APPLICANT);
         assertThat(denied.get("actor").asText()).isEqualTo(APPLICANT);
+        // 双向拒绝留痕（评审视角 4 建议）：政务→企业方向的 upload DENIED 同样落审计
+        final JsonNode uploadDenied = awaitEvent("certification.upload", "DENIED", APPLICANT);
+        assertThat(uploadDenied.get("actor").asText()).isEqualTo(APPLICANT);
+
+        // 企业主体档案回归：govCa 恒为 null、当日剩余次数正常返回（hifi B8，评审视角 1 建议补齐）
+        final MvcResult enterpriseProfile = mockMvc.perform(
+                        get(BASE + "/" + enterpriseSubjectNo + "/certification")
+                                .header("X-Ctds-Subject", APPLICANT).header("X-Ctds-Roles", "applicant"))
+                .andExpect(status().isOk())
+                .andReturn();
+        final JsonNode enterpriseData = MAPPER.readTree(enterpriseProfile.getResponse().getContentAsString())
+                .get("data");
+        assertThat(enterpriseData.get("govCa").isNull()).isTrue();
+        assertThat(enterpriseData.get("remainingAttemptsToday").isNull()).isFalse();
     }
 
     @Test

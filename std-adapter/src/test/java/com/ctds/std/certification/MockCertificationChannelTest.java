@@ -100,8 +100,18 @@ class MockCertificationChannelTest {
         final GovCaVerification result = channel.verifyGovCaCertificate(new byte[]{1}, "其他证书.pem");
 
         assertThat(result.passed()).isFalse();
-        assertThat(result.failReason()).isNotBlank();
+        // 精确文案与 hifi B9 定稿一致（评审视角 4：钉住渠道契约文案防漂移）
+        assertThat(result.failReason()).isEqualTo("证书无法识别或验证不通过，请确认后重新提交");
         assertThat(result.unitName()).isNull();
+        assertThat(result.unitCode()).isNull();
+    }
+
+    @Test
+    void 政务CA结论记录的不变量约束() {
+        assertThatThrownBy(() -> new GovCaVerification(true, " ", null, null, null, null))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new GovCaVerification(false, "MOCK-1", null, null, null, null))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test

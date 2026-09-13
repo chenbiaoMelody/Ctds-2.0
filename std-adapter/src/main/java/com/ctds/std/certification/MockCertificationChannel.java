@@ -88,7 +88,7 @@ public class MockCertificationChannel implements CertificationStandardApi {
         }
         if (fileName.contains(GOV_CERT_VALID_MARKER)) {
             return new GovCaVerification(true, nextRequestNo(), null, "市大数据管理局",
-                    "91330100MA27XW123X", "证书验证通过（模拟渠道预置有效证书 A3）");
+                    "11330100MA27XW1300", "证书验证通过（模拟渠道预置有效证书 A3）");
         }
         if (fileName.contains(GOV_CERT_EXPIRED_MARKER)) {
             return new GovCaVerification(false, nextRequestNo(), "证书已过期（模拟渠道预置 A4）",

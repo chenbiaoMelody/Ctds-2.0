@@ -217,15 +217,15 @@ public class CertificationService {
         ops.requireSubjectNo(subjectNo);
         final Subject subject = requireSubject(subjectNo);
         ownershipGuard.requireOwnerOrReviewer(subject, "certification.profile");
-        final List<CertificationProfile.VerificationEntry> entries =
-                certificationRepository.findVerifications(subject.id()).stream()
-                        .map(item -> new CertificationProfile.VerificationEntry(item.conclusion(),
-                                item.failReason(), item.createdAt()))
-                        .collect(Collectors.toList());
+        final List<CertVerificationLog> logs = certificationRepository.findVerifications(subject.id());
+        final List<CertificationProfile.VerificationEntry> entries = logs.stream()
+                .map(item -> new CertificationProfile.VerificationEntry(item.conclusion(),
+                        item.failReason(), item.createdAt()))
+                .collect(Collectors.toList());
         if (subject.subjectType() == SubjectType.GOV) {
             return new CertificationProfile(subjectNo, subject.status(),
                     CertificationProfile.LicenseProfile.empty(),
-                    govCaProfile(subject.id()), entries, null);
+                    govCaProfile(subject.id(), logs), entries, null);
         }
         final CertMaterial material =
                 certificationRepository.findLatestMaterial(subject.id(), CertMaterial.TYPE_BUSINESS_LICENSE)
@@ -242,11 +242,12 @@ public class CertificationService {
                 remainingAttempts(subject.id()));
     }
 
-    /** 查看证照影像（行为 2 验收-4）：解密返回 + 查看审计留痕"谁在何时查看"。 */
+    /** 查看证照影像（行为 2 验收-4）：解密返回 + 查看审计留痕"谁在何时查看"；政务主体不适用企业影像端点（hifi B5）。 */
     public ImageView viewImage(final String subjectNo) {
         ops.requireSubjectNo(subjectNo);
         final Subject subject = requireSubject(subjectNo);
         ownershipGuard.requireOwnerOrReviewer(subject, ACTION_IMAGE_VIEW);
+        requireEnterpriseChannel(subject, ACTION_IMAGE_VIEW);
         final CertMaterial material = requireMaterial(subject.id());
         final byte[] plain = sm4Service.decrypt(material.contentCipher(), properties.getMaterialKeyRef());
         ops.audit(ops.operator(), ACTION_IMAGE_VIEW, subjectNo, AuditOutcome.SUCCESS, null);
@@ -370,7 +371,7 @@ public class CertificationService {
                 properties.getMaterialKeyRef());
         certificationRepository.replaceMaterial(new CertMaterial(null, subjectId,
                 CertMaterial.TYPE_GOV_CA_CERT, fileName, certDigest, certCipher, rawCipher,
-                verification.unitCode(), null, verification.passed(),
+                null, null, verification.passed(),
                 null, null, null, null, null, now));
         certificationRepository.appendVerification(new CertVerificationLog(null, subjectId,
                 CertVerificationLog.TYPE_GOV_CA, certificationChannel.channelCode(),
@@ -392,8 +393,9 @@ public class CertificationService {
         }
     }
 
-    /** 政务 CA 档案段（GOV 主体）：最近一次材料 + 最近一条 GOV_CA 留痕结论。 */
-    private CertificationProfile.GovCaProfile govCaProfile(final long subjectId) {
+    /** 政务 CA 档案段（GOV 主体）：最近一次材料 + 最近一条 GOV_CA 留痕结论（复用 profile 已取的留痕列表）。 */
+    private CertificationProfile.GovCaProfile govCaProfile(final long subjectId,
+            final List<CertVerificationLog> logs) {
         final CertMaterial material =
                 certificationRepository.findLatestMaterial(subjectId, CertMaterial.TYPE_GOV_CA_CERT)
                         .orElse(null);
@@ -401,7 +403,7 @@ public class CertificationService {
             return null;
         }
         CertificationProfile.VerificationEntry last = null;
-        for (final CertVerificationLog item : certificationRepository.findVerifications(subjectId)) {
+        for (final CertVerificationLog item : logs) {
             if (CertVerificationLog.TYPE_GOV_CA.equals(item.verifyType())) {
                 last = new CertificationProfile.VerificationEntry(item.conclusion(), item.failReason(),
                         item.createdAt());

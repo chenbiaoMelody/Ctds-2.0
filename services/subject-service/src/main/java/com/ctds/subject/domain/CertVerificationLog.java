@@ -4,7 +4,8 @@ import java.time.LocalDateTime;
 
 /**
  * 认证渠道调用记录（一行 = 一次渠道调用；渠道标识/请求流水号/结论三要素 + 耗时，规格行为 7 第 3 条）。
- * counted 仅对 LEGAL_PERSON 且 FAIL 为 1（计入当日核验失败次数）；渠道异常与 OCR 调用一律 0（行为 7 第 4 条）。
+ * counted 仅对 LEGAL_PERSON 且 FAIL 为 1（计入当日核验失败次数）；渠道异常、OCR 调用与 GOV_CA
+ * 政务验证一律 0（GOV_CA 无失败次数概念，WBS-3.1.4 lofi Q3-A）。
  */
 public record CertVerificationLog(
         Long id,

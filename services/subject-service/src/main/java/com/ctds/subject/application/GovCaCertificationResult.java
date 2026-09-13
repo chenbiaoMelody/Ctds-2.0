@@ -7,7 +7,8 @@ import com.ctds.subject.domain.SubjectStatus;
  *
  * @param subjectNo  申请编号
  * @param conclusion 渠道结论：PASS / FAIL
- * @param status     验证后主体状态：通过 = PENDING_REVIEW，不通过保持 PENDING_CERT
+ * @param status     验证后主体状态：通过 = PENDING_REVIEW；不通过保持原状态（PENDING_CERT，或
+ *                   CERT_FAILED 主体重新提交时仍为 CERT_FAILED）
  * @param failReason 不通过原因（业务可读；通过时为 null）
  */
 public record GovCaCertificationResult(String subjectNo, String conclusion, SubjectStatus status,
