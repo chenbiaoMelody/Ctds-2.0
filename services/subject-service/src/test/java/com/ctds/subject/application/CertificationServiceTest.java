@@ -94,7 +94,7 @@ class CertificationServiceTest {
         sm4Service = new Sm4Service(stubKeyProvider());
         service = new CertificationService(subjectRepository, certificationRepository, channel,
                 sm4Service, new Sm3Service(), ownershipGuard, statusService,
-                auditRecorder, properties, Clock.systemDefaultZone());
+                new SubjectOpsSupport(auditRecorder), properties, Clock.systemDefaultZone());
 
         subject = new Subject(9L, SUBJECT_NO, "认证演示公司", "91330100MA27X8AB01", SubjectType.ENTERPRISE,
                 "杭州市XX区XX路88号", "李四", "13800001234", "admin001", APPLICANT, SubjectStatus.PENDING_CERT,
@@ -283,7 +283,7 @@ class CertificationServiceTest {
                 .toInstant(), ZoneId.systemDefault());
         final CertificationService withNextDayClock = new CertificationService(subjectRepository,
                 certificationRepository, channel, new Sm4Service(stubKeyProvider()), new Sm3Service(),
-                ownershipGuard, statusService, auditRecorder, properties, nextDay);
+                ownershipGuard, statusService, new SubjectOpsSupport(auditRecorder), properties, nextDay);
         when(certificationRepository.findLatestMaterial(9L, CertMaterial.TYPE_BUSINESS_LICENSE))
                 .thenReturn(Optional.of(confirmedMaterial("91330100MA27X8AB01")));
         when(certificationRepository.countFailuresSince(eq(9L), any())).thenReturn(2);

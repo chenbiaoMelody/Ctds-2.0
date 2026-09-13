@@ -1,12 +1,9 @@
 package com.ctds.subject.application;
 
-import com.ctds.common.auth.AuthContext;
 import com.ctds.common.errorcode.BizException;
 import com.ctds.common.errorcode.ErrorCodes;
 import com.ctds.common.idempotency.Idempotent;
-import com.ctds.common.logging.AuditEvent;
 import com.ctds.common.logging.AuditOutcome;
-import com.ctds.common.logging.AuditRecorder;
 import com.ctds.subject.domain.StatusTransition;
 import com.ctds.subject.domain.Subject;
 import com.ctds.subject.domain.SubjectErrorCodes;
@@ -47,15 +44,15 @@ public class SubjectRegistrationService {
 
     private final SubjectRepository repository;
     private final SubjectStatusService statusService;
-    private final AuditRecorder auditRecorder;
+    private final SubjectOpsSupport ops;
     private final OwnershipGuard ownershipGuard;
     private final Clock clock;
 
     public SubjectRegistrationService(final SubjectRepository repository, final SubjectStatusService statusService,
-            final AuditRecorder auditRecorder, final OwnershipGuard ownershipGuard, final Clock clock) {
+            final SubjectOpsSupport ops, final OwnershipGuard ownershipGuard, final Clock clock) {
         this.repository = repository;
         this.statusService = statusService;
-        this.auditRecorder = auditRecorder;
+        this.ops = ops;
         this.ownershipGuard = ownershipGuard;
         this.clock = clock;
     }
@@ -69,7 +66,7 @@ public class SubjectRegistrationService {
     @Idempotent(key = "#command.uscc")
     public RegistrationResult register(final RegisterCommand command) {
         requireValid(command);
-        final String operator = operator();
+        final String operator = ops.operator();
         final Optional<Subject> existing = repository.findByUscc(command.uscc());
         if (existing.isEmpty()) {
             return createRegistration(command, operator);
@@ -83,31 +80,31 @@ public class SubjectRegistrationService {
             return resubmit(current, command, operator, SubjectStatusService.RESUBMIT_AFTER_CANCEL_REMARK,
                     SubjectStatus.PENDING_CERT);
         }
-        audit(operator, ACTION_REGISTER, current.subjectNo(), AuditOutcome.DENIED, "already_registered");
+        ops.audit(operator, ACTION_REGISTER, current.subjectNo(), AuditOutcome.DENIED, "already_registered");
         throw new BizException(SubjectErrorCodes.SUBJECT_ALREADY_REGISTERED, "该主体已注册");
     }
 
     /** 撤销申请（仅待认证且未撤销过可撤销；归属断言 ADR-016 §2.6；撤销 = 撤销留痕，lofi Q3-A）。 */
     public CancellationResult cancel(final String subjectNo) {
-        requireSubjectNo(subjectNo);
+        ops.requireSubjectNo(subjectNo);
         final Subject subject = repository.findBySubjectNo(subjectNo)
                 .orElseThrow(() -> new BizException(ErrorCodes.RESOURCE_NOT_FOUND, "申请编号不存在"));
-        final String operator = operator();
+        final String operator = ops.operator();
         ownershipGuard.requireOwnerOrReviewer(subject, ACTION_CANCEL);
         if (subject.status() != SubjectStatus.PENDING_CERT || isCancelled(subject.id())) {
-            audit(operator, ACTION_CANCEL, subjectNo, AuditOutcome.DENIED, "cancel_not_allowed");
+            ops.audit(operator, ACTION_CANCEL, subjectNo, AuditOutcome.DENIED, "cancel_not_allowed");
             throw new BizException(SubjectErrorCodes.SUBJECT_CANCEL_NOT_ALLOWED, "当前状态不可撤销");
         }
         statusService.transition(subject.id(), SubjectStatus.PENDING_CERT, SubjectStatus.PENDING_CERT,
                 TriggerRole.APPLICANT, operator, SubjectStatusService.CANCEL_REMARK);
-        audit(operator, ACTION_CANCEL, subjectNo, AuditOutcome.SUCCESS, null);
+        ops.audit(operator, ACTION_CANCEL, subjectNo, AuditOutcome.SUCCESS, null);
         log.info("subject cancelled: subjectNo={}", subjectNo);
         return new CancellationResult(subjectNo, subject.status(), true);
     }
 
     /** 进度查询：注册信息（联系电话脱敏展示）+ 当前状态 + 全部流转留痕（规格行为 4 第 2 条；归属断言 §2.6）。 */
     public SubjectDetail detail(final String subjectNo) {
-        requireSubjectNo(subjectNo);
+        ops.requireSubjectNo(subjectNo);
         final Subject subject = repository.findBySubjectNo(subjectNo)
                 .orElseThrow(() -> new BizException(ErrorCodes.RESOURCE_NOT_FOUND, "申请编号不存在"));
         ownershipGuard.requireOwnerOrReviewer(subject, "subject.read");
@@ -122,7 +119,7 @@ public class SubjectRegistrationService {
                 command.contactPhone(), command.adminAccount(), operator, SubjectStatus.PENDING_CERT, now, now);
         repository.create(subject, new StatusTransition(null, SubjectStatus.PENDING_CERT, TriggerRole.APPLICANT,
                 operator, null, now));
-        audit(operator, ACTION_REGISTER, subjectNo, AuditOutcome.SUCCESS, null);
+        ops.audit(operator, ACTION_REGISTER, subjectNo, AuditOutcome.SUCCESS, null);
         log.info("subject registered: subjectNo={}", subjectNo);
         return new RegistrationResult(subjectNo, SubjectStatus.PENDING_CERT);
     }
@@ -136,7 +133,7 @@ public class SubjectRegistrationService {
                 current.createdAt(), now);
         repository.resubmit(updated, new StatusTransition(fromStatus, SubjectStatus.PENDING_CERT,
                 TriggerRole.APPLICANT, operator, remark, now));
-        audit(operator, ACTION_REGISTER, current.subjectNo(), AuditOutcome.SUCCESS, "resubmit");
+        ops.audit(operator, ACTION_REGISTER, current.subjectNo(), AuditOutcome.SUCCESS, "resubmit");
         log.info("subject resubmitted: subjectNo={} from={}", current.subjectNo(), fromStatus);
         return new RegistrationResult(current.subjectNo(), SubjectStatus.PENDING_CERT);
     }
@@ -194,22 +191,5 @@ public class SubjectRegistrationService {
             }
         }
         return false;
-    }
-
-    private void requireSubjectNo(final String subjectNo) {
-        if (subjectNo == null || subjectNo.isBlank() || !subjectNo.matches("S\\d{14}")) {
-            throw new BizException(ErrorCodes.PARAM_INVALID, "申请编号格式不正确");
-        }
-    }
-
-    private void audit(final String operator, final String action, final String subjectNo,
-            final AuditOutcome outcome, final String reason) {
-        final var detail = reason == null ? null : java.util.Map.of("reason", reason);
-        auditRecorder.record(AuditEvent.of(operator, action, "subject", subjectNo, outcome, detail));
-    }
-
-    private static String operator() {
-        final String subject = AuthContext.subject();
-        return subject == null ? "anonymous" : subject;
     }
 }

@@ -1,13 +1,10 @@
 package com.ctds.subject.application;
 
-import com.ctds.common.auth.AuthContext;
 import com.ctds.common.crypto.Sm3Service;
 import com.ctds.common.crypto.Sm4Service;
 import com.ctds.common.errorcode.BizException;
 import com.ctds.common.errorcode.ErrorCodes;
-import com.ctds.common.logging.AuditEvent;
 import com.ctds.common.logging.AuditOutcome;
-import com.ctds.common.logging.AuditRecorder;
 import com.ctds.std.StdAdapterErrorCodes;
 import com.ctds.std.certification.CertificationStandardApi;
 import com.ctds.std.certification.LegalPersonVerification;
@@ -76,7 +73,7 @@ public class CertificationService {
     private final Sm3Service sm3Service;
     private final OwnershipGuard ownershipGuard;
     private final SubjectStatusService statusService;
-    private final AuditRecorder auditRecorder;
+    private final SubjectOpsSupport ops;
     private final CertificationProperties properties;
     private final Clock clock;
 
@@ -84,7 +81,7 @@ public class CertificationService {
             final CertificationRepository certificationRepository,
             final CertificationStandardApi certificationChannel, final Sm4Service sm4Service,
             final Sm3Service sm3Service, final OwnershipGuard ownershipGuard,
-            final SubjectStatusService statusService, final AuditRecorder auditRecorder,
+            final SubjectStatusService statusService, final SubjectOpsSupport ops,
             final CertificationProperties properties, final Clock clock) {
         this.subjectRepository = subjectRepository;
         this.certificationRepository = certificationRepository;
@@ -93,14 +90,14 @@ public class CertificationService {
         this.sm3Service = sm3Service;
         this.ownershipGuard = ownershipGuard;
         this.statusService = statusService;
-        this.auditRecorder = auditRecorder;
+        this.ops = ops;
         this.properties = properties;
         this.clock = clock;
     }
 
     /** 证照上传与 OCR 识别（行为 2 第 1~3 条）：影像密文与原始结果密文即时落库，识别要素回填仅供核对。 */
     public LicenseUploadResult uploadLicense(final String subjectNo, final byte[] image, final String fileName) {
-        requireSubjectNo(subjectNo);
+        ops.requireSubjectNo(subjectNo);
         final Subject subject = requireSubject(subjectNo);
         ownershipGuard.requireOwnerOrReviewer(subject, ACTION_UPLOAD);
         requirePendingCert(subject);
@@ -117,12 +114,12 @@ public class CertificationService {
 
         if (!recognition.recognizable()) {
             saveMaterial(subject.id(), fileName, imageCipher, imageDigest, recognition, costMs, now);
-            audit(operator(), ACTION_UPLOAD, subjectNo, AuditOutcome.DENIED, "ocr_unrecognizable");
+            ops.audit(ops.operator(), ACTION_UPLOAD, subjectNo, AuditOutcome.DENIED, "ocr_unrecognizable");
             throw new BizException(SubjectErrorCodes.CERT_LICENSE_UNRECOGNIZABLE, "证照影像无法识别，请重传");
         }
         final CertMaterial material =
                 saveMaterial(subject.id(), fileName, imageCipher, imageDigest, recognition, costMs, now);
-        audit(operator(), ACTION_UPLOAD, subjectNo, AuditOutcome.SUCCESS, null);
+        ops.audit(ops.operator(), ACTION_UPLOAD, subjectNo, AuditOutcome.SUCCESS, null);
         log.info("license uploaded: subjectNo={}, materialId={}", subjectNo, material.id());
         return new LicenseUploadResult(material.id(), fileName, true,
                 new OcrElements(recognition.subjectName(), recognition.uscc(),
@@ -131,7 +128,7 @@ public class CertificationService {
 
     /** 核对确认（行为 2 第 3~4 条）：确认信用代码与 OCR 识别值一致才生效，修改过的字段以人工确认为准。 */
     public ConfirmationResult confirmLicense(final String subjectNo, final ConfirmationCommand command) {
-        requireSubjectNo(subjectNo);
+        ops.requireSubjectNo(subjectNo);
         final Subject subject = requireSubject(subjectNo);
         ownershipGuard.requireOwnerOrReviewer(subject, ACTION_CONFIRM);
         requirePendingCert(subject);
@@ -142,20 +139,20 @@ public class CertificationService {
 
         final CertMaterial material = requireMaterial(subject.id());
         if (!command.uscc().equals(material.ocrUscc())) {
-            audit(operator(), ACTION_CONFIRM, subjectNo, AuditOutcome.DENIED, "uscc_mismatch");
+            ops.audit(ops.operator(), ACTION_CONFIRM, subjectNo, AuditOutcome.DENIED, "uscc_mismatch");
             throw new BizException(SubjectErrorCodes.CERT_USCC_MISMATCH,
                     "统一社会信用代码与证照识别结果不一致，请修正后提交");
         }
         certificationRepository.updateConfirmation(material.id(), command.subjectName(), command.uscc(),
                 command.legalPerson(), command.regAddress(), LocalDateTime.now(clock));
-        audit(operator(), ACTION_CONFIRM, subjectNo, AuditOutcome.SUCCESS, null);
+        ops.audit(ops.operator(), ACTION_CONFIRM, subjectNo, AuditOutcome.SUCCESS, null);
         log.info("license confirmed: subjectNo={}", subjectNo);
         return new ConfirmationResult(subjectNo, true, "LEGAL_PERSON_VERIFICATION");
     }
 
     /** 法人实人核验（行为 3）：前置校验 → 渠道核验 → 留痕 → 通过自动流转待审核（行为 4 第 1 条）。 */
     public VerificationResult verifyLegalPerson(final String subjectNo, final VerificationCommand command) {
-        requireSubjectNo(subjectNo);
+        ops.requireSubjectNo(subjectNo);
         final Subject subject = requireSubject(subjectNo);
         ownershipGuard.requireOwnerOrReviewer(subject, ACTION_VERIFY);
         if (subject.status() != SubjectStatus.PENDING_CERT && subject.status() != SubjectStatus.CERT_FAILED) {
@@ -169,7 +166,7 @@ public class CertificationService {
             throw new BizException(SubjectErrorCodes.CERT_LICENSE_NOT_CONFIRMED, "请先完成证照上传与核对确认");
         }
         if (!command.legalPersonName().equals(material.confirmedLegalPerson())) {
-            audit(operator(), ACTION_VERIFY, subjectNo, AuditOutcome.DENIED, "legal_person_mismatch");
+            ops.audit(ops.operator(), ACTION_VERIFY, subjectNo, AuditOutcome.DENIED, "legal_person_mismatch");
             throw new BizException(SubjectErrorCodes.CERT_LEGAL_PERSON_MISMATCH,
                     "法人信息与证照识别结果不一致，请先修正后再发起核验");
         }
@@ -191,7 +188,7 @@ public class CertificationService {
                     VerificationConclusion.PASS, null, costMs, false, now));
             statusService.transition(subject.id(), subject.status(), SubjectStatus.PENDING_REVIEW,
                     TriggerRole.SYSTEM, SYSTEM_OPERATOR, AUTO_TRANSITION_REMARK);
-            audit(operator(), ACTION_VERIFY, subjectNo, AuditOutcome.SUCCESS, null);
+            ops.audit(ops.operator(), ACTION_VERIFY, subjectNo, AuditOutcome.SUCCESS, null);
             log.info("legal person verified: subjectNo={} -> PENDING_REVIEW", subjectNo);
             return new VerificationResult(subjectNo, VerificationConclusion.PASS.name(),
                     SubjectStatus.PENDING_REVIEW.name(), null, remainingAttempts(subject.id()));
@@ -200,7 +197,7 @@ public class CertificationService {
                 CertVerificationLog.TYPE_LEGAL_PERSON, certificationChannel.channelCode(),
                 verification.channelRequestNo(), command.legalPersonName(), idCipher,
                 VerificationConclusion.FAIL, verification.failReason(), costMs, true, now));
-        audit(operator(), ACTION_VERIFY, subjectNo, AuditOutcome.SUCCESS, "verify_failed");
+        ops.audit(ops.operator(), ACTION_VERIFY, subjectNo, AuditOutcome.SUCCESS, "verify_failed");
         log.info("legal person verification failed: subjectNo={}", subjectNo);
         return new VerificationResult(subjectNo, VerificationConclusion.FAIL.name(), subject.status().name(),
                 verification.failReason(), remainingAttempts(subject.id()));
@@ -208,7 +205,7 @@ public class CertificationService {
 
     /** 认证进度档案（行为 3 第 2 条 / 行为 4 第 2 条）：身份证号等 L4 字段不回显。 */
     public CertificationProfile profile(final String subjectNo) {
-        requireSubjectNo(subjectNo);
+        ops.requireSubjectNo(subjectNo);
         final Subject subject = requireSubject(subjectNo);
         ownershipGuard.requireOwnerOrReviewer(subject, "certification.profile");
         final CertMaterial material =
@@ -233,25 +230,25 @@ public class CertificationService {
 
     /** 查看证照影像（行为 2 验收-4）：解密返回 + 查看审计留痕"谁在何时查看"。 */
     public ImageView viewImage(final String subjectNo) {
-        requireSubjectNo(subjectNo);
+        ops.requireSubjectNo(subjectNo);
         final Subject subject = requireSubject(subjectNo);
         ownershipGuard.requireOwnerOrReviewer(subject, ACTION_IMAGE_VIEW);
         final CertMaterial material = requireMaterial(subject.id());
         final byte[] plain = sm4Service.decrypt(material.contentCipher(), properties.getMaterialKeyRef());
-        audit(operator(), ACTION_IMAGE_VIEW, subjectNo, AuditOutcome.SUCCESS, null);
+        ops.audit(ops.operator(), ACTION_IMAGE_VIEW, subjectNo, AuditOutcome.SUCCESS, null);
         return new ImageView(material.fileName(), imageBaseUrl(material.fileName())
                 + Base64.getEncoder().encodeToString(plain));
     }
 
     /** 结束认证（lofi Q1-A：待认证 → 认证失败，触发方=申请人；之后可重新发起核验）。 */
     public CertificationActionResult abandonCertification(final String subjectNo) {
-        requireSubjectNo(subjectNo);
+        ops.requireSubjectNo(subjectNo);
         final Subject subject = requireSubject(subjectNo);
         ownershipGuard.requireOwnerOrReviewer(subject, ACTION_ABANDON);
         requirePendingCert(subject);
         statusService.transition(subject.id(), SubjectStatus.PENDING_CERT, SubjectStatus.CERT_FAILED,
-                TriggerRole.APPLICANT, operator(), ABANDON_REMARK);
-        audit(operator(), ACTION_ABANDON, subjectNo, AuditOutcome.SUCCESS, null);
+                TriggerRole.APPLICANT, ops.operator(), ABANDON_REMARK);
+        ops.audit(ops.operator(), ACTION_ABANDON, subjectNo, AuditOutcome.SUCCESS, null);
         log.info("certification abandoned: subjectNo={}", subjectNo);
         return new CertificationActionResult(subjectNo, SubjectStatus.CERT_FAILED);
     }
@@ -296,7 +293,7 @@ public class CertificationService {
         final LocalDateTime dayStart = LocalDate.now(clock).atStartOfDay();
         if (certificationRepository.countFailuresSince(subject.id(), dayStart)
                 >= properties.getVerifyDailyLimit()) {
-            audit(operator(), ACTION_VERIFY, subject.subjectNo(), AuditOutcome.DENIED, "daily_limit_reached");
+            ops.audit(ops.operator(), ACTION_VERIFY, subject.subjectNo(), AuditOutcome.DENIED, "daily_limit_reached");
             throw new BizException(SubjectErrorCodes.CERT_VERIFY_LIMIT_REACHED, "今日核验次数已用完，请次日再试");
         }
     }
@@ -413,27 +410,10 @@ public class CertificationService {
         return (int) Duration.between(start, Instant.now()).toMillis();
     }
 
-    private void requireSubjectNo(final String subjectNo) {
-        if (subjectNo == null || subjectNo.isBlank() || !subjectNo.matches("S\\d{14}")) {
-            throw new BizException(ErrorCodes.PARAM_INVALID, "申请编号格式不正确");
-        }
-    }
-
     private static void requireText(final String value, final String label) {
         if (value == null || value.isBlank()) {
             throw new BizException(ErrorCodes.PARAM_INVALID, label + "不能为空");
         }
-    }
-
-    private static String operator() {
-        final String subject = AuthContext.subject();
-        return subject == null ? "anonymous" : subject;
-    }
-
-    private void audit(final String operator, final String action, final String subjectNo,
-            final AuditOutcome outcome, final String reason) {
-        final var detail = reason == null ? null : Map.of("reason", reason);
-        auditRecorder.record(AuditEvent.of(operator, action, "subject", subjectNo, outcome, detail));
     }
 
     /** 渠道调用的函数出口（内部封闭）。 */
