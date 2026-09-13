@@ -28,6 +28,7 @@
     <module>common/idempotency</module>
     <module>std-adapter</module>
     <module>services/example-service</module>
+    <module>services/kms</module>
   </modules>
 
   <properties>

@@ -98,4 +98,44 @@ class CryptoAutoConfigurationTest {
                             "kms-key")).isEqualTo("via-kms".getBytes(StandardCharsets.UTF_8));
                 });
     }
+
+    @Test
+    void kmsBaseUrlRegistersKmsKeyProviderOverridingLocal() {
+        // 指向无服务端口：装配成立、fail-fast 不降级（SM4 操作报 1001S0001）
+        runner.withPropertyValues("ctds.crypto.kms.base-url=http://127.0.0.1:1").run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(context.getBean(KeyProvider.class)).isInstanceOf(KmsKeyProvider.class);
+            final Sm4Service sm4 = context.getBean(Sm4Service.class);
+            assertThatThrownBy(() -> sm4.encrypt(new byte[]{1}, TestKeys.KEY_REF))
+                    .isInstanceOfSatisfying(BizException.class, e ->
+                            assertThat(e.getErrorCode()).isEqualTo(CryptoErrorCodes.CRYPTO_KEY_UNAVAILABLE));
+        });
+    }
+
+    @Test
+    void kmsConfigWinsOverLocalKeyFile() {
+        runner.withPropertyValues(
+                        "ctds.crypto.local.key-file=" + dir.resolve("ignored.properties"),
+                        "ctds.crypto.kms.base-url=http://127.0.0.1:1")
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context.getBean(KeyProvider.class)).isInstanceOf(KmsKeyProvider.class);
+                    assertThat(context).doesNotHaveBean(LocalFileKeyProvider.class);
+                });
+    }
+
+    @Test
+    void kmsDurationBindingAcceptsPlainSeconds() {
+        // 纯数字按秒解释（@DurationUnit），防毫秒静默失效
+        runner.withPropertyValues(
+                        "ctds.crypto.kms.base-url=http://127.0.0.1:1",
+                        "ctds.crypto.kms.connect-timeout=2",
+                        "ctds.crypto.kms.read-timeout=4")
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    final CryptoProperties.Kms kms = context.getBean(CryptoProperties.class).getKms();
+                    assertThat(kms.getConnectTimeout()).isEqualTo(java.time.Duration.ofSeconds(2));
+                    assertThat(kms.getReadTimeout()).isEqualTo(java.time.Duration.ofSeconds(4));
+                });
+    }
 }

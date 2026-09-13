@@ -28,34 +28,54 @@ public class Sm4Service {
         this.keyProvider = keyProvider;
     }
 
-    /** 明文 → 密文信封（B1）。 */
+    /** 明文 → 密文信封（B1；版本化密钥源产出 v2 信封并写入当前密钥版本，本地路径产出 v1 不变）。 */
     public byte[] encrypt(final byte[] plaintext, final String keyRef) {
         Inputs.requirePlaintext(plaintext);
         Inputs.requireKeyRef(keyRef);
-        final byte[] key = keyProvider.sm4Key(keyRef);
         final byte[] iv = new byte[CipherEnvelope.IV_LEN];
         random.nextBytes(iv);
+        // 取密钥在 try 外：密钥源不可用须保持 1001S0001 原语义，不得被收敛为 1001S0002
+        final Integer keyVersion;
+        final byte[] key;
+        if (keyProvider instanceof VersionedKeyProvider versioned) {
+            keyVersion = versioned.currentVersion(keyRef);
+            key = versioned.sm4Key(keyRef, keyVersion);
+        } else {
+            keyVersion = null;
+            key = keyProvider.sm4Key(keyRef);
+        }
         try {
             final GCMModeCipher cipher = GCMBlockCipher.newInstance(new SM4Engine());
             cipher.init(true, new AEADParameters(new KeyParameter(key), MAC_BITS, iv, null));
             final byte[] body = new byte[cipher.getOutputSize(plaintext.length)];
             final int processed = cipher.processBytes(plaintext, 0, plaintext.length, body, 0);
             final int total = processed + cipher.doFinal(body, processed);
-            return CipherEnvelope.build(iv, Arrays.copyOf(body, total));
+            return keyVersion == null
+                    ? CipherEnvelope.build(iv, Arrays.copyOf(body, total))
+                    : CipherEnvelope.buildV2(iv, keyVersion, Arrays.copyOf(body, total));
         } catch (final InvalidCipherTextException | RuntimeException e) {
             // 评审①P3-4：加密侧输入已校验、无"结构坏"语义，任何异常均属未预期 → 收敛 1001S0002
             throw Inputs.operationFailed(e);
         }
     }
 
-    /** 密文信封 → 明文（B2/B3）；非 CTDS 格式 → INPUT_INVALID；篡改/截断/错密钥 → DATA_REJECTED。 */
+    /** 密文信封 → 明文（B2/B3；v1 走当前密钥、v2 按信封内版本取历史密钥，轮换后旧密文不失效）。 */
     public byte[] decrypt(final byte[] envelope, final String keyRef) {
         Inputs.requireSm4EnvelopeLength(envelope);
         Inputs.requireKeyRef(keyRef);
         if (!CipherEnvelope.headerValid(envelope)) {
             throw Inputs.invalid();
         }
-        final byte[] key = keyProvider.sm4Key(keyRef);
+        final byte[] key;
+        if (envelope[CipherEnvelope.MAGIC.length] == CipherEnvelope.VERSION_V2) {
+            if (!(keyProvider instanceof VersionedKeyProvider versioned)) {
+                // v2 信封只能由版本化密钥源解（本地路径不产 v2 也不解 v2，hifi §1）
+                throw Inputs.keyUnavailable();
+            }
+            key = versioned.sm4Key(keyRef, CipherEnvelope.keyVersionOf(envelope));
+        } else {
+            key = keyProvider.sm4Key(keyRef);
+        }
         final byte[] body = CipherEnvelope.bodyOf(envelope);
         try {
             final GCMModeCipher cipher = GCMBlockCipher.newInstance(new SM4Engine());

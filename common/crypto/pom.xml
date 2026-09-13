@@ -24,6 +24,12 @@
       <groupId>com.ctds</groupId>
       <artifactId>common-errorcode</artifactId>
     </dependency>
+    <!-- KmsKeyProvider 解析 KMS 服务 ApiResult 封套用（WBS-2.6.3）；版本随 Spring Boot BOM，
+         属 ADR-001 冻结生态既有面（全服务已在用），登记 docs/dependencies.md。 -->
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+    </dependency>
     <!-- 国密算法唯一实现来源（ADR-001 基线；本组件只做封装、禁止自研算法——章程红线）。 -->
     <dependency>
       <groupId>org.bouncycastle</groupId>

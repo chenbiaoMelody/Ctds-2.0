@@ -1,0 +1,38 @@
+spring:
+  application:
+    name: kms-service
+  # 数据库迁移工具链（WBS 2.4.10 / ADR-009）：默认 profile 无数据库照常启动（B3 兼容性决策，同 example-service）。
+  # classpath 上有 spring-boot-starter-jdbc 会激活 DataSourceAutoConfiguration 并要求配置数据源，
+  # 默认 profile 显式排除；mysql profile（application-mysql.yml）清空本排除项后数据源 + Flyway 生效。
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+
+server:
+  port: 8080
+
+# 指标暴露（ADR-014 最小暴露面）：KMS 只开 health 探活，prometheus 暴露随 2.5.x 监控基座统一接入
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+logging:
+  file:
+    name: logs/app.log
+  structured:
+    format:
+      console: logstash
+      file: logstash
+
+ctds:
+  # 根密钥（密钥库加密根，规格行为 1）：只经环境变量注入（密钥零入库，章程红线 7）；
+  # 缺失/坏值 = 启动失败 fail-fast（hifi §3.4，沿 2.4.6 密钥文件同款语义）
+  kms:
+    root-key: ${CTDS_KMS_ROOT_KEY:}
+  # RBAC（WBS 2.4.5 模式 A 配置映射）：密钥创建/轮换 = 管理面，须 admin 角色（规格行为 2 GTT-3）；
+  # 密钥供给读取面（GET material）为内部网络边界内服务间调用，不设 JWT（诚实边界见交付说明）
+  auth:
+    permissions:
+      admin: kms.admin

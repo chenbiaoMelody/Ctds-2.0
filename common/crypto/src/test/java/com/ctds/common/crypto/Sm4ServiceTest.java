@@ -49,7 +49,7 @@ class Sm4ServiceTest {
         final byte[] plaintext = plain();
         final byte[] envelope = service.encrypt(plaintext, TestKeys.KEY_REF);
         assertThat(new String(envelope, 0, 4, StandardCharsets.US_ASCII)).isEqualTo("CTSE");
-        assertThat(envelope[4]).isEqualTo(CipherEnvelope.VERSION);
+        assertThat(envelope[4]).isEqualTo(CipherEnvelope.VERSION_V1);
         // 评审④P3-3：用硬编码 33（=魔数4+版本1+IV12+标签16）独立钉桩，不依赖生产常量同源
         assertThat(envelope).hasSize(33 + plaintext.length);
         // IV 段（5..16）不得全零（随机 IV 生效）
@@ -90,8 +90,9 @@ class Sm4ServiceTest {
         badMagic[0] = (byte) 'X';
         assertCode(CryptoErrorCodes.CRYPTO_INPUT_INVALID, () -> service.decrypt(badMagic, TestKeys.KEY_REF));
 
+        // 未知版本字节（0x02 自 2.6.3 起为合法 v2 信封，见 CipherEnvelopeV2Test）
         final byte[] badVersion = service.encrypt(plain(), TestKeys.KEY_REF);
-        badVersion[4] = 0x02;
+        badVersion[4] = 0x7F;
         assertCode(CryptoErrorCodes.CRYPTO_INPUT_INVALID, () -> service.decrypt(badVersion, TestKeys.KEY_REF));
 
         assertCode(CryptoErrorCodes.CRYPTO_INPUT_INVALID,

@@ -42,7 +42,9 @@
     "sk-[a-zA-Z0-9]{20,}",
     "xox[baprs]-[0-9A-Za-z-]{10,}",
     "(?i)(api[_-]?key|secret[_-]?key|access[_-]?token|private[_-]?key)\\s*[:=]\\s*['\"][A-Za-z0-9+/=_-]{16,}['\"]",
-    "(?i)(password|passwd|pwd)\\s*[:=]\\s*['\"][^'\"\\s]{8,}['\"]"
+    "(?i)(password|passwd|pwd)\\s*[:=]\\s*['\"][^'\"\\s]{8,}['\"]",
+    "(?i)(root[_-]?key|master[_-]?key|data[_-]?key|sm4[_-]?key|kms[_-]?admin[_-]?token)\\s*[:=]\\s*['\"][A-Za-z0-9+/=]{16,}['\"]",
+    "(?i)CTDS_KMS_ROOT_KEY\\s*[:=]\\s*['\"][A-Za-z0-9+/=]{16,}['\"]"
   ],
   "secretsExcludePaths": [".git", "scripts/gates/reports", "build-output", "*.min.js", "*.lock", "node_modules"]
 }

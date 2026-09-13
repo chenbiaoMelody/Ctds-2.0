@@ -20,6 +20,20 @@ public class CryptoAutoConfiguration {
 
     private static final Logger log = LoggerFactory.getLogger(CryptoAutoConfiguration.class);
 
+    /**
+     * KMS 托管密钥供给（WBS-2.6.3）：配置 ctds.crypto.kms.base-url 即启用并覆盖本地文件实现
+     * （ADR-006 §5.1 覆盖式接入，业务零改动）。声明在本地实现之前，保证优先级：业务 Bean > KMS > 本地文件。
+     */
+    @Bean
+    @ConditionalOnProperty(prefix = "ctds.crypto.kms", name = "base-url")
+    @ConditionalOnMissingBean(KeyProvider.class)
+    public KeyProvider cryptoKmsKeyProvider(final CryptoProperties properties) {
+        log.info("ctds.crypto.kms.base-url is set: KMS-backed key provider active "
+                + "(local file provider will not be registered)");
+        return new KmsKeyProvider(properties.getKms().getBaseUrl(),
+                properties.getKms().getConnectTimeout(), properties.getKms().getReadTimeout());
+    }
+
     /** 密钥供给（Q3 模式 A）：本地文件实现；业务/2.6.3 定义 KeyProvider Bean 即整体替换。 */
     @Bean
     @ConditionalOnMissingBean(KeyProvider.class)
