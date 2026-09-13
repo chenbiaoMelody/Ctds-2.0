@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>C-TDS 主体注册与实名认证 · 界面原型（WBS-3.1.3）</title>
+<style>
+  /* 演示期静态原型：纯前端，不连后端；文案与交互口径以 WBS-3.1.3-hifi 界面说明书为准 */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; background: #f0f2f5; color: #303133; }
+  .header { background: #1f3a5f; color: #fff; padding: 14px 32px; font-size: 18px; font-weight: bold; }
+  .header .sub { font-size: 12px; font-weight: normal; opacity: .8; margin-left: 12px; }
+  .wrap { max-width: 860px; margin: 24px auto; padding: 0 16px; }
+  .card { background: #fff; border-radius: 8px; padding: 24px; margin-bottom: 20px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+  .card h2 { font-size: 16px; margin-bottom: 16px; border-left: 4px solid #1f3a5f; padding-left: 10px; }
+  .steps { display: flex; margin-bottom: 24px; }
+  .step { flex: 1; text-align: center; position: relative; color: #909399; font-size: 14px; }
+  .step .dot { width: 28px; height: 28px; border-radius: 50%; background: #e4e7ed; color: #909399; line-height: 28px; margin: 0 auto 6px; }
+  .step.active .dot { background: #1f3a5f; color: #fff; }
+  .step.active { color: #1f3a5f; font-weight: bold; }
+  .step.done .dot { background: #67c23a; color: #fff; }
+  .step.done { color: #67c23a; }
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-size: 13px; margin-bottom: 4px; }
+  .field label .req { color: #f56c6c; margin-right: 2px; }
+  .field input, .field select { width: 100%; padding: 8px 10px; border: 1px solid #dcdfe6; border-radius: 4px; font-size: 14px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 20px; }
+  .btn { display: inline-block; padding: 9px 22px; border: none; border-radius: 4px; font-size: 14px; cursor: pointer; }
+  .btn-primary { background: #1f3a5f; color: #fff; }
+  .btn-plain { background: #fff; border: 1px solid #dcdfe6; color: #606266; }
+  .btn-danger-plain { background: #fff; border: 1px solid #f56c6c; color: #f56c6c; }
+  .btn[disabled] { opacity: .5; cursor: not-allowed; }
+  .msg { padding: 10px 14px; border-radius: 4px; font-size: 13px; margin: 12px 0; display: none; }
+  .msg-ok { background: #f0f9eb; border: 1px solid #e1f3d8; color: #67c23a; }
+  .msg-err { background: #fef0f0; border: 1px solid #fde2e2; color: #f56c6c; }
+  .msg-info { background: #edf2fc; border: 1px solid #d8e3f3; color: #409eff; }
+  .status-tag { display: inline-block; padding: 2px 10px; border-radius: 3px; font-size: 12px; background: #fdf6ec; color: #e6a23c; border: 1px solid #faecd8; }
+  .status-tag.review { background: #edf2fc; color: #409eff; border-color: #d8e3f3; }
+  .status-tag.failed { background: #fef0f0; color: #f56c6c; border-color: #fde2e2; }
+  .hint { font-size: 12px; color: #909399; margin-top: 4px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { border: 1px solid #ebeef5; padding: 8px 10px; text-align: left; }
+  th { background: #f5f7fa; }
+  .hidden { display: none; }
+  .demo-tip { background: #fffbe6; border: 1px dashed #e6a23c; color: #8c6a1d; padding: 8px 12px; border-radius: 4px; font-size: 12px; margin-bottom: 16px; }
+</style>
+</head>
+<body>
+<div class="header">C-TDS 城市可信数据空间 · 主体注册与实名认证<span class="sub">界面原型（WBS-3.1.3 · 静态演示，不连后端；真实页面随 3.1.5 前端实现）</span></div>
+<div class="wrap">
+
+  <div class="demo-tip">演示数据（与验收剧本附录 A 对应）：组 A1 = 蓝天数据科技有限公司 / 91330100MA27XW123X / 法人张伟，证照影像文件名含 <b>A1</b> 可识别；法人核验身份证号尾号为 <b>8</b> 判不通过。</div>
+
+  <!-- 页面 1：注册表单（行为 1） -->
+  <div class="card" id="card-register">
+    <h2>主体注册</h2>
+    <div class="grid">
+      <div class="field"><label><span class="req">*</span>主体名称</label><input id="regName" placeholder="示例：蓝天数据科技有限公司"></div>
+      <div class="field"><label><span class="req">*</span>统一社会信用代码</label><input id="regUscc" placeholder="18 位" maxlength="18"></div>
+      <div class="field"><label><span class="req">*</span>主体类型</label>
+        <select id="regType"><option value="ENTERPRISE">企业</option><option value="INSTITUTION">机构</option><option value="GOV">政府部门</option></select>
+      </div>
+      <div class="field"><label><span class="req">*</span>联系电话</label><input id="regPhone" placeholder="11 位手机号"></div>
+      <div class="field"><label><span class="req">*</span>注册地址</label><input id="regAddr" placeholder="省市区+详细地址"></div>
+      <div class="field"><label><span class="req">*</span>联系人姓名</label><input id="regContact" placeholder="联系人"></div>
+      <div class="field"><label><span class="req">*</span>管理员账号</label><input id="regAdmin" placeholder="管理员账号（V1.0 仅信息收集）"></div>
+    </div>
+    <div class="msg msg-err" id="regErr"></div>
+    <div style="text-align:right"><button class="btn btn-primary" onclick="submitRegister()">提交注册</button></div>
+    <div class="msg msg-ok" id="regOk"></div>
+  </div>
+
+  <!-- 页面 2：认证流程（行为 2 / 行为 3 / 行为 4） -->
+  <div class="card hidden" id="card-certify">
+    <h2>实名认证 <span class="status-tag" id="certStatus">待认证</span>
+      <span style="float:right;font-size:12px;color:#909399">申请编号：<b id="certSubjectNo">—</b></span></h2>
+
+    <div class="steps">
+      <div class="step active" id="step1"><div class="dot">1</div>上传证照</div>
+      <div class="step" id="step2"><div class="dot">2</div>核对确认</div>
+      <div class="step" id="step3"><div class="dot">3</div>法人核验</div>
+    </div>
+
+    <!-- 第 1 步：上传证照（行为 2 第 1~3 条） -->
+    <div id="pane-upload">
+      <div class="field"><label><span class="req">*</span>营业执照影像（≤5MB，jpg/jpeg/png）</label><input type="file" id="licenseFile" accept=".jpg,.jpeg,.png"></div>
+      <div class="hint">演示口径：文件名含 A1（如 A1.jpg）模拟"可识别影像"，其余文件名模拟"无法识别"。</div>
+      <div class="msg msg-err" id="upErr"></div>
+      <div class="msg msg-ok" id="upOk"></div>
+      <button class="btn btn-primary" onclick="uploadLicense()">上传并识别</button>
+    </div>
+
+    <!-- 第 2 步：核对确认（行为 2 第 3~4 条：OCR 辅助录入，人工确认为准） -->
+    <div id="pane-confirm" class="hidden">
+      <p class="hint" style="margin-bottom:10px">以下要素由 OCR 识别回填，<b>请逐项核对确认，修改过的字段以人工确认为准</b>：</p>
+      <div class="grid">
+        <div class="field"><label><span class="req">*</span>主体名称</label><input id="ocrName"></div>
+        <div class="field"><label><span class="req">*</span>统一社会信用代码</label><input id="ocrUscc"></div>
+        <div class="field"><label><span class="req">*</span>法定代表人</label><input id="ocrLegal"></div>
+        <div class="field"><label><span class="req">*</span>注册地址</label><input id="ocrAddr"></div>
+      </div>
+      <div class="msg msg-err" id="cfErr"></div>
+      <button class="btn btn-plain" onclick="backToUpload()">重新上传</button>
+      <button class="btn btn-primary" onclick="confirmOcr()">确认无误，进入法人核验</button>
+    </div>
+
+    <!-- 第 3 步：法人核验（行为 3） -->
+    <div id="pane-verify" class="hidden">
+      <div class="grid">
+        <div class="field"><label><span class="req">*</span>法人姓名</label><input id="vfName" placeholder="须与证照识别的法定代表人一致"></div>
+        <div class="field"><label><span class="req">*</span>法人身份证号</label><input id="vfId" placeholder="仅用于核验，不回显"></div>
+      </div>
+      <div class="hint">核验不通过可重试：当日上限 <b id="vfLimit">5</b> 次，超限当日锁定、次日自动恢复。</div>
+      <div class="msg msg-err" id="vfErr"></div>
+      <div class="msg msg-ok" id="vfOk"></div>
+      <button class="btn btn-primary" onclick="verifyLegal()">发起核验</button>
+      <button class="btn btn-danger-plain" onclick="abandonCert()">放弃本次认证</button>
+      <p class="hint" style="margin-top:6px">"放弃本次认证"将使主体进入"认证失败"并记录认证档案，之后可重新发起核验。</p>
+      <table style="margin-top:14px" id="vfLogWrap">
+        <thead><tr><th>核验记录</th><th>结论</th><th>时间</th><th>失败原因</th></tr></thead>
+        <tbody id="vfLog"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+<script>
+  /* ===== 模拟渠道预置规则（与验收剧本附录 A 严格对应；真实实现收口 std-adapter）===== */
+  var OCR_A1 = { subjectName: "蓝天数据科技有限公司", uscc: "91330100MA27XW123X", legalPerson: "张伟", regAddress: "杭州市XX区XX路88号" };
+  var DAILY_LIMIT = 5, failCount = 0, ocr = null, confirmed = false;
+
+  function show(id) { document.getElementById(id).style.display = "block"; }
+  function hide(id) { document.getElementById(id).style.display = "none"; }
+  function say(id, text) { var el = document.getElementById(id); el.textContent = text; el.style.display = "block"; }
+  function unsay(id) { document.getElementById(id).style.display = "none"; }
+  function setStatus(text, cls) { var t = document.getElementById("certStatus"); t.textContent = text; t.className = "status-tag" + (cls ? " " + cls : ""); }
+  function setStep(n) {
+    ["1","2","3"].forEach(function (i) {
+      var s = document.getElementById("step" + i);
+      s.className = "step" + (i < n ? " done" : i == n ? " active" : "");
+      if (i < n) s.querySelector(".dot").textContent = "✓";
+    });
+  }
+
+  function submitRegister() {
+    unsay("regErr"); unsay("regOk");
+    var name = document.getElementById("regName").value.trim(),
+        uscc = document.getElementById("regUscc").value.trim(),
+        phone = document.getElementById("regPhone").value.trim(),
+        contact = document.getElementById("regContact").value.trim(),
+        addr = document.getElementById("regAddr").value.trim(),
+        admin = document.getElementById("regAdmin").value.trim();
+    if (!name || uscc.length !== 18 || !phone || !contact || !addr || !admin) {
+      say("regErr", "必填字段缺失或格式不正确：" + [
+        !name && "主体名称不能为空", uscc.length !== 18 && "统一社会信用代码须为 18 位",
+        !phone && "联系电话不能为空", !contact && "联系人姓名不能为空",
+        !addr && "注册地址不能为空", !admin && "管理员账号不能为空"
+      ].filter(Boolean).join("；"));
+      return;
+    }
+    document.getElementById("certSubjectNo").textContent = "S20260913000001";
+    hide("card-register"); show("card-certify");
+    setStatus("待认证"); setStep(1);
+    say("regOk", "注册成功：申请编号 S20260913000001，主体状态【待认证】。请继续完成实名认证。");
+    setTimeout(function () { unsay("regOk"); }, 3000);
+  }
+
+  function uploadLicense() {
+    unsay("upErr"); unsay("upOk");
+    var f = document.getElementById("licenseFile").value;
+    if (!f) { say("upErr", "请先选择证照影像文件"); return; }
+    var fileName = f.split("\\").pop();
+    if (!/\.(jpg|jpeg|png)$/i.test(fileName)) { say("upErr", "仅支持 jpg/jpeg/png 格式"); return; }
+    if (fileName.indexOf("A1") >= 0) {
+      ocr = OCR_A1;
+      say("upOk", "识别成功，影像与 OCR 原始结果已加密存档。识别要素已回填，请核对确认。");
+      document.getElementById("ocrName").value = ocr.subjectName;
+      document.getElementById("ocrUscc").value = ocr.uscc;
+      document.getElementById("ocrLegal").value = ocr.legalPerson;
+      document.getElementById("ocrAddr").value = ocr.regAddress;
+      setTimeout(function () { hide("pane-upload"); show("pane-confirm"); setStep(2); unsay("upOk"); }, 900);
+    } else {
+      say("upErr", "证照影像无法识别，请重传（不产生部分识别结果）");
+    }
+  }
+
+  function backToUpload() { hide("pane-confirm"); show("pane-upload"); setStep(1); }
+
+  function confirmOcr() {
+    unsay("cfErr");
+    var uscc = document.getElementById("ocrUscc").value.trim();
+    if (uscc !== ocr.uscc) {
+      say("cfErr", "提交被阻断：统一社会信用代码与证照识别结果不一致（识别值 " + ocr.uscc + "），请修正后再提交。");
+      return;
+    }
+    confirmed = true;
+    hide("pane-confirm"); show("pane-verify"); setStep(3);
+  }
+
+  function verifyLegal() {
+    unsay("vfErr"); unsay("vfOk");
+    var name = document.getElementById("vfName").value.trim(),
+        id = document.getElementById("vfId").value.trim();
+    if (!confirmed) { say("vfErr", "请先完成证照上传与核对确认"); return; }
+    if (name !== ocr.legalPerson) { say("vfErr", "法人信息与证照识别结果不一致（证照识别法定代表人：" + ocr.legalPerson + "），请先修正后再发起核验。"); return; }
+    if (id.length < 15) { say("vfErr", "身份证号格式不正确"); return; }
+    if (failCount >= DAILY_LIMIT) { say("vfErr", "今日核验次数已用完，请次日再试"); return; }
+    var time = new Date().toLocaleString("zh-CN", { hour12: false });
+    if (id.slice(-1) === "8") {
+      failCount++;
+      say("vfErr", "核验不通过：身份要素不匹配。剩余当日可尝试次数：" + (DAILY_LIMIT - failCount));
+      document.getElementById("vfLog").insertAdjacentHTML("beforeend",
+        "<tr><td>法人核验</td><td style='color:#f56c6c'>不通过</td><td>" + time + "</td><td>身份要素不匹配</td></tr>");
+    } else {
+      document.getElementById("vfLog").insertAdjacentHTML("beforeend",
+        "<tr><td>法人核验</td><td style='color:#67c23a'>通过</td><td>" + time + "</td><td>—</td></tr>");
+      setStatus("待审核", "review");
+      say("vfOk", "核验通过：证照确认与法人核验均已完成，主体状态自动流转为【待审核】，等待平台人工审核入驻。");
+      document.getElementById("vfName").disabled = true;
+      document.getElementById("vfId").disabled = true;
+    }
+  }
+
+  function abandonCert() {
+    unsay("vfErr"); unsay("vfOk");
+    if (confirm("确认放弃本次认证？该操作将记录认证档案（状态：认证失败），之后可重新发起核验。")) {
+      setStatus("认证失败", "failed");
+      say("vfOk", "已结束本次认证：主体状态【认证失败】。修正信息后可重新发起法人核验。");
+    }
+  }
+</script>
+</body>
+</html>
