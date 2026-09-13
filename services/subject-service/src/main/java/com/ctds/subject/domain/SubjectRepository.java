@@ -7,6 +7,8 @@ import java.util.Optional;
 /**
  * 主体仓储（领域层接口，infrastructure 提供 MySQL 实现）。
  * 写方法一律要求携带 StatusTransition 参数——流转留痕不可绕过（hifi B7：一切流转强制落留痕）。
+ * 分页参数用原始类型（int offset/limit）——领域层不依赖 common-pagination（架构门禁 LayerRulesTest），
+ * PageResult 组装归应用层。
  */
 public interface SubjectRepository {
 
@@ -22,6 +24,12 @@ public interface SubjectRepository {
     Optional<Subject> findBySubjectNo(String subjectNo);
 
     Optional<Subject> findByUscc(String uscc);
+
+    /** 按状态查询总数（WBS-3.1.5 审核清单分页配套）。 */
+    long countByStatus(SubjectStatus status);
+
+    /** 按状态分页取数（offset 从 0 起，limit = 页大小；申请时间升序稳定排序）。 */
+    List<Subject> findByStatus(SubjectStatus status, int offset, int limit);
 
     /** 最新一条流转留痕（撤销标记判定 = 最新留痕是否为"申请人撤销"口径，见 SubjectStatusService）。 */
     Optional<StatusTransition> findLatestTransition(long subjectId);

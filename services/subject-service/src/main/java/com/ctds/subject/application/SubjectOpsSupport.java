@@ -20,6 +20,9 @@ public class SubjectOpsSupport {
     /** 申请编号格式（与申请编号生成规则 S + yyyyMMdd + 6 位序号对齐）。 */
     private static final String SUBJECT_NO_PATTERN = "S\\d{14}";
 
+    /** 归一化后文件名长度上限（超出截断；与证照/证书文件校验的文件名上限一致）。 */
+    private static final int MAX_FILE_NAME_CHARS = 255;
+
     private final AuditRecorder auditRecorder;
 
     public SubjectOpsSupport(final AuditRecorder auditRecorder) {
@@ -37,6 +40,25 @@ public class SubjectOpsSupport {
     public String operator() {
         final String subject = AuthContext.subject();
         return subject == null ? "anonymous" : subject;
+    }
+
+    /**
+     * 上传文件名归一化（WBS-3.1.5 hifi B8①，3.1.4 观察项处置）：剥除控制字符（U+0000~U+001F/U+007F）、
+     * 去首尾空白、超长截 255；null/空白透传（由既有文件校验拒绝）。归一化后值用于渠道调用、落库与档案回显。
+     */
+    public String normalizeFileName(final String fileName) {
+        if (fileName == null) {
+            return null;
+        }
+        final StringBuilder sb = new StringBuilder(fileName.length());
+        for (int i = 0; i < fileName.length(); i++) {
+            final char c = fileName.charAt(i);
+            if (c >= 0x20 && c != 0x7F) {
+                sb.append(c);
+            }
+        }
+        final String normalized = sb.toString().trim();
+        return normalized.length() > MAX_FILE_NAME_CHARS ? normalized.substring(0, MAX_FILE_NAME_CHARS) : normalized;
     }
 
     /** 审计落痕（reason 为空时不带明细字段）。 */

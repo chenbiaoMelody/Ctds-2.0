@@ -51,6 +51,8 @@ ctds:
     gov-cert-max-bytes: 2097152
     gov-cert-allowed-extensions: cer,crt,pem
     material-key-ref: subject-cert-material
+    # 审核驳回理由长度上限（WBS-3.1.5 hifi 配置项表）
+    review-reason-max-length: 200
   # 模拟认证渠道异常注入开关（演示/测试 fail-fast 口径，hifi B8）
   std:
     certification:

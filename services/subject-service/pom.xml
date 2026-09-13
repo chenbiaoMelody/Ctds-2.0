@@ -28,6 +28,11 @@
       <groupId>com.ctds</groupId>
       <artifactId>common-auth</artifactId>
     </dependency>
+    <!-- 审核清单分页（WBS-3.1.5）：横切能力复用 common-pagination（ADR-005 §3.2） -->
+    <dependency>
+      <groupId>com.ctds</groupId>
+      <artifactId>common-pagination</artifactId>
+    </dependency>
     <!-- 注册防重复提交（ADR-007 模式 B）：@Idempotent(key=信用代码)，演示/单测 memory 模式 -->
     <dependency>
       <groupId>com.ctds</groupId>

@@ -103,15 +103,17 @@ public class CertificationService {
     /** 证照上传与 OCR 识别（行为 2 第 1~3 条）：影像密文与原始结果密文即时落库，识别要素回填仅供核对。 */
     public LicenseUploadResult uploadLicense(final String subjectNo, final byte[] image, final String fileName) {
         ops.requireSubjectNo(subjectNo);
+        // 文件名归一化（WBS-3.1.5 hifi B8①，3.1.4 观察项）：控制字符剥除后再走校验/渠道/落库/回显全链
+        final String safeName = ops.normalizeFileName(fileName);
         final Subject subject = requireSubject(subjectNo);
         ownershipGuard.requireOwnerOrReviewer(subject, ACTION_UPLOAD);
         requirePendingCert(subject);
         requireEnterpriseChannel(subject, ACTION_UPLOAD);
-        requireImage(image, fileName);
+        requireImage(image, safeName);
 
         final Instant start = Instant.now();
         final OcrRecognition recognition = callChannel(
-                () -> certificationChannel.ocrBusinessLicense(image, fileName),
+                () -> certificationChannel.ocrBusinessLicense(image, safeName),
                 subject.id(), CertVerificationLog.TYPE_OCR_LICENSE, null);
         final int costMs = elapsedMs(start);
         final LocalDateTime now = LocalDateTime.now(clock);
@@ -119,15 +121,15 @@ public class CertificationService {
         final String imageDigest = sm3Service.digestHex(image);
 
         if (!recognition.recognizable()) {
-            saveMaterial(subject.id(), fileName, imageCipher, imageDigest, recognition, costMs, now);
+            saveMaterial(subject.id(), safeName, imageCipher, imageDigest, recognition, costMs, now);
             ops.audit(ops.operator(), ACTION_UPLOAD, subjectNo, AuditOutcome.DENIED, "ocr_unrecognizable");
             throw new BizException(SubjectErrorCodes.CERT_LICENSE_UNRECOGNIZABLE, "证照影像无法识别，请重传");
         }
         final CertMaterial material =
-                saveMaterial(subject.id(), fileName, imageCipher, imageDigest, recognition, costMs, now);
+                saveMaterial(subject.id(), safeName, imageCipher, imageDigest, recognition, costMs, now);
         ops.audit(ops.operator(), ACTION_UPLOAD, subjectNo, AuditOutcome.SUCCESS, null);
         log.info("license uploaded: subjectNo={}, materialId={}", subjectNo, material.id());
-        return new LicenseUploadResult(material.id(), fileName, true,
+        return new LicenseUploadResult(material.id(), safeName, true,
                 new OcrElements(recognition.subjectName(), recognition.uscc(),
                         recognition.legalPerson(), recognition.regAddress()));
     }
@@ -277,21 +279,23 @@ public class CertificationService {
     public GovCaCertificationResult submitGovCaCertificate(final String subjectNo, final byte[] certBytes,
             final String fileName) {
         ops.requireSubjectNo(subjectNo);
+        // 文件名归一化（WBS-3.1.5 hifi B8①，3.1.4 观察项）：控制字符剥除后再走校验/渠道/落库全链
+        final String safeName = ops.normalizeFileName(fileName);
         final Subject subject = requireSubject(subjectNo);
         ownershipGuard.requireOwnerOrReviewer(subject, ACTION_GOV_SUBMIT);
         if (subject.status() != SubjectStatus.PENDING_CERT && subject.status() != SubjectStatus.CERT_FAILED) {
             throw new BizException(SubjectErrorCodes.CERT_STATE_NOT_ALLOWED, "当前状态不允许执行认证操作");
         }
         requireGovChannel(subject, ACTION_GOV_SUBMIT);
-        requireCertFile(certBytes, fileName);
+        requireCertFile(certBytes, safeName);
 
         final Instant start = Instant.now();
         final GovCaVerification verification = callChannel(
-                () -> certificationChannel.verifyGovCaCertificate(certBytes, fileName),
+                () -> certificationChannel.verifyGovCaCertificate(certBytes, safeName),
                 subject.id(), CertVerificationLog.TYPE_GOV_CA, null);
         final int costMs = elapsedMs(start);
         final LocalDateTime now = LocalDateTime.now(clock);
-        saveGovCertMaterial(subject.id(), fileName, certBytes, verification, costMs, now);
+        saveGovCertMaterial(subject.id(), safeName, certBytes, verification, costMs, now);
 
         if (!verification.passed()) {
             ops.audit(ops.operator(), ACTION_GOV_SUBMIT, subjectNo, AuditOutcome.SUCCESS, "gov_verify_failed");

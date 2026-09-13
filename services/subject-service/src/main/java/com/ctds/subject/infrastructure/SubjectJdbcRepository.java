@@ -10,6 +10,8 @@ import com.ctds.subject.domain.SubjectStatus;
 import com.ctds.subject.domain.SubjectType;
 import com.ctds.subject.domain.TriggerRole;
 import java.sql.Date;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.LocalDate;
 import java.util.List;
@@ -108,6 +110,27 @@ public class SubjectJdbcRepository implements SubjectRepository {
     }
 
     @Override
+    public long countByStatus(final SubjectStatus status) {
+        return jdbc.sql("SELECT COUNT(1) FROM subject WHERE status = ?")
+                .param(status.name())
+                .query(Long.class)
+                .single();
+    }
+
+    @Override
+    public List<Subject> findByStatus(final SubjectStatus status, final int offset, final int limit) {
+        return jdbc.sql("SELECT id, subject_no, subject_name, uscc, subject_type, "
+                        + "reg_address, contact_name, contact_phone, admin_account, applicant, status, "
+                        + "created_at, updated_at FROM subject WHERE status = ? "
+                        + "ORDER BY created_at ASC, id ASC LIMIT ? OFFSET ?")
+                .param(status.name())
+                .param(limit)
+                .param(offset)
+                .query((rs, rowNum) -> mapSubject(rs))
+                .list();
+    }
+
+    @Override
     public Optional<StatusTransition> findLatestTransition(final long subjectId) {
         return jdbc.sql("SELECT from_status, to_status, trigger_role, operator, remark, created_at "
                         + "FROM subject_status_log WHERE subject_id = ? ORDER BY id DESC LIMIT 1")
@@ -163,21 +186,25 @@ public class SubjectJdbcRepository implements SubjectRepository {
     private Optional<Subject> querySubject(final String sql, final String key) {
         return jdbc.sql(sql)
                 .param(key)
-                .query((rs, rowNum) -> new Subject(
-                        rs.getLong("id"),
-                        rs.getString("subject_no"),
-                        rs.getString("subject_name"),
-                        rs.getString("uscc"),
-                        SubjectType.valueOf(rs.getString("subject_type")),
-                        rs.getString("reg_address"),
-                        rs.getString("contact_name"),
-                        rs.getString("contact_phone"),
-                        rs.getString("admin_account"),
-                        rs.getString("applicant"),
-                        SubjectStatus.valueOf(rs.getString("status")),
-                        rs.getTimestamp("created_at").toLocalDateTime(),
-                        rs.getTimestamp("updated_at").toLocalDateTime()))
+                .query((rs, rowNum) -> mapSubject(rs))
                 .optional();
+    }
+
+    private Subject mapSubject(final ResultSet rs) throws SQLException {
+        return new Subject(
+                rs.getLong("id"),
+                rs.getString("subject_no"),
+                rs.getString("subject_name"),
+                rs.getString("uscc"),
+                SubjectType.valueOf(rs.getString("subject_type")),
+                rs.getString("reg_address"),
+                rs.getString("contact_name"),
+                rs.getString("contact_phone"),
+                rs.getString("admin_account"),
+                rs.getString("applicant"),
+                SubjectStatus.valueOf(rs.getString("status")),
+                rs.getTimestamp("created_at").toLocalDateTime(),
+                rs.getTimestamp("updated_at").toLocalDateTime());
     }
 
     private void insertTransition(final long subjectId, final StatusTransition transition) {
