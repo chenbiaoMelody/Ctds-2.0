@@ -51,7 +51,7 @@
 | T5b | 3.1.4 hifi 边界表"政务重复提交并发"（承诺"3.1.5 前补"顺延项） | `GovCaCertificationIntegrationTest#concurrentGovSubmissionExactlyOneWins` | 同政务主体 2 线程并发提交证书验证 → 恰 1 成功进 PENDING_REVIEW，1 被门槛拒；核验流水恰 1 条 | 同上 |
 | T6 | 3.1.3/3.1.4 hifi 配置"容器 6MB/业务 5MB、证书 2MB"HTTP 封套（现状仅单测层） | `CertificationIntegrationTest#oversizedMultipartGetsUnifiedEnvelope`；`GovCaCertificationIntegrationTest#oversizedCertFileRejectedAtHttpLayer` | 超容器上限 multipart POST → 统一错误信封（不泄露堆栈、错误码在主体模块位）；2MB+1 证书文件 → 1004 族拒绝文案、材料零落库 | 删业务大小校验 → 红（业务层那条） |
 | T7 | 行为 7-1 收口纪律"业务只见接口"（架构守卫缺口） | `LayerRulesTest#subjectMustNotDependOnMockChannel` | ArchUnit 规则：`com.ctds.subject..`（main）不得依赖 `com.ctds.std.certification.mock..`（模拟渠道实现类） | 在 subject 里 import 一个 mock 类 → 红 |
-| T8 | 行为 7-4"渠道异常不计失败次数"的库级组合（现状两侧分开锚定） | `CertificationIntegrationTest#channelErrorRowsNotCountedAgainstDailyFailLimit` | 直插 1 条 CHANNEL_ERROR(counted=0) + 5 条 FAIL(counted=1) → 第 6 次被拒；删掉 CHANNEL_ERROR 行中 1 条 FAIL → 第 6 次放行（组合证明 counted 过滤生效） | 仓储查询去掉 `counted = 1` → 红 |
+| T8 | 行为 7-4"渠道异常不计失败次数"的库级组合（现状两侧分开锚定） | `CertificationIntegrationTest#channelErrorRowsNotCountedAgainstDailyFailLimit` | 直插 1 条 CHANNEL_ERROR(counted=0) + 4 条 FAIL(counted=1) → 核验放行（渠道异常不占当日额度）；对照主体：1 条 CHANNEL_ERROR + 5 条 FAIL → 第 6 次 1004B0005 阻断（组合口径不误伤上限本身） | 计数条件整体退化为"仅按主体+窗口计数"（**同时**去掉 `conclusion = 'FAIL'` 与 `counted = 1` 两谓词）→ 渠道异常行进入计数 → 红。**独立评审④更正（2026-09-14）**：单独去 `counted = 1` 不可观测（`conclusion = 'FAIL'` 已排除渠道异常行），原声明不成立；`counted = 1` 在可达路径与 `conclusion = 'FAIL'` 冗余（存活突变，登记观察项） |
 
 ## 3. 前端补测行为清单（F1~F4，Vitest，随门禁 frontendTest）
 
@@ -99,7 +99,7 @@
 3. **RegisterView.submit 加 validate 拒绝捕获**（随 F1 交付的最小前端代码修正）：原 `await formRef.value.validate()` 失败即抛 unhandled rejection（控制台报错、无功能影响）；现捕获后静默 return（字段级红字由 el-form 自行展示）。行为口径不变、消除噪声、使 F1 红锚可稳定断言。hifi §3 F1 行"删 rules 或 validate 即红"验证方式在本修复后为真。
 4. **命名/措辞与实现出入补正**（视角①评审打回项，2026-09-14）：
    - T6 落点拆分：§2 原表写"类#方法 `CertificationIntegrationTest#oversizedMultipartGetsUnifiedEnvelope`"——实际因 MockMvc 不经真实 multipart 解析器，拆为业务上限 5MB 集成用例 `#oversizedLicenseRejectedAtHttpLayerWithoutMaterial`（CertificationIT）+ 容器 6MB 处理器直测 `CertificationExceptionHandlerTest#containerOversizeUploadMapsToUnifiedParamEnvelope`（interfaces 测试）。两者覆盖不同代码路径（requireImage 业务校验 vs `MaxUploadSizeExceededException`→处理器映射），非重复。
-   - T6 错误码措辞：§2 原表"错误码在主体模块位/1004 族"——实际 5MB/6MB 超限均出 `1000C0001`（PARAM_INVALID 平台参数位，文案"≤5MB"/"≤2MB"）。与 3.1.4 hifi"400 + 参数类文案"冻结行为一致，原措辞失准。
+   - T6 错误码措辞：§2 原表"错误码在主体模块位/1004 族"——实际业务 5MB / 政务 2MB / 容器 6MB 三处超限均出 `1000C0001`（PARAM_INVALID 平台参数位，文案"≤5MB"/"≤2MB"）。与 3.1.4 hifi"400 + 参数类文案"冻结行为一致，原措辞失准。
    - T2 HTTP 层措辞：§2 原表"HTTP 200 信封内 400 参数错误码"——实际为 HTTP 400 + 错误码 1000C0001（标准参数错误信封，非 200 包壳）。
    - T7 规则收窄第二处：§2 原表"禁依赖 `com.ctds.std.certification.mock..` 包"——实际 mock 实现类与接口同处 `com.ctds.std.certification` 包（无 .mock 子包），包级规则会误杀接口合法依赖；实现钉死单一类 FQN `MockCertificationChannel`、限 domain/application/interfaces 三业务层。盲区：未来新增第二个 mock 实现类不拦截，登记观察项随真实渠道包评估清单化规则。
    - QueueView 用例补登记：§3 F1~F4 未列但实际随 T3 前端侧一并补了 `QueueView.spec.ts` 两例（渲染顺序=响应序不重排、翻页 btn-next 透传 pageNum 重拉），属 §3 范畴，此处补账。
@@ -109,10 +109,28 @@
 
 视角①规格与设计符合性：**有条件通过** → 必修 2（①开发日志+剧本界面核对修订缺失、②§8 三处出入未登记）+ 建议 5。代码/测试 14 项承诺全部落地、实测复绿、零业务越界、S1 行为等价成立。
 视角②安全与供应链：**通过**（0 必修；建议 4：T7 守卫防绕过升级、既有注释错码登记、门禁证据时点、日志随分支）。
-视角③一致性与重复：**主智能体自检通过**（独立子智能体派发遇配额耗尽降级，留痕待补独立评审）——S1 上收后 main 无残留同型私有方法；SubjectRegistrationService 用 requireSubjectNo 属合理独立（只校验格式不查库）；T6 三用例覆盖不同代码路径非重复；ADR-016 §4~§7 忠实引自既有决策无臆造；既有 96+58 测试断言口径未弱化（ReviewServiceTest 仍锚 1000C0003 透传、CertificationServiceTest countFailuresSince 桩仍被真实 ops 消费）。
-视角④测试质量：**主智能体自检通过**（同上降级留痕）——T1 双主体设计真区分窗口口径（删 created_at 过滤锚验红）；T3 startsWith 跨用例耦合用固定历史日期（2026-09-01~03，无条件早于"今日"）当前安全（建议：未来同类回填用例注意耦合）；T8 直插行与真实写入口径一致；T5a"恰一次200"不锚败者错误码族——概率性口径同 T5b，机制由并发门槛突变锚验（建议同视角①：补败者错误码族断言或在注记登记）；F2① toHaveValue 能杀绑定丢失；F1 setTimeout 100ms 渲染时序经验稳定；vitest deps.inline 后其它既有 spec 不依赖 el-form rules（DetailView 驳回走自定义 textarea+手动校验，RegisterView 既有 3 例仅分支/字段渲染）——修复不致其它 spec 假绿；覆盖率数字全部行为驱动非凑数。
+视角③一致性与重复：**有条件通过（独立评审补，2026-09-14 21:4x）** → 必修 1（已修复）+ 建议 5 + 观察 6。
+视角④测试质量：**有条件通过（独立评审补，2026-09-14 21:4x）** → 必修 1（已修复）+ 建议 4 + 观察 8。
 
-**降级留痕**：③④ 独立子智能体派发连续四轮遇 `inference exceeds tpm/rpm limit`（视角①②已用约 3.6M 子智能体 tokens，判为配额耗尽非瞬时速率），按记忆 [[subagent-dispatch-serial-retry]] 降级为主智能体自检 + 本节留痕；**待配额恢复后另会话补独立评审视角③④**，结论若与自检冲突以独立评审为准。必修项 1（日志+剧本核对）与必修项 2（§8 补记）已随本包修复提交兑现。
+### 9.1 独立评审③④补录（2026-09-14，配额恢复后另会话独立子智能体派发；结论以独立评审为准）
+
+**视角③ 一致性与重复 = 有条件通过。**
+- 必修 1（**已修复**）：首轮自检"SubjectRegistrationService 用 requireSubjectNo 属合理独立（只校验格式不查库）"与代码不符——`SubjectRegistrationService.cancel/detail`（:89-91 / :107-109）实为"格式校验 + 查库 + 同形 1000C0003"三段式，与 `SubjectOpsSupport.requireSubject` 逐字同型（属 S1 声明范围 [ReviewService/CertificationService] 外的遗留重复）。本节表述已更正，去重项登记见交接提醒。
+- 有效核对：ReviewService/CertificationService 两处私有 `requireSubject` 已删、9 个调用点（认证 7 + 审核 2）全替换且错误码/文案逐字一致；`uploadLicense`/`submitGovCaCertificate` 仅 `normalizeFileName`（纯函数）相对格式校验前移，无行为漂移；T6 三用例覆盖三条不同代码路径（`requireImage` 5MB / `requireCertFile` 2MB / `MaxUploadSizeExceededException` 处理器）；`ReviewServiceTest` 断言未弱化（仍锚 1000C0003 透传，映射本体移交 `SubjectOpsSupportTest`）；ADR-016 §4~§7 忠实引自既有决策无臆造。
+- 建议 5（登记，见交接提醒）：SubjectRegistrationService 同型内联收口；`SubjectOpsSupport:38` 注释错码（存量）；`ReviewIntegrationTest.queueList` 与存量内联取清单重复；前端 `inputByLabel`/`fillAllFields` 跨 spec 重复；§8 T6 错误码措辞补"政务 2MB"（**已修复**）。
+
+**视角④ 测试质量 = 有条件通过。**
+- 必修 1（**已修复**）：§2 T8 原声明红锚"仓储查询去掉 `counted = 1` → 红"经独立推演**不成立**——`CertificationJdbcRepository.countFailuresSince` 查询含 `conclusion = 'FAIL'` 谓词，CHANNEL_ERROR 行（conclusion≠FAIL）与之无关，单独去 `counted = 1` 计数不变、用例不变红；该用例实际锁定的突变是"计数条件整体退化为仅按主体+窗口"（同时去两谓词）。§2 T8 红锚声明已更正；`counted = 1` 存活突变（可达路径与 `conclusion = 'FAIL'` 冗余）登记观察项。
+- 有效核对：T1（删 `created_at` 窗口条件 → 昨日 5 条计入 → 红）；T2（去长度校验 → 转 REJECTED → 红）；T3（`ORDER BY` 改列 → 红）；T4（枚举增删改名 → 红）；T6（删大小校验 → 红；材料零落库已锚）；T7（import mock 类 → 红）；F1~F4 断言真实非假绿（F1 `not.toHaveBeenCalled()` 真验证不发请求；F2 值级 `element.value` 断言杀绑定丢失；F3 刷新恰 2 次；F4 路由重定向）；线程池均 `finally` 关闭；新增/改动测试无 TODO/死代码/调试输出。
+- 建议 4 + 观察 8（登记，见交接提醒）：T5a/T5b 缺败者错误码族断言；T5b 容忍死锁 500 且可能偶发红；T3 依赖绝对历史日期的隐式时钟耦合；`ReviewServiceTest#approveUnknownSubjectNo` 退化为弱透传断言；并发栅栏 `ready` 未 `await`（死代码）；T1/T8 DB `NOW()` 与 JVM 时钟依赖；F1 `setTimeout 100ms` 时序；`RegisterView` try/catch 吞任意拒绝等。
+
+**与首轮自检的差异**：③"SubjectRegistrationService 属合理独立"与 ④"T8 红锚有效"两处经独立评审判定**不成立**（以独立评审为准，已修复）；其余自检结论经独立复核成立。本会话修复**仅文档层（设计文档更正），零代码/行为改动**，故既有门禁结论（后端 subject 111/111 + std 20/20、前端 68/68、run-gates GREEN）继续有效。
+
+### 9.2 首轮降级自检留痕（历史记录，保留备查）
+
+- 视角③（自检）：S1 上收后 ReviewService/CertificationService 无残留同型私有方法；SubjectRegistrationService 用 requireSubjectNo 判为合理独立（**该判定经独立评审更正，见 9.1**）；T6 三用例覆盖不同代码路径非重复；ADR-016 §4~§7 忠实引自既有决策无臆造；既有 96+58 测试断言口径未弱化（ReviewServiceTest 仍锚 1000C0003 透传、CertificationServiceTest countFailuresSince 桩仍被真实 ops 消费）。
+- 视角④（自检）：T1 双主体设计真区分窗口口径；T3 startsWith 跨用例耦合用固定历史日期（2026-09-01~03）当前安全；T8 直插行与真实写入口径一致（**红锚声明经独立评审更正，见 9.1**）；T5a"恰一次 200"不锚败者错误码族；F2① toHaveValue 能杀绑定丢失；F1 setTimeout 100ms 渲染时序经验稳定；vitest deps.inline 后其它既有 spec 不依赖 el-form rules（DetailView 驳回走自定义 textarea+手动校验，RegisterView 既有 3 例仅分支/字段渲染）——修复不致其它 spec 假绿；覆盖率数字全部行为驱动非凑数。
+- 降级原因：③④ 独立子智能体派发连续四轮遇 `inference exceeds tpm/rpm limit`（视角①②已用约 3.6M tokens，判为配额耗尽非瞬时速率），按记忆 [[subagent-dispatch-serial-retry]] 降级为主智能体自检 + 本节留痕。必修项 1（日志+剧本核对）与必修项 2（§8 补记）已随本包修复提交兑现。
 
 ## 确认记录（人签署；未签署 = 未确认 = 禁止进入编码）
 
