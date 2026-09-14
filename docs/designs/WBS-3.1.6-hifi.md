@@ -97,6 +97,22 @@
 1. **T7 规则范围收窄**：首版按"subject 全模块禁依赖 MockCertificationChannel"落地即红——唯一命中是 `infrastructure/CertificationBeanConfig`（ADR-008 §4 明示的 Bean 注册替换点，属合法装配）。规则收窄为 domain/application/interfaces 业务三层禁依赖。**该首版红灯本身即 T7 红锚实证**（规则对真实依赖引用立即生效）。
 2. **vitest 环境缺陷修复（前端主链路外唯一的配置面变更）**：element-plus 在 vitest SSR 下被外置，其 `import AsyncValidator from 'async-validator'` 走 Node CJS interop 拿到整个 module.exports 对象，`new` 抛 TypeError 且被 EP `catch (fields)` 吞成"校验通过"——**既有 58 例中凡依赖 el-form rules 的断言实际从未生效**（本包 F1 首验时暴露：jsdom 下必填提示不渲染）。修复 = vite.config.ts `test.server.deps.inline: [/element-plus/, /async-validator/]`（走 dist-web ESM，与浏览器构建一致）。业务代码零改动。教训入记忆：测试环境组件行为断言必须先以"故意不填必填"式反向探针验证测试本身能红。
 3. **RegisterView.submit 加 validate 拒绝捕获**（随 F1 交付的最小前端代码修正）：原 `await formRef.value.validate()` 失败即抛 unhandled rejection（控制台报错、无功能影响）；现捕获后静默 return（字段级红字由 el-form 自行展示）。行为口径不变、消除噪声、使 F1 红锚可稳定断言。hifi §3 F1 行"删 rules 或 validate 即红"验证方式在本修复后为真。
+4. **命名/措辞与实现出入补正**（视角①评审打回项，2026-09-14）：
+   - T6 落点拆分：§2 原表写"类#方法 `CertificationIntegrationTest#oversizedMultipartGetsUnifiedEnvelope`"——实际因 MockMvc 不经真实 multipart 解析器，拆为业务上限 5MB 集成用例 `#oversizedLicenseRejectedAtHttpLayerWithoutMaterial`（CertificationIT）+ 容器 6MB 处理器直测 `CertificationExceptionHandlerTest#containerOversizeUploadMapsToUnifiedParamEnvelope`（interfaces 测试）。两者覆盖不同代码路径（requireImage 业务校验 vs `MaxUploadSizeExceededException`→处理器映射），非重复。
+   - T6 错误码措辞：§2 原表"错误码在主体模块位/1004 族"——实际 5MB/6MB 超限均出 `1000C0001`（PARAM_INVALID 平台参数位，文案"≤5MB"/"≤2MB"）。与 3.1.4 hifi"400 + 参数类文案"冻结行为一致，原措辞失准。
+   - T2 HTTP 层措辞：§2 原表"HTTP 200 信封内 400 参数错误码"——实际为 HTTP 400 + 错误码 1000C0001（标准参数错误信封，非 200 包壳）。
+   - T7 规则收窄第二处：§2 原表"禁依赖 `com.ctds.std.certification.mock..` 包"——实际 mock 实现类与接口同处 `com.ctds.std.certification` 包（无 .mock 子包），包级规则会误杀接口合法依赖；实现钉死单一类 FQN `MockCertificationChannel`、限 domain/application/interfaces 三业务层。盲区：未来新增第二个 mock 实现类不拦截，登记观察项随真实渠道包评估清单化规则。
+   - QueueView 用例补登记：§3 F1~F4 未列但实际随 T3 前端侧一并补了 `QueueView.spec.ts` 两例（渲染顺序=响应序不重排、翻页 btn-next 透传 pageNum 重拉），属 §3 范畴，此处补账。
+   - 方法名出入（T6/T7）已在上述逐条标注，测试方法实际名以代码为准。
+
+## 9. 评审汇总（2026-09-14，4 视角评审留痕）
+
+视角①规格与设计符合性：**有条件通过** → 必修 2（①开发日志+剧本界面核对修订缺失、②§8 三处出入未登记）+ 建议 5。代码/测试 14 项承诺全部落地、实测复绿、零业务越界、S1 行为等价成立。
+视角②安全与供应链：**通过**（0 必修；建议 4：T7 守卫防绕过升级、既有注释错码登记、门禁证据时点、日志随分支）。
+视角③一致性与重复：**主智能体自检通过**（独立子智能体派发遇配额耗尽降级，留痕待补独立评审）——S1 上收后 main 无残留同型私有方法；SubjectRegistrationService 用 requireSubjectNo 属合理独立（只校验格式不查库）；T6 三用例覆盖不同代码路径非重复；ADR-016 §4~§7 忠实引自既有决策无臆造；既有 96+58 测试断言口径未弱化（ReviewServiceTest 仍锚 1000C0003 透传、CertificationServiceTest countFailuresSince 桩仍被真实 ops 消费）。
+视角④测试质量：**主智能体自检通过**（同上降级留痕）——T1 双主体设计真区分窗口口径（删 created_at 过滤锚验红）；T3 startsWith 跨用例耦合用固定历史日期（2026-09-01~03，无条件早于"今日"）当前安全（建议：未来同类回填用例注意耦合）；T8 直插行与真实写入口径一致；T5a"恰一次200"不锚败者错误码族——概率性口径同 T5b，机制由并发门槛突变锚验（建议同视角①：补败者错误码族断言或在注记登记）；F2① toHaveValue 能杀绑定丢失；F1 setTimeout 100ms 渲染时序经验稳定；vitest deps.inline 后其它既有 spec 不依赖 el-form rules（DetailView 驳回走自定义 textarea+手动校验，RegisterView 既有 3 例仅分支/字段渲染）——修复不致其它 spec 假绿；覆盖率数字全部行为驱动非凑数。
+
+**降级留痕**：③④ 独立子智能体派发连续四轮遇 `inference exceeds tpm/rpm limit`（视角①②已用约 3.6M 子智能体 tokens，判为配额耗尽非瞬时速率），按记忆 [[subagent-dispatch-serial-retry]] 降级为主智能体自检 + 本节留痕；**待配额恢复后另会话补独立评审视角③④**，结论若与自检冲突以独立评审为准。必修项 1（日志+剧本核对）与必修项 2（§8 补记）已随本包修复提交兑现。
 
 ## 确认记录（人签署；未签署 = 未确认 = 禁止进入编码）
 
