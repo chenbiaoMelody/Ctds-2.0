@@ -17,7 +17,7 @@ import {
   uploadLicense,
   verifyLegalPerson,
   type CertificationProfile,
-  type SubjectDetail,
+  type SubjectDetailView,
 } from '../../api/subject'
 import { STATUS_LABELS, STATUS_TYPES, subjectTypeLabel } from '../../constants/subject'
 
@@ -27,9 +27,9 @@ const subjectNo = computed(() => String(route.params.subjectNo))
 const loading = ref(false)
 const submitting = ref(false)
 const profile = ref<CertificationProfile | null>(null)
-const detail = ref<SubjectDetail | null>(null)
+const detail = ref<SubjectDetailView | null>(null)
 
-const subjectType = computed(() => detail.value?.subject.subjectType ?? 'ENTERPRISE')
+const subjectType = computed(() => detail.value?.subjectType ?? 'ENTERPRISE')
 const isGov = computed(() => subjectType.value === 'GOV')
 
 const statusLabel = computed(() =>
@@ -41,7 +41,7 @@ const statusType = computed(() =>
 
 /** 驳回理由 = 最近一条"转已驳回"流转的备注（行为 4：申请人可见并可修改后重新申请）。 */
 const rejectReason = computed(() => {
-  const toRejected = detail.value?.transitions.filter((t) => t.toStatus === 'REJECTED') ?? []
+  const toRejected = detail.value?.statusLogs.filter((t) => t.toStatus === 'REJECTED') ?? []
   const last = toRejected[toRejected.length - 1]
   return last?.remark ?? ''
 })
@@ -147,7 +147,7 @@ onMounted(() => {
         <span class="label">申请编号</span>{{ subjectNo }}
         <el-tag :type="statusType" class="tag">{{ statusLabel }}</el-tag>
       </p>
-      <p v-if="detail"><span class="label">主体名称</span>{{ detail.subject.subjectName }}（{{ subjectTypeLabel(detail.subject.subjectType) }}）</p>
+      <p v-if="detail"><span class="label">主体名称</span>{{ detail.subjectName }}（{{ subjectTypeLabel(detail.subjectType) }}）</p>
       <el-alert
         v-if="rejectReason"
         class="reject-tip"

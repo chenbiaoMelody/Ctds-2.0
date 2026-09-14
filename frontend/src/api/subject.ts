@@ -68,19 +68,18 @@ export interface StatusTransition {
   createdAt: string
 }
 
-export interface SubjectDetail {
-  subject: {
-    subjectNo: string
-    subjectName: string
-    uscc: string
-    subjectType: string
-    regAddress: string
-    contactName: string
-    contactPhone: string
-    adminAccount: string
-    status: SubjectStatus
-  }
-  transitions: StatusTransition[]
+// 与后端 GET /registrations/{subjectNo} 出参 SubjectView 逐字段对齐（扁平结构，
+// 注册信息脱敏展示：contactPhone 已掩码；无 adminAccount 字段）。
+export interface SubjectDetailView {
+  subjectNo: string
+  subjectName: string
+  uscc: string
+  subjectType: string
+  regAddress: string
+  contactName: string
+  contactPhone: string
+  status: SubjectStatus
+  statusLogs: StatusTransition[]
 }
 
 export interface LicenseImageView {
@@ -107,7 +106,7 @@ export function registerSubject(payload: RegisterPayload): Promise<{ subjectNo: 
   })
 }
 
-export function fetchSubjectDetail(subjectNo: string): Promise<SubjectDetail> {
+export function fetchSubjectDetail(subjectNo: string): Promise<SubjectDetailView> {
   return apiJson(`/api/v1/subject/registrations/${subjectNo}`)
 }
 

@@ -15,7 +15,7 @@ import {
   fetchSubjectDetail,
   rejectSubject,
   type CertificationProfile,
-  type SubjectDetail,
+  type SubjectDetailView,
 } from '../../api/subject'
 import { STATUS_LABELS, STATUS_TYPES, subjectTypeLabel } from '../../constants/subject'
 
@@ -25,7 +25,7 @@ const subjectNo = computed(() => String(route.params.subjectNo))
 
 const loading = ref(false)
 const profile = ref<CertificationProfile | null>(null)
-const detail = ref<SubjectDetail | null>(null)
+const detail = ref<SubjectDetailView | null>(null)
 const imageVisible = ref(false)
 const imageDataUrl = ref('')
 const rejectVisible = ref(false)
@@ -140,11 +140,11 @@ onMounted(() => {
       <!-- 注册信息（规格行为 5 第 1 条：审核员可见注册信息的完整档案） -->
       <el-card v-if="detail" shadow="never" class="block">
         <template #header>注册信息</template>
-        <p><span class="label">主体名称</span>{{ detail.subject.subjectName }}</p>
-        <p><span class="label">主体类型</span>{{ subjectTypeLabel(detail.subject.subjectType) }}</p>
-        <p><span class="label">统一社会信用代码</span>{{ detail.subject.uscc }}</p>
-        <p><span class="label">注册地址</span>{{ detail.subject.regAddress }}</p>
-        <p><span class="label">联系人</span>{{ detail.subject.contactName }}（{{ detail.subject.contactPhone }}）</p>
+        <p><span class="label">主体名称</span>{{ detail.subjectName }}</p>
+        <p><span class="label">主体类型</span>{{ subjectTypeLabel(detail.subjectType) }}</p>
+        <p><span class="label">统一社会信用代码</span>{{ detail.uscc }}</p>
+        <p><span class="label">注册地址</span>{{ detail.regAddress }}</p>
+        <p><span class="label">联系人</span>{{ detail.contactName }}（{{ detail.contactPhone }}）</p>
       </el-card>
 
       <el-card v-if="profile.license && profile.license.uploaded" shadow="never" class="block">
@@ -199,7 +199,7 @@ onMounted(() => {
       <!-- 流转留痕（行为 4 第 2 条四要素；审核结论与操作者、时间闭环——剧本 S1 步骤 9 可见性） -->
       <el-card v-if="detail" shadow="never" class="block">
         <template #header>流转留痕</template>
-        <el-table :data="detail.transitions" empty-text="暂无流转记录">
+        <el-table :data="detail.statusLogs" empty-text="暂无流转记录">
           <el-table-column label="前状态" width="120">
             <template #default="scope">{{ scope.row.fromStatus ?? '—' }}</template>
           </el-table-column>

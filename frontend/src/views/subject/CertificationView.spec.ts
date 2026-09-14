@@ -25,18 +25,15 @@ const mockedProfile = vi.mocked(fetchProfile)
 const mockedDetail = vi.mocked(fetchSubjectDetail)
 
 const baseDetail = (subjectType: string) => ({
-  subject: {
-    subjectNo: 'S20260913000002',
-    subjectName: '市大数据管理局',
-    uscc: '11330100MA27XW1301',
-    subjectType,
-    regAddress: '杭州市XX区',
-    contactName: '王科',
-    contactPhone: '13800005678',
-    adminAccount: 'govadmin',
-    status: 'PENDING_REVIEW' as const,
-  },
-  transitions: [],
+  subjectNo: 'S20260913000002',
+  subjectName: '市大数据管理局',
+  uscc: '11330100MA27XW1301',
+  subjectType,
+  regAddress: '杭州市XX区',
+  contactName: '王科',
+  contactPhone: '138****5678',
+  status: 'PENDING_REVIEW' as const,
+  statusLogs: [],
 })
 
 const baseProfile = (overrides: Record<string, unknown>) => ({
@@ -95,7 +92,7 @@ describe('认证与档案页（WBS-3.1.5 界面化）', () => {
     mockedProfile.mockResolvedValue(baseProfile({ status: 'REJECTED' }) as never)
     mockedDetail.mockResolvedValue({
       ...baseDetail('GOV'),
-      transitions: [
+      statusLogs: [
         {
           fromStatus: 'PENDING_REVIEW',
           toStatus: 'REJECTED',

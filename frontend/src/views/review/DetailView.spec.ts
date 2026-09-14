@@ -58,18 +58,15 @@ const pendingGovProfile = {
 }
 
 const subjectDetail = {
-  subject: {
-    subjectNo: 'S20260913000001',
-    subjectName: '蓝天数据科技有限公司',
-    uscc: '91330100MA27XW123X',
-    subjectType: 'ENTERPRISE',
-    regAddress: '杭州市XX区',
-    contactName: '张三',
-    contactPhone: '13800001234',
-    adminAccount: 'admin001',
-    status: 'PENDING_REVIEW',
-  },
-  transitions: [
+  subjectNo: 'S20260913000001',
+  subjectName: '蓝天数据科技有限公司',
+  uscc: '91330100MA27XW123X',
+  subjectType: 'ENTERPRISE',
+  regAddress: '杭州市XX区',
+  contactName: '张三',
+  contactPhone: '138****1234',
+  status: 'PENDING_REVIEW',
+  statusLogs: [
     {
       fromStatus: 'PENDING_CERT',
       toStatus: 'PENDING_REVIEW',

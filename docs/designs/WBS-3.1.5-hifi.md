@@ -34,6 +34,10 @@
 | POST | `/api/v1/subject/registrations/{subjectNo}/review/approval` | 无 body | `ApiResult<ReviewActionResult>` | 通过：转已入驻 |
 | POST | `/api/v1/subject/registrations/{subjectNo}/review/rejection` | body：`{ "reason": string }`（业务上限 = 配置参数 `review-reason-max-length` 默认 200，服务层校验；DTO `@Size(max=512)` 为传输面兜底；**硬上限 251** = 留痕列 VARCHAR(256) 减"审核驳回："前缀，调大配置将致落库失败） | `ApiResult<ReviewActionResult>` | 驳回：转已驳回，理由入留痕备注 |
 
+### 注册信息数据源出参口径（验收缺陷修复补记，2026-09-14）
+
+审核详情页"注册信息 + 流转留痕"分区消费 `GET /api/v1/subject/registrations/{subjectNo}` 的真实 HTTP 出参 = 接口层 `SubjectView`（**扁平结构**：subjectNo/subjectName/uscc/subjectType/regAddress/contactName/contactPhone(脱敏)/status/statusLogs[]），非应用层 `SubjectDetail` 的 `{subject, transitions}` 嵌套——前端类型以实测出参为准。
+
 ### 响应记录（应用层 record）
 
 ```
