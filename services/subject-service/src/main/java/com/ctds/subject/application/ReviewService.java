@@ -62,7 +62,7 @@ public class ReviewService {
 
     /** 通过（行为 5 第 2 条）：待审核 → 已入驻，留痕"审核通过"。 */
     public ReviewActionResult approve(final String subjectNo) {
-        final Subject subject = requireSubject(subjectNo);
+        final Subject subject = ops.requireSubject(subjectNo);
         requirePendingReview(subject, ACTION_REVIEW_APPROVE);
         statusService.transition(subject.id(), SubjectStatus.PENDING_REVIEW, SubjectStatus.ADMITTED,
                 TriggerRole.REVIEWER, ops.operator(), APPROVE_REMARK);
@@ -79,19 +79,12 @@ public class ReviewService {
         if (reason.length() > maxLength) {
             throw new BizException(ErrorCodes.PARAM_INVALID, "驳回理由长度不能超过" + maxLength + "字");
         }
-        final Subject subject = requireSubject(subjectNo);
+        final Subject subject = ops.requireSubject(subjectNo);
         requirePendingReview(subject, ACTION_REVIEW_REJECT);
         statusService.transition(subject.id(), SubjectStatus.PENDING_REVIEW, SubjectStatus.REJECTED,
                 TriggerRole.REVIEWER, ops.operator(), REJECT_REMARK_PREFIX + reason);
         ops.audit(ops.operator(), ACTION_REVIEW_REJECT, subjectNo, AuditOutcome.SUCCESS, null);
         return new ReviewActionResult(subjectNo, SubjectStatus.REJECTED.name());
-    }
-
-    /** 申请编号不存在时与"归属不匹配"出站同形（1000C0003，防存在性探测，ADR-016 §2.6 口径）。 */
-    private Subject requireSubject(final String subjectNo) {
-        ops.requireSubjectNo(subjectNo);
-        return subjectRepository.findBySubjectNo(subjectNo)
-                .orElseThrow(() -> new BizException(ErrorCodes.RESOURCE_NOT_FOUND, "申请编号不存在"));
     }
 
     /**

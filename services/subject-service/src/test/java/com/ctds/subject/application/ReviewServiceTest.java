@@ -25,7 +25,6 @@ import com.ctds.subject.domain.SubjectType;
 import com.ctds.subject.domain.TriggerRole;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -61,7 +60,7 @@ class ReviewServiceTest {
 
     @Test
     void approveTransitionsToAdmittedWithReviewerTrailAndAudit() {
-        when(subjectRepository.findBySubjectNo(SUBJECT_NO)).thenReturn(Optional.of(subject));
+        when(ops.requireSubject(SUBJECT_NO)).thenReturn(subject);
 
         final ReviewActionResult result = service.approve(SUBJECT_NO);
 
@@ -75,8 +74,10 @@ class ReviewServiceTest {
 
     @Test
     void approveUnknownSubjectNoThrowsSameShapeAsNotFound() {
-        when(subjectRepository.findBySubjectNo(SUBJECT_NO)).thenReturn(Optional.empty());
+        // 1000C0003 映射本体随 WBS-3.1.6 S1 上收（断言在 SubjectOpsSupportTest）；本用例锚定审核服务如实透传
 
+        when(ops.requireSubject(SUBJECT_NO))
+                .thenThrow(new BizException(ErrorCodes.RESOURCE_NOT_FOUND, "申请编号不存在"));
         assertThatThrownBy(() -> service.approve(SUBJECT_NO))
                 .isInstanceOf(BizException.class)
                 .extracting(e -> ((BizException) e).getErrorCode().value())
@@ -90,7 +91,7 @@ class ReviewServiceTest {
         final Subject admitted = new Subject(1L, SUBJECT_NO, "演示公司", "91330100MA27XW123X",
                 SubjectType.ENTERPRISE, "杭州市XX区XX路88号", "张三", "13800001234", "admin001", "applicant-01",
                 SubjectStatus.ADMITTED, LocalDateTime.now(), LocalDateTime.now());
-        when(subjectRepository.findBySubjectNo(SUBJECT_NO)).thenReturn(Optional.of(admitted));
+        when(ops.requireSubject(SUBJECT_NO)).thenReturn(admitted);
 
         assertThatThrownBy(() -> service.approve(SUBJECT_NO))
                 .isInstanceOf(BizException.class)
@@ -107,7 +108,7 @@ class ReviewServiceTest {
         final Subject rejected = new Subject(1L, SUBJECT_NO, "演示公司", "91330100MA27XW123X",
                 SubjectType.ENTERPRISE, "杭州市XX区XX路88号", "张三", "13800001234", "admin001", "applicant-01",
                 SubjectStatus.REJECTED, LocalDateTime.now(), LocalDateTime.now());
-        when(subjectRepository.findBySubjectNo(SUBJECT_NO)).thenReturn(Optional.of(rejected));
+        when(ops.requireSubject(SUBJECT_NO)).thenReturn(rejected);
 
         assertThatThrownBy(() -> service.reject(SUBJECT_NO, "再次驳回"))
                 .isInstanceOf(BizException.class)
@@ -120,7 +121,7 @@ class ReviewServiceTest {
 
     @Test
     void rejectTransitionsToRejectedWithReasonRemarkAndAudit() {
-        when(subjectRepository.findBySubjectNo(SUBJECT_NO)).thenReturn(Optional.of(subject));
+        when(ops.requireSubject(SUBJECT_NO)).thenReturn(subject);
 
         final ReviewActionResult result = service.reject(SUBJECT_NO, "证照材料不齐全");
 
@@ -139,7 +140,7 @@ class ReviewServiceTest {
         assertThatThrownBy(() -> service.reject(SUBJECT_NO, null))
                 .isInstanceOf(BizException.class)
                 .hasMessageContaining("驳回理由必填");
-        verify(subjectRepository, never()).findBySubjectNo(anyString());
+        verify(ops, never()).requireSubject(anyString());
     }
 
     @Test
@@ -150,7 +151,7 @@ class ReviewServiceTest {
         assertThatThrownBy(() -> service.reject(SUBJECT_NO, overlong))
                 .isInstanceOf(BizException.class)
                 .hasMessageContaining("200");
-        verify(subjectRepository, never()).findBySubjectNo(anyString());
+        verify(ops, never()).requireSubject(anyString());
     }
 
     @Test

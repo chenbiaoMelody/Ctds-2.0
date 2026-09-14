@@ -15,7 +15,6 @@ import com.ctds.subject.domain.CertVerificationLog;
 import com.ctds.subject.domain.CertificationRepository;
 import com.ctds.subject.domain.Subject;
 import com.ctds.subject.domain.SubjectErrorCodes;
-import com.ctds.subject.domain.SubjectRepository;
 import com.ctds.subject.domain.SubjectStatus;
 import com.ctds.subject.domain.SubjectType;
 import com.ctds.subject.domain.TriggerRole;
@@ -71,7 +70,6 @@ public class CertificationService {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    private final SubjectRepository subjectRepository;
     private final CertificationRepository certificationRepository;
     private final CertificationStandardApi certificationChannel;
     private final Sm4Service sm4Service;
@@ -82,13 +80,11 @@ public class CertificationService {
     private final CertificationProperties properties;
     private final Clock clock;
 
-    public CertificationService(final SubjectRepository subjectRepository,
-            final CertificationRepository certificationRepository,
+    public CertificationService(final CertificationRepository certificationRepository,
             final CertificationStandardApi certificationChannel, final Sm4Service sm4Service,
             final Sm3Service sm3Service, final OwnershipGuard ownershipGuard,
             final SubjectStatusService statusService, final SubjectOpsSupport ops,
             final CertificationProperties properties, final Clock clock) {
-        this.subjectRepository = subjectRepository;
         this.certificationRepository = certificationRepository;
         this.certificationChannel = certificationChannel;
         this.sm4Service = sm4Service;
@@ -102,10 +98,9 @@ public class CertificationService {
 
     /** 证照上传与 OCR 识别（行为 2 第 1~3 条）：影像密文与原始结果密文即时落库，识别要素回填仅供核对。 */
     public LicenseUploadResult uploadLicense(final String subjectNo, final byte[] image, final String fileName) {
-        ops.requireSubjectNo(subjectNo);
         // 文件名归一化（WBS-3.1.5 hifi B8①，3.1.4 观察项）：控制字符剥除后再走校验/渠道/落库/回显全链
         final String safeName = ops.normalizeFileName(fileName);
-        final Subject subject = requireSubject(subjectNo);
+        final Subject subject = ops.requireSubject(subjectNo);
         ownershipGuard.requireOwnerOrReviewer(subject, ACTION_UPLOAD);
         requirePendingCert(subject);
         requireEnterpriseChannel(subject, ACTION_UPLOAD);
@@ -136,8 +131,7 @@ public class CertificationService {
 
     /** 核对确认（行为 2 第 3~4 条）：确认信用代码与 OCR 识别值一致才生效，修改过的字段以人工确认为准。 */
     public ConfirmationResult confirmLicense(final String subjectNo, final ConfirmationCommand command) {
-        ops.requireSubjectNo(subjectNo);
-        final Subject subject = requireSubject(subjectNo);
+        final Subject subject = ops.requireSubject(subjectNo);
         ownershipGuard.requireOwnerOrReviewer(subject, ACTION_CONFIRM);
         requirePendingCert(subject);
         requireEnterpriseChannel(subject, ACTION_CONFIRM);
@@ -161,8 +155,7 @@ public class CertificationService {
 
     /** 法人实人核验（行为 3）：前置校验 → 渠道核验 → 留痕 → 通过自动流转待审核（行为 4 第 1 条）。 */
     public VerificationResult verifyLegalPerson(final String subjectNo, final VerificationCommand command) {
-        ops.requireSubjectNo(subjectNo);
-        final Subject subject = requireSubject(subjectNo);
+        final Subject subject = ops.requireSubject(subjectNo);
         ownershipGuard.requireOwnerOrReviewer(subject, ACTION_VERIFY);
         if (subject.status() != SubjectStatus.PENDING_CERT && subject.status() != SubjectStatus.CERT_FAILED) {
             throw new BizException(SubjectErrorCodes.CERT_STATE_NOT_ALLOWED, "当前状态不允许执行认证操作");
@@ -216,8 +209,7 @@ public class CertificationService {
     /** 认证进度档案（行为 3 第 2 条 / 行为 4 第 2 条 / 行为 6 验收-3）：L4 字段不回显；
      * 政务主体返回 govCa 段且无"当日剩余次数"概念（hifi 接口契约）。 */
     public CertificationProfile profile(final String subjectNo) {
-        ops.requireSubjectNo(subjectNo);
-        final Subject subject = requireSubject(subjectNo);
+        final Subject subject = ops.requireSubject(subjectNo);
         ownershipGuard.requireOwnerOrReviewer(subject, "certification.profile");
         final List<CertVerificationLog> logs = certificationRepository.findVerifications(subject.id());
         final List<CertificationProfile.VerificationEntry> entries = logs.stream()
@@ -246,8 +238,7 @@ public class CertificationService {
 
     /** 查看证照影像（行为 2 验收-4）：解密返回 + 查看审计留痕"谁在何时查看"；政务主体不适用企业影像端点（hifi B5）。 */
     public ImageView viewImage(final String subjectNo) {
-        ops.requireSubjectNo(subjectNo);
-        final Subject subject = requireSubject(subjectNo);
+        final Subject subject = ops.requireSubject(subjectNo);
         ownershipGuard.requireOwnerOrReviewer(subject, ACTION_IMAGE_VIEW);
         requireEnterpriseChannel(subject, ACTION_IMAGE_VIEW);
         final CertMaterial material = requireMaterial(subject.id());
@@ -259,8 +250,7 @@ public class CertificationService {
 
     /** 结束认证（lofi Q1-A：待认证 → 认证失败，触发方=申请人；之后可重新发起核验）。 */
     public CertificationActionResult abandonCertification(final String subjectNo) {
-        ops.requireSubjectNo(subjectNo);
-        final Subject subject = requireSubject(subjectNo);
+        final Subject subject = ops.requireSubject(subjectNo);
         ownershipGuard.requireOwnerOrReviewer(subject, ACTION_ABANDON);
         requirePendingCert(subject);
         statusService.transition(subject.id(), SubjectStatus.PENDING_CERT, SubjectStatus.CERT_FAILED,
@@ -278,10 +268,9 @@ public class CertificationService {
      */
     public GovCaCertificationResult submitGovCaCertificate(final String subjectNo, final byte[] certBytes,
             final String fileName) {
-        ops.requireSubjectNo(subjectNo);
         // 文件名归一化（WBS-3.1.5 hifi B8①，3.1.4 观察项）：控制字符剥除后再走校验/渠道/落库全链
         final String safeName = ops.normalizeFileName(fileName);
-        final Subject subject = requireSubject(subjectNo);
+        final Subject subject = ops.requireSubject(subjectNo);
         ownershipGuard.requireOwnerOrReviewer(subject, ACTION_GOV_SUBMIT);
         if (subject.status() != SubjectStatus.PENDING_CERT && subject.status() != SubjectStatus.CERT_FAILED) {
             throw new BizException(SubjectErrorCodes.CERT_STATE_NOT_ALLOWED, "当前状态不允许执行认证操作");
@@ -309,11 +298,6 @@ public class CertificationService {
         log.info("gov ca verified: subjectNo={} -> PENDING_REVIEW", subjectNo);
         return new GovCaCertificationResult(subjectNo, VerificationConclusion.PASS.name(),
                 SubjectStatus.PENDING_REVIEW, null);
-    }
-
-    private Subject requireSubject(final String subjectNo) {
-        return subjectRepository.findBySubjectNo(subjectNo)
-                .orElseThrow(() -> new BizException(ErrorCodes.RESOURCE_NOT_FOUND, "申请编号不存在"));
     }
 
     private CertMaterial requireMaterial(final long subjectId) {

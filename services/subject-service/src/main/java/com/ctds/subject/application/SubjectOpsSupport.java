@@ -6,12 +6,16 @@ import com.ctds.common.errorcode.ErrorCodes;
 import com.ctds.common.logging.AuditEvent;
 import com.ctds.common.logging.AuditOutcome;
 import com.ctds.common.logging.AuditRecorder;
+import com.ctds.subject.domain.Subject;
+import com.ctds.subject.domain.SubjectRepository;
 import java.util.Map;
 import org.springframework.stereotype.Component;
 
 /**
  * 主体服务公共支撑（WBS-3.1.4 承接 3.1.4 视角评审观察项①：注册与认证两个应用服务的
- * 申请编号格式校验、当前操作人取值、审计落痕三处同型工具方法上收，消除第二使用方重复）。
+ * 申请编号格式校验、当前操作人取值、审计落痕三处同型工具方法上收，消除第二使用方重复；
+ * WBS-3.1.6 S1 续收 requireSubject——审核与认证两服务的"格式校验+查库或同形拒绝"完全同型重复上收，
+ * 行为零变化：错误码/文案/审计语义与两服务原私有方法逐字一致）。
  * 审计对象域固定 subject（ADR-016 审计口径）。
  */
 @Component
@@ -24,9 +28,11 @@ public class SubjectOpsSupport {
     private static final int MAX_FILE_NAME_CHARS = 255;
 
     private final AuditRecorder auditRecorder;
+    private final SubjectRepository subjectRepository;
 
-    public SubjectOpsSupport(final AuditRecorder auditRecorder) {
+    public SubjectOpsSupport(final AuditRecorder auditRecorder, final SubjectRepository subjectRepository) {
         this.auditRecorder = auditRecorder;
+        this.subjectRepository = subjectRepository;
     }
 
     /** 申请编号格式校验（不合法即 1000C0002 参数错误，不泄露存在性）。 */
@@ -34,6 +40,16 @@ public class SubjectOpsSupport {
         if (subjectNo == null || subjectNo.isBlank() || !subjectNo.matches(SUBJECT_NO_PATTERN)) {
             throw new BizException(ErrorCodes.PARAM_INVALID, "申请编号格式不正确");
         }
+    }
+
+    /**
+     * 格式校验 + 查库（WBS-3.1.6 S1 上收，原 CertificationService/ReviewService 私有同型方法）：
+     * 申请编号不存在时 1000C0003——与"归属不匹配"出站同形，防存在性探测（ADR-016 §2.6 口径）。
+     */
+    public Subject requireSubject(final String subjectNo) {
+        requireSubjectNo(subjectNo);
+        return subjectRepository.findBySubjectNo(subjectNo)
+                .orElseThrow(() -> new BizException(ErrorCodes.RESOURCE_NOT_FOUND, "申请编号不存在"));
     }
 
     /** 当前操作人（网关身份缺失时落 anonymous，不阻断——演示链路口径）。 */

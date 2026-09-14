@@ -33,7 +33,12 @@ const rules = {
 }
 
 async function submit(): Promise<void> {
-  await formRef.value.validate()
+  try {
+    await formRef.value.validate()
+  } catch {
+    // 校验失败：el-form 已逐项显示原因，此处仅阻断提交（WBS-3.1.6 F1：不产生未处理的 Promise 拒绝）
+    return
+  }
   submitting.value = true
   try {
     const result = await registerSubject({ ...form })

@@ -161,4 +161,19 @@ describe('审核工作台详情页（WBS-3.1.5）', () => {
     await flushPromises()
     expect(mockedReject).toHaveBeenCalledWith('S20260913000001', '证照材料不齐全')
   })
+
+  it('审核时状态已变化：后端文案如实展示且自动刷新档案（WBS-3.1.6 F3，hifi 交互要点 4）', async () => {
+    const { ApiError } = await import('../../api/client')
+    mockedProfile.mockResolvedValue(pendingEnterpriseProfile as never)
+    mockedApprove.mockRejectedValue(new ApiError('1004C0002', '当前状态不允许执行审核操作'))
+    const elementPlus = await import('element-plus')
+    vi.spyOn(elementPlus.ElMessageBox, 'confirm').mockResolvedValue('confirm' as never)
+    const wrapper = await mountPage()
+    const buttons = wrapper.findAll('button').filter((b) => b.text().includes('通过（转已入驻）'))
+    await buttons[0].trigger('click')
+    await flushPromises()
+    expect(document.body.textContent).toContain('当前状态不允许执行审核操作')
+    // 1004C0002 专属分支：档案刷新（挂载 1 次 + 失败刷新 1 次），清单被他人动过时页面不自洽的兜底口径
+    expect(mockedProfile).toHaveBeenCalledTimes(2)
+  })
 })

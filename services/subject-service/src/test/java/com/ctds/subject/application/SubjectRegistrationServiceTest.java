@@ -49,7 +49,7 @@ class SubjectRegistrationServiceTest {
         auditRecorder = mock(AuditRecorder.class);
         ownershipGuard = mock(OwnershipGuard.class);
         service = new SubjectRegistrationService(repository, statusService,
-                new SubjectOpsSupport(auditRecorder), ownershipGuard, Clock.systemDefaultZone());
+                new SubjectOpsSupport(auditRecorder, repository), ownershipGuard, Clock.systemDefaultZone());
     }
 
     @Test

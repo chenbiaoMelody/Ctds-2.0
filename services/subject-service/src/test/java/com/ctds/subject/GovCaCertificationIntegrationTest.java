@@ -15,6 +15,10 @@ import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -186,6 +190,51 @@ class GovCaCertificationIntegrationTest {
     }
 
     @Test
+    void concurrentGovSubmissionExactlyOneWins() throws Exception {
+        // WBS-3.1.6 T5b（3.1.4 hifi 边界表"政务重复提交并发"——原承诺"3.1.5 前补"的顺延项）：
+        // 双线程并发提交 A3 有效证书 → 恰一次 200，PENDING_CERT→PENDING_REVIEW 流转留痕恰 1 条
+        // （败者概率性锚定口径同 ReviewIntegrationTest#concurrentReviewExactlyOneWinner）。
+        // 实测注记：败者可能拿门槛 400，也可能在 cert_material 行锁竞争下拿死锁 500（未转译——
+        // 登记观察项，随 2.5.x/真实渠道包评估重试策略），本用例只锚定"恰一次成功 + 流转恰一条"
+        final String subjectNo = registerGovSubject("91330100MA27XW1306", "政务并发演示局");
+        final byte[] cert = "valid-cert".getBytes(StandardCharsets.US_ASCII);
+        final CountDownLatch ready = new CountDownLatch(2);
+        final CountDownLatch start = new CountDownLatch(1);
+        final ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            final Future<Integer> first = pool.submit(
+                    () -> fireGovSubmit(subjectNo, cert, ready, start));
+            final Future<Integer> second = pool.submit(
+                    () -> fireGovSubmit(subjectNo, cert, ready, start));
+            start.countDown();
+            final long okCount = Stream.of(first.get(), second.get()).filter(s -> s == 200).count();
+            assertThat(okCount).as("并发政务提交恰一次成功").isEqualTo(1);
+        } finally {
+            pool.shutdownNow();
+        }
+        assertThat(subjectStatus(subjectNo)).isEqualTo("PENDING_REVIEW");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(1) FROM subject_status_log WHERE subject_id = "
+                        + "(SELECT id FROM subject WHERE subject_no = ?) "
+                        + "AND from_status = 'PENDING_CERT' AND to_status = 'PENDING_REVIEW'",
+                Integer.class, subjectNo)).isEqualTo(1);
+    }
+
+    @Test
+    void oversizedGovCertRejectedAtHttpLayerWithoutMaterial() throws Exception {
+        // WBS-3.1.6 T6（lofi Q4-A 定参 ≤2MB 的 HTTP 封套 + 材料零落库，与执照族同口径）
+        final String subjectNo = registerGovSubject("91330100MA27XW1307", "超限证书演示局");
+        submitGovCert(subjectNo, new byte[2_097_153], "oversize.cer", APPLICANT)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("1000C0001"))
+                .andExpect(jsonPath("$.message").value("政务 CA 证书文件大小超出上限（≤2MB）"));
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(1) FROM cert_material WHERE subject_id = "
+                        + "(SELECT id FROM subject WHERE subject_no = ?)",
+                Integer.class, subjectNo)).isZero();
+    }
+
+    @Test
     void channelMutualExclusionBlocksBothDirections() throws Exception {
         final String govSubjectNo = registerGovSubject("91330100MA27XW1303", "通道互斥演示局");
         final String enterpriseSubjectNo = registerEnterpriseSubject("91330100MA27X8AB0B", "互斥对照演示公司");
@@ -264,6 +313,17 @@ class GovCaCertificationIntegrationTest {
     }
 
     // ==== 辅助 ====
+
+    private int fireGovSubmit(final String subjectNo, final byte[] cert, final CountDownLatch ready,
+            final CountDownLatch start) throws Exception {
+        ready.countDown();
+        start.await();
+        return mockMvc.perform(multipart(BASE + "/" + subjectNo + "/certification/gov-ca-certificate")
+                        .file(new MockMultipartFile("file", "A3.cer",
+                                MediaType.APPLICATION_OCTET_STREAM_VALUE, cert))
+                        .header("X-Ctds-Subject", APPLICANT).header("X-Ctds-Roles", "applicant"))
+                .andReturn().getResponse().getStatus();
+    }
 
     private String subjectStatus(final String subjectNo) {
         return jdbcTemplate.queryForObject(

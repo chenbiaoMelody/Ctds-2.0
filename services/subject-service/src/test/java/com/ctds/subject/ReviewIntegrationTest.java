@@ -274,6 +274,46 @@ class ReviewIntegrationTest {
     }
 
     @Test
+    void rejectOverlongReasonRejectedAtHttpLayer() throws Exception {
+        // WBS-3.1.6 T2（hifi E2 上包登记欠账）：201 字符理由（DTO 512 传输兜底之内、业务 200 上限之外）
+        // → 服务端参数封套 400 + 1000C0001 + 配置上限文案；库内状态不被扰动、无 REJECTED 流转留痕
+        final String subjectNo = createPendingGovSubject("91330100MA27XW1415", "理由超长演示局");
+        final String overlong = "驳".repeat(201);
+
+        mockMvc.perform(post(BASE + "/registrations/" + subjectNo + "/review/rejection")
+                        .header("X-Ctds-Subject", REVIEWER).header("X-Ctds-Roles", "reviewer")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reason\":\"" + overlong + "\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("1000C0001"))
+                .andExpect(jsonPath("$.message").value("驳回理由长度不能超过200字"));
+
+        assertThat(subjectStatus(subjectNo)).isEqualTo("PENDING_REVIEW");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(1) FROM subject_status_log WHERE subject_id = "
+                        + "(SELECT id FROM subject WHERE subject_no = ?) AND to_status = 'REJECTED'",
+                Integer.class, subjectNo)).isZero();
+    }
+
+    @Test
+    void queueOrderedByApplicationTimeAsc() throws Exception {
+        // WBS-3.1.6 T3（3.1.5 hifi 接口契约"按申请时间升序"有约无断言）：直改 created_at 打乱物理序
+        // （id 序 = 一/二/三，时间序 = 二/三/一），断言清单严格按申请时间升序且分页跨界保序
+        final String p1 = createPendingGovSubject("91330100MA27XW1416", "排序演示局一");
+        final String p2 = createPendingGovSubject("91330100MA27XW1417", "排序演示局二");
+        final String p3 = createPendingGovSubject("91330100MA27XW1418", "排序演示局三");
+        backdateCreated(p1, "2026-09-03 08:00:00");
+        backdateCreated(p2, "2026-09-01 08:00:00");
+        backdateCreated(p3, "2026-09-02 08:00:00");
+
+        // 同库其他待审核条目的申请时间为用例执行当日（晚于上面三天）→ 升序口径下本用例三条必须占前
+        assertThat(queueList("1", "100")).startsWith(p2, p3, p1);
+        // 分页跨界保序：第 1 页恰为前两条，第 2 页首条为第三条
+        assertThat(queueList("1", "2")).containsExactly(p2, p3);
+        assertThat(queueList("2", "2").get(0)).isEqualTo(p1);
+    }
+
+    @Test
     void unauthorizedRolesAreRejectedWithDeniedAudit() throws Exception {
         final String subjectNo = createPendingGovSubject("91330100MA27XW1411", "越权演示局");
 
@@ -317,6 +357,22 @@ class ReviewIntegrationTest {
     }
 
     // ==== 辅助 ====
+
+    private void backdateCreated(final String subjectNo, final String timestamp) {
+        jdbcTemplate.update("UPDATE subject SET created_at = ? WHERE subject_no = ?",
+                java.sql.Timestamp.valueOf(timestamp), subjectNo);
+    }
+
+    private List<String> queueList(final String pageNum, final String pageSize) throws Exception {
+        final MvcResult result = mockMvc.perform(get(BASE + "/review/queue")
+                        .queryParam("pageNum", pageNum).queryParam("pageSize", pageSize)
+                        .header("X-Ctds-Subject", REVIEWER).header("X-Ctds-Roles", "reviewer"))
+                .andExpect(status().isOk()).andReturn();
+        final List<String> nos = new java.util.ArrayList<>();
+        MAPPER.readTree(result.getResponse().getContentAsString()).get("data").get("list")
+                .forEach(item -> nos.add(item.get("subjectNo").asText()));
+        return nos;
+    }
 
     private int fireReview(final org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder builder,
             final CountDownLatch ready, final CountDownLatch start) throws Exception {

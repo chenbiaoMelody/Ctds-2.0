@@ -20,5 +20,10 @@ export default defineConfig({
     environment: 'jsdom',
     pool: 'threads',
     exclude: [...defaultExclude, 'e2e/**'],
+    // WBS-3.1.6 测试环境修复：el-form 校验在 vitest SSR 下假通过——element-plus 被外置后，
+    // 其 'async-validator' 裸导入走 Node CJS interop 拿到整个 module.exports 对象，
+    // new Schema() 抛 TypeError 且被 EP 的 catch(fields) 吞成通过。将两者内联交 vite 解析
+    // （走 async-validator 的 module 字段 = dist-web ESM，与浏览器构建一致），校验行为即真实。
+    server: { deps: { inline: [/element-plus/, /async-validator/] } },
   },
 })

@@ -16,6 +16,10 @@ import java.util.Base64;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -234,6 +238,105 @@ class CertificationIntegrationTest {
                 .andExpect(jsonPath("$.message").value("今日核验次数已用完，请次日再试"));
     }
 
+    @Test
+    void yesterdayFailuresDoNotBlockTodaySixthAttemptDbLevel() throws Exception {
+        // WBS-3.1.6 T1（规格行为 3 第 3 条"次日自动恢复"的库级口径；剧本 S2 步骤 4 依赖）：
+        // 昨日 5 条 FAIL(counted=1) 不占今日额度，第 6 次（今日第 1 次）正常发起并通过；
+        // 对照锚：今日已 5 FAIL → 第 6 次仍拒 1004B0005（防止把窗口条件整体删错的同义反复）
+        final String yesterday = registerAndUploadAndConfirm("91330100MA27X8AB0B", "次日恢复演示公司");
+        insertVerificationRows(yesterday, "FAIL", 1, -1, 5);
+        verifyLegal(yesterday, LEGAL_PERSON_ID_OK, APPLICANT)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.conclusion").value("PASS"))
+                .andExpect(jsonPath("$.data.remainingAttemptsToday").value(5));
+        assertThat(subjectStatus(yesterday)).isEqualTo("PENDING_REVIEW");
+
+        final String today = registerAndUploadAndConfirm("91330100MA27X8AB0C", "当日对照演示公司");
+        insertVerificationRows(today, "FAIL", 1, 0, 5);
+        verifyLegal(today, LEGAL_PERSON_ID_OK, APPLICANT)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("1004B0005"));
+    }
+
+    @Test
+    void channelErrorRowsNotCountedAgainstDailyFailLimit() throws Exception {
+        // WBS-3.1.6 T8（规格行为 7 第 4 条的库级组合证明）：同窗口内 CHANNEL_ERROR(counted=0) 与
+        // FAIL(counted=1) 混合——1 错误 + 4 失败仍放行（证 counted 过滤生效，删过滤即红）；
+        // 1 错误 + 5 失败照常阻断（组合口径不误伤上限本身）
+        final String passing = registerAndUploadAndConfirm("91330100MA27X8AB0D", "错误不计次演示公司");
+        insertVerificationRows(passing, "CHANNEL_ERROR", 0, 0, 1);
+        insertVerificationRows(passing, "FAIL", 1, 0, 4);
+        verifyLegal(passing, LEGAL_PERSON_ID_OK, APPLICANT)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.conclusion").value("PASS"));
+
+        final String blocked = registerAndUploadAndConfirm("91330100MA27X8AB0E", "混合计数阻断演示公司");
+        insertVerificationRows(blocked, "CHANNEL_ERROR", 0, 0, 1);
+        insertVerificationRows(blocked, "FAIL", 1, 0, 5);
+        verifyLegal(blocked, LEGAL_PERSON_ID_OK, APPLICANT)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("1004B0005"));
+    }
+
+    @Test
+    void concurrentVerifyExactlyOneTransition() throws Exception {
+        // WBS-3.1.6 T5a（3.1.3 hifi 边界表"认证端并发重复点击"承诺项）：确认完成后 20 线程并发发起
+        // 核验（模拟渠道均返回通过）→ 恰一次 200，PENDING_CERT→PENDING_REVIEW 流转留痕恰 1 条。
+        // 败者的核验尝试行以 counted=0 的 PASS 形态如实留痕（真实发生过渠道调用），不影响状态与额度；
+        // 门槛概率性锚定口径与 ReviewIntegrationTest#concurrentReviewExactlyOneWinner 一致
+        final String subjectNo = registerAndUploadAndConfirm("91330100MA27X8AB0F", "认证并发演示公司");
+        final int threads = 20;
+        final CountDownLatch ready = new CountDownLatch(threads);
+        final CountDownLatch start = new CountDownLatch(1);
+        final ExecutorService pool = Executors.newFixedThreadPool(threads);
+        try {
+            final List<Future<Integer>> futures = new java.util.ArrayList<>();
+            for (int i = 0; i < threads; i++) {
+                futures.add(pool.submit(() -> {
+                    ready.countDown();
+                    start.await();
+                    return mockMvc.perform(post(BASE + "/" + subjectNo
+                                    + "/certification/legal-person-verifications")
+                                    .header("X-Ctds-Subject", APPLICANT).header("X-Ctds-Roles", "applicant")
+                                    .contentType(MediaType.APPLICATION_JSON)
+                                    .content(verifyBody(LEGAL_PERSON, LEGAL_PERSON_ID_OK)))
+                            .andReturn().getResponse().getStatus();
+                }));
+            }
+            start.countDown();
+            int okCount = 0;
+            for (final Future<Integer> future : futures) {
+                if (future.get() == 200) {
+                    okCount++;
+                }
+            }
+            assertThat(okCount).as("并发核验恰一次成功流转").isEqualTo(1);
+        } finally {
+            pool.shutdownNow();
+        }
+        assertThat(subjectStatus(subjectNo)).isEqualTo("PENDING_REVIEW");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(1) FROM subject_status_log WHERE subject_id = "
+                        + "(SELECT id FROM subject WHERE subject_no = ?) "
+                        + "AND from_status = 'PENDING_CERT' AND to_status = 'PENDING_REVIEW'",
+                Integer.class, subjectNo)).isEqualTo(1);
+    }
+
+    @Test
+    void oversizedLicenseRejectedAtHttpLayerWithoutMaterial() throws Exception {
+        // WBS-3.1.6 T6（3.1.3 hifi 配置项：业务上限 5MB 的 HTTP 封套 + 材料零落库；
+        // 容器级 6MB→统一封套的映射另见 CertificationExceptionHandlerTest 直测）
+        final String subjectNo = register("91330100MA27X8AB10", "超限影像演示公司");
+        uploadLicense(subjectNo, new byte[5_242_881], "oversize.jpg")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("1000C0001"))
+                .andExpect(jsonPath("$.message").value("证照影像大小超出上限（≤5MB）"));
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(1) FROM cert_material WHERE subject_id = "
+                        + "(SELECT id FROM subject WHERE subject_no = ?)",
+                Integer.class, subjectNo)).isZero();
+    }
+
     /**
      * 归属断言双向用例（ADR-016 §2.6，评审视角 2 修复后出站统一 404 防存在性探测）：
      * 本人通过 + 他人（全部认证端点与存量端点）404 + DENIED 审计；审核员持豁免权限可查。
@@ -348,6 +451,21 @@ class CertificationIntegrationTest {
     }
 
     // ==== 辅助 ====
+
+    /** 直插核验留痕行（T1/T8 造数）：dayOffset=0 落今日、-1 落昨日；counted 控制是否计入失败额度。 */
+    private void insertVerificationRows(final String subjectNo, final String conclusion, final int counted,
+            final int dayOffset, final int rows) {
+        for (int i = 0; i < rows; i++) {
+            jdbcTemplate.update("INSERT INTO cert_verification_log (subject_id, verify_type, channel_code, "
+                            + "channel_request_no, legal_person_name, legal_person_id_cipher, conclusion, "
+                            + "fail_reason, cost_ms, counted, created_at) SELECT id, 'LEGAL_PERSON', "
+                            + "'mock-certification', ?, ?, NULL, ?, ?, 1, ?, DATE_ADD(NOW(), INTERVAL ? DAY) "
+                            + "FROM subject WHERE subject_no = ?",
+                    "MOCK-SEED-" + conclusion + '-' + i, LEGAL_PERSON, conclusion,
+                    "FAIL".equals(conclusion) ? "身份证号尾号 8（造数）" : null,
+                    counted, dayOffset, subjectNo);
+        }
+    }
 
     private String subjectStatus(final String subjectNo) {
         return jdbcTemplate.queryForObject(

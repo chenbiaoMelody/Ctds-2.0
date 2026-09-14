@@ -107,6 +107,22 @@ describe('守卫 beforeEach 实际行为（H4）', () => {
     await router.push('/no-such-page')
     expect(router.currentRoute.value.name).toBe('not-found')
   })
+
+  it('普通用户直连 /review 清单路由：守卫拦截重定向工作台带 denied（WBS-3.1.6 F4，菜单显隐之外的链路级锚点）', async () => {
+    const { default: router } = await import('../router/index')
+    setDemoRole('user')
+    await router.push('/review')
+    expect(router.currentRoute.value.name).toBe('dashboard')
+    expect(router.currentRoute.value.query.denied).toBe('1')
+  })
+
+  // 显式放宽超时：懒加载 QueueView 模块首次经 vite-node 转换（并行负载下可达数秒），非被测行为慢
+  it('admin（兼审核员）直连 /review 放行（F4 正向对照）', async () => {
+    const { default: router } = await import('../router/index')
+    setDemoRole('admin')
+    await router.push('/review')
+    expect(router.currentRoute.value.name).toBe('review-queue')
+  }, 30000)
 })
 
 describe('登录守卫（WBS-2.4.12 B5/B7/边界 B-2）', () => {
