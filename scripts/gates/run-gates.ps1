@@ -5,12 +5,17 @@
 #   powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gates\run-gates.ps1
 # Options: -RepoRoot <path> (default: repo root inferred from script location)
 #          -ReportPath <file> (default: scripts\gates\reports\gate-report-<timestamp>.md)
-# Exit codes: 0 = GREEN (no FAIL; PENDING stages allowed), 1 = RED (any FAIL), 2 = config error.
+# Exit codes (WBS-2.2.7): 0 = GREEN (no FAIL; PENDING/SKIP stages allowed),
+#                          1 = RED (any FAIL -> code not acceptable),
+#                          2 = config/environment error (bad config, or the runner itself crashed - NOT a code verdict).
+# WBS-2.2.7 change record: 单文件读取失败（被占用/权限）不再中断门禁，改记 SKIP 并在报告中逐条列出；
+# 全阶段异常兜底保证"报告必出"；脚本自身崩溃退出码独立为 2，与"代码不合格的红灯=1"区分。
 param(
     [string]$RepoRoot = "",
     [string]$ReportPath = ""
 )
 $ErrorActionPreference = "Stop"
+$script:runnerCrashed = $false
 
 if ($RepoRoot -eq "") {
     $RepoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
@@ -36,12 +41,18 @@ function Add-Result([string]$stage, [string]$verdict, [string]$detail) {
     $script:results.Add([pscustomobject]@{ Stage = $stage; Verdict = $verdict; Detail = $detail })
 }
 
+# ---------- WBS-2.2.7: 全阶段异常兜底 ----------
+# 以下所有阶段包在一个 try 内：任何未预期异常都不允许让门禁"无报告退出"（原缺陷：脚本崩溃不留报告、
+# 退出码与"代码不合格的红灯"同形）。为保持变更最小可读，块内不额外缩进，改由本注释与收尾 catch 标注边界。
+try {
+
 # ---------- Stage: secretsScan ----------
 if ($cfg.stages.secretsScan.enabled) {
     $exclude = @($cfg.secretsExcludePaths)
     $patterns = @($cfg.secretsPatterns)
     $hit = 0
-    $all = @(Get-ChildItem -Path $RepoRoot -Recurse -File)
+    $unreadable = New-Object System.Collections.Generic.List[string]
+    $all = @(Get-ChildItem -Path $RepoRoot -Recurse -File -ErrorAction SilentlyContinue)
     $files = @($all | Where-Object {
         $rel = $_.FullName.Substring($RepoRoot.Length).TrimStart('\', '/') -replace '\\', '/'
         $bad = $false
@@ -54,7 +65,13 @@ if ($cfg.stages.secretsScan.enabled) {
     $skipped = $all.Count - $files.Count
     foreach ($f in $files) {
         $rel = $f.FullName.Substring($RepoRoot.Length).TrimStart('\', '/') -replace '\\', '/'
-        $bytes = [System.IO.File]::ReadAllBytes($f.FullName)
+        # WBS-2.2.7: 单文件不可读（被占用/权限）不得中断整个门禁 —— 记 SKIP 明细并继续扫描其余文件
+        try {
+            $bytes = [System.IO.File]::ReadAllBytes($f.FullName)
+        } catch {
+            $unreadable.Add($rel)
+            continue
+        }
         if ($bytes.Length -eq 0) { continue }
         # crude binary skip: NUL byte in first 1024
         $head = $bytes[0..([Math]::Min(1023, $bytes.Length - 1))]
@@ -63,12 +80,16 @@ if ($cfg.stages.secretsScan.enabled) {
         foreach ($p in $patterns) {
             if ([System.Text.RegularExpressions.Regex]::IsMatch($text, $p, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)) {
                 $hit++
-                Add-Result "secretsScan" "FAIL" ("Pattern hit in " + $f.FullName.Substring($RepoRoot.Length).TrimStart('\', '/') + " (content withheld)")
+                Add-Result "secretsScan" "FAIL" ("Pattern hit in " + $rel + " (content withheld)")
                 break
             }
         }
     }
     if ($hit -eq 0) { Add-Result "secretsScan" "PASS" ("Scanned " + $files.Count + " files, 0 hits (skipped oversized/binary/excluded: " + $skipped + ")") }
+    if ($unreadable.Count -gt 0) {
+        # SKIP 不是放行：逐条列出被跳过的文件，便于人工复核（若为源码/配置/文档文件应视为异常并排查占用来源）
+        Add-Result "secretsScan.skipped" "SKIP" ($unreadable.Count.ToString() + " file(s) unreadable (locked/permission), NOT scanned: " + ($unreadable -join ", "))
+    }
 }
 
 # ---------- Stage: structureCheck ----------
@@ -121,14 +142,15 @@ foreach ($stageName in @("compile", "lint", "unitTest")) {
     $s = $cfg.stages.$stageName
     if (-not $s -or -not $s.enabled) { continue }
     # defensive allowlist: config values are joined into a cmd.exe command line
+    # WBS-2.2.7: 配置/环境类问题记 ERROR（退出码 2），不得与"代码不合格的 FAIL（退出码 1）"混淆
     foreach ($v in @($toolMavenBin, $toolMavenArgs, $s.goals)) {
         if ($v -and ($v -notmatch '^[A-Za-z0-9:._\-\s]+$')) {
-            Add-Result $stageName "FAIL" "Illegal characters in gates-config toolchain/stage value (allowed: A-Za-z0-9 : . _ - space)"
+            Add-Result $stageName "ERROR" "Illegal characters in gates-config toolchain/stage value (allowed: A-Za-z0-9 : . _ - space)"
             continue
         }
     }
     if (-not $toolJavaHome -or -not (Test-Path $toolJavaHome)) {
-        Add-Result $stageName "FAIL" "JAVA_HOME not found (set env JAVA_HOME or gates-config toolchain.javaHome)"
+        Add-Result $stageName "ERROR" "JAVA_HOME not found (set env JAVA_HOME or gates-config toolchain.javaHome)"
         continue
     }
     $outLog = Join-Path $env:TEMP ("ctds-gate-" + $stageName + "-out.log")
@@ -171,7 +193,7 @@ foreach ($stageName in @("frontendLint", "frontendTest", "frontendE2E")) {
         if ($v -and ($v -notmatch '^[A-Za-z0-9:._\-\s]+$')) { $illegal = $true }
     }
     if ($illegal) {
-        Add-Result $stageName "FAIL" "Illegal characters in gates-config stage value (allowed: A-Za-z0-9 : . _ - space)"
+        Add-Result $stageName "ERROR" "Illegal characters in gates-config stage value (allowed: A-Za-z0-9 : . _ - space)"
         continue
     }
     # workdir 读取配置值（缺省回退 frontend；评审①P3-3/③P3-2：字段不得为死配置）
@@ -179,7 +201,7 @@ foreach ($stageName in @("frontendLint", "frontendTest", "frontendE2E")) {
     if ($s.workdir) { $stageWorkdir = $s.workdir }
     $workdir = Join-Path $RepoRoot $stageWorkdir
     if (-not (Test-Path (Join-Path $workdir "package.json"))) {
-        Add-Result $stageName "FAIL" ("package.json not found under workdir: " + $stageWorkdir)
+        Add-Result $stageName "ERROR" ("package.json not found under workdir: " + $stageWorkdir)
         continue
     }
     $psi = New-Object System.Diagnostics.ProcessStartInfo
@@ -214,17 +236,29 @@ foreach ($prop in $cfg.stages.PSObject.Properties) {
     }
 }
 
+} catch {
+    # WBS-2.2.7: 脚本自身异常 -> 记 FAIL 明细 + runnerCrashed 标记（退出码 2，与"代码不合格=1"区分）
+    $script:runnerCrashed = $true
+    Add-Result "runner" "FAIL" ("runner aborted by unexpected error (exit code will be 2, NOT a code verdict): " + $_.Exception.Message + " | " + $_.ScriptStackTrace)
+}
+
 # ---------- Report ----------
 $green = @($results | Where-Object { $_.Verdict -eq "PASS" }).Count
 $red = @($results | Where-Object { $_.Verdict -eq "FAIL" }).Count
+$skip = @($results | Where-Object { $_.Verdict -eq "SKIP" }).Count
+$envErr = @($results | Where-Object { $_.Verdict -eq "ERROR" }).Count
 $pend = @($results | Where-Object { $_.Verdict -eq "PENDING" }).Count
+$verdict = "GREEN"
+if ($script:runnerCrashed) { $verdict = "ERROR (runner crashed - see runner row; exit code 2)" }
+elseif ($envErr -gt 0) { $verdict = "ERROR (environment/config - NOT a code verdict; exit code 2; fix and re-run)" }
+elseif ($red -gt 0) { $verdict = "RED" }
 
 $lines = New-Object System.Collections.Generic.List[string]
 $lines.Add("# C-TDS Gate Report")
 $lines.Add("")
 $lines.Add("- Time: " + (Get-Date -Format "yyyy-MM-dd HH:mm:ss"))
 $lines.Add("- Repo: $RepoRoot")
-$lines.Add("- Result: PASS=$green FAIL=$red PENDING=$pend -> " + $(if ($red -gt 0) { "RED" } else { "GREEN" }))
+$lines.Add("- Result: PASS=$green FAIL=$red SKIP=$skip ERROR=$envErr PENDING=$pend -> $verdict")
 $lines.Add("")
 $lines.Add("| Stage | Verdict | Detail |")
 $lines.Add("| --- | --- | --- |")
@@ -239,8 +273,16 @@ if ($ReportPath -eq "") {
     if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir | Out-Null }
     $ReportPath = Join-Path $dir ("gate-report-" + (Get-Date -Format "yyyyMMdd-HHmmss") + ".md")
 }
-[System.IO.File]::WriteAllText($ReportPath, $report, (New-Object System.Text.UTF8Encoding($true)))
+$reportWritten = $true
+try {
+    [System.IO.File]::WriteAllText($ReportPath, $report, (New-Object System.Text.UTF8Encoding($true)))
+} catch {
+    $reportWritten = $false
+    Write-Output ("[WARN] report could not be written to " + $ReportPath + ": " + $_.Exception.Message)
+}
 Write-Output $report
 Write-Output ""
-Write-Output "Report saved to: $ReportPath"
-if ($red -gt 0) { exit 1 } else { exit 0 }
+if ($reportWritten) { Write-Output "Report saved to: $ReportPath" }
+# WBS-2.2.7 exit code semantics: 2 = config/environment/runner error (NOT a code verdict), 1 = FAIL, 0 = GREEN
+if ($script:runnerCrashed -or $envErr -gt 0 -or (-not $reportWritten)) { exit 2 }
+elseif ($red -gt 0) { exit 1 } else { exit 0 }

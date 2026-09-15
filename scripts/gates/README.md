@@ -16,9 +16,20 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gates\run-gates.ps1
 
 ## 怎么看结果
 
-- 每个检查项三态：**PASS（绿）**、**FAIL（红，必须修复后重交，无特批）**、**PENDING（待接入）**；
-- 最后一行汇总 `-> GREEN/RED`：只有 **GREEN** 才允许提交评审；
-- 退出码：`0`=GREEN，`1`=RED，`2`=配置错误。
+- 每个检查项五态：**PASS（绿）**、**FAIL（红，必须修复后重交，无特批）**、**SKIP（跳过）**、**ERROR（环境/配置问题）**、**PENDING（待接入）**；
+- **SKIP 不是放行**：表示某文件被占用/不可读（如运行中的日志）而**未被扫描**。报告以 `secretsScan.skipped` 行**逐条列出**被跳过的文件，需人工确认（若为源码/配置/文档文件，应排查占用来源后再重跑）；
+- 最后一行汇总 `-> GREEN / RED / ERROR`：只有 **GREEN** 才允许提交评审；
+- 退出码（WBS-2.2.7 明确语义）：
+  - `0` = GREEN；
+  - `1` = RED（**代码不合格**，必须修复后重交）；
+  - `2` = 配置/环境错误（含**脚本自身崩溃**、报告写入失败、配置解析失败，以及阶段级环境问题：`JAVA_HOME` 缺失、`package.json` 缺失、配置项含非法字符——这些一律记 `ERROR` 行）——**`2` 不是质量结论**，须先修环境/配置再重跑，不得当作"红灯"或"绿灯"记录；
+- **报告必然产出**：任一阶段抛出未预期异常都会被兜底捕获、记 `runner` FAIL 明细并仍写出报告（唯一例外：配置解析失败，此时直接以退出码 `2` 退出并打印原因——配置读不出来就无法产报告）。
+
+## 扫描范围与排除项（WBS-2.2.7）
+
+`gates-config.json` 的 `secretsExcludePaths` **只允许覆盖"未入库的构建/运行产物目录"与第三方产物目录**（当前：`.git`、`node_modules`、`target`、`logs`、`dist`、`test-results`、`playwright-report`、`coverage`、`scripts/gates/reports`、`build-output`、`*.min.js`、`*.lock`）。**禁止借排除项规避源码/配置/文档扫描**；新增排除项须经门禁变更流程留痕（`changeLog` 字段写明理由），配置中另有 `secretsExcludePathsRule` 声明该约束。
+
+> 变更留痕：配置 **V1.1（2026-09-15，WBS-2.2.7）**——修复"本地后端运行占用 `logs/app.log`，导致脚本 `ReadAllBytes` 抛异常、门禁崩溃不出报告、退出码与真红灯同形"的缺陷（REV-ALL-2026-09-15 DB-01）。**扫描面未缩减**（仅不再遍历构建/运行产物，源码/配置/文档全量仍扫）；实测扫描文件数由 2335 降至 464，全量门禁 GREEN（PASS=9 FAIL=0）。
 
 ## 当前检查项（V1.0）
 

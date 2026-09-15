@@ -1,6 +1,7 @@
 {
-  "version": "V1.0",
+  "version": "V1.1",
   "note": "C-TDS quality gate config. Consumed by scripts/gates/run-gates.ps1. Thresholds come from charter 4.2 table.",
+  "changeLog": "V1.1 (2026-09-15, WBS-2.2.7): secretsScan 排除项增补未入库的构建/运行产物目录（target/logs/dist/test-results/playwright-report/coverage）；原因：本地后端运行占用 logs/app.log 导致脚本 ReadAllBytes 抛异常、整个门禁崩溃且不出报告（REV-ALL-2026-09-15 DB-01）。本次变更不降低任何检查强度：排除项仅覆盖未入库目录，扫描面（源码/文档/配置）不变，且被跳过文件在报告中逐条列出。门禁配置变更须走变更流程留痕（AGENTS 红线 8.3）。",
   "thresholds": {
     "coreLineCoverage": 80,
     "overallLineCoverage": 70,
@@ -46,5 +47,7 @@
     "(?i)(root[_-]?key|master[_-]?key|data[_-]?key|sm4[_-]?key|kms[_-]?admin[_-]?token)\\s*[:=]\\s*['\"][A-Za-z0-9+/=]{16,}['\"]",
     "(?i)CTDS_KMS_ROOT_KEY\\s*[:=]\\s*['\"][A-Za-z0-9+/=]{16,}['\"]"
   ],
-  "secretsExcludePaths": [".git", "scripts/gates/reports", "build-output", "*.min.js", "*.lock", "node_modules"]
+  "secretsExcludePaths": [".git", "scripts/gates/reports", "build-output", "node_modules", "*.min.js", "*.lock",
+    "target", "logs", "dist", "test-results", "playwright-report", "coverage"],
+  "secretsExcludePathsRule": "排除项只允许覆盖【未入库的构建/运行产物目录】与第三方产物目录；禁止借排除项规避源码/配置/文档扫描。新增排除项须经门禁变更流程留痕，并在 changeLog 中逐条写明理由（AGENTS 红线 8.3）。被跳过的文件在门禁报告中逐条列出（SKIP 结果行），以便人工复核。"
 }
