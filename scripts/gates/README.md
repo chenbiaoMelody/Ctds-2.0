@@ -2,7 +2,7 @@
 
 ## 这是什么
 
-本项目所有代码/文档交付前的**机器门禁**。它是一个独立脚本，不依赖任何 CI 平台——未来接入任何 CI（GitHub Actions、Gitee Go、自建 Jenkins）时，只需让流水线执行本脚本并检查退出码（0=绿灯，1=红灯），这就是"切换接口预留"（D-3 原则）。
+本项目所有代码/文档交付前的**机器门禁**。它是一个独立脚本，不依赖任何 CI 平台——未来接入任何 CI（GitHub Actions、Gitee Go、自建 Jenkins）时，只需让流水线执行本脚本并检查退出码（0=绿灯，1=红灯，2=环境/配置错误），这就是"切换接口预留"（D-3 原则）。
 
 ## 怎么运行
 
@@ -12,30 +12,64 @@
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gates\run-gates.ps1
 ```
 
-结束后屏幕会打印一份门禁报告（同时在 `scripts/gates/reports/` 存一份 Markdown，该目录不入库）。
+结束后屏幕会打印一份门禁报告（同时在 `scripts/gates/reports/` 存一份 Markdown，该目录不入库）。报告头带 `RunLabel / Scenario / ExitCode / ConfigPath / ConfigSha256 / Time / Repo`——**任何结论都能被锚定到"哪一次运行、用的哪份配置"**（第三方复核只需这份报告）。
 
 ## 怎么看结果
 
 - 每个检查项五态：**PASS（绿）**、**FAIL（红，必须修复后重交，无特批）**、**SKIP（跳过）**、**ERROR（环境/配置问题）**、**PENDING（待接入）**；
-- **SKIP 不是放行**：表示某文件被占用/不可读（如运行中的日志）而**未被扫描**。报告以 `secretsScan.skipped` 行**逐条列出**被跳过的文件，需人工确认（若为源码/配置/文档文件，应排查占用来源后再重跑）；
+- **SKIP 不是放行**：只有**未入库**（非 git 追踪）的构建/运行产物被占用或不可读时才记 SKIP，且以 `secretsScan.skipped` 行**逐条列出**被跳过的文件备人工复核；**入库文件不可读一律记 `ERROR`**（`secretsScan.unreadable` 行）——"扫不了"与"扫过且干净"必须分开；
 - 最后一行汇总 `-> GREEN / RED / ERROR`：只有 **GREEN** 才允许提交评审；
-- 退出码（WBS-2.2.7 明确语义）：
+- 退出码（WBS-2.2.7 语义，**优先级 1 > 2 > 0**）：
+  - `1` = RED（**代码/安全不合格**，必须修复后重交）——**只要存在任一 FAIL 就是 1，即使同时存在 ERROR 行**；报告中会明示"环境/配置错误不得掩盖这条红灯"；
   - `0` = GREEN；
-  - `1` = RED（**代码不合格**，必须修复后重交）；
-  - `2` = 配置/环境错误（含**脚本自身崩溃**、报告写入失败、配置解析失败，以及阶段级环境问题：`JAVA_HOME` 缺失、`package.json` 缺失、配置项含非法字符——这些一律记 `ERROR` 行）——**`2` 不是质量结论**，须先修环境/配置再重跑，不得当作"红灯"或"绿灯"记录；
-- **报告必然产出**：任一阶段抛出未预期异常都会被兜底捕获、记 `runner` FAIL 明细并仍写出报告（唯一例外：配置解析失败，此时直接以退出码 `2` 退出并打印原因——配置读不出来就无法产报告）。
+  - `2` = 配置/环境错误（含**脚本自身崩溃**、报告写入失败、配置解析失败，以及阶段级环境问题：`JAVA_HOME` 缺失/无效、`mvn`/`npm` 不在 PATH、`package.json` 缺失、配置项含非法字符——这些一律记 `ERROR` 行）——**`2` 不是质量结论**，须先修环境/配置再重跑；
+- **报告必然产出**：任一阶段抛出未预期异常都会被兜底捕获、记 `runner ERROR` 明细并**仍写出报告**；报告目标不可写时记 `runner.reportPath ERROR` 并把报告打印到标准输出。唯一例外：配置文件解析失败——此时无法产报告，直接以退出码 `2` 退出并打印原因。
+
+## 运行器自检（脚本自身防回归 · WBS-2.2.7 交付物⑤）
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gates\selftest.ps1
+```
+
+在 `%TEMP%` 下构造**沙箱 fixture 仓库**（`git init` + 精简阶段配置，配置由真实 `gates-config.json` 派生，因此练的是**真实排除项**），可复现地注入故障并断言，全部通过才退出 0：
+
+| 场景 | 注入的故障 | 期望结论 |
+| --- | --- | --- |
+| S1 | **未入库**文件被独占锁定 | 记 SKIP、**门禁继续**（后续阶段仍跑）、报告产出、退出码 0 |
+| S2 | **入库**文件被独占锁定 | 记 ERROR、退出码 2（入库文件绝不允许被跳过） |
+| S3 | `JAVA_HOME` 指向无效路径 | 记 ERROR、退出码 2；**反向探针**：同 fixture 关掉工具链阶段 → 退出码 0（证明 ERROR 由注入的故障引起，而不是 harness 本身坏了） |
+| S4 | 报告路径不可写 | 记 ERROR、退出码 2，且报告仍打印到标准输出 |
+| S5 | 排除项命中入库路径 | 护栏记 ERROR、退出码 2（禁止借排除项规避扫描） |
+| S6 | 在 `docs/logs/` 放一条"假凭据" | 记 FAIL 并点名该文件、退出码 1（**入库开发日志必须被扫描** —— DB-16 回归锚点） |
+| S7 | 某阶段抛异常（ADR 文件被锁定） | 外层兜底记 `runner ERROR`、报告**仍然产出**、退出码 2（崩溃绝不能被误报成"代码不合格=1"） |
+
+`selftest.ps1` 只读运行器、只写 `%TEMP%`；全部通过后自动清理沙箱目录（`-KeepFixture` 可保留以便排查）。其运行状态在配置中登记为 `gateSelfTest: PENDING-SELFTEST`：**未接入 CI 前，每份门禁报告都会显示"自检未跑"**，接入 CI 后（WBS-2.2.9）改 `enabled=true`。
+
+> `run-gates.ps1` 另有两个**仅供 selftest / 变更验证**的参数：`-ConfigPath`（指定另一份配置，报告会写明实际路径与其 SHA256）与 `-Scenario`（运行标签）。**正常交付运行一律使用默认配置、`Scenario=default`**；带标签的运行在报告中一眼可辨。
 
 ## 扫描范围与排除项（WBS-2.2.7）
 
-`gates-config.json` 的 `secretsExcludePaths` **只允许覆盖"未入库的构建/运行产物目录"与第三方产物目录**（当前：`.git`、`node_modules`、`target`、`logs`、`dist`、`test-results`、`playwright-report`、`coverage`、`scripts/gates/reports`、`build-output`、`*.min.js`、`*.lock`）。**禁止借排除项规避源码/配置/文档扫描**；新增排除项须经门禁变更流程留痕（`changeLog` 字段写明理由），配置中另有 `secretsExcludePathsRule` 声明该约束。
+`gates-config.json` 的 `secretsExcludePaths` **只允许覆盖"未入库的构建/运行产物目录"与第三方产物目录**（当前：`.git`、`scripts/gates/reports`、`build-output`、`**/node_modules/**`、`*.min.js`、`*.lock`、`logs`、`**/target/**`、`**/dist/**`、`**/test-results/**`、`**/playwright-report/**`、`**/coverage/**`）。**禁止借排除项规避源码/配置/文档扫描**；新增排除项须经门禁变更流程留痕（`changeLog` 写明理由），配置中另有 `secretsExcludePathsRule` 声明该约束。
 
-> 变更留痕：配置 **V1.1（2026-09-15，WBS-2.2.7）**——修复"本地后端运行占用 `logs/app.log`，导致脚本 `ReadAllBytes` 抛异常、门禁崩溃不出报告、退出码与真红灯同形"的缺陷（REV-ALL-2026-09-15 DB-01）。**扫描面未缩减**（仅不再遍历构建/运行产物，源码/配置/文档全量仍扫）；实测扫描文件数由 2335 降至 464，全量门禁 GREEN（PASS=9 FAIL=0）。
+**条目语义（V1.2 起）**：
 
-## 当前检查项（V1.0）
+- **不以 `*` 开头** = **仓库根锚定**路径：只匹配仓库根下该路径本身及其子项。例：`logs` 只排仓库根的 `logs/`（运行日志），**不影响 `docs/logs/`**（必须入库的开发日志）；
+- **以 `*` 开头** = 通配模式，对仓库相对路径做 `-like` 匹配（`*` 可跨 `/`；以 `**/` 开头时同时匹配仓库根下的同名目录）。例：`**/target/**` 覆盖任意层级的 `target/`，也覆盖仓库根的 `target/`。
+
+**机器护栏（V1.2 起）**：门禁启动时用 `git ls-files` 取入库路径清单，**任一排除项命中入库路径即记 `secretsScan.excludeGuard ERROR` 并以退出码 2 结束**。"排除项不得规避已入库文件"这条约束不再只写在注释里，而是每次运行都在校验——**改动排除项若误伤入库文件，门禁当次即红**。
+
+> 变更留痕：
+> - **V1.2（2026-09-15，WBS-2.2.7 第 2 轮，对应债务 DB-16）**：修复 V1.1 的排除项缺陷——`logs` 裸词经"任意层级"匹配规则连带排除了 `docs/logs/`（61 份入库开发日志）与 `services/*/logs/`（24 份运行期日志），**V1.1 中"扫描面未缩减"的声明因此失实**；同时新增上述 `git ls-files` 护栏、`gateSelfTest` 阶段与报告头字段。实测（RunLabel `20260915-160705-4156`，连跑 3 次一致）：GREEN，`PASS=10 FAIL=0 SKIP=0 ERROR=0 PENDING=9`，**扫描 546 个文件、0 命中**；同一工作区按 V1.1 规则复算为 460 个文件，故本轮**扫描面净增 86**（`docs/logs/` 62 份 + `services/*/logs/` 24 份）。
+> - **V1.1（2026-09-15，WBS-2.2.7）**：修复"本地后端运行占用 `logs/app.log`，导致脚本 `ReadAllBytes` 抛异常、门禁崩溃不出报告、退出码与真红灯同形"的缺陷（REV-ALL-2026-09-15 DB-01）；其自身记录"扫描文件数由 2335 降至 463"（该说明文字中曾误写 `464`，第 2 轮已更正为 463）。
+
+**已知观察项（不在本卡范围，登记待收敛）**：V1.2 下 `services/*/logs/`（服务运行期日志，共 24 个未入库文件）重新进入扫描范围。它们**未入库**，被占用时只记 SKIP、不影响绿灯判定，代价仅是每轮多扫若干日志文本。若要重新排除，必须写成带模块前缀的形式（如 `services/**/logs/**`）——**写成 `**/logs/**` 会被上述护栏直接拦下**（它会命中入库的 `docs/logs/`）。建议随 DB-12（运行期数据置于项目目录外）一并收敛。
+
+## 当前检查项（V1.2）
 
 | 检查项 | 状态 | 说明 |
 | --- | --- | --- |
 | secretsScan 密钥扫描 | ✅ 已启用 | 内置规则扫描私钥/密钥/口令模式（gitleaks 的过渡替代），命中即红 |
+| secretsScan.excludeGuard 排除项护栏 | ✅ 已启用 | 排除项命中 `git ls-files` 入库路径即 ERROR（退出码 2） |
 | structureCheck 结构检查 | ✅ 已启用 | AGENTS.md/章程/ADR/日志等必备文件齐备 |
 | devLogNamingCheck 日志命名 | ✅ 已启用 | `docs/logs/` 文件名符合 `Ctds-项目开发日志-yy-mm-dd-hhss.md` 规范 |
 | adrFieldsCheck ADR 字段 | ✅ 已启用 | 每份 ADR 必含：背景/决策/理由/备选/业务影响说明/影响范围/可替换性（章程 4.4 + D-3） |
@@ -45,6 +79,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gates\run-gates.ps1
 | frontendLint 前端格式与风格 | ✅ 已启用（WBS 2.4.12 接入） | `npm run lint`（ESLint 9，覆盖 src 与 e2e），零错误 |
 | frontendTest 前端单元测试 | ✅ 已启用（WBS 2.4.12 接入） | `npm run test`（Vitest + jsdom），全部通过 |
 | frontendE2E 前端端到端测试 | ⏸ PENDING-CI（WBS 2.4.12 登记） | `npm run e2e`（Playwright + Chromium）；CI 环境浏览器二进制供给待 2.5.x 评估，本机可手动全量 |
+| gateSelfTest 运行器自检 | ⏸ PENDING-SELFTEST | `selftest.ps1` 七场景（S1~S7）；未接入 CI 前固定 PENDING，让"自检未跑"在每份报告中可见 |
 | coverage 覆盖率 | ⏸ PENDING | JaCoCo 行/分支覆盖（核心 ≥80%、整体 ≥70%，章程 4.2），接入属工具链变更走 ADR |
 | mutationTest 变异测试 | ⏸ PENDING | 核心模块出现后接入（pitest），阈值 60% |
 | duplication 重复度 | ⏸ PENDING | PMD CPD，新增重复行 = 0 |
@@ -57,6 +92,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gates\run-gates.ps1
 
 Maven 阶段需要 JDK 17 与 Maven 3.9+：脚本优先读环境变量 `JAVA_HOME`，缺省回退到 `gates-config.json` 的 `toolchain.javaHome`（当前本机 `C:\Program Files\Java\jdk-17`）；`mavenBin`/`mavenArgs` 同理可覆盖。依赖解析走用户级 `%USERPROFILE%\.m2\settings.xml`（阿里云镜像）。单阶段超时：Java 阶段 600 秒 / 前端阶段 300 秒。前端阶段（WBS 2.4.12 接入）在 `frontend/` 目录执行 npm 命令（workdir 可按阶段在 gates-config.json 配置）。
 
+**工具前置探测（V1.2 起）**：`mvn` / `npm` 不在 PATH 时记 `ERROR`（退出码 2）而不是让阶段以"命令不存在"的失败面目出现——工具缺失是环境问题，不是代码结论。配置值含非法字符时**整个阶段跳过、不执行任何命令**（不得"检出后仍启动命令"）。
+
 ## 阈值管理
 
-所有阈值集中在 `gates-config.json`（对应章程 4.2 表：核心模块行覆盖 ≥80%、整体 ≥70%、变异杀除率 ≥60%、圈复杂度 >15 打回、新增重复行=0）。**修改门禁配置属架构变更，只能经章程第 7 章流程留痕执行，禁止绕过或放宽**（红线 8.3）。
+所有阈值集中在 `gates-config.json`（对应章程 4.2 表：核心模块行覆盖 ≥80%、整体 ≥70%、变异杀除率 ≥60%、圈复杂度 >15 打回、新增重复行=0）。**修改门禁配置属架构变更，只能经章程第 7 章流程留痕执行，禁止绕过或放宽**（`AGENTS §8 第 3 条`）。

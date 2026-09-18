@@ -1,7 +1,7 @@
 {
-  "version": "V1.1",
+  "version": "V1.2",
   "note": "C-TDS quality gate config. Consumed by scripts/gates/run-gates.ps1. Thresholds come from charter 4.2 table.",
-  "changeLog": "V1.1 (2026-09-15, WBS-2.2.7): secretsScan 排除项增补未入库的构建/运行产物目录（target/logs/dist/test-results/playwright-report/coverage）；原因：本地后端运行占用 logs/app.log 导致脚本 ReadAllBytes 抛异常、整个门禁崩溃且不出报告（REV-ALL-2026-09-15 DB-01）。本次变更不降低任何检查强度：排除项仅覆盖未入库目录，扫描面（源码/文档/配置）不变，且被跳过文件在报告中逐条列出。门禁配置变更须走变更流程留痕（AGENTS 红线 8.3）。",
+  "changeLog": "V1.2 (2026-09-15, WBS-2.2.7 第 2 轮修复, 对应债务 DB-16): ① 排除项语义改为【根锚定 + 显式通配】——不以 * 开头只排仓库根下该路径（logs 不再连带排除 docs/logs/），需任意层级的写 '**/x/**'；修复 V1.1 中 61 份入库开发日志（docs/logs/）逃逸密钥扫描的缺陷；② 新增机器护栏：排除项命中 git ls-files 追踪路径即记 ERROR（退出码 2），把【禁止借排除项规避扫描】从注释变成强制；③ 新增 gateSelfTest 阶段（PENDING-SELFTEST，使【自检未跑】在每份报告中可见）。 | V1.1 (2026-09-15, WBS-2.2.7): secretsScan 排除项增补未入库的构建/运行产物目录（target/logs/dist/test-results/playwright-report/coverage）；原因：本地后端运行占用 logs/app.log 导致脚本 ReadAllBytes 抛异常、整个门禁崩溃且不出报告（REV-ALL-2026-09-15 DB-01）。V1.1 声明【扫描面不变】，但因 logs 裸词连带排除 docs/logs/ 而实际不成立，已在 V1.2 修正（该失实声明由第 1 轮三视角独立命中，留痕见任务卡与开发日志 -1525）。门禁配置变更须走变更流程留痕（AGENTS §8 第 3 条）。",
   "thresholds": {
     "coreLineCoverage": 80,
     "overallLineCoverage": 70,
@@ -29,6 +29,7 @@
     "frontendLint": { "enabled": true, "tool": "npm", "goals": "run lint", "workdir": "frontend" },
     "frontendTest": { "enabled": true, "tool": "npm", "goals": "run test", "workdir": "frontend" },
     "frontendE2E": { "enabled": false, "status": "PENDING-CI", "tool": "playwright", "goals": "run e2e", "workdir": "frontend", "note": "WBS-2.4.12: CI 环境浏览器二进制供给待 2.5.x 部署基建评估；本机可 npm run e2e 手动全量" },
+    "gateSelfTest": { "enabled": false, "status": "PENDING-SELFTEST", "tool": "scripts/gates/selftest.ps1", "note": "运行器自检（WBS-2.2.7 交付物⑤）：可复现验证 ①未入库锁定文件->SKIP 且不中断 ②入库文件不可读->ERROR ③JAVA_HOME 无效->ERROR/2（含反向探针）④报告路径不可写->ERROR/2 且报告仍打印 ⑤排除项命中入库路径->ERROR。以独立脚本运行（selftest.ps1）；未接入 CI 前固定 PENDING，使【自检未跑】在每份报告中可见，WBS-2.2.9 接入 CI 后改 enabled=true" },
     "coverage": { "enabled": false, "status": "PENDING-JACOCO", "tool": "jacoco" },
     "mutationTest": { "enabled": false, "status": "PENDING-TOOLCHAIN", "tool": "pitest" },
     "duplication": { "enabled": false, "status": "PENDING-TOOLCHAIN", "tool": "pmd-cpd" },
@@ -47,7 +48,19 @@
     "(?i)(root[_-]?key|master[_-]?key|data[_-]?key|sm4[_-]?key|kms[_-]?admin[_-]?token)\\s*[:=]\\s*['\"][A-Za-z0-9+/=]{16,}['\"]",
     "(?i)CTDS_KMS_ROOT_KEY\\s*[:=]\\s*['\"][A-Za-z0-9+/=]{16,}['\"]"
   ],
-  "secretsExcludePaths": [".git", "scripts/gates/reports", "build-output", "node_modules", "*.min.js", "*.lock",
-    "target", "logs", "dist", "test-results", "playwright-report", "coverage"],
-  "secretsExcludePathsRule": "排除项只允许覆盖【未入库的构建/运行产物目录】与第三方产物目录；禁止借排除项规避源码/配置/文档扫描。新增排除项须经门禁变更流程留痕，并在 changeLog 中逐条写明理由（AGENTS 红线 8.3）。被跳过的文件在门禁报告中逐条列出（SKIP 结果行），以便人工复核。"
+  "secretsExcludePaths": [
+    ".git",
+    "scripts/gates/reports",
+    "build-output",
+    "**/node_modules/**",
+    "*.min.js",
+    "*.lock",
+    "logs",
+    "**/target/**",
+    "**/dist/**",
+    "**/test-results/**",
+    "**/playwright-report/**",
+    "**/coverage/**"
+  ],
+  "secretsExcludePathsRule": "条目语义（V1.2）：(1) 不以 '*' 开头 = 仓库根锚定路径，只匹配仓库根下该路径本身及其子项（例：'logs' 只排仓库根目录的 logs/，不影响 docs/logs/）；(2) 以 '*' 开头 = 通配模式，对仓库相对路径做 -like 匹配（'*' 可跨 '/'；以 '**/' 开头时同时匹配仓库根下的同名目录，例：'**/target/**' 亦覆盖仓库根的 target/）。约束：(a) 排除项只允许覆盖【未入库的构建/运行产物目录】与第三方产物目录，禁止借排除项规避源码/配置/文档扫描；(b) 该约束由机器强制——任一排除项命中 git ls-files 追踪路径时记 ERROR（secretsScan.excludeGuard 行）并以退出码 2 结束；(c) 被跳过文件在报告中逐条列出（secretsScan.skipped 行），且仅未入库文件可 SKIP，入库文件不可读一律记 ERROR（secretsScan.unreadable 行）；(d) 新增或修改排除项须经门禁变更流程留痕，并在 changeLog 中逐条写明理由（AGENTS §8 第 3 条）。"
 }
