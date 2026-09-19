@@ -139,12 +139,25 @@ if ($cfg.stages.secretsScan.enabled) {
     }
     $hit = 0
     $unreadable = New-Object System.Collections.Generic.List[string]
-    $all = @(Get-ChildItem -Path $RepoRoot -Recurse -File -ErrorAction SilentlyContinue)
-    $files = @($all | Where-Object {
-        $rel = $_.FullName.Substring($RepoRoot.Length).TrimStart('\', '/') -replace '\\', '/'
-        (-not (Test-Excluded $rel $exclude)) -and $_.Length -lt 1MB
-    })
-    $skipped = $all.Count - $files.Count
+    $binarySkipped = New-Object System.Collections.Generic.List[string]
+    $binaryUntracked = 0
+    # DB-18 ①：目录枚举失败（无权限/被占用）不得静默——整个子树没进扫描名单必须记 ERROR（退出码 2）
+    $scanEnumErrors = @()
+    $all = @(Get-ChildItem -Path $RepoRoot -Recurse -File -ErrorAction SilentlyContinue -ErrorVariable scanEnumErrors)
+    # DB-18 ②：>=1MB 文件按"入库/未入库"区分——入库的逐条列名（SKIP 行供人工复核），不再只进总数
+    $excludedCount = 0
+    $oversized = New-Object System.Collections.Generic.List[string]
+    $oversizedUntracked = 0
+    $files = New-Object System.Collections.Generic.List[object]
+    foreach ($f in $all) {
+        $rel = $f.FullName.Substring($RepoRoot.Length).TrimStart('\', '/') -replace '\\', '/'
+        if (Test-Excluded $rel $exclude) { $excludedCount++; continue }
+        if ($f.Length -ge 1MB) {
+            if ($tracked.Contains($rel)) { $oversized.Add($rel) } else { $oversizedUntracked++ }
+            continue
+        }
+        $files.Add($f)
+    }
     foreach ($f in $files) {
         $rel = $f.FullName.Substring($RepoRoot.Length).TrimStart('\', '/') -replace '\\', '/'
         # WBS-2.2.7: 单文件不可读（被占用/权限）不得中断整个门禁；
@@ -160,9 +173,12 @@ if ($cfg.stages.secretsScan.enabled) {
             continue
         }
         if ($bytes.Length -eq 0) { continue }
-        # crude binary skip: NUL byte in first 1024
+        # binary skip: NUL byte in first 1024; DB-18 ③：入库二进制逐条列名，不得静默逃逸
         $head = $bytes[0..([Math]::Min(1023, $bytes.Length - 1))]
-        if ($head -contains 0) { continue }
+        if ($head -contains 0) {
+            if ($tracked.Contains($rel)) { $binarySkipped.Add($rel) } else { $binaryUntracked++ }
+            continue
+        }
         $text = [System.Text.Encoding]::UTF8.GetString($bytes)
         foreach ($p in $patterns) {
             if ([System.Text.RegularExpressions.Regex]::IsMatch($text, $p, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)) {
@@ -172,7 +188,24 @@ if ($cfg.stages.secretsScan.enabled) {
             }
         }
     }
-    if ($hit -eq 0) { Add-Result "secretsScan" "PASS" ("Scanned " + $files.Count + " files, 0 hits (not scanned: " + $skipped + " excluded-or-oversized)") }
+    if ($hit -eq 0) { Add-Result "secretsScan" "PASS" ("Scanned " + $files.Count + " files, 0 hits (not scanned: " + $excludedCount + " excluded, " + ($oversized.Count + $oversizedUntracked) + " oversized, " + ($binarySkipped.Count + $binaryUntracked) + " binary, " + $unreadable.Count + " unreadable)") }
+    # DB-18：三类"没扫到"都必须在报告里可见——枚举失败=ERROR（退出码 2）；超大/二进制=SKIP 且入库文件逐条列名
+    if ($scanEnumErrors.Count -gt 0) {
+        $enumPaths = @($scanEnumErrors | ForEach-Object { [string]$_.TargetObject } | Where-Object { $_ -ne "" } | Sort-Object -Unique)
+        Add-Result "secretsScan.enumGap" "ERROR" ("Enumerating repo files FAILED for " + $enumPaths.Count + " path(s) (permission/locked) - anything inside them silently escaped the scan; list: " + ($enumPaths -join ", "))
+    }
+    if ($oversized.Count -gt 0 -or $oversizedUntracked -gt 0) {
+        $d = "not regex-scanned (>= 1MB)"
+        if ($oversized.Count -gt 0) { $d += " - tracked, listed for manual review: " + ($oversized -join ", ") }
+        if ($oversizedUntracked -gt 0) { $d += " - untracked: " + $oversizedUntracked }
+        Add-Result "secretsScan.oversized" "SKIP" (($oversized.Count + $oversizedUntracked).ToString() + " file(s) " + $d)
+    }
+    if ($binarySkipped.Count -gt 0 -or $binaryUntracked -gt 0) {
+        $d = "skipped by the NUL-byte heuristic"
+        if ($binarySkipped.Count -gt 0) { $d += " - tracked, listed for manual review: " + ($binarySkipped -join ", ") }
+        if ($binaryUntracked -gt 0) { $d += " - untracked: " + $binaryUntracked }
+        Add-Result "secretsScan.binary" "SKIP" (($binarySkipped.Count + $binaryUntracked).ToString() + " binary file(s) " + $d)
+    }
     if ($unreadable.Count -gt 0) {
         # SKIP 不是放行：仅未入库的构建/运行产物可 SKIP，且逐条列出以便人工复核
         Add-Result "secretsScan.skipped" "SKIP" ($unreadable.Count.ToString() + " untracked file(s) unreadable (locked/permission), NOT scanned - listed for manual review: " + ($unreadable -join ", "))
@@ -311,6 +344,11 @@ foreach ($stageName in @("frontendLint", "frontendTest", "frontendE2E")) {
     $psi.UseShellExecute = $false
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true
+    # DB-19：Node.js/npm 的输出恒为 UTF-8，不显式指定时 .NET 按系统默认（中文 Windows=GBK）解码，
+    # 报告 FAIL 明细的中文变乱码（红灯不丢，但人工复核"为什么红"失效）。Maven 段不改——JDK 17 于
+    # 中文 Windows 的输出为平台编码（GBK），与默认解码一致，强行 UTF-8 反而引入乱码。
+    $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
+    $psi.StandardErrorEncoding = [System.Text.Encoding]::UTF8
     $psi.WorkingDirectory = $workdir
     $proc = [System.Diagnostics.Process]::Start($psi)
     $outTask = $proc.StandardOutput.ReadToEndAsync()
