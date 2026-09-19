@@ -3,6 +3,11 @@ import type { Router } from 'vue-router'
 import { routes } from '../router/index'
 import { hasPermission, getDemoRole, setDemoRole } from '../stores/demoRole'
 import { isDemoAuthed, signInDemo, signOutDemo } from '../stores/demoAuth'
+// 卡 2（WBS-3.1.6b / DB-02）：顶层静态预热 QueueView——/review 懒加载组件（router/index.ts）的
+// vite-node 首次转换在并行负载下可达数秒，原在 F4 导航内首转造成"第一次红、第二次绿"偶发。
+// 顶层静态导入先于一切用例与超时窗口完成转换（先例：views/review/QueueView.spec.ts 的静态导入），
+// 彻底把该环境成本移出被测导航；vitest 配置受限重试方案未采用（无必要，留痕）
+import '../views/review/QueueView.vue'
 
 /**
  * WBS-2.4.9 H3/H4 测试：
@@ -119,6 +124,7 @@ describe('守卫 beforeEach 实际行为（H4）', () => {
   // 显式放宽超时：懒加载 QueueView 模块首次经 vite-node 转换（并行负载下可达数秒），非被测行为慢
   it('admin（兼审核员）直连 /review 放行（F4 正向对照）', async () => {
     const { default: router } = await import('../router/index')
+    // QueueView 已在文件顶层静态预热（见文件头注释），此导航不再承担首次转换成本
     setDemoRole('admin')
     await router.push('/review')
     expect(router.currentRoute.value.name).toBe('review-queue')
