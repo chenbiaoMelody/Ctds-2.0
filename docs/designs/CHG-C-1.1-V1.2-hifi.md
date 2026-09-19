@@ -46,7 +46,7 @@
 | 幂等/缓存 | 只读 GET，不加 @Idempotent；不引入缓存（最小实现） |
 | 数据模型 | **零迁移**：查询复用 `findBySubjectNo`＋`findTransitions`，无新表新列 |
 
-后端落点：`SubjectRegistrationService` 新增 `progress(subjectNo, uscc)` 方法（注册聚合查询同源，不再拆类）；`SubjectRegistrationController` 新增端点＋`ProgressView` DTO；`requireValid` 与 `RegisterRequest.contactPhone` 按 §2 规则表补电话格式。
+后端落点：`SubjectRegistrationService` 新增 `progress(subjectNo, uscc)` 方法（注册聚合查询同源，不再拆类）；`SubjectRegistrationController` 新增端点＋`ProgressView` DTO；`requireValid` 与 `RegisterRequest.contactPhone` 按 §2 规则表补电话格式；`ValidationExceptionHandler` 补 `ConstraintViolationException` 映射（GET 查询参数 `@NotBlank` 走校验通道的必要配套，沿该类既有同口径先例，common 零改动——评审③补登）。
 
 前端落点：`api/subject.ts` 新增 `fetchRegistrationProgress(subjectNo, uscc)`＋`RegistrationProgressView` 类型；`router/index.ts` 新增路由（meta 见 §1.2）；新文件 `views/subject/ProgressQueryView.vue`；`RegisterView.vue` 两处增量。
 
@@ -63,6 +63,8 @@
 | 查询：编号不存在 vs 编号存在但 uscc 不符 | 响应文案一致 `未查询到匹配的申请`；仅后者落 DENIED 审计 |
 | 查询：uscc 填 17 位 | 参数错误（前端必填/格式红字优先；后端 @Pattern 兜底） |
 | 已入驻主体查询 | 状态徽标"已入驻"，rejectReason=null，无驳回 alert |
+
+> **【补正说明】**（评审③ 2026-09-19）："后端 @Pattern 兜底"的实现机制为 **service 层复用既有 `USCC_PATTERN`、于 trim+大写归一之后校验**（`progress` 方法），非 Bean Validation 参数注解——因 §4 边界"小写带空格匹配成功"要求归一先于格式判定，注解校验原始串无法表达该顺序。行为与上表预期完全一致（17 位/缺参 → 400 参数错误；小写带空格 → 匹配成功），代码零改动；裁决留痕见日志 `-1714` 关键决策 1。
 
 ## 5. 测试映射（规格 V1.2 → 设计 → 用例 → 剧本）
 
