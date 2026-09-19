@@ -218,6 +218,16 @@ class GovCaCertificationIntegrationTest {
                         + "(SELECT id FROM subject WHERE subject_no = ?) "
                         + "AND from_status = 'PENDING_CERT' AND to_status = 'PENDING_REVIEW'",
                 Integer.class, subjectNo)).isEqualTo(1);
+        // AUD-04 正向断言（任务卡卡 4，评审④建议）：政务并发败者的材料与留痕均已随事务回滚——
+        // 库内 GOV_CA_CERT 材料恰 1 份、GOV_CA 留痕恰 1 条（胜者），不存在半成品行
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(1) FROM cert_material WHERE subject_id = "
+                        + "(SELECT id FROM subject WHERE subject_no = ?) AND material_type = 'GOV_CA_CERT'",
+                Integer.class, subjectNo)).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(1) FROM cert_verification_log WHERE subject_id = "
+                        + "(SELECT id FROM subject WHERE subject_no = ?) AND verify_type = 'GOV_CA'",
+                Integer.class, subjectNo)).isEqualTo(1);
     }
 
     @Test

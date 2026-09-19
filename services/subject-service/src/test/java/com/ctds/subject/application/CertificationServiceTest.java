@@ -97,6 +97,7 @@ class CertificationServiceTest {
         sm3Service = new Sm3Service();
         service = new CertificationService(certificationRepository, channel,
                 sm4Service, sm3Service, ownershipGuard, statusService,
+                new CertificationTxSupport(certificationRepository, statusService),
                 new SubjectOpsSupport(auditRecorder, subjectRepository), properties, Clock.systemDefaultZone());
 
         subject = new Subject(9L, SUBJECT_NO, "认证演示公司", "91330100MA27X8AB01", SubjectType.ENTERPRISE,
@@ -222,6 +223,26 @@ class CertificationServiceTest {
     }
 
     @Test
+    void idNumberWithIllegalLengthOrFormatIsRejectedBeforeChannel() {
+        // AUD-05（任务卡卡 4）：位数明显不对的身份证号不得送核验渠道（演示期看不出，接真实渠道会变成
+        // 脏数据 + 无效调用）。修复前 requireIdChecksum 对非 18 位一律静默放行；15 位旧号口径需先补
+        // 规格（卡面声明本卡不含），故任何非 18 位一律拒绝。合法号 = 110101199001011229（ID_OK）。
+        when(certificationRepository.findLatestMaterial(9L, CertMaterial.TYPE_BUSINESS_LICENSE))
+                .thenReturn(Optional.of(confirmedMaterial("91330100MA27X8AB01")));
+        final String[] badNumbers = {"123", "110101199001011", "1101011990010112", "11010119900101122",
+                "1101011990010112299", "11010119900101122999", "1101011990010112a9"};
+        for (final String bad : badNumbers) {
+            assertThatThrownBy(() -> service.verifyLegalPerson(SUBJECT_NO, new VerificationCommand("张伟", bad)))
+                    .as("身份证号 [%s]（%d 位）应被拒", bad, bad.length())
+                    .isInstanceOfSatisfying(BizException.class, e -> {
+                        assertThat(e.getErrorCode()).isEqualTo(ErrorCodes.PARAM_INVALID);
+                        assertThat(e.getMessage()).isEqualTo("身份证号位数或格式不正确");
+                    });
+        }
+        verify(channel, never()).verifyLegalPerson(anyString(), anyString());
+    }
+
+    @Test
     void legalPersonVerificationPassTransitionsToPendingReview() {
         when(certificationRepository.findLatestMaterial(9L, CertMaterial.TYPE_BUSINESS_LICENSE))
                 .thenReturn(Optional.of(confirmedMaterial("91330100MA27X8AB01")));
@@ -287,6 +308,7 @@ class CertificationServiceTest {
         final CertificationService withNextDayClock = new CertificationService(
                 certificationRepository, channel, new Sm4Service(stubKeyProvider()), new Sm3Service(),
                 ownershipGuard, statusService,
+                new CertificationTxSupport(certificationRepository, statusService),
                 new SubjectOpsSupport(auditRecorder, subjectRepository), properties, nextDay);
         when(certificationRepository.findLatestMaterial(9L, CertMaterial.TYPE_BUSINESS_LICENSE))
                 .thenReturn(Optional.of(confirmedMaterial("91330100MA27X8AB01")));
