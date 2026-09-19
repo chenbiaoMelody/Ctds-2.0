@@ -282,8 +282,9 @@ class CertificationIntegrationTest {
     void concurrentVerifyExactlyOneTransition() throws Exception {
         // WBS-3.1.6 T5a（3.1.3 hifi 边界表"认证端并发重复点击"承诺项）：确认完成后 20 线程并发发起
         // 核验（模拟渠道均返回通过）→ 恰一次 200，PENDING_CERT→PENDING_REVIEW 流转留痕恰 1 条。
-        // 败者的核验尝试行以 counted=0 的 PASS 形态如实留痕（真实发生过渠道调用），不影响状态与额度；
-        // 门槛概率性锚定口径与 ReviewIntegrationTest#concurrentReviewExactlyOneWinner 一致
+        // AUD-04 事务化更新（2026-09-19，任务卡卡 4）：核验留痕与状态流转同属一个事务——并发败者的
+        // 留痕随其事务一并回滚，库内不再出现"PASS 留痕但状态未流转"的半成品数据（原口径为败者留
+        // counted=0 的 PASS 行，随本卡废弃）；门槛概率性锚定口径与 ReviewIntegrationTest 一致
         final String subjectNo = registerAndUploadAndConfirm("91330100MA27X8AB0F", "认证并发演示公司");
         final int threads = 20;
         final CountDownLatch ready = new CountDownLatch(threads);
@@ -319,6 +320,14 @@ class CertificationIntegrationTest {
                 "SELECT COUNT(1) FROM subject_status_log WHERE subject_id = "
                         + "(SELECT id FROM subject WHERE subject_no = ?) "
                         + "AND from_status = 'PENDING_CERT' AND to_status = 'PENDING_REVIEW'",
+                Integer.class, subjectNo)).isEqualTo(1);
+        // AUD-04 正向断言（任务卡卡 4，评审①建议）：库内不存在败者半成品行——LEGAL_PERSON 留痕
+        // 恰 1 条（胜者），无"PASS 留痕但状态未流转"残留（败者或在前置门槛即被拒、或留痕随事务
+        // 回滚；回滚机制的确定性证明另见 VerifyTransactionRollbackIntegrationTest）
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(1) FROM cert_verification_log WHERE subject_id = "
+                        + "(SELECT id FROM subject WHERE subject_no = ?) "
+                        + "AND verify_type = 'LEGAL_PERSON'",
                 Integer.class, subjectNo)).isEqualTo(1);
     }
 

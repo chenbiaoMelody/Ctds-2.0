@@ -76,6 +76,7 @@ public class CertificationService {
     private final Sm3Service sm3Service;
     private final OwnershipGuard ownershipGuard;
     private final SubjectStatusService statusService;
+    private final CertificationTxSupport tx;
     private final SubjectOpsSupport ops;
     private final CertificationProperties properties;
     private final Clock clock;
@@ -83,20 +84,25 @@ public class CertificationService {
     public CertificationService(final CertificationRepository certificationRepository,
             final CertificationStandardApi certificationChannel, final Sm4Service sm4Service,
             final Sm3Service sm3Service, final OwnershipGuard ownershipGuard,
-            final SubjectStatusService statusService, final SubjectOpsSupport ops,
-            final CertificationProperties properties, final Clock clock) {
+            final SubjectStatusService statusService, final CertificationTxSupport tx,
+            final SubjectOpsSupport ops, final CertificationProperties properties, final Clock clock) {
         this.certificationRepository = certificationRepository;
         this.certificationChannel = certificationChannel;
         this.sm4Service = sm4Service;
         this.sm3Service = sm3Service;
         this.ownershipGuard = ownershipGuard;
         this.statusService = statusService;
+        this.tx = tx;
         this.ops = ops;
         this.properties = properties;
         this.clock = clock;
     }
 
-    /** 证照上传与 OCR 识别（行为 2 第 1~3 条）：影像密文与原始结果密文即时落库，识别要素回填仅供核对。 */
+    /**
+     * 证照上传与 OCR 识别（行为 2 第 1~3 条）：影像密文与原始结果密文即时落库，识别要素回填仅供核对。
+     * AUD-04（任务卡卡 4）：材料落库与渠道留痕经 {@link CertificationTxSupport} 同事务原子落库；
+     * 无法识别的业务拒绝发生在落库之后，已落库的材料照常保留（提示重传口径）。
+     */
     public LicenseUploadResult uploadLicense(final String subjectNo, final byte[] image, final String fileName) {
         // 文件名归一化（WBS-3.1.5 hifi B8①，3.1.4 观察项）：控制字符剥除后再走校验/渠道/落库/回显全链
         final String safeName = ops.normalizeFileName(fileName);
@@ -153,7 +159,13 @@ public class CertificationService {
         return new ConfirmationResult(subjectNo, true, "LEGAL_PERSON_VERIFICATION");
     }
 
-    /** 法人实人核验（行为 3）：前置校验 → 渠道核验 → 留痕 → 通过自动流转待审核（行为 4 第 1 条）。 */
+    /**
+     * 法人实人核验（行为 3）：前置校验 → 渠道核验 → 留痕 → 通过自动流转待审核（行为 4 第 1 条）。
+     * AUD-04（任务卡卡 4，对应债务 DB-04）：通过路径的留痕与状态流转经 {@link CertificationTxSupport}
+     * 同事务原子落库——流转被门槛拒绝（并发恰一胜出的败者）或失败时，核验留痕一并回滚，
+     * 不再残留"档案有 PASS 留痕、状态未流转"的自相矛盾数据（并发口径变化见
+     * CertificationIntegrationTest#concurrentVerifyExactlyOneTransition 注释更新）。
+     */
     public VerificationResult verifyLegalPerson(final String subjectNo, final VerificationCommand command) {
         final Subject subject = ops.requireSubject(subjectNo);
         ownershipGuard.requireOwnerOrReviewer(subject, ACTION_VERIFY);
@@ -185,11 +197,11 @@ public class CertificationService {
         final LocalDateTime now = LocalDateTime.now(clock);
 
         if (verification.passed()) {
-            certificationRepository.appendVerification(new CertVerificationLog(null, subject.id(),
+            tx.recordVerificationAndTransition(new CertVerificationLog(null, subject.id(),
                     CertVerificationLog.TYPE_LEGAL_PERSON, certificationChannel.channelCode(),
                     verification.channelRequestNo(), command.legalPersonName(), idCipher,
-                    VerificationConclusion.PASS, null, costMs, false, now));
-            statusService.transition(subject.id(), subject.status(), SubjectStatus.PENDING_REVIEW,
+                    VerificationConclusion.PASS, null, costMs, false, now),
+                    subject.id(), subject.status(), SubjectStatus.PENDING_REVIEW,
                     TriggerRole.SYSTEM, SYSTEM_OPERATOR, AUTO_TRANSITION_REMARK);
             ops.audit(ops.operator(), ACTION_VERIFY, subjectNo, AuditOutcome.SUCCESS, null);
             log.info("legal person verified: subjectNo={} -> PENDING_REVIEW", subjectNo);
@@ -265,6 +277,7 @@ public class CertificationService {
      * 前置校验（状态/通道互斥/文件）→ 渠道验证 → 材料与留痕落库 → 通过自动流转待审核（不免人工审核，Q2 裁决）。
      * 业务不通过是结论非异常（FAIL + 明确原因，主体停留待认证可重新提交换证）；
      * 政务通道不设失败次数上限（lofi Q3-A：规格行为 6 未定义），留痕兜底。
+     * AUD-04（任务卡卡 4）：通过路径的材料、留痕、流转经 {@link CertificationTxSupport} 同事务原子落库。
      */
     public GovCaCertificationResult submitGovCaCertificate(final String subjectNo, final byte[] certBytes,
             final String fileName) {
@@ -284,20 +297,22 @@ public class CertificationService {
                 subject.id(), CertVerificationLog.TYPE_GOV_CA, null);
         final int costMs = elapsedMs(start);
         final LocalDateTime now = LocalDateTime.now(clock);
-        saveGovCertMaterial(subject.id(), safeName, certBytes, verification, costMs, now);
+        final CertMaterial govMaterial = buildGovCertRecord(subject.id(), safeName, certBytes, verification, now);
+        final CertVerificationLog govLog = buildGovLogRecord(subject.id(), verification, costMs, now);
 
-        if (!verification.passed()) {
-            ops.audit(ops.operator(), ACTION_GOV_SUBMIT, subjectNo, AuditOutcome.SUCCESS, "gov_verify_failed");
-            log.info("gov ca verification failed: subjectNo={}", subjectNo);
-            return new GovCaCertificationResult(subjectNo, VerificationConclusion.FAIL.name(),
-                    subject.status(), verification.failReason());
+        if (verification.passed()) {
+            tx.saveMaterialWithLogAndTransition(govMaterial, govLog, subject.id(), subject.status(),
+                    SubjectStatus.PENDING_REVIEW, TriggerRole.SYSTEM, SYSTEM_OPERATOR, GOV_TRANSITION_REMARK);
+            ops.audit(ops.operator(), ACTION_GOV_SUBMIT, subjectNo, AuditOutcome.SUCCESS, null);
+            log.info("gov ca verified: subjectNo={} -> PENDING_REVIEW", subjectNo);
+            return new GovCaCertificationResult(subjectNo, VerificationConclusion.PASS.name(),
+                    SubjectStatus.PENDING_REVIEW, null);
         }
-        statusService.transition(subject.id(), subject.status(), SubjectStatus.PENDING_REVIEW,
-                TriggerRole.SYSTEM, SYSTEM_OPERATOR, GOV_TRANSITION_REMARK);
-        ops.audit(ops.operator(), ACTION_GOV_SUBMIT, subjectNo, AuditOutcome.SUCCESS, null);
-        log.info("gov ca verified: subjectNo={} -> PENDING_REVIEW", subjectNo);
-        return new GovCaCertificationResult(subjectNo, VerificationConclusion.PASS.name(),
-                SubjectStatus.PENDING_REVIEW, null);
+        tx.saveMaterialWithLog(govMaterial, govLog);
+        ops.audit(ops.operator(), ACTION_GOV_SUBMIT, subjectNo, AuditOutcome.SUCCESS, "gov_verify_failed");
+        log.info("gov ca verification failed: subjectNo={}", subjectNo);
+        return new GovCaCertificationResult(subjectNo, VerificationConclusion.FAIL.name(),
+                subject.status(), verification.failReason());
     }
 
     private CertMaterial requireMaterial(final long subjectId) {
@@ -351,21 +366,25 @@ public class CertificationService {
     }
 
     /** 政务证书材料落库（复用 cert_material 表 GOV_CA_CERT 类型；文件密文 + SM3 + 验证要素密文，hifi 库表节）。 */
-    private void saveGovCertMaterial(final long subjectId, final String fileName, final byte[] certBytes,
-            final GovCaVerification verification, final int costMs, final LocalDateTime now) {
+    private CertMaterial buildGovCertRecord(final long subjectId, final String fileName, final byte[] certBytes,
+            final GovCaVerification verification, final LocalDateTime now) {
         final byte[] certCipher = sm4Service.encrypt(certBytes, properties.getMaterialKeyRef());
         final String certDigest = sm3Service.digestHex(certBytes);
         final byte[] rawCipher = sm4Service.encrypt(govVerifyRawJson(verification),
                 properties.getMaterialKeyRef());
-        certificationRepository.replaceMaterial(new CertMaterial(null, subjectId,
+        return new CertMaterial(null, subjectId,
                 CertMaterial.TYPE_GOV_CA_CERT, fileName, certDigest, certCipher, rawCipher,
                 null, null, verification.passed(),
-                null, null, null, null, null, now));
-        certificationRepository.appendVerification(new CertVerificationLog(null, subjectId,
+                null, null, null, null, null, now);
+    }
+
+    private CertVerificationLog buildGovLogRecord(final long subjectId, final GovCaVerification verification,
+            final int costMs, final LocalDateTime now) {
+        return new CertVerificationLog(null, subjectId,
                 CertVerificationLog.TYPE_GOV_CA, certificationChannel.channelCode(),
                 verification.channelRequestNo(), null, null,
                 verification.passed() ? VerificationConclusion.PASS : VerificationConclusion.FAIL,
-                verification.failReason(), costMs, false, now));
+                verification.failReason(), costMs, false, now);
     }
 
     /** 政务验证要素密文 JSON（组织信息非 L4 但统一密文落 ocr_raw_cipher，hifi 库表节口径）。 */
@@ -431,12 +450,13 @@ public class CertificationService {
     }
 
     /**
-     * 18 位身份证号校验位验证（GB 11643-1999 mod 11-2；hifi B6"证件号校验位合法"的实现落点；
-     * 15 位旧格式只做格式校验不做校验位）。
+     * 18 位身份证号校验位验证（GB 11643-1999 mod 11-2；hifi B6"证件号校验位合法"的实现落点）。
+     * AUD-05（任务卡卡 4）：位数明显不对的号码不得送核验渠道——长度必须恰为 18 位，前 17 位须为数字，
+     * 末位为数字或 X/x；15 位旧号口径需先补规格（卡面声明本卡不含），当前一律拒绝。
      */
     private static void requireIdChecksum(final String idNo) {
         if (idNo.length() != 18) {
-            return;
+            throw new BizException(ErrorCodes.PARAM_INVALID, "身份证号位数或格式不正确");
         }
         final int[] weights = {7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2};
         final char[] checkChars = {'1', '0', 'X', '9', '8', '7', '6', '5', '4', '3', '2'};
@@ -444,7 +464,7 @@ public class CertificationService {
         for (int i = 0; i < 17; i++) {
             final int digit = Character.digit(idNo.charAt(i), 10);
             if (digit < 0) {
-                throw new BizException(ErrorCodes.PARAM_INVALID, "身份证号格式不正确");
+                throw new BizException(ErrorCodes.PARAM_INVALID, "身份证号位数或格式不正确");
             }
             sum += digit * weights[i];
         }
@@ -492,17 +512,17 @@ public class CertificationService {
             final LocalDateTime now) {
         final byte[] rawCipher = recognition.recognizable()
                 ? sm4Service.encrypt(ocrRawJson(recognition), properties.getMaterialKeyRef()) : null;
-        final CertMaterial material = certificationRepository.replaceMaterial(new CertMaterial(null, subjectId,
+        return tx.saveMaterialWithLog(new CertMaterial(null, subjectId,
                 CertMaterial.TYPE_BUSINESS_LICENSE, fileName, imageDigest, imageCipher, rawCipher,
                 recognition.recognizable() ? recognition.uscc() : null,
                 recognition.recognizable() ? recognition.legalPerson() : null,
-                recognition.recognizable(), null, null, null, null, null, now));
-        certificationRepository.appendVerification(new CertVerificationLog(null, subjectId,
-                CertVerificationLog.TYPE_OCR_LICENSE, certificationChannel.channelCode(),
-                recognition.channelRequestNo(), null, null,
-                recognition.recognizable() ? VerificationConclusion.PASS : VerificationConclusion.UNRECOGNIZABLE,
-                recognition.recognizable() ? null : recognition.message(), costMs, false, now));
-        return material;
+                recognition.recognizable(), null, null, null, null, null, now),
+                new CertVerificationLog(null, subjectId,
+                        CertVerificationLog.TYPE_OCR_LICENSE, certificationChannel.channelCode(),
+                        recognition.channelRequestNo(), null, null,
+                        recognition.recognizable()
+                                ? VerificationConclusion.PASS : VerificationConclusion.UNRECOGNIZABLE,
+                        recognition.recognizable() ? null : recognition.message(), costMs, false, now));
     }
 
     private byte[] ocrRawJson(final OcrRecognition recognition) {
