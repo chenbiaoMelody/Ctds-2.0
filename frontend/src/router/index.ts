@@ -92,6 +92,13 @@ const routes = [
         component: () => import('../views/review/DetailView.vue'),
         meta: { title: '审核详情', permission: 'subject.review' },
       },
+      // CHG-C-1.1-V1.2 入驻进度查询：登录即可见（无权限点，安全边界在后端双凭证比对）
+      {
+        path: 'subject/progress',
+        name: 'subject-progress',
+        component: () => import('../views/subject/ProgressQueryView.vue'),
+        meta: { title: '入驻进度查询', menu: true, menuOrder: 7, icon: 'Search' },
+      },
       {
         path: ':pathMatch(.*)*',
         name: 'not-found',

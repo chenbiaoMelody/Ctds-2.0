@@ -28,7 +28,15 @@ const rules = {
   uscc: [{ required: true, message: '统一社会信用代码不能为空', trigger: 'blur' }],
   regAddress: [{ required: true, message: '注册地址不能为空', trigger: 'blur' }],
   contactName: [{ required: true, message: '联系人姓名不能为空', trigger: 'blur' }],
-  contactPhone: [{ required: true, message: '联系电话不能为空', trigger: 'blur' }],
+  // CHG-C-1.1-V1.2：双格式与后端 requireValid/@Pattern 同口径（hifi §2 前后端逐字一致）
+  contactPhone: [
+    { required: true, message: '联系电话不能为空', trigger: 'blur' },
+    {
+      pattern: /^(1[3-9]\d{9}|0\d{2,3}-\d{7,8})$/,
+      message: '联系电话格式不正确（手机 11 位或 区号-座机）',
+      trigger: 'blur',
+    },
+  ],
   adminAccount: [{ required: true, message: '管理员账号不能为空', trigger: 'blur' }],
 }
 
@@ -91,10 +99,13 @@ async function submit(): Promise<void> {
           <el-input v-model="form.contactName" />
         </el-form-item>
         <el-form-item label="联系电话" prop="contactPhone">
-          <el-input v-model="form.contactPhone" />
+          <el-input v-model="form.contactPhone" placeholder="手机 11 位或 区号-座机，如 0571-87654321" />
         </el-form-item>
         <el-form-item label="管理员账号" prop="adminAccount">
           <el-input v-model="form.adminAccount" />
+          <div class="field-tip">
+            请填写贵单位自己的平台管理员账号名（仅允许字母、数字与 . _ -），待平台账号体系上线后生效
+          </div>
         </el-form-item>
         <el-form-item>
           <el-button type="primary" :loading="submitting" @click="submit">提交注册</el-button>
@@ -122,5 +133,14 @@ async function submit(): Promise<void> {
 
 .branch-tip {
   margin-bottom: 16px;
+}
+
+/* 管理员账号常驻指引小字（CHG-C-1.1-V1.2 hifi §1.1） */
+.field-tip {
+  width: 100%;
+  font-size: 12px;
+  color: #909399;
+  line-height: 1.5;
+  margin-top: 4px;
 }
 </style>

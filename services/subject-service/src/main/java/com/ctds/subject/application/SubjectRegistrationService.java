@@ -17,6 +17,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
@@ -25,7 +26,8 @@ import org.springframework.stereotype.Service;
 
 /**
  * 主体注册应用服务（规格 C-1.1 行为 1/4，WBS-3.1.2 hifi B3~B6）：
- * 注册（唯一性 + 防重复提交 + 申请编号）、撤销重报（lofi Q3-A：复用记录）、进度查询（脱敏）。
+ * 注册（唯一性 + 防重复提交 + 申请编号）、撤销重报（lofi Q3-A：复用记录）、进度查询（脱敏）、
+ * 入驻进度自助查询（CHG-C-1.1-V1.2 行为 8，双凭证）。
  * 防重复提交经 common-idempotency @Idempotent（幂等键 = 统一社会信用代码，ADR-007 模式 B）；
  * 唯一性双保险 = 服务层预检 + uk_uscc 唯一索引兜底。
  */
@@ -40,6 +42,11 @@ public class SubjectRegistrationService {
     private static final String USCC_REGEX = "^[0-9A-HJ-NPQRTUWXY]{2}\\d{6}[0-9A-HJ-NPQRTUWXY]{10}$";
     private static final Pattern USCC_PATTERN = Pattern.compile(USCC_REGEX);
     private static final Pattern ACCOUNT_PATTERN = Pattern.compile("^[A-Za-z0-9._-]{1,64}$");
+    /** 联系电话双格式（CHG-C-1.1-V1.2 规格行为 1 第 6 条，hifi §2 规则表：手机 11 位 或 区号-座机）。 */
+    private static final Pattern PHONE_PATTERN = Pattern.compile("^(1[3-9]\\d{9}|0\\d{2,3}-\\d{7,8})$");
+    private static final String PHONE_FORMAT_MESSAGE = "联系电话格式不正确（手机 11 位或 区号-座机）";
+    private static final String ACTION_PROGRESS_QUERY = "subject.progress_query";
+    private static final String PROGRESS_NOT_FOUND_MESSAGE = "未查询到匹配的申请";
     private static final int MAX_TEXT_CHARS = 256;
 
     private final SubjectRepository repository;
@@ -111,6 +118,37 @@ public class SubjectRegistrationService {
         return new SubjectDetail(subject, repository.findTransitions(subject.id()));
     }
 
+    /**
+     * 入驻进度自助查询（CHG-C-1.1-V1.2 规格行为 8）：申请编号 + 统一社会信用代码双凭证，
+     * 凭证断言取代归属断言（hifi §3 留痕口径）。编号不存在与信用代码不符统一出站同文案防枚举：
+     * 仅编号不存在不落 DENIED（无对象可归属）；凭证不匹配落 DENIED（reason progress_denied）。
+     */
+    public ProgressResult progress(final String subjectNo, final String rawUscc) {
+        ops.requireSubjectNo(subjectNo);
+        final String uscc = rawUscc == null ? "" : rawUscc.trim().toUpperCase(Locale.ROOT);
+        if (!USCC_PATTERN.matcher(uscc).matches()) {
+            throw new BizException(ErrorCodes.PARAM_INVALID, "统一社会信用代码格式不正确");
+        }
+        final String operator = ops.operator();
+        final Subject subject = repository.findBySubjectNo(subjectNo).orElse(null);
+        if (subject == null) {
+            throw new BizException(ErrorCodes.RESOURCE_NOT_FOUND, PROGRESS_NOT_FOUND_MESSAGE);
+        }
+        if (!subject.uscc().equals(uscc)) {
+            ops.audit(operator, ACTION_PROGRESS_QUERY, subjectNo, AuditOutcome.DENIED, "progress_denied");
+            throw new BizException(ErrorCodes.RESOURCE_NOT_FOUND, PROGRESS_NOT_FOUND_MESSAGE);
+        }
+        final String rejectReason = subject.status() == SubjectStatus.REJECTED
+                ? repository.findLatestTransition(subject.id())
+                        .filter(t -> t.toStatus() == SubjectStatus.REJECTED)
+                        .map(StatusTransition::remark)
+                        .orElse(null)
+                : null;
+        ops.audit(operator, ACTION_PROGRESS_QUERY, subjectNo, AuditOutcome.SUCCESS, null);
+        return new ProgressResult(subject.subjectNo(), subject.subjectName(), subject.subjectType(),
+                subject.status(), rejectReason);
+    }
+
     private RegistrationResult createRegistration(final RegisterCommand command, final String operator) {
         final LocalDateTime now = LocalDateTime.now(clock);
         final String subjectNo = generateSubjectNo();
@@ -166,7 +204,11 @@ public class SubjectRegistrationService {
         }
         requireText(command.regAddress(), "注册地址", 256, problems);
         requireText(command.contactName(), "联系人姓名", 64, problems);
-        requireText(command.contactPhone(), "联系电话", 32, problems);
+        if (command.contactPhone() == null || command.contactPhone().isBlank()) {
+            problems.add("联系电话不能为空");
+        } else if (!PHONE_PATTERN.matcher(command.contactPhone()).matches()) {
+            problems.add(PHONE_FORMAT_MESSAGE);
+        }
         if (command.adminAccount() == null || !ACCOUNT_PATTERN.matcher(command.adminAccount()).matches()) {
             problems.add("管理员账号不合法（仅允许字母数字 . _ -）");
         }

@@ -14,7 +14,7 @@ import jakarta.validation.constraints.Size;
  * @param subjectType  主体类型：ENTERPRISE 企业 / INSTITUTION 机构 / GOV 政府部门
  * @param regAddress   注册地址
  * @param contactName  联系人姓名
- * @param contactPhone 联系电话
+ * @param contactPhone 联系电话（CHG-C-1.1-V1.2：手机 11 位或 区号-座机，hifi §2 规则表）
  * @param adminAccount 管理员账号
  */
 public record RegisterRequest(
@@ -29,7 +29,8 @@ public record RegisterRequest(
         String regAddress,
         @NotBlank(message = "联系人姓名不能为空") @Size(max = 64, message = "联系人姓名超长（最长 64 字符）")
         String contactName,
-        @NotBlank(message = "联系电话不能为空") @Size(max = 32, message = "联系电话超长（最长 32 字符）")
+        @NotBlank(message = "联系电话不能为空")
+        @Pattern(regexp = "(1[3-9]\\d{9}|0\\d{2,3}-\\d{7,8})", message = "联系电话格式不正确（手机 11 位或 区号-座机）")
         String contactPhone,
         @NotBlank(message = "管理员账号不能为空")
         @Pattern(regexp = "[A-Za-z0-9._-]{1,64}", message = "管理员账号不合法（仅允许字母数字 . _ -）")
