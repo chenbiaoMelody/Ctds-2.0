@@ -17,12 +17,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gates\run-gates.ps1
 ## 怎么看结果
 
 - 每个检查项五态：**PASS（绿）**、**FAIL（红，必须修复后重交，无特批）**、**SKIP（跳过）**、**ERROR（环境/配置问题）**、**PENDING（待接入）**；
-- **SKIP 不是放行**：只有**未入库**（非 git 追踪）的构建/运行产物被占用或不可读时才记 SKIP，且以 `secretsScan.skipped` 行**逐条列出**被跳过的文件备人工复核；**入库文件不可读一律记 `ERROR`**（`secretsScan.unreadable` 行）——"扫不了"与"扫过且干净"必须分开；
+- **SKIP 不是放行**：记 SKIP 的情形有三类，凡涉及**入库**（git 追踪）文件均**逐条列名**备人工复核——① 未入库文件被占用/不可读（`secretsScan.skipped` 行）；② ≥1MB 超大文件不入正则扫描（`secretsScan.oversized` 行，DB-18）；③ NUL 二进制按启发式跳过（`secretsScan.binary` 行，DB-18）；**入库文件不可读一律记 `ERROR`**（`secretsScan.unreadable` 行），目录枚举失败（其下文件根本没进扫描名单）也记 `ERROR`（`secretsScan.enumGap` 行，DB-18）——"没枚举到/扫不了/没扫/扫过且干净"必须分开；
 - 最后一行汇总 `-> GREEN / RED / ERROR`：只有 **GREEN** 才允许提交评审；
 - 退出码（WBS-2.2.7 语义，**优先级 1 > 2 > 0**）：
   - `1` = RED（**代码/安全不合格**，必须修复后重交）——**只要存在任一 FAIL 就是 1，即使同时存在 ERROR 行**；报告中会明示"环境/配置错误不得掩盖这条红灯"；
   - `0` = GREEN；
-  - `2` = 配置/环境错误（含**脚本自身崩溃**、报告写入失败、配置解析失败，以及阶段级环境问题：`JAVA_HOME` 缺失/无效、`mvn`/`npm` 不在 PATH、`package.json` 缺失、配置项含非法字符——这些一律记 `ERROR` 行）——**`2` 不是质量结论**，须先修环境/配置再重跑；
+  - `2` = 配置/环境错误（含**脚本自身崩溃**、报告写入失败、配置解析失败，以及阶段级环境问题：`JAVA_HOME` 缺失/无效、`mvn`/`npm` 不在 PATH、`package.json` 缺失、配置项含非法字符、仓库文件枚举失败 `secretsScan.enumGap`——这些一律记 `ERROR` 行）——**`2` 不是质量结论**，须先修环境/配置再重跑；
 - **报告必然产出**：任一阶段抛出未预期异常都会被兜底捕获、记 `runner ERROR` 明细并**仍写出报告**；报告目标不可写时记 `runner.reportPath ERROR` 并把报告打印到标准输出。唯一例外：配置文件解析失败——此时无法产报告，直接以退出码 `2` 退出并打印原因。
 
 ## 运行器自检（脚本自身防回归 · WBS-2.2.7 交付物⑤）
@@ -61,6 +61,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gates\selftest.ps1
 **机器护栏（V1.2 起）**：门禁启动时用 `git ls-files` 取入库路径清单，**任一排除项命中入库路径即记 `secretsScan.excludeGuard ERROR` 并以退出码 2 结束**。"排除项不得规避已入库文件"这条约束不再只写在注释里，而是每次运行都在校验——**改动排除项若误伤入库文件，门禁当次即红**。
 
 > 变更留痕：
+> - **DB-18 显性化（2026-09-19，清债小卡 `docs/tasks/DB-17-21-清债小卡-2026-09-19.md`，配置零改动）**：secretsScan 三类"静默逃逸"改为报告可见——目录枚举失败记 `secretsScan.enumGap ERROR`（退出码 2）；≥1MB 超大文件与 NUL 二进制按入库/未入库区分，入库的逐条列名（`secretsScan.oversized` / `secretsScan.binary` SKIP 行），PASS 行"not scanned"细分为 excluded/oversized/binary/unreadable。检查强度只增不减；上文 SKIP 语义句已同步。前端段另设 `StandardOutput/ErrorEncoding = UTF-8`（DB-19，修复报告 FAIL 明细中文乱码，Maven 段不动）。
 > - **V1.2（2026-09-15，WBS-2.2.7 第 2 轮，对应债务 DB-16）**：修复 V1.1 的排除项缺陷——`logs` 裸词经"任意层级"匹配规则连带排除了 `docs/logs/`（61 份入库开发日志）与 `services/*/logs/`（24 份运行期日志），**V1.1 中"扫描面未缩减"的声明因此失实**；同时新增上述 `git ls-files` 护栏、`gateSelfTest` 阶段与报告头字段。实测（RunLabel `20260915-160705-4156`，连跑 3 次一致）：GREEN，`PASS=10 FAIL=0 SKIP=0 ERROR=0 PENDING=9`，**扫描 546 个文件、0 命中**；同一工作区按 V1.1 规则复算为 460 个文件，故本轮**扫描面净增 86**（`docs/logs/` 62 份 + `services/*/logs/` 24 份）。
 > - **V1.1（2026-09-15，WBS-2.2.7）**：修复"本地后端运行占用 `logs/app.log`，导致脚本 `ReadAllBytes` 抛异常、门禁崩溃不出报告、退出码与真红灯同形"的缺陷（REV-ALL-2026-09-15 DB-01）；其自身记录"扫描文件数由 2335 降至 463"（该说明文字中曾误写 `464`，第 2 轮已更正为 463）。
 
@@ -81,7 +82,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gates\selftest.ps1
 | frontendLint 前端格式与风格 | ✅ 已启用（WBS 2.4.12 接入） | `npm run lint`（ESLint 9，覆盖 src 与 e2e），零错误 |
 | frontendTest 前端单元测试 | ✅ 已启用（WBS 2.4.12 接入） | `npm run test`（Vitest + jsdom），全部通过 |
 | frontendE2E 前端端到端测试 | ⏸ PENDING-CI（WBS 2.4.12 登记） | `npm run e2e`（Playwright + Chromium）；CI 环境浏览器二进制供给待 2.5.x 评估，本机可手动全量 |
-| gateSelfTest 运行器自检 | ⏸ PENDING-SELFTEST | `selftest.ps1` 九场景（S1~S9，49 断言）；未接入 CI 前固定 PENDING，让"自检未跑"在每份报告中可见 |
+| gateSelfTest 运行器自检 | ⏸ PENDING-SELFTEST | `selftest.ps1` 九场景（S1~S9，50 断言）；未接入 CI 前固定 PENDING，让"自检未跑"在每份报告中可见 |
 | coverage 覆盖率 | ⏸ PENDING | JaCoCo 行/分支覆盖（核心 ≥80%、整体 ≥70%，章程 4.2），接入属工具链变更走 ADR |
 | mutationTest 变异测试 | ⏸ PENDING | 核心模块出现后接入（pitest），阈值 60% |
 | duplication 重复度 | ⏸ PENDING | PMD CPD，新增重复行 = 0 |

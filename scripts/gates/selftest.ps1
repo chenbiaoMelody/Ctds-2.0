@@ -277,6 +277,7 @@ $r = Invoke-Runner $fix $cfg $rep "selftest-s8-fail-plus-error"
 Assert-True ($r.ExitCode -eq 1) ("S8 exit code 1 (got " + $r.ExitCode + ")")
 $repText = Read-Report $rep
 Assert-Contains $repText "| devLogNamingCheck | FAIL |" "S8 the real red light (bad log name) is present"
+Assert-Contains $repText "zz-bad-log-name" "S8 the FAIL is attributable to the injected file (not another FAIL source)"
 Assert-Contains $repText "| compile | ERROR |" "S8 the environment ERROR (bad JAVA_HOME) is present"
 Assert-Contains $repText "JAVA_HOME not found" "S8 the ERROR names its cause"
 Assert-Contains $repText "-> RED (also" "S8 verdict is RED with the ERROR count visible (not a masked GREEN/ERROR-only run)"
