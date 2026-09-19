@@ -42,6 +42,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gates\selftest.ps1
 | S5 | 排除项命中入库路径 | 护栏记 ERROR、退出码 2（禁止借排除项规避扫描） |
 | S6 | 在 `docs/logs/` 放一条"假凭据" | 记 FAIL 并点名该文件、退出码 1（**入库开发日志必须被扫描** —— DB-16 回归锚点） |
 | S7 | 某阶段抛异常（ADR 文件被锁定） | 外层兜底记 `runner ERROR`、报告**仍然产出**、退出码 2（崩溃绝不能被误报成"代码不合格=1"） |
+| S8 | 日志命名违规（FAIL）+ 无效 `JAVA_HOME`（ERROR）并存 | 退出码 **1**、结论 `RED (also N ERROR...)`（真红灯绝不能被环境/配置错误掩盖 —— R2 锚点，DB-17） |
+| S9 | Maven `compile.goals` 注入非法字符（`&`） | 该阶段记 ERROR 且行文含 **"stage SKIPPED, command NOT executed"**（非法配置绝不启动命令 —— R5 锚点，DB-17） |
 
 `selftest.ps1` 只读运行器、只写 `%TEMP%`；全部通过后自动清理沙箱目录（`-KeepFixture` 可保留以便排查）。其运行状态在配置中登记为 `gateSelfTest: PENDING-SELFTEST`：**未接入 CI 前，每份门禁报告都会显示"自检未跑"**，接入 CI 后（WBS-2.2.9）改 `enabled=true`。
 
@@ -79,7 +81,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gates\selftest.ps1
 | frontendLint 前端格式与风格 | ✅ 已启用（WBS 2.4.12 接入） | `npm run lint`（ESLint 9，覆盖 src 与 e2e），零错误 |
 | frontendTest 前端单元测试 | ✅ 已启用（WBS 2.4.12 接入） | `npm run test`（Vitest + jsdom），全部通过 |
 | frontendE2E 前端端到端测试 | ⏸ PENDING-CI（WBS 2.4.12 登记） | `npm run e2e`（Playwright + Chromium）；CI 环境浏览器二进制供给待 2.5.x 评估，本机可手动全量 |
-| gateSelfTest 运行器自检 | ⏸ PENDING-SELFTEST | `selftest.ps1` 七场景（S1~S7）；未接入 CI 前固定 PENDING，让"自检未跑"在每份报告中可见 |
+| gateSelfTest 运行器自检 | ⏸ PENDING-SELFTEST | `selftest.ps1` 九场景（S1~S9，49 断言）；未接入 CI 前固定 PENDING，让"自检未跑"在每份报告中可见 |
 | coverage 覆盖率 | ⏸ PENDING | JaCoCo 行/分支覆盖（核心 ≥80%、整体 ≥70%，章程 4.2），接入属工具链变更走 ADR |
 | mutationTest 变异测试 | ⏸ PENDING | 核心模块出现后接入（pitest），阈值 60% |
 | duplication 重复度 | ⏸ PENDING | PMD CPD，新增重复行 = 0 |
