@@ -68,6 +68,16 @@ export interface StatusTransition {
   createdAt: string
 }
 
+// 与后端 GET /registrations/{subjectNo}/progress?uscc= 出参 ProgressView 逐字段对齐
+// （CHG-C-1.1-V1.2 行为 8：仅最小必要五字段，无联系人/电话/证照信息）。
+export interface RegistrationProgressView {
+  subjectNo: string
+  subjectName: string
+  subjectType: string
+  status: SubjectStatus
+  rejectReason: string | null
+}
+
 // 与后端 GET /registrations/{subjectNo} 出参 SubjectView 逐字段对齐（扁平结构，
 // 注册信息脱敏展示：contactPhone 已掩码；无 adminAccount 字段）。
 export interface SubjectDetailView {
@@ -108,6 +118,12 @@ export function registerSubject(payload: RegisterPayload): Promise<{ subjectNo: 
 
 export function fetchSubjectDetail(subjectNo: string): Promise<SubjectDetailView> {
   return apiJson(`/api/v1/subject/registrations/${subjectNo}`)
+}
+
+// CHG-C-1.1-V1.2 入驻进度自助查询（行为 8：双凭证；查询失败后端统一 1000C0003 文案防枚举）
+export function fetchRegistrationProgress(subjectNo: string, uscc: string): Promise<RegistrationProgressView> {
+  const params = new URLSearchParams({ uscc })
+  return apiJson(`/api/v1/subject/registrations/${encodeURIComponent(subjectNo)}/progress?${params.toString()}`)
 }
 
 export function fetchProfile(subjectNo: string): Promise<CertificationProfile> {

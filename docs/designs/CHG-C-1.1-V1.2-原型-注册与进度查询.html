@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>CHG-C-1.1-V1.2 原型 ｜ 注册页改动 ＋ 入驻进度查询</title>
+<style>
+  body { font-family: "Microsoft YaHei", sans-serif; margin: 0; background: #f3f4f6; color: #111827; }
+  .layout { display: flex; min-height: 100vh; }
+  .side { width: 180px; background: #1f2937; color: #e5e7eb; padding: 16px 0; flex-shrink: 0; }
+  .side h1 { font-size: 14px; padding: 0 16px 12px; color: #9ca3af; border-bottom: 1px solid #374151; }
+  .menu a { display: block; padding: 9px 16px; color: #d1d5db; text-decoration: none; font-size: 13px; }
+  .menu a.active { background: #2563eb; color: #fff; }
+  .menu .new { color: #fbbf24; font-size: 11px; margin-left: 4px; }
+  .main { flex: 1; padding: 20px 28px; }
+  .page { background: #fff; border: 1px solid #e5e7eb; border-radius: 6px; padding: 20px 24px; margin-bottom: 24px; max-width: 640px; }
+  h2 { font-size: 16px; margin: 0 0 4px; }
+  .desc { font-size: 12px; color: #6b7280; margin: 0 0 16px; }
+  label { display: inline-block; width: 120px; font-size: 13px; text-align: right; margin-right: 10px; vertical-align: top; }
+  .req::before { content: "* "; color: #dc2626; }
+  input[type=text] { width: 260px; padding: 6px 8px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 13px; }
+  input.bad { border-color: #dc2626; }
+  .row { margin-bottom: 14px; position: relative; }
+  .fieldwrap { display: inline-block; vertical-align: top; }
+  .err { display: block; font-size: 12px; color: #dc2626; margin-top: 3px; }
+  .guide { display: block; font-size: 12px; color: #6b7280; margin-top: 3px; max-width: 300px; }
+  .guide.emph { background: #fef9c3; border: 1px dashed #ca8a04; padding: 4px 6px; border-radius: 4px; }
+  button { background: #2563eb; color: #fff; border: 0; border-radius: 4px; padding: 8px 18px; font-size: 13px; cursor: pointer; }
+  button.plain { background: #fff; color: #2563eb; border: 1px solid #2563eb; }
+  .tag { display: inline-block; font-size: 12px; padding: 2px 10px; border-radius: 10px; background: #dcfce7; color: #166534; margin-left: 8px; }
+  .tag.reject { background: #fee2e2; color: #991b1b; }
+  .alert-reject { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; font-size: 13px; padding: 10px 12px; border-radius: 4px; margin: 12px 0; }
+  .alert-error { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; font-size: 13px; padding: 10px 12px; border-radius: 4px; margin-bottom: 12px; }
+  .card { border: 1px solid #e5e7eb; border-radius: 6px; padding: 14px 16px; font-size: 13px; }
+  .card p { margin: 6px 0; }
+  .note { font-size: 12px; color: #92400e; background: #fffbeb; border: 1px solid #fde68a; padding: 8px 10px; border-radius: 4px; margin-bottom: 16px; max-width: 640px; }
+</style>
+</head>
+<body>
+<div class="layout">
+  <nav class="side">
+    <h1>城市可信数据空间</h1>
+    <div class="menu">
+      <a href="#">工作台</a>
+      <a href="#">标准能力</a>
+      <a href="#">数据目录</a>
+      <a class="active" href="#register">主体入驻</a>
+      <a href="#progress">入驻进度查询<span class="new">新增</span></a>
+      <a href="#">主体审核</a>
+    </div>
+  </nav>
+  <main class="main">
+    <div class="note">静态原型（CHG-C-1.1-V1.2）：黄色虚线框＝本次新增/改动的文案与控件；其余为 3.1.5 现势界面示意。非交互，仅供方向与文案确认。</div>
+
+    <section class="page" id="register">
+      <h2>主体入驻（注册页 · 两处改动）</h2>
+      <p class="desc">企业/机构主体：注册后上传营业执照完成 OCR 识别与法人核验；政府部门主体：注册后提交政务 CA 数字证书。</p>
+      <div class="row"><label>主体类型</label>
+        <span>○ 企业　○ 机构　○ 政府部门</span>
+      </div>
+      <div class="row"><label class="req">主体名称</label><input type="text" value="蓝天数据科技有限公司" /></div>
+      <div class="row"><label class="req">统一社会信用代码</label><input type="text" value="91330100MA27XW123X" /></div>
+      <div class="row"><label class="req">联系电话</label>
+        <span class="fieldwrap">
+          <!-- 改动 1：格式规则收紧 -->
+          <input class="bad" type="text" value="测试电话" placeholder="手机 11 位或 区号-座机，如 0571-87654321" />
+          <span class="err">联系电话格式不正确（手机 11 位或 区号-座机）</span>
+        </span>
+      </div>
+      <div class="row"><label class="req">管理员账号</label>
+        <span class="fieldwrap">
+          <input type="text" value="lanna-admin" />
+          <!-- 改动 2：常驻指引文字 -->
+          <span class="guide emph">请填写贵单位自己的平台管理员账号名（仅允许字母、数字与 . _ -），待平台账号体系上线后生效</span>
+        </span>
+      </div>
+      <div class="row"><label></label><button>提交注册</button></div>
+    </section>
+
+    <section class="page" id="progress">
+      <h2>入驻进度查询（新增页面）</h2>
+      <p class="desc">凭注册时返回的申请编号与本主体统一社会信用代码查询入驻进度。</p>
+      <div class="row"><label class="req">申请编号</label><input type="text" value="S20260915000001" /></div>
+      <div class="row"><label class="req">统一社会信用代码</label><input type="text" value="91330100MA27XW123X" /></div>
+      <div class="row"><label></label><button>查询</button></div>
+
+      <h2 style="margin-top:20px">查询结果（示意一：正常主体）</h2>
+      <div class="card">
+        <p>主体名称：蓝天数据科技有限公司（企业）</p>
+        <p>当前状态：<span class="tag">已入驻</span></p>
+        <p style="margin-top:10px"><button class="plain">前往认证页</button></p>
+      </div>
+
+      <h2 style="margin-top:20px">查询结果（示意二：已驳回）</h2>
+      <div class="card">
+        <p>主体名称：星河信息技术有限公司（企业）</p>
+        <p>当前状态：<span class="tag reject">已驳回</span></p>
+        <div class="alert-reject">驳回理由：注册地址与证照不一致，请修正后重新提交</div>
+        <p><button class="plain">前往认证页</button></p>
+      </div>
+
+      <h2 style="margin-top:20px">查询失败（统一口径，不区分原因）</h2>
+      <div class="alert-error">未查询到匹配的申请</div>
+    </section>
+  </main>
+</div>
+</body>
+</html>

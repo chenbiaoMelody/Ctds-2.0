@@ -106,4 +106,49 @@ describe('主体注册页（WBS-3.1.5 界面化）', () => {
     expect(document.body.textContent).toContain('注册成功，申请编号：S20260914000021')
     expect(router.currentRoute.value.path).toBe('/subject/certification/S20260914000021')
   })
+
+  // ==== CHG-C-1.1-V1.2：联系电话双格式 + 管理员账号指引（hifi §1.1/§2） ====
+
+  const phoneInput = (wrapper: Awaited<ReturnType<typeof mountPage>>['wrapper']) => {
+    for (const item of wrapper.findAll('.el-form-item')) {
+      if (item.find('.el-form-item__label').text().includes('联系电话')) {
+        return item.find('input.el-input__inner')
+      }
+    }
+    throw new Error('未找到联系电话输入框')
+  }
+
+  it('联系电话输入框带双格式指引 placeholder（hifi §1.1 文案定稿）', async () => {
+    const { wrapper } = await mountPage()
+    expect(phoneInput(wrapper).attributes('placeholder')).toBe('手机 11 位或 区号-座机，如 0571-87654321')
+  })
+
+  it('联系电话填非法格式提交：格式红字且不发请求（规格行为 1 第 6 条红锚）', async () => {
+    const { wrapper } = await mountPage()
+    await fillAllFields(wrapper)
+    await phoneInput(wrapper).setValue('测试电话')
+    await submitButton(wrapper).trigger('click')
+    await flushPromises()
+    await new Promise((r) => setTimeout(r, 100))
+    expect(wrapper.text()).toContain('联系电话格式不正确（手机 11 位或 区号-座机）')
+    expect(mockedRegister).not.toHaveBeenCalled()
+  })
+
+  it('联系电话填座机格式提交：通过前端校验发出注册请求（与后端规则同口径）', async () => {
+    mockedRegister.mockResolvedValue({ subjectNo: 'S20260919000009' })
+    const { wrapper } = await mountPage()
+    await fillAllFields(wrapper)
+    await phoneInput(wrapper).setValue('0571-87654321')
+    await submitButton(wrapper).trigger('click')
+    await flushPromises()
+    expect(mockedRegister).toHaveBeenCalledTimes(1)
+    expect(mockedRegister.mock.calls[0][0].contactPhone).toBe('0571-87654321')
+  })
+
+  it('管理员账号输入框下方常驻指引小字（规格行为 1 第 7 条，hifi §1.1 文案定稿）', async () => {
+    const { wrapper } = await mountPage()
+    expect(wrapper.text()).toContain(
+      '请填写贵单位自己的平台管理员账号名（仅允许字母、数字与 . _ -），待平台账号体系上线后生效',
+    )
+  })
 })

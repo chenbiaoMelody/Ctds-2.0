@@ -388,6 +388,128 @@ class SubjectRegistrationIntegrationTest {
         assertThat(subjectRepository.nextDailySeq(futureDate)).isEqualTo(2);
     }
 
+    // ==== CHG-C-1.1-V1.2：电话双格式（HTTP 层）+ 入驻进度自助查询（规格行为 8） ====
+
+    @Test
+    void invalidPhoneFormatRejectedAtHttpLayer() throws Exception {
+        final int before = countAll();
+        mockMvc.perform(post(REGISTER_URL)
+                        .header("X-Ctds-Subject", APPLICANT).header("X-Ctds-Roles", "applicant")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(registerBody(uscc(41), "电话格式演示公司", "测试电话")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("1000C0001"))
+                .andExpect(jsonPath("$.message")
+                        .value(org.hamcrest.Matchers.containsString("联系电话格式不正确（手机 11 位或 区号-座机）")));
+        assertThat(countAll()).isEqualTo(before);
+    }
+
+    @Test
+    void validLandlinePhonePassesAtHttpLayer() throws Exception {
+        final JsonNode data = submitRegisterWithPhone(uscc(42), "座机格式演示公司", "0571-87654321");
+
+        assertThat(data.get("subjectNo").asText()).matches("S\\d{14}");
+    }
+
+    /** 双凭证匹配：仅返回最小必要五字段，无联系人/电话/证照等敏感字段（规格行为 8 第 2 条）。 */
+    @Test
+    void progressQueryReturnsMinimalFieldsAndAuditsSuccess() throws Exception {
+        final JsonNode registered = submitRegister(uscc(43), "进度查询演示公司");
+        final String subjectNo = registered.get("subjectNo").asText();
+
+        mockMvc.perform(get(REGISTER_URL + "/" + subjectNo + "/progress")
+                        .header("X-Ctds-Subject", APPLICANT).header("X-Ctds-Roles", "applicant")
+                        .param("uscc", uscc(43)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("0"))
+                .andExpect(jsonPath("$.data.subjectNo").value(subjectNo))
+                .andExpect(jsonPath("$.data.subjectName").value("进度查询演示公司"))
+                .andExpect(jsonPath("$.data.subjectType").value("ENTERPRISE"))
+                .andExpect(jsonPath("$.data.status").value("PENDING_CERT"))
+                .andExpect(jsonPath("$.data.rejectReason").doesNotExist())
+                .andExpect(jsonPath("$.data.uscc").doesNotExist())
+                .andExpect(jsonPath("$.data.contactName").doesNotExist())
+                .andExpect(jsonPath("$.data.contactPhone").doesNotExist())
+                .andExpect(jsonPath("$.data.statusLogs").doesNotExist());
+
+        final JsonNode event = awaitEvent("subject.progress_query", "SUCCESS");
+        assertThat(event.get("actor").asText()).isEqualTo(APPLICANT);
+    }
+
+    @Test
+    void progressQueryNormalizesLowercaseUsccWithSpaces() throws Exception {
+        final JsonNode registered = submitRegister(uscc(44), "归一查询演示公司");
+
+        mockMvc.perform(get(REGISTER_URL + "/" + registered.get("subjectNo").asText() + "/progress")
+                        .header("X-Ctds-Subject", APPLICANT).header("X-Ctds-Roles", "applicant")
+                        .param("uscc", " " + uscc(44).toLowerCase() + " "))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.subjectName").value("归一查询演示公司"));
+    }
+
+    @Test
+    void progressQueryUnknownSubjectNoIsUniformMessage() throws Exception {
+        mockMvc.perform(get(REGISTER_URL + "/S20260913000099/progress")
+                        .header("X-Ctds-Subject", APPLICANT).header("X-Ctds-Roles", "applicant")
+                        .param("uscc", uscc(45)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("1000C0003"))
+                .andExpect(jsonPath("$.message").value("未查询到匹配的申请"));
+    }
+
+    /** 编号存在但信用代码不符：与"编号不存在"同文案防枚举，另落 DENIED 审计（hifi §3 留痕口径）。 */
+    @Test
+    void progressQueryUsccMismatchIsUniformMessageAndDeniedAudited() throws Exception {
+        createSubjectDirect(uscc(46), "凭证不符演示公司", SubjectStatus.PENDING_CERT, "S20260913003501");
+
+        mockMvc.perform(get(REGISTER_URL + "/S20260913003501/progress")
+                        .header("X-Ctds-Subject", APPLICANT).header("X-Ctds-Roles", "applicant")
+                        .param("uscc", "91330100MA27X8ABEF"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("1000C0003"))
+                .andExpect(jsonPath("$.message").value("未查询到匹配的申请"));
+
+        final JsonNode denied = awaitEvent("subject.progress_query", "DENIED");
+        assertThat(denied.get("detail").get("reason").asText()).isEqualTo("progress_denied");
+    }
+
+    @Test
+    void progressQueryMalformedOrMissingUsccIsParamInvalid() throws Exception {
+        mockMvc.perform(get(REGISTER_URL + "/S20260913000099/progress")
+                        .header("X-Ctds-Subject", APPLICANT).header("X-Ctds-Roles", "applicant")
+                        .param("uscc", "91330100MA27X8AB"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("1000C0001"))
+                .andExpect(jsonPath("$.message").value("统一社会信用代码格式不正确"));
+
+        mockMvc.perform(get(REGISTER_URL + "/S20260913000099/progress")
+                        .header("X-Ctds-Subject", APPLICANT).header("X-Ctds-Roles", "applicant"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("1000C0001"))
+                .andExpect(jsonPath("$.message").value("统一社会信用代码不能为空"));
+    }
+
+    @Test
+    void progressQueryRejectedSubjectReturnsRejectReason() throws Exception {
+        createSubjectDirect(uscc(47), "驳回查询演示公司", SubjectStatus.PENDING_CERT, "S20260913003601");
+        appendRejectedTransition("S20260913003601");
+
+        mockMvc.perform(get(REGISTER_URL + "/S20260913003601/progress")
+                        .header("X-Ctds-Subject", APPLICANT).header("X-Ctds-Roles", "applicant")
+                        .param("uscc", uscc(47)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("REJECTED"))
+                .andExpect(jsonPath("$.data.rejectReason").value("材料不齐全，予以驳回"));
+    }
+
+    @Test
+    void progressQueryUnauthenticatedIsUnauthorized() throws Exception {
+        mockMvc.perform(get(REGISTER_URL + "/S20260913000099/progress")
+                        .param("uscc", uscc(45)))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("1000C0002"));
+    }
+
     /** 仓储直造主体（含初始留痕），绕开幂等结果缓存——供重报/重复注册拒绝类用例使用。 */
     private void createSubjectDirect(final String uscc, final String subjectName, final SubjectStatus status,
             final String subjectNo) {
@@ -399,10 +521,15 @@ class SubjectRegistrationIntegrationTest {
     }
 
     private JsonNode submitRegister(final String uscc, final String subjectName) throws Exception {
+        return submitRegisterWithPhone(uscc, subjectName, "13800001234");
+    }
+
+    private JsonNode submitRegisterWithPhone(final String uscc, final String subjectName,
+            final String contactPhone) throws Exception {
         final MvcResult result = mockMvc.perform(post(REGISTER_URL)
                         .header("X-Ctds-Subject", APPLICANT).header("X-Ctds-Roles", "applicant")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(registerBody(uscc, subjectName)))
+                        .content(registerBody(uscc, subjectName, contactPhone)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value("0"))
                 .andReturn();
@@ -419,9 +546,23 @@ class SubjectRegistrationIntegrationTest {
     }
 
     private String registerBody(final String uscc, final String subjectName) {
+        return registerBody(uscc, subjectName, "13800001234");
+    }
+
+    private String registerBody(final String uscc, final String subjectName, final String contactPhone) {
         return "{\"subjectName\":\"" + subjectName + "\",\"uscc\":\"" + uscc + "\",\"subjectType\":\"ENTERPRISE\","
-                + "\"regAddress\":\"杭州市XX区XX路88号\",\"contactName\":\"张三\",\"contactPhone\":\"13800001234\","
-                + "\"adminAccount\":\"admin001\"}";
+                + "\"regAddress\":\"杭州市XX区XX路88号\",\"contactName\":\"张三\",\"contactPhone\":\"" + contactPhone
+                + "\",\"adminAccount\":\"admin001\"}";
+    }
+
+    /** 按真实状态机路径造驳回态（PENDING_CERT→待审核→已驳回，appendTransition 状态门槛要求逐段推进）。 */
+    private void appendRejectedTransition(final String subjectNo) {
+        final Subject subject = subjectRepository.findBySubjectNo(subjectNo).orElseThrow();
+        final LocalDateTime rejectedAt = LocalDateTime.now();
+        subjectRepository.appendTransition(subject.id(), new StatusTransition(SubjectStatus.PENDING_CERT,
+                SubjectStatus.PENDING_REVIEW, TriggerRole.SYSTEM, "applicant-01", null, rejectedAt));
+        subjectRepository.appendTransition(subject.id(), new StatusTransition(SubjectStatus.PENDING_REVIEW,
+                SubjectStatus.REJECTED, TriggerRole.REVIEWER, "reviewer-01", "材料不齐全，予以驳回", rejectedAt));
     }
 
     /** 合法 18 位统一社会信用代码（2+6+10，按测试序号区分），如 91330100MA27X8AB01。 */
@@ -441,6 +582,11 @@ class SubjectRegistrationIntegrationTest {
     }
 
     private JsonNode awaitEvent(final String action) throws Exception {
+        return awaitEvent(action, null);
+    }
+
+    /** 轮询审计文件直至出现指定 action（可再按 outcome 过滤，避免同类 action 多用例串扰）。 */
+    private JsonNode awaitEvent(final String action, final String outcome) throws Exception {
         for (int i = 0; i < 40; i++) {
             if (Files.exists(auditDir)) {
                 try (Stream<Path> files = Files.list(auditDir)) {
@@ -449,7 +595,8 @@ class SubjectRegistrationIntegrationTest {
                     for (final Path file : auditFiles) {
                         for (final String line : Files.readAllLines(file)) {
                             final JsonNode node = MAPPER.readTree(line);
-                            if (action.equals(node.get("action").asText())) {
+                            if (action.equals(node.get("action").asText())
+                                    && (outcome == null || outcome.equals(node.get("outcome").asText()))) {
                                 return node;
                             }
                         }
@@ -458,6 +605,7 @@ class SubjectRegistrationIntegrationTest {
             }
             Thread.sleep(50);
         }
-        throw new AssertionError("2 秒内审计未出现 action=" + action);
+        throw new AssertionError(
+                "2 秒内审计未出现 action=" + action + (outcome == null ? "" : " outcome=" + outcome));
     }
 }

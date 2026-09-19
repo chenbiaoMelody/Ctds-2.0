@@ -1,6 +1,7 @@
 package com.ctds.subject.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -12,6 +13,7 @@ import static org.mockito.Mockito.when;
 import com.ctds.common.errorcode.BizException;
 import com.ctds.common.errorcode.ErrorCodes;
 import com.ctds.common.logging.AuditEvent;
+import com.ctds.common.logging.AuditOutcome;
 import com.ctds.common.logging.AuditRecorder;
 import com.ctds.subject.domain.StatusTransition;
 import com.ctds.subject.domain.Subject;
@@ -198,6 +200,134 @@ class SubjectRegistrationServiceTest {
 
         assertThat(detail.subject()).isEqualTo(pending);
         assertThat(detail.transitions()).isEqualTo(logs);
+    }
+
+    // ==== CHG-C-1.1-V1.2：联系电话双格式（规格行为 1 第 6 条，hifi §2 规则表） ====
+
+    @Test
+    void validPhoneFormatsPassValidation() {
+        final String[] validPhones = {"13800001234", "0571-87654321", "010-12345678", "0571-1234567"};
+        for (final String phone : validPhones) {
+            final RegisterCommand command = new RegisterCommand("示例数据科技有限公司", USCC, "ENTERPRISE",
+                    "杭州市XX区XX路88号", "张三", phone, "admin001");
+
+            assertThatCode(() -> service.register(command)).doesNotThrowAnyException();
+        }
+    }
+
+    @Test
+    void invalidPhoneFormatsAreRejectedWithFormatMessage() {
+        final String[] invalidPhones = {"12345678901", "1380000123", "057187654321", "测试电话",
+                "0571-87654321#8001"};
+        for (final String phone : invalidPhones) {
+            final RegisterCommand bad = new RegisterCommand("示例数据科技有限公司", USCC, "ENTERPRISE",
+                    "杭州市XX区XX路88号", "张三", phone, "admin001");
+
+            assertThatThrownBy(() -> service.register(bad))
+                    .isInstanceOf(BizException.class)
+                    .hasMessageContaining("联系电话格式不正确（手机 11 位或 区号-座机）");
+        }
+        verify(repository, never()).create(any(), any());
+    }
+
+    /** 管理员账号规则 V1.0 既有（规格 V1.2 第 7 条补写），本用例锁定边界防回归（hifi §5）。 */
+    @Test
+    void adminAccountBoundaryLengthsAreLockedByExistingRule() {
+        when(repository.findByUscc(USCC)).thenReturn(Optional.empty());
+        when(repository.nextDailySeq(any())).thenReturn(1);
+
+        assertThatCode(() -> service.register(new RegisterCommand("示例数据科技有限公司", USCC, "ENTERPRISE",
+                "杭州市XX区XX路88号", "张三", "13800001234", "a".repeat(64))))
+                .doesNotThrowAnyException();
+        assertThatThrownBy(() -> service.register(new RegisterCommand("示例数据科技有限公司", USCC, "ENTERPRISE",
+                "杭州市XX区XX路88号", "张三", "13800001234", "a".repeat(65))))
+                .isInstanceOf(BizException.class)
+                .hasMessageContaining("管理员账号不合法");
+        assertThatThrownBy(() -> service.register(new RegisterCommand("示例数据科技有限公司", USCC, "ENTERPRISE",
+                "杭州市XX区XX路88号", "张三", "13800001234", "管理员账号")))
+                .isInstanceOf(BizException.class)
+                .hasMessageContaining("管理员账号不合法");
+    }
+
+    // ==== CHG-C-1.1-V1.2：入驻进度自助查询（规格行为 8；凭证断言取代归属断言，hifi §3） ====
+
+    @Test
+    void progressMatchingUsccReturnsMinimalFieldsWithoutSensitiveData() {
+        final Subject pending = subject(SubjectStatus.PENDING_CERT);
+        when(repository.findBySubjectNo(SUBJECT_NO)).thenReturn(Optional.of(pending));
+
+        final ProgressResult result = service.progress(SUBJECT_NO, USCC);
+
+        assertThat(result.subjectNo()).isEqualTo(SUBJECT_NO);
+        assertThat(result.subjectName()).isEqualTo("原主体名称");
+        assertThat(result.subjectType()).isEqualTo(SubjectType.ENTERPRISE);
+        assertThat(result.status()).isEqualTo(SubjectStatus.PENDING_CERT);
+        assertThat(result.rejectReason()).isNull();
+        final ArgumentCaptor<AuditEvent> audit = ArgumentCaptor.forClass(AuditEvent.class);
+        verify(auditRecorder).record(audit.capture());
+        assertThat(audit.getValue().action()).isEqualTo("subject.progress_query");
+        assertThat(audit.getValue().outcome()).isEqualTo(AuditOutcome.SUCCESS);
+    }
+
+    @Test
+    void progressNormalizesLowercaseAndWhitespaceUscc() {
+        final Subject pending = subject(SubjectStatus.PENDING_CERT);
+        when(repository.findBySubjectNo(SUBJECT_NO)).thenReturn(Optional.of(pending));
+
+        final ProgressResult result = service.progress(SUBJECT_NO, " " + USCC.toLowerCase() + " ");
+
+        assertThat(result.subjectNo()).isEqualTo(SUBJECT_NO);
+    }
+
+    @Test
+    void progressMalformedUsccIsParamInvalidWithoutDbAccess() {
+        assertThatThrownBy(() -> service.progress(SUBJECT_NO, "91330100MA27X8ABC"))
+                .isInstanceOf(BizException.class)
+                .satisfies(e -> assertThat(((BizException) e).getErrorCode())
+                        .isEqualTo(ErrorCodes.PARAM_INVALID));
+        verify(repository, never()).findBySubjectNo(any());
+    }
+
+    @Test
+    void progressUnknownSubjectNoIsUniformNotFoundWithoutDeniedAudit() {
+        when(repository.findBySubjectNo("S20260913000099")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.progress("S20260913000099", USCC))
+                .isInstanceOf(BizException.class)
+                .satisfies(e -> assertThat(((BizException) e).getErrorCode())
+                        .isEqualTo(ErrorCodes.RESOURCE_NOT_FOUND))
+                .hasMessage("未查询到匹配的申请");
+        verify(auditRecorder, never()).record(any(AuditEvent.class));
+    }
+
+    @Test
+    void progressUsccMismatchIsDeniedAndAuditedWithUniformMessage() {
+        final Subject pending = subject(SubjectStatus.PENDING_CERT);
+        when(repository.findBySubjectNo(SUBJECT_NO)).thenReturn(Optional.of(pending));
+
+        assertThatThrownBy(() -> service.progress(SUBJECT_NO, "91330100MA27X8ABEF"))
+                .isInstanceOf(BizException.class)
+                .satisfies(e -> assertThat(((BizException) e).getErrorCode())
+                        .isEqualTo(ErrorCodes.RESOURCE_NOT_FOUND))
+                .hasMessage("未查询到匹配的申请");
+        final ArgumentCaptor<AuditEvent> audit = ArgumentCaptor.forClass(AuditEvent.class);
+        verify(auditRecorder).record(audit.capture());
+        assertThat(audit.getValue().outcome()).isEqualTo(AuditOutcome.DENIED);
+        assertThat(audit.getValue().detail()).containsEntry("reason", "progress_denied");
+    }
+
+    @Test
+    void progressRejectedSubjectReturnsLatestRejectRemark() {
+        final Subject rejected = subject(SubjectStatus.REJECTED);
+        when(repository.findBySubjectNo(SUBJECT_NO)).thenReturn(Optional.of(rejected));
+        when(repository.findLatestTransition(rejected.id())).thenReturn(Optional.of(
+                new StatusTransition(SubjectStatus.PENDING_REVIEW, SubjectStatus.REJECTED,
+                        TriggerRole.REVIEWER, "reviewer-01", "材料不齐全，予以驳回", LocalDateTime.now())));
+
+        final ProgressResult result = service.progress(SUBJECT_NO, USCC);
+
+        assertThat(result.status()).isEqualTo(SubjectStatus.REJECTED);
+        assertThat(result.rejectReason()).isEqualTo("材料不齐全，予以驳回");
     }
 
     private RegisterCommand command(final String subjectName) {

@@ -55,6 +55,19 @@ describe('路由表结构（H3）', () => {
     expect(notFound?.meta?.title).toBe('页面不存在')
   })
 
+  it('入驻进度查询路由（CHG-C-1.1-V1.2 行为 8-5）：menuOrder=7 追加菜单末尾、icon=Search、登录即可见无权限点', () => {
+    const progressRoute = children.find((r) => r.name === 'subject-progress')
+    expect(progressRoute?.path).toBe('subject/progress')
+    expect(progressRoute?.meta?.title).toBe('入驻进度查询')
+    expect(progressRoute?.meta?.menu).toBe(true)
+    expect(progressRoute?.meta?.menuOrder).toBe(7)
+    expect(progressRoute?.meta?.icon).toBe('Search')
+    expect(progressRoute?.meta?.permission).toBeUndefined()
+    // menuOrder=7 为全站菜单最大序号（lofi Q2-B：追加末尾，不重排既有菜单）
+    const menuOrders = children.filter((r) => r.meta?.menu === true).map((r) => r.meta?.menuOrder ?? 0)
+    expect(Math.max(...menuOrders)).toBe(7)
+  })
+
   it('登录页为顶层路由（WBS-2.4.12 B4）：不套布局、无菜单标记', () => {
     const login = routes.find((r) => r.name === 'login')
     expect(login).toBeDefined()
