@@ -31,6 +31,8 @@
 | B13 | **界面原型与界面说明书**：静态 HTML 原型（`docs/designs/WBS-3.1.3-原型-注册与认证.html`，纯前端内嵌演示数据，不连后端）+ 本文件"界面说明书"节；真实 Vue 页面随 3.1.5（lofi 待确认 2 口径） | 行为 1/2/3 界面侧 | 人工走查（PO 浏览器打开原型核对交互与文案） |
 | B14 | **依赖登记**：新增内部模块依赖 `common-crypto`、`std-adapter`（均 2.0.0-SNAPSHOT，有先例：kms 用 crypto、example-service 用 std-adapter）；multipart 配置随 Boot 内置，无新外部依赖，`docs/dependencies.md` 无需新增条目 | 章程 4.3 | 人工核对（文档级） |
 
+> **补正说明（2026-09-19，DB-21，随清债小卡 `docs/tasks/DB-17-21-清债小卡-2026-09-19.md`）**：B6 原文"姓名/证件号校验位合法 + 姓名与证照识别值一致，否则 1004B0004"与实现不符——实现（`CertificationService.requireIdChecksum`，DB-05 交付）对校验位非法返回参数类错误 **1000C0001**；**1004B0004 语义收窄为"法人姓名与证照识别值不一致"**。本补正仅更正错误码落点表述，不改已确认设计的校验行为本身（沿文档补正先例，代码零改动）。
+
 ## 库表设计（编码契约 = 本节定稿；Flyway `V2__add_certification_tables.sql`，库 `ctds_subject`）
 
 ```sql

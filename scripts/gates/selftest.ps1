@@ -11,6 +11,12 @@
 #                                    committed dev logs MUST be scanned again)
 #   S7 a stage throwing (unreadable ADR file) -> the outer fallback records a runner ERROR row, the
 #                                    report is STILL produced and the exit code is 2 (never 1)
+#   S8 devLogNaming FAIL + invalid JAVA_HOME ERRORs coexist -> exit 1, verdict "RED (also ...)"
+#                                    (the R2 anchor, DB-17 N1: a real red light must never be masked
+#                                    by environment/config errors - now asserted on every run)
+#   S9 Maven goals containing an illegal character -> that stage reports ERROR "NOT executed"
+#                                    (the R5 anchor, DB-17 N2: a command is never launched from an
+#                                    illegal config; regression of the allowlist order fails here)
 # How: every scenario builds a hermetic fixture repo under %TEMP% (git init + git add, cheap stages
 # only), generates its config FROM THE REAL gates-config.json (so the real exclude list is what gets
 # exercised), runs scripts/gates/run-gates.ps1 against it and asserts on the report file / stdout /
@@ -252,6 +258,57 @@ try {
     Assert-Contains $repText "-> ERROR (runner crashed" "S7 verdict says the runner crashed - not that the code is bad"
     Assert-Contains $repText "- ExitCode: 2" "S7 the report declares exit code 2 (consistent with the process)"
 } finally { $lockStream.Close() }
+
+# ---------- S8: FAIL + ERROR coexist -> RED/1 (R2 anchor, DB-17 N1) ----------
+Write-Output ""
+Write-Output "S8 [naming FAIL + bad JAVA_HOME ERRORs] expect: exit 1, verdict 'RED (also ...)' - env errors must NOT mask the red light"
+$fix = New-Fixture "s8"
+Initialize-FixtureGit $fix
+# 真红灯：一个不符合命名规则的入库开发日志（devLogNamingCheck FAIL）
+[System.IO.File]::WriteAllText((Join-Path $fix "docs\logs\zz-bad-log-name.md"), "# fixture bad log name" + [Environment]::NewLine, $utf8NoBom)
+# 环境错误：Maven 阶段启用但 JAVA_HOME 指向不存在路径（compile/lint/unitTest 各记一条 ERROR）。
+# 与 S3 同构：必须先接管 $env:JAVA_HOME，否则本机真实 JAVA_HOME 会压过配置里的假路径（真跑 mvn）
+$savedJavaHome = $env:JAVA_HOME
+Remove-Item Env:JAVA_HOME -ErrorAction SilentlyContinue
+try {
+$cfg = New-FixtureConfig $fix "cfg-s8.json" $true (Join-Path $fix "no-such-jdk") $null
+$rep = Join-Path $script:workDir "s8-report.md"
+$r = Invoke-Runner $fix $cfg $rep "selftest-s8-fail-plus-error"
+Assert-True ($r.ExitCode -eq 1) ("S8 exit code 1 (got " + $r.ExitCode + ")")
+$repText = Read-Report $rep
+Assert-Contains $repText "| devLogNamingCheck | FAIL |" "S8 the real red light (bad log name) is present"
+Assert-Contains $repText "zz-bad-log-name" "S8 the FAIL is attributable to the injected file (not another FAIL source)"
+Assert-Contains $repText "| compile | ERROR |" "S8 the environment ERROR (bad JAVA_HOME) is present"
+Assert-Contains $repText "JAVA_HOME not found" "S8 the ERROR names its cause"
+Assert-Contains $repText "-> RED (also" "S8 verdict is RED with the ERROR count visible (not a masked GREEN/ERROR-only run)"
+} finally {
+    if ($savedJavaHome) { $env:JAVA_HOME = $savedJavaHome }
+}
+
+# ---------- S9: illegal chars in Maven goals -> stage SKIPPED, command NOT executed (R5 anchor, DB-17 N2) ----------
+Write-Output ""
+Write-Output "S9 [Maven goals with illegal char] expect: compile ERROR 'NOT executed' (a command is never launched from an illegal config)"
+$fix = New-Fixture "s9"
+Initialize-FixtureGit $fix
+$savedJavaHome = $env:JAVA_HOME
+Remove-Item Env:JAVA_HOME -ErrorAction SilentlyContinue
+try {
+$cfg = New-FixtureConfig $fix "cfg-s9.json" $true (Join-Path $fix "no-such-jdk") $null
+# 在派生配置上注入 cmd.exe 元字符（'&' 不在 allowlist 内）；假 JAVA_HOME 使该断言同时对
+# "allowlist 检查被移除/被挪到 JAVA_HOME 检查之后"两类回归敏感（任一回归都会失去 NOT executed 行文）
+$cfgObj = ConvertFrom-Json -InputObject ([System.IO.File]::ReadAllText($cfg, [System.Text.Encoding]::UTF8))
+$cfgObj.stages.compile.goals = "clean package & whoami"
+[System.IO.File]::WriteAllText($cfg, ($cfgObj | ConvertTo-Json -Depth 10), $utf8NoBom)
+$rep = Join-Path $script:workDir "s9-report.md"
+$r = Invoke-Runner $fix $cfg $rep "selftest-s9-illegal-goals"
+Assert-True ($r.ExitCode -eq 2) ("S9 exit code 2 (got " + $r.ExitCode + ")")
+$repText = Read-Report $rep
+Assert-Contains $repText "| compile | ERROR |" "S9 compile reports ERROR (stage refused)"
+Assert-Contains $repText "stage SKIPPED, command NOT executed" "S9 the R5 promise: no command is launched from an illegal config"
+Assert-Contains $repText "stages.compile.goals" "S9 the ERROR names the offending config field"
+} finally {
+    if ($savedJavaHome) { $env:JAVA_HOME = $savedJavaHome }
+}
 
 } catch {
     Write-Output ""
