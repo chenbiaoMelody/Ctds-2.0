@@ -18,3 +18,7 @@ ctds:
   demo:
     # 迁移演示端点/仓储随本 profile 启用（与 profile 双保险，见 WBS-2.4.10-hifi B5/B6）
     db-enabled: true
+
+server:
+  # AUD-03 演示期安全边界 = 网络隔离：服务仅绑定回环地址，不得对外暴露端口（ADR-016 §2.7）
+  address: 127.0.0.1
