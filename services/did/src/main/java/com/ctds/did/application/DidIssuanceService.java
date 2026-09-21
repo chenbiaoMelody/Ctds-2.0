@@ -5,6 +5,7 @@ import com.ctds.common.errorcode.BizException;
 import com.ctds.did.domain.DidErrorCodes;
 import com.ctds.did.domain.DidIdentity;
 import com.ctds.did.domain.DidKmsClient;
+import com.ctds.did.domain.DidOperationLog;
 import com.ctds.did.domain.DidRepository;
 import com.ctds.did.domain.DidStatus;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -28,6 +29,7 @@ public class DidIssuanceService {
     private static final Logger log = LoggerFactory.getLogger(DidIssuanceService.class);
     private static final String OPERATION_ISSUE = "ISSUE";
     private static final String OPERATION_REISSUE = "REISSUE";
+    private static final String OPERATION_REVOKE = "REVOKE";
     private static final String SYSTEM_OPERATOR = "SYSTEM";
     private static final String DID_PREFIX = "did:ctds:";
     private static final String KEY_REF_PREFIX = "did-";
@@ -57,7 +59,7 @@ public class DidIssuanceService {
             return completePending(identity, OPERATION_ISSUE, SYSTEM_OPERATOR);
         }
         final DidIdentity pending = repository.createPending(subjectNo, repository.nextIssuanceSeq(subjectNo),
-                LocalDateTime.now());
+                now());
         return completePending(pending, OPERATION_ISSUE, SYSTEM_OPERATOR);
     }
 
@@ -75,7 +77,7 @@ public class DidIssuanceService {
         repository.findLatestRevoked(subjectNo)
                 .orElseThrow(() -> new BizException(DidErrorCodes.DID_NO_REVOKED_TO_REISSUE, "无已吊销记录可重签"));
         final int issuanceSeq = repository.nextIssuanceSeq(subjectNo);
-        final DidIdentity pending = repository.createPending(subjectNo, issuanceSeq, LocalDateTime.now());
+        final DidIdentity pending = repository.createPending(subjectNo, issuanceSeq, now());
         return completePending(pending, OPERATION_REISSUE, operator());
     }
 
@@ -94,8 +96,9 @@ public class DidIssuanceService {
         final DidIdentity identity = repository.findByDid(did)
                 .filter(d -> d.status() == DidStatus.ACTIVE)
                 .orElseThrow(() -> new BizException(DidErrorCodes.DID_REVOKE_NOT_ACTIVE, "非有效 DID 不可吊销"));
-        final LocalDateTime now = LocalDateTime.now();
-        repository.revoke(identity.id(), identity.subjectNo(), did, operator(), reason, now);
+        final LocalDateTime now = now();
+        repository.revoke(identity.id(), new DidOperationLog(did, identity.subjectNo(), OPERATION_REVOKE,
+                operator(), reason, null, DidStatus.ACTIVE.name(), DidStatus.REVOKED.name(), now));
         return new RevocationResult(did, DidStatus.REVOKED, now);
     }
 
@@ -109,11 +112,12 @@ public class DidIssuanceService {
             log.warn("DID 签发失败（KMS 不可达等），记录停留待签发: subjectNo={}", pending.subjectNo(), e);
             return IssuanceResult.pending();
         }
-        final LocalDateTime now = LocalDateTime.now();
+        final LocalDateTime now = now();
         final String did = didOf(pending.subjectNo(), pending.issuanceSeq());
         final String documentJson = buildDocument(did, pending.subjectNo(), publicKeyHex, now);
-        repository.completeIssuance(pending.id(), pending.subjectNo(), operation, did, publicKeyHex,
-                keyRef, documentJson, operator, now);
+        repository.completeIssuance(pending.id(), publicKeyHex, documentJson,
+                new DidOperationLog(did, pending.subjectNo(), operation, operator, null, keyRef,
+                        DidStatus.PENDING_ISSUE.name(), DidStatus.ACTIVE.name(), now));
         return IssuanceResult.active(did, keyRef, now);
     }
 
@@ -151,6 +155,11 @@ public class DidIssuanceService {
     private static String operator() {
         final String subject = AuthContext.subject();
         return subject == null ? "anonymous" : subject;
+    }
+
+    /** 应用时钟（截断到秒：DID 文档与留痕的时间格式固定为秒级 ISO-8601，hifi §2.3 示例口径）。 */
+    private static LocalDateTime now() {
+        return LocalDateTime.now().withNano(0);
     }
 
     private static String requireSubjectNo(final String subjectNo) {

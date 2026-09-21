@@ -32,8 +32,8 @@ C-1.2 分布式数字身份（DID）的第一个实施包（WBS-3.1.8）新建�
 
 - `did_identity`（身份注册表，唯一事实源）：`subject_no`/`issuance_seq`（从 1 起，重签 +1，旧标识永不复用）/`did`/`status`（`PENDING_ISSUE` 待签发 / `ACTIVE` 有效 / `REVOKED` 已吊销）/`public_key_hex`/`key_ref`（管理面留痕，非公开）/`document_json`（公开要素，无私钥/L4）/`guard_key`（唯一性守卫列：非吊销行 = subject_no，吊销行 = NULL）。
 - 唯一键：`uk_did (did)`、`uk_guard (guard_key)`——**一主体同期唯一有效/待签发身份**由 `uk_guard` 保证（MySQL 唯一索引允许多个 NULL，吊销行 guard_key=NULL 可累积）。
-- `did_operation_log`（留痕）：`operation`（`ISSUE`/`REISSUE`/`REVOKE`）/`operator`/`reason`（仅 REVOKE）/`key_ref`（签发/重签填）/`status_from`/`status_to`/`occurred_at`——一表承载签发四要素与吊销五要素，nullable 列区分。
-- **时间戳一律经应用时钟写入**（方法参数 now/occurredAt），不走 DB NOW()（DB-22"两把钟"教训）。
+- `did_operation_log`（留痕）：`operation`（`ISSUE`/`REISSUE`/`REVOKE`）/`operator`/`reason`（仅 REVOKE）/`key_ref`（签发/重签填）/`status_from`/`status_to`/`occurred_at`——一表承载签发四要素与吊销五要素，nullable 列区分（另有物理索引 `idx_did_op_log_subject`，仅查询性能、无行为差异）。
+- **时间戳一律经应用时钟写入**（方法参数 now/occurredAt），不走 DB NOW()（DB-22"两把钟"教训）；**DID 文档与留痕时间固定为秒级 ISO-8601**（应用时钟截断到秒，与 hifi §2.3 示例口径一致）。
 - **DID 服务不重复校验主体状态**：主体是否"已入驻"由触发方（subject-service）保证，单一事实源在主体服务（避免两服务复制状态机）。
 
 ### 2.3 DID 标识格式与文档结构
@@ -71,8 +71,8 @@ C-1.2 分布式数字身份（DID）的第一个实施包（WBS-3.1.8）新建�
 
 ### 2.8 私钥零明文（三面锚定，行为 1 规则 3）
 
-- **库表**：`did_identity`/`did_operation_log` 无私钥列（仅公钥 hex + 密钥引用）；KMS `kms_key_version.material_cipher` 存根密钥 SM4 信封（密文非明文）。
-- **接口**：DID/KMS 接口响应无私钥/材料字段；KMS 无任何返回 SM2 私钥/材料的端点（`GET /material` 仅服务既有 SM4 数据密钥）。
+- **库表**：`did_identity`/`did_operation_log` 无私钥列（仅公钥 hex + 密钥引用）；KMS `kms_key_version.material_cipher` 存根密钥 SM4 信封（密文非明文，KMS 集成测试以根密钥解信封断言得 32 字节 D 值）。
+- **接口**：DID/KMS 接口响应无私钥/材料字段；KMS 无任何返回 SM2 私钥/材料的端点——**由代码门槛强制**（非注释断言）：`KeyManagementService` 的材料读取与轮换路径经 `requireDataKey` 校验 `key_type`，非 `SM4` 一律拒（1002C0001），故既有 `GET /api/v1/keys/{keyRef}/material` 与 `/rotations` **不覆盖 SM2 密钥对**（KMS 集成测试含回归锚点 + 合法 SM4 数据密钥的反向探针）。
 - **日志**：密钥编号/公钥可入日志，私钥 D 值禁入（`Sm2KeyPair.toString()` 显式脱敏）。
 
 ## 3. 影响

@@ -198,5 +198,10 @@ class KeyManagementServiceTest {
         public Optional<KeyPair> findKeyPair(final String keyRef) {
             return Optional.empty();
         }
+
+        @Override
+        public Optional<String> findKeyType(final String keyRef) {
+            return descriptors.containsKey(keyRef) ? Optional.of("SM4") : Optional.empty();
+        }
     }
 }

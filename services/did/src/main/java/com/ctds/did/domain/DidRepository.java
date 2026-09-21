@@ -28,14 +28,12 @@ public interface DidRepository {
     DidIdentity createPending(String subjectNo, int issuanceSeq, LocalDateTime now);
 
     /** 转有效 + 落签发/重签留痕（同事务，保证留痕四要素与状态变更原子）。 */
-    void completeIssuance(long identityId, String subjectNo, String operation, String did,
-                          String publicKeyHex, String keyRef, String documentJson,
-                          String operator, LocalDateTime occurredAt);
+    void completeIssuance(long identityId, String publicKeyHex, String documentJson,
+                          DidOperationLog operationLog);
 
     /** 主体历史最大签发序号 + 1（重签用）。 */
     int nextIssuanceSeq(String subjectNo);
 
-    /** 吊销：ACTIVE → REVOKED + 释放 guard_key + 落吊销留痕（同事务）。 */
-    void revoke(long identityId, String subjectNo, String did, String operator, String reason,
-                LocalDateTime occurredAt);
+    /** 吊销：ACTIVE → REVOKED + 释放 guard_key + 落吊销留痕（同事务；带 status 乐观门槛）。 */
+    void revoke(long identityId, DidOperationLog operationLog);
 }

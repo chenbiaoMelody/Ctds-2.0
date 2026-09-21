@@ -18,7 +18,7 @@ public final class DidErrorCodes {
     public static final ErrorCode DID_NO_PENDING_ISSUANCE = ErrorCode.of("1005B0001");
     /** 无已吊销记录可重签。→ 400 */
     public static final ErrorCode DID_NO_REVOKED_TO_REISSUE = ErrorCode.of("1005B0002");
-    /** 签发内部失败（KMS 不可达等；触发接口将其收敛为 PENDING_ISSUE 业务态，不直出——hifi §5）。→ 500 */
+    /** 签发内部失败：KMS 不可达经触发接口收敛为 PENDING_ISSUE（不直出）；文档组装/激活等内部异常按本码直出 500。→ 500 */
     public static final ErrorCode DID_ISSUANCE_INTERNAL_ERROR = ErrorCode.of("1005S0001");
 
     private DidErrorCodes() {

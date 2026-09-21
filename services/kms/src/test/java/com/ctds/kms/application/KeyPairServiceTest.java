@@ -163,5 +163,11 @@ class KeyPairServiceTest {
         public Optional<KeyPair> findKeyPair(final String keyRef) {
             return Optional.ofNullable(pairs.get(keyRef));
         }
+
+        @Override
+        public Optional<String> findKeyType(final String keyRef) {
+            final KeyPair pair = pairs.get(keyRef);
+            return pair == null ? Optional.empty() : Optional.of(pair.keyType());
+        }
     }
 }

@@ -1,7 +1,8 @@
 spring:
   application:
     name: did-service
-  # 数据库迁移工具链（WBS 2.4.10 / ADR-009）：默认 profile 无数据库照常启动，mysql profile 才启用数据源 + Flyway
+  # 数据库迁移工具链（WBS 2.4.10 / ADR-009）：**默认 profile 不可启动**——仓储构造器依赖 JdbcClient，
+  # 排除 DataSourceAutoConfiguration 后无该 Bean（同族口径见 kms DB-24）；演示与服务一律 mysql profile
   autoconfigure:
     exclude:
       - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration

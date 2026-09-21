@@ -193,6 +193,11 @@ class DidIssuanceIntegrationTest {
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT COUNT(1) FROM did_identity WHERE subject_no = ? AND guard_key IS NOT NULL",
                 Integer.class, subjectNo)).isZero();
+
+        // 不可逆：不存在"恢复"端点（规格行为 4 验收标准 5）
+        assertThat(mockMvc.perform(post(BASE + "/" + did + "/recovery")
+                        .header("X-Ctds-Subject", ADMIN).header("X-Ctds-Roles", "admin"))
+                .andReturn().getResponse().getStatus()).isEqualTo(404);
     }
 
     @Test

@@ -3,6 +3,7 @@ package com.ctds.did.infrastructure;
 import com.ctds.common.errorcode.BizException;
 import com.ctds.did.domain.DidErrorCodes;
 import com.ctds.did.domain.DidIdentity;
+import com.ctds.did.domain.DidOperationLog;
 import com.ctds.did.domain.DidRepository;
 import com.ctds.did.domain.DidStatus;
 import java.sql.ResultSet;
@@ -86,22 +87,17 @@ public class DidJdbcRepository implements DidRepository {
 
     @Override
     @Transactional
-    public void completeIssuance(final long identityId, final String subjectNo, final String operation,
-            final String did, final String publicKeyHex, final String keyRef, final String documentJson,
-            final String operator, final LocalDateTime occurredAt) {
+    public void completeIssuance(final long identityId, final String publicKeyHex, final String documentJson,
+            final DidOperationLog operationLog) {
         final int updated = jdbc.sql("UPDATE did_identity SET did = ?, status = ?, public_key_hex = ?, "
                         + "key_ref = ?, document_json = ?, updated_at = ? WHERE id = ?")
-                .params(did, DidStatus.ACTIVE.name(), publicKeyHex, keyRef, documentJson,
-                        Timestamp.valueOf(occurredAt), identityId)
+                .params(operationLog.did(), DidStatus.ACTIVE.name(), publicKeyHex, operationLog.keyRef(),
+                        documentJson, Timestamp.valueOf(operationLog.occurredAt()), identityId)
                 .update();
         if (updated == 0) {
             throw new BizException(DidErrorCodes.DID_ISSUANCE_INTERNAL_ERROR, "签发处理失败，请重试");
         }
-        jdbc.sql("INSERT INTO did_operation_log (did, subject_no, operation, operator, reason, key_ref, "
-                        + "status_from, status_to, occurred_at) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?)")
-                .params(did, subjectNo, operation, operator, keyRef,
-                        DidStatus.PENDING_ISSUE.name(), DidStatus.ACTIVE.name(), Timestamp.valueOf(occurredAt))
-                .update();
+        insertOperationLog(operationLog);
     }
 
     @Override
@@ -115,19 +111,24 @@ public class DidJdbcRepository implements DidRepository {
 
     @Override
     @Transactional
-    public void revoke(final long identityId, final String subjectNo, final String did, final String operator,
-            final String reason, final LocalDateTime occurredAt) {
+    public void revoke(final long identityId, final DidOperationLog operationLog) {
+        // 带 status 乐观门槛：并发双吊销恰一人成功（败者 0 行 → 1005C0003，不落第二条 REVOKE 留痕）
         final int updated = jdbc.sql("UPDATE did_identity SET status = ?, guard_key = NULL, updated_at = ? "
-                        + "WHERE id = ?")
-                .params(DidStatus.REVOKED.name(), Timestamp.valueOf(occurredAt), identityId)
+                        + "WHERE id = ? AND status = ?")
+                .params(DidStatus.REVOKED.name(), Timestamp.valueOf(operationLog.occurredAt()), identityId,
+                        DidStatus.ACTIVE.name())
                 .update();
         if (updated == 0) {
             throw new BizException(DidErrorCodes.DID_REVOKE_NOT_ACTIVE, "非有效 DID 不可吊销");
         }
+        insertOperationLog(operationLog);
+    }
+
+    private void insertOperationLog(final DidOperationLog log) {
         jdbc.sql("INSERT INTO did_operation_log (did, subject_no, operation, operator, reason, key_ref, "
-                        + "status_from, status_to, occurred_at) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?)")
-                .params(did, subjectNo, "REVOKE", operator, reason,
-                        DidStatus.ACTIVE.name(), DidStatus.REVOKED.name(), Timestamp.valueOf(occurredAt))
+                        + "status_from, status_to, occurred_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+                .params(log.did(), log.subjectNo(), log.operation(), log.operator(), log.reason(),
+                        log.keyRef(), log.statusFrom(), log.statusTo(), Timestamp.valueOf(log.occurredAt()))
                 .update();
     }
 

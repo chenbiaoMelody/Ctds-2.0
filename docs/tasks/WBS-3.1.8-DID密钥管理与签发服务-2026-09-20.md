@@ -95,7 +95,11 @@
 **如何演示**：
 1. 启动三服务（主体 8080 / 密钥 8081 / DID 8082，均仅本机可访问，须用 mysql profile）；
 2. 走完"注册 → 认证 → 审核通过"（剧本 S1 步骤 1~3），随后调用 `GET`/查询可见该主体名下一条**有效** DID；
-3. **重复触发演示（S1 步骤 5）**：对同一主体重复调用 `POST /api/v1/did/issuances`（PowerShell `Invoke-RestMethod` 一行命令，随交付说明提供）——重复调用后仍只有**一条**有效 DID（幂等）；
+3. **重复触发演示（S1 步骤 5）**：对同一主体重复调用签发接口（幂等），命令原文：
+   ```powershell
+   Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8082/api/v1/did/issuances" -ContentType "application/json" -Body '{"subjectNo":"<主体申请编号>"}'
+   ```
+   重复调用后仍只有**一条**有效 DID（幂等）；响应 `code=0`、`data.did`/`data.keyRef` 不变。
 4. **吊销演示（S3）**：以运营管理员身份（`X-Ctds-Roles: admin`）调用 `POST /api/v1/did/{did}/revocation`，理由必填；吊销后解析可见"已吊销"且不可恢复；重签生成新身份。
 
 **有无注意事项**：

@@ -24,4 +24,7 @@ public interface KeyRepository {
 
     /** 按编号取 SM2 密钥对（含私钥 D 值信封，仅供签名时解密）。 */
     Optional<KeyPair> findKeyPair(String keyRef);
+
+    /** 密钥类型（SM4/SM2）；编号不存在 → empty（材料读取与轮换只服务 SM4 数据密钥）。 */
+    Optional<String> findKeyType(String keyRef);
 }

@@ -130,6 +130,14 @@ public class KeyJdbcRepository implements KeyRepository {
                 .optional();
     }
 
+    @Override
+    public Optional<String> findKeyType(final String keyRef) {
+        return jdbc.sql("SELECT key_type FROM kms_key WHERE key_ref = ?")
+                .param(keyRef)
+                .query(String.class)
+                .optional();
+    }
+
     private void insertVersion(final KeyVersion record) {
         try {
             jdbc.sql("INSERT INTO kms_key_version (key_ref, version, material_cipher, created_at) "

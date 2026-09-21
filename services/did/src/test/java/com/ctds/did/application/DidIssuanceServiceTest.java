@@ -243,14 +243,13 @@ class DidIssuanceServiceTest {
         }
 
         @Override
-        public void completeIssuance(final long identityId, final String subjectNo, final String operation,
-                final String did, final String publicKeyHex, final String keyRef, final String documentJson,
-                final String operator, final LocalDateTime occurredAt) {
+        public void completeIssuance(final long identityId, final String publicKeyHex, final String documentJson,
+                final DidOperationLog operationLog) {
             final DidIdentity old = rows.get(identityId);
-            rows.put(identityId, new DidIdentity(identityId, subjectNo, old.issuanceSeq(), did, DidStatus.ACTIVE,
-                    publicKeyHex, keyRef, documentJson, subjectNo, old.createdAt(), occurredAt));
-            logs.add(new DidOperationLog(did, subjectNo, operation, operator, null, keyRef,
-                    DidStatus.PENDING_ISSUE.name(), DidStatus.ACTIVE.name(), occurredAt));
+            rows.put(identityId, new DidIdentity(identityId, operationLog.subjectNo(), old.issuanceSeq(),
+                    operationLog.did(), DidStatus.ACTIVE, publicKeyHex, operationLog.keyRef(), documentJson,
+                    operationLog.subjectNo(), old.createdAt(), operationLog.occurredAt()));
+            logs.add(operationLog);
         }
 
         @Override
@@ -260,13 +259,12 @@ class DidIssuanceServiceTest {
         }
 
         @Override
-        public void revoke(final long identityId, final String subjectNo, final String did, final String operator,
-                final String reason, final LocalDateTime occurredAt) {
+        public void revoke(final long identityId, final DidOperationLog operationLog) {
             final DidIdentity old = rows.get(identityId);
-            rows.put(identityId, new DidIdentity(identityId, subjectNo, old.issuanceSeq(), did, DidStatus.REVOKED,
-                    old.publicKeyHex(), old.keyRef(), old.documentJson(), null, old.createdAt(), occurredAt));
-            logs.add(new DidOperationLog(did, subjectNo, "REVOKE", operator, reason, null,
-                    DidStatus.ACTIVE.name(), DidStatus.REVOKED.name(), occurredAt));
+            rows.put(identityId, new DidIdentity(identityId, operationLog.subjectNo(), old.issuanceSeq(),
+                    old.did(), DidStatus.REVOKED, old.publicKeyHex(), old.keyRef(), old.documentJson(), null,
+                    old.createdAt(), operationLog.occurredAt()));
+            logs.add(operationLog);
         }
     }
 }
