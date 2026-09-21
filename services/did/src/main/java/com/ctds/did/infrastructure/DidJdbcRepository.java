@@ -87,17 +87,29 @@ public class DidJdbcRepository implements DidRepository {
 
     @Override
     @Transactional
-    public void completeIssuance(final long identityId, final String publicKeyHex, final String documentJson,
+    public boolean completeIssuance(final long identityId, final String publicKeyHex, final String documentJson,
             final DidOperationLog operationLog) {
+        // 带 status 乐观门槛（与 revoke 对称）：并发双签发恰一人成功，败者不落第二条 ISSUE 留痕（hifi §6）
         final int updated = jdbc.sql("UPDATE did_identity SET did = ?, status = ?, public_key_hex = ?, "
-                        + "key_ref = ?, document_json = ?, updated_at = ? WHERE id = ?")
+                        + "key_ref = ?, document_json = ?, updated_at = ? WHERE id = ? AND status = ?")
                 .params(operationLog.did(), DidStatus.ACTIVE.name(), publicKeyHex, operationLog.keyRef(),
-                        documentJson, Timestamp.valueOf(operationLog.occurredAt()), identityId)
+                        documentJson, Timestamp.valueOf(operationLog.occurredAt()), identityId,
+                        DidStatus.PENDING_ISSUE.name())
                 .update();
         if (updated == 0) {
+            // 门槛拦截：行已被并发完成（ACTIVE → 幂等）或状态已变（REVOKED/不存在 → 内部错误）
+            final String status = jdbc.sql("SELECT status FROM did_identity WHERE id = ?")
+                    .param(identityId)
+                    .query(String.class)
+                    .optional()
+                    .orElse(null);
+            if (DidStatus.ACTIVE.name().equals(status)) {
+                return false;
+            }
             throw new BizException(DidErrorCodes.DID_ISSUANCE_INTERNAL_ERROR, "签发处理失败，请重试");
         }
         insertOperationLog(operationLog);
+        return true;
     }
 
     @Override

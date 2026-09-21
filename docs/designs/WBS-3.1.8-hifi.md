@@ -108,7 +108,7 @@
 | 方法 | 路径 | 权限 | 入参 | 出参（data） | 主要错误 |
 | --- | --- | --- | --- | --- | --- |
 | POST | `/api/v1/key-pairs` | `kms.admin` | `{keyRef}`（格式 `[A-Za-z0-9._-]+`≤64） | `{keyRef, publicKeyHex, createdAt}` | 1002B0001（编号已存在）、1002C0001 |
-| POST | `/api/v1/key-pairs/{keyRef}/signatures` | 无（内部签名面，回环边界） | `{data: Base64}` | `{keyRef, signature: Base64}`（SM2 DER 签名） | 1002B0002（编号不存在）、1002C0001、1002S0001 |
+| POST | `/api/v1/key-pairs/{keyRef}/signatures` | 无（内部签名面，回环边界） | `{data: Base64}` | `{keyRef, signature: Base64}`（SM2 DER 签名） | 1002B0002（编号不存在）、1002C0001 |
 
 - **私钥不出 KMS**：不提供任何返回 SM2 私钥/材料的端点（`GET /material` 仅服务既有 SM4 数据密钥，不覆盖 SM2 密钥对）。
 

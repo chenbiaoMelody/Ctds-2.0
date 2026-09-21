@@ -109,16 +109,33 @@ public class DidIssuanceService {
         try {
             publicKeyHex = kmsClient.createKeyPair(keyRef);
         } catch (final RuntimeException e) {
+            // 并发窗口：密钥已被并发请求创建（KMS 键号已存在）且行已由并发转有效 → 幂等返回既有结果
+            final Optional<DidIdentity> active = activeIdentity(pending.subjectNo());
+            if (active.isPresent()) {
+                return IssuanceResult.active(active.get().did(), active.get().keyRef(), active.get().updatedAt());
+            }
             log.warn("DID 签发失败（KMS 不可达等），记录停留待签发: subjectNo={}", pending.subjectNo(), e);
             return IssuanceResult.pending();
         }
         final LocalDateTime now = now();
         final String did = didOf(pending.subjectNo(), pending.issuanceSeq());
         final String documentJson = buildDocument(did, pending.subjectNo(), publicKeyHex, now);
-        repository.completeIssuance(pending.id(), publicKeyHex, documentJson,
+        final boolean completed = repository.completeIssuance(pending.id(), publicKeyHex, documentJson,
                 new DidOperationLog(did, pending.subjectNo(), operation, operator, null, keyRef,
                         DidStatus.PENDING_ISSUE.name(), DidStatus.ACTIVE.name(), now));
+        if (!completed) {
+            // 并发窗口：行已被并发请求完成（乐观门槛 0 行）→ 幂等返回既有 ACTIVE 结果，不落重复留痕
+            final DidIdentity active = activeIdentity(pending.subjectNo())
+                    .orElseThrow(() -> new BizException(DidErrorCodes.DID_ISSUANCE_INTERNAL_ERROR,
+                            "签发处理失败，请重试"));
+            return IssuanceResult.active(active.did(), active.keyRef(), active.updatedAt());
+        }
         return IssuanceResult.active(did, keyRef, now);
+    }
+
+    /** 主体当前有效 DID（幂等收敛回查；无有效行返回空）。 */
+    private Optional<DidIdentity> activeIdentity(final String subjectNo) {
+        return repository.findActiveOrPending(subjectNo).filter(i -> i.status() == DidStatus.ACTIVE);
     }
 
     private String buildDocument(final String did, final String subjectNo, final String publicKeyHex,

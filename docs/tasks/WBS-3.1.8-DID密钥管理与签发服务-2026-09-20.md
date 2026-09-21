@@ -30,16 +30,16 @@
 
 ---
 
-## 4 视角评审结论（循环 1/3，2026-09-21）
+## 4 视角评审结论（循环 2/3，2026-09-21）
 
 | 视角 | 结论 | 要点与处置 |
 | --- | --- | --- |
-| ① 规格与设计符合性（独立评审智能体） | **打回（P1×1）→ 修复后符合** | **P1**：KMS 既有未鉴权端点 `GET /api/v1/keys/{keyRef}/material` 可明文取回本次新增的 SM2 私钥 D 值（`material`/`rotate` 无 `key_type` 门槛，与 hifi §4.2/ADR-017 §2.8 断言冲突）→ **已修复**（`a1e3b98`：`KeyManagementService.requireDataKey` 强制 `key_type` 校验，非 SM4 → 1002C0001，含 `rotate` 路径）。P2×4 已处置：did 默认 profile 注释更正、KMS 集成锚点补齐、时间精度秒级固化、`DidOperationLog` 仓储化；P3×9 处置/留痕（吊销乐观门槛已加、1005S0001 码注据实、ADR 补索引、重放命令原文、"无恢复端点"断言等） |
-| ② 安全与供应链（独立评审智能体） | **有条件通过（无 P1）** | **P1 修复经独立复核闭合**（6 条绕过路径逐一排除：key_type 唯一写入点同事务/无 TOCTOU/current_version 无指向 SM2 材料路径/反向越界被拒/NULL fail-closed）。条件 P2×3 已处置：① 权限 401/403 负向锚点补齐（did 管理三端点 + kms 密钥对创建）；② 内部无鉴权面后果表征（ADR-017 §2.7 补记 + 交付说明：签名/签发能力可外借、私钥导出被堵死、解除条件=网关+令牌+服务间鉴权）；③ DB-24 修复约束登记（选项①必须同时补默认 profile 回环）。硬事实：零新依赖、`common/` 零改动、无敏感数据、无自研密码学 |
-| ③ 一致性与重复 | **通过（降级自检；独立评审待补）** | 因模型配额限流（重试无效）降级为主智能体自检，独立评审智能体③**待补**（留痕）。自检结论：横切能力全部复用（鉴权/错误码/幂等库表守卫）；三处同型 HTTP 客户端沿 `KmsKeyProvider` 先例（hifi 明示），**沉淀建议 3 条留痕**：服务间 HTTP 客户端上收 common、`operator()` 取值上收、kms 内 `requireKeyRef` 收敛。机器证据：checkstyle 0 违规、ArchUnit 3 规则绿 |
-| ④ 测试质量 | **通过（降级自检；独立评审待补）** | 因模型配额限流（重试无效）降级为主智能体自检，独立评审智能体④**待补**（留痕）。自检结论：B1~B7 全覆盖 + 反向探针齐备（uk_guard 直插拒绝 / 库表 64-hex 扫描+植入 / KMS 信封解出 32 字节断言 / `/material` 拒 SM2 锚点 / 401·403·404 负向锚点）；**did 行覆盖实测 92.8%**（≥80% 达标，瞬时 jacoco 0.8.12 测量，未引入项目依赖）。如实声明：本包测试与实现同批落盘，未严格执行"先 RED 后 GREEN"逐步序列，以反向探针 + 全绿 + 覆盖率补偿 |
+| ① 规格与设计符合性（独立评审智能体） | **打回（P1×1）→ 修复后符合** | **P1**：KMS 既有未鉴权端点 `GET /api/v1/keys/{keyRef}/material` 可明文取回本次新增的 SM2 私钥 D 值（`material`/`rotate` 无 `key_type` 门槛，与 hifi §4.2/ADR-017 §2.8 断言冲突）→ **已修复**（`a1e3b98`：`KeyManagementService.requireDataKey` 强制 `key_type` 校验，非 SM4 → 1002C0001，含 `rotate` 路径）。P2×4 已处置：did 默认 profile 注释更正、KMS 集成锚点补齐、时间精度秒级固化、`DidOperationLog` 仓储化；P3×9 处置/留痕（吊销乐观门槛已加、1005S0001 码注据实、ADR 补索引、重放命令原文、"无恢复端点"断言等）。循环 2 复验：completeIssuance 门槛修复与 hifi §6 并发兜底承诺一致，符合性不受影响 |
+| ② 安全与供应链（独立评审智能体） | **有条件通过（无 P1）** | **P1 修复经独立复核闭合**（6 条绕过路径逐一排除：key_type 唯一写入点同事务/无 TOCTOU/current_version 无指向 SM2 材料路径/反向越界被拒/NULL fail-closed）。条件 P2×3 已处置：① 权限 401/403 负向锚点补齐（did 管理三端点 + kms 密钥对创建）；② 内部无鉴权面后果表征（ADR-017 §2.7 补记 + 交付说明：签名/签发能力可外借、私钥导出被堵死、解除条件=网关+令牌+服务间鉴权）；③ DB-24 修复约束登记（选项①必须同时补默认 profile 回环）。硬事实：零新依赖、`common/` 零改动、无敏感数据、无自研密码学。循环 2 复验：本轮新增 completeIssuance 状态门槛为并发安全增强（与 revoke 对称），不改变安全边界 |
+| ③ 一致性与重复 | **通过（独立评审补派完成）** | 独立评审智能体实跑 checkstyle 0 违规 + 静态检索：横切能力全部复用（common-auth/common-errorcode/common-crypto/ApiResult）、三处 HTTP 客户端同构、ADR-017/015/016 与 hifi B1~B7 契约闭环、零自研密码学。**P2-1**（completeIssuance 缺并发乐观门槛，与 revoke 不对称）→ **已修复**（与评审④ P1-A 同根：`AND status='PENDING_ISSUE'` + 0 行回查 ACTIVE 幂等/其他 1005S0001）。P3×3 已处置：① 两 HTTP 客户端补 `statusCode != 200 → throw`（与 KmsKeyProvider 先例同构）；② hifi §4.2 签名错误表删实现不存在的 `1002S0001`；③ did pom 删未使用 `common-logging` 依赖。沉淀建议 3 条留痕（HTTP 客户端上收 common、`operator()`/`requireKeyRef` 收敛、审计语义口径固化）归 3.1.9+ 兑现 |
+| ④ 测试质量 | **打回（P1×1）→ 修复后通过（独立评审补派完成）** | 独立评审智能体核验：测试数量与覆盖率声明属实（did 23→28、kms 24、subject 136→138；jacoco 数值真实可达）、断言整体不空洞、库表/接口两面安全锚点 + 反向探针 + 401/403 齐备、评审① P1 修复锚点真实。**P1-A**：`completeIssuance` 无 `status='PENDING_ISSUE'` 乐观门槛且 0 行分支 jacoco 零覆盖（"并发守卫断言为假"）→ **已修复**：门槛 + 0 行幂等收敛（`DidJdbcRepository`/`DidRepository`），并补**单元交错用例**（`completeIssuanceOnNonPendingIdentityIsRejectedWithoutLog`）、**集成交错用例**（`completeIssuanceOnRevokedIdentityIsRejectedWithoutLog`，真实 DB 直改 REVOKED）、**单元真实并发用例**（8 线程并发触发恰一条 ACTIVE + 一条留痕，`concurrentIssueProducesSingleActiveIdentityAndSingleLog`）。**P2×3 已修复**：① 日志面零锚定 → `logsDoNotExposePrivateKeyMaterial`（OutputCapture 断言签发/吊销/失败路径日志无 64-hex 私钥样式）；② 非 ADMITTED 不触发签发无负向用例 → `rejectedSubjectDoesNotTriggerDidIssuance`（`verify(never())`）；③ 端到端闭环断裂（mock 绕过真实 client）→ 新测试类 `DidIssuanceClientFailureIntegrationTest`（真实 `DidIssuanceClient` 指向不可达端口，审核仍 200/ADMITTED）。**P3 处置**：单元真实并发用例 + did 容器时区固定（`connectionTimeZone=UTC`+`TZ=UTC`）；测试先行补偿盲区按本表如实记录。did 行覆盖实测 **93.4%**（≥80% 达标，瞬时 jacoco 0.8.12） |
 
-**评审收口（主智能体，2026-09-21）**：①②独立评审均过（①打回后修复并独立复核闭合）；③④因配额降级自检且结论通过、独立评审**待补登记**。机器门禁全绿（kms 24/24、subject 136/136、did 23/23、checkstyle 0 违规、门禁 GREEN）。**待编排师验收合并**（分支 `feat/C-1.2-DID密钥管理与签发服务`：`2e48799` 实现 + `a1e3b98` P1 修复 + 评审收口提交）。
+**评审收口（主智能体，2026-09-21 第 2 轮）**：**四视角独立评审全部通过**（①打回→修复→独立复核闭合；②有条件通过；③④本轮独立评审补派完成——③通过、④打回 P1→修复→重交通过）。机器门禁全绿（did 28/28、kms 24/24、subject 138/138、checkstyle 0 违规、门禁 GREEN `gate-report-20260921-202815.md`）。**待编排师验收合并**（分支 `feat/C-1.2-DID密钥管理与签发服务`：`2e48799` 实现 + `a1e3b98` P1 修复 + `7a81a76` 评审收口 + 本轮评审修复提交待推）。
 
 ---
 

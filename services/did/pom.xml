@@ -20,10 +20,6 @@
       <groupId>com.ctds</groupId>
       <artifactId>common-errorcode</artifactId>
     </dependency>
-    <dependency>
-      <groupId>com.ctds</groupId>
-      <artifactId>common-logging</artifactId>
-    </dependency>
     <!-- 运营管理员吊销/重签/重试（did.admin 权限强制，WBS 2.4.5 复用） -->
     <dependency>
       <groupId>com.ctds</groupId>

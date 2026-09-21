@@ -1,17 +1,14 @@
 package com.ctds.subject;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.ctds.subject.domain.DidIssuancePort;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.IOException;
+import java.net.ServerSocket;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -30,7 +27,6 @@ import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.testcontainers.containers.MySQLContainer;
@@ -38,21 +34,23 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
- * DID 签发触发衔接集成测试（WBS-3.1.8 行为清单 B7 / ADR-016 §6）：
- * 审核通过 → DidIssuanceTrigger 收到主体编号；触发抛异常 → 批准仍 200、状态仍 ADMITTED。
- * DID 端口 @MockitoBean 替换（DID 服务自身行为由 did-service 集成测试覆盖）。
- * 本机 Docker 未运行时 disabledWithoutDocker 自动跳过。
+ * DID 签发触发"真实网络不可达"链路集成测试（WBS-3.1.8 行为清单 B7，评审④ P2-C）：
+ * 不 mock DidIssuancePort，真实 DidIssuanceClient 指向不可达端口（连接超时失败）→
+ * 审核通过仍 200/ADMITTED、主体状态不变（行为 1 规则 5：签发失败不影响入驻结论）。
+ * 与 DidIssuanceTriggerIntegrationTest（port 为 mock）互补：本类锚定真实 HTTP 失败路径。
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 @AutoConfigureMockMvc
 @ActiveProfiles("mysql")
 @Testcontainers(disabledWithoutDocker = true)
-class DidIssuanceTriggerIntegrationTest {
+class DidIssuanceClientFailureIntegrationTest {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final String BASE = "/api/v1/subject";
-    private static final String APPLICANT = "applicant-01";
-    private static final String REVIEWER = "reviewer-01";
+    private static final String APPLICANT = "applicant-02";
+    private static final String REVIEWER = "reviewer-02";
+    /** 启动时动态取一个当前空闲端口（占位后立即释放），保证 DID 地址确实不可达。 */
+    private static final int UNREACHABLE_PORT = unusedPort();
     private static Path auditDir;
     private static Path keyFile;
 
@@ -60,9 +58,6 @@ class DidIssuanceTriggerIntegrationTest {
     @ServiceConnection
     static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:8.0")
             .withDatabaseName("ctds_subject");
-
-    @MockitoBean
-    private DidIssuancePort didIssuancePort;
 
     @Autowired
     private MockMvc mockMvc;
@@ -72,8 +67,8 @@ class DidIssuanceTriggerIntegrationTest {
 
     @BeforeAll
     static void createDirsAndKeyFile() throws Exception {
-        auditDir = Files.createTempDirectory("ctds-audit-did-trigger");
-        keyFile = Files.createTempFile("ctds-test-keys", ".keys");
+        auditDir = Files.createTempDirectory("ctds-audit-did-client-failure");
+        keyFile = Files.createTempFile("ctds-test-keys-client-failure", ".keys");
         Files.writeString(keyFile, "subject-cert-material=MDEyMzQ1Njc4OWFiY2RlZg==\n",
                 StandardCharsets.UTF_8);
     }
@@ -90,26 +85,12 @@ class DidIssuanceTriggerIntegrationTest {
     static void testProperties(final DynamicPropertyRegistry registry) {
         registry.add("ctds.audit.file-dir", () -> auditDir.toString());
         registry.add("ctds.crypto.local.key-file", () -> keyFile.toString());
+        registry.add("ctds.did.issuance.base-url", () -> "http://127.0.0.1:" + UNREACHABLE_PORT);
     }
 
     @Test
-    void approveTriggersDidIssuanceWithSubjectNo() throws Exception {
-        final String subjectNo = createPendingGovSubject("91330100MA27XW1501", "签发触发演示局");
-
-        mockMvc.perform(post(BASE + "/registrations/" + subjectNo + "/review/approval")
-                        .header("X-Ctds-Subject", REVIEWER).header("X-Ctds-Roles", "reviewer"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.status").value("ADMITTED"));
-
-        verify(didIssuancePort).triggerIssuance(org.mockito.ArgumentMatchers.eq(subjectNo), anyString(), anyString());
-        assertThat(subjectStatus(subjectNo)).isEqualTo("ADMITTED");
-    }
-
-    @Test
-    void didIssuanceFailureDoesNotAffectApproval() throws Exception {
-        final String subjectNo = createPendingGovSubject("91330100MA27XW1502", "触发失败演示局");
-        doThrow(new IllegalStateException("DID 服务不可达")).when(didIssuancePort)
-                .triggerIssuance(anyString(), anyString(), anyString());
+    void approvalSucceedsWhenDidServiceUnreachable() throws Exception {
+        final String subjectNo = createPendingGovSubject("91330100MA27XW1504", "真实不可达局");
 
         mockMvc.perform(post(BASE + "/registrations/" + subjectNo + "/review/approval")
                         .header("X-Ctds-Subject", REVIEWER).header("X-Ctds-Roles", "reviewer"))
@@ -119,22 +100,13 @@ class DidIssuanceTriggerIntegrationTest {
         assertThat(subjectStatus(subjectNo)).isEqualTo("ADMITTED");
     }
 
-    @Test
-    void rejectedSubjectDoesNotTriggerDidIssuance() throws Exception {
-        // 负向锚点（评审④ P2-B，hifi B1"驳回不触发"）：非 ADMITTED 状态 → 签发触发零调用
-        final String subjectNo = createPendingGovSubject("91330100MA27XW1503", "驳回不触发局");
-
-        mockMvc.perform(post(BASE + "/registrations/" + subjectNo + "/review/rejection")
-                        .header("X-Ctds-Subject", REVIEWER).header("X-Ctds-Roles", "reviewer")
-                        .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"材料不符\"}"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.status").value("REJECTED"));
-
-        verify(didIssuancePort, never()).triggerIssuance(anyString(), anyString(), anyString());
-        assertThat(subjectStatus(subjectNo)).isEqualTo("REJECTED");
+    private static int unusedPort() {
+        try (ServerSocket socket = new ServerSocket(0)) {
+            return socket.getLocalPort();
+        } catch (final IOException e) {
+            return 59999;
+        }
     }
-
-    // ==== 辅助 ====
 
     private String subjectStatus(final String subjectNo) {
         return jdbcTemplate.queryForObject(

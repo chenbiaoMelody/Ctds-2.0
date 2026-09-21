@@ -27,9 +27,13 @@ public interface DidRepository {
      */
     DidIdentity createPending(String subjectNo, int issuanceSeq, LocalDateTime now);
 
-    /** 转有效 + 落签发/重签留痕（同事务，保证留痕四要素与状态变更原子）。 */
-    void completeIssuance(long identityId, String publicKeyHex, String documentJson,
-                          DidOperationLog operationLog);
+    /**
+     * 转有效 + 落签发/重签留痕（同事务，保证留痕四要素与状态变更原子；带 status 乐观门槛，
+     * 与 revoke 对称——并发双签发恰一人成功）。
+     * 返回 true=本次完成并落留痕；false=行已被并发完成（ACTIVE，幂等场景，服务层收敛返回既有结果）。
+     */
+    boolean completeIssuance(long identityId, String publicKeyHex, String documentJson,
+                             DidOperationLog operationLog);
 
     /** 主体历史最大签发序号 + 1（重签用）。 */
     int nextIssuanceSeq(String subjectNo);

@@ -19,16 +19,28 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 
 /**
  * DID 签发应用服务单元测试（WBS-3.1.8 行为清单 B1~B6 全分支，仓储用内存桩）：
  * 自动签发（留痕四要素）/ 幂等 / 失败可重试 / 吊销（理由必填 + 五要素 + 不可逆）/ 重签（新序号新密钥）。
+ * 并发守卫：completeIssuance 带状态乐观门槛（与 revoke 对称），交错/并发用例锚定"恰一条 ACTIVE + 一条留痕"。
  */
+@ExtendWith(OutputCaptureExtension.class)
 class DidIssuanceServiceTest {
 
     private static final String SUBJECT_NO = "S20260920000001";
+    /** 私钥 D 值样式：恰好 64 位 hex、两侧非 hex 边界（区分 130 位公钥 04‖X‖Y）。 */
+    private static final String PRIVATE_KEY_PATTERN = "(^|[^0-9a-fA-F])[0-9a-fA-F]{64}([^0-9a-fA-F]|$)";
 
     private FakeDidRepository repository;
     private StubKmsClient kmsClient;
@@ -179,6 +191,65 @@ class DidIssuanceServiceTest {
                         assertThat(e.getErrorCode()).isEqualTo(DidErrorCodes.DID_PARAM_INVALID));
     }
 
+    @Test
+    void completeIssuanceOnNonPendingIdentityIsRejectedWithoutLog() {
+        // 交错用例（评审④ P1）：行状态已变（如并发吊销/外部变更）后完成签发 → 乐观门槛拒绝，
+        // 不产生 ACTIVE、不落重复 ISSUE 留痕（与 revoke 对称）
+        repository.createPending(SUBJECT_NO, 1, LocalDateTime.now());
+        final DidIdentity pending = repository.findActiveOrPending(SUBJECT_NO).orElseThrow();
+        repository.forceRevoke(pending.id());
+        final DidOperationLog op = new DidOperationLog("did:ctds:" + SUBJECT_NO + ".1", SUBJECT_NO, "ISSUE",
+                "SYSTEM", null, "did-" + SUBJECT_NO + "-1", "PENDING_ISSUE", "ACTIVE", LocalDateTime.now());
+
+        assertThatThrownBy(() -> repository.completeIssuance(pending.id(), kmsClient.publicKeyHex(), "{}", op))
+                .isInstanceOfSatisfying(BizException.class, e ->
+                        assertThat(e.getErrorCode()).isEqualTo(DidErrorCodes.DID_ISSUANCE_INTERNAL_ERROR));
+        assertThat(repository.activeCount()).isZero();
+        assertThat(repository.logs()).isEmpty();
+    }
+
+    @Test
+    void concurrentIssueProducesSingleActiveIdentityAndSingleLog() throws Exception {
+        // 真实并发（评审④ P3-A）：8 线程并发触发同一主体 → 乐观门槛 + uk_guard 兜底 → 恰一条 ACTIVE + 一条留痕
+        final int threadCount = 8;
+        final ExecutorService pool = Executors.newFixedThreadPool(threadCount);
+        try {
+            final CountDownLatch ready = new CountDownLatch(threadCount);
+            final CountDownLatch start = new CountDownLatch(1);
+            final List<Future<DidIssuanceService.IssuanceResult>> futures = new ArrayList<>();
+            for (int i = 0; i < threadCount; i++) {
+                futures.add(pool.submit(() -> {
+                    ready.countDown();
+                    start.await();
+                    return service.issue(SUBJECT_NO);
+                }));
+            }
+            ready.await(5, TimeUnit.SECONDS);
+            start.countDown();
+            for (final Future<DidIssuanceService.IssuanceResult> future : futures) {
+                future.get(10, TimeUnit.SECONDS);
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+        assertThat(repository.activeCount()).isEqualTo(1);
+        assertThat(repository.logs()).hasSize(1);
+        assertThat(repository.logs().get(0).operation()).isEqualTo("ISSUE");
+    }
+
+    @Test
+    void logsDoNotExposePrivateKeyMaterial(final CapturedOutput output) {
+        // 日志面锚定（评审④ P2-A，hifi B3 三面之一）：签发/吊销/失败路径的日志不含任何 64 位 hex 形态密钥材料
+        kmsClient.failNext();
+        assertThat(service.issue(SUBJECT_NO).status()).isEqualTo(DidStatus.PENDING_ISSUE);
+        assertThat(service.retry(SUBJECT_NO).status()).isEqualTo(DidStatus.ACTIVE);
+        service.revoke("did:ctds:" + SUBJECT_NO + ".1", "私钥疑似泄露");
+
+        assertThat(output.getAll())
+                .doesNotContain("aa".repeat(32))
+                .doesNotContainPattern(PRIVATE_KEY_PATTERN);
+    }
+
     private static JsonNode parseDocument(final String json) {
         try {
             return new ObjectMapper().readTree(json);
@@ -209,48 +280,50 @@ class DidIssuanceServiceTest {
         }
     }
 
-    /** 内存仓储桩：语义对齐 DidJdbcRepository（uk_guard 幂等守卫 + guard_key 释放）。 */
+    /** 内存仓储桩：语义对齐 DidJdbcRepository（uk_guard 幂等守卫 + guard_key 释放 + completeIssuance 乐观门槛）。
+     *  全部方法同步（并发用例要求 find→insert/update 原子）。 */
     private static final class FakeDidRepository implements DidRepository {
         private final Map<Long, DidIdentity> rows = new LinkedHashMap<>();
         private final List<DidOperationLog> logs = new ArrayList<>();
         private long nextId = 1;
 
-        int activeCount() {
+        synchronized int activeCount() {
             return (int) rows.values().stream().filter(r -> r.status() == DidStatus.ACTIVE).count();
         }
 
-        List<DidOperationLog> logs() {
+        synchronized List<DidOperationLog> logs() {
             return logs;
         }
 
         @Override
-        public Optional<DidIdentity> findActiveOrPending(final String subjectNo) {
+        public synchronized Optional<DidIdentity> findActiveOrPending(final String subjectNo) {
             return rows.values().stream()
                     .filter(r -> r.subjectNo().equals(subjectNo) && r.guardKey() != null)
                     .findFirst();
         }
 
         @Override
-        public Optional<DidIdentity> findPending(final String subjectNo) {
+        public synchronized Optional<DidIdentity> findPending(final String subjectNo) {
             return rows.values().stream()
                     .filter(r -> r.subjectNo().equals(subjectNo) && r.status() == DidStatus.PENDING_ISSUE)
                     .findFirst();
         }
 
         @Override
-        public Optional<DidIdentity> findLatestRevoked(final String subjectNo) {
+        public synchronized Optional<DidIdentity> findLatestRevoked(final String subjectNo) {
             return rows.values().stream()
                     .filter(r -> r.subjectNo().equals(subjectNo) && r.status() == DidStatus.REVOKED)
                     .max(Comparator.comparingInt(DidIdentity::issuanceSeq));
         }
 
         @Override
-        public Optional<DidIdentity> findByDid(final String did) {
+        public synchronized Optional<DidIdentity> findByDid(final String did) {
             return rows.values().stream().filter(r -> did.equals(r.did())).findFirst();
         }
 
         @Override
-        public DidIdentity createPending(final String subjectNo, final int issuanceSeq, final LocalDateTime now) {
+        public synchronized DidIdentity createPending(final String subjectNo, final int issuanceSeq,
+                final LocalDateTime now) {
             final Optional<DidIdentity> existing = findActiveOrPending(subjectNo);
             if (existing.isPresent()) {
                 return existing.get();
@@ -263,28 +336,43 @@ class DidIssuanceServiceTest {
         }
 
         @Override
-        public void completeIssuance(final long identityId, final String publicKeyHex, final String documentJson,
-                final DidOperationLog operationLog) {
+        public synchronized boolean completeIssuance(final long identityId, final String publicKeyHex,
+                final String documentJson, final DidOperationLog operationLog) {
             final DidIdentity old = rows.get(identityId);
+            if (old == null || old.status() != DidStatus.PENDING_ISSUE) {
+                // 乐观门槛（与 DidJdbcRepository 一致）：已 ACTIVE → 并发完成幂等返回 false；其他 → 内部错误
+                if (old != null && old.status() == DidStatus.ACTIVE) {
+                    return false;
+                }
+                throw new BizException(DidErrorCodes.DID_ISSUANCE_INTERNAL_ERROR, "签发处理失败，请重试");
+            }
             rows.put(identityId, new DidIdentity(identityId, operationLog.subjectNo(), old.issuanceSeq(),
                     operationLog.did(), DidStatus.ACTIVE, publicKeyHex, operationLog.keyRef(), documentJson,
                     operationLog.subjectNo(), old.createdAt(), operationLog.occurredAt()));
             logs.add(operationLog);
+            return true;
         }
 
         @Override
-        public int nextIssuanceSeq(final String subjectNo) {
+        public synchronized int nextIssuanceSeq(final String subjectNo) {
             return rows.values().stream().filter(r -> r.subjectNo().equals(subjectNo))
                     .mapToInt(DidIdentity::issuanceSeq).max().orElse(0) + 1;
         }
 
         @Override
-        public void revoke(final long identityId, final DidOperationLog operationLog) {
+        public synchronized void revoke(final long identityId, final DidOperationLog operationLog) {
             final DidIdentity old = rows.get(identityId);
             rows.put(identityId, new DidIdentity(identityId, operationLog.subjectNo(), old.issuanceSeq(),
                     old.did(), DidStatus.REVOKED, old.publicKeyHex(), old.keyRef(), old.documentJson(), null,
                     old.createdAt(), operationLog.occurredAt()));
             logs.add(operationLog);
+        }
+
+        /** 测试辅助：模拟行状态被外部变更为已吊销（交错用例）。 */
+        synchronized void forceRevoke(final long identityId) {
+            final DidIdentity old = rows.get(identityId);
+            rows.put(identityId, new DidIdentity(identityId, old.subjectNo(), old.issuanceSeq(), old.did(),
+                    DidStatus.REVOKED, null, null, null, null, old.createdAt(), old.updatedAt()));
         }
     }
 }

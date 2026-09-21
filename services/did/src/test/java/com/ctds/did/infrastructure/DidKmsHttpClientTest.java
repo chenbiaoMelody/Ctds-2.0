@@ -69,12 +69,24 @@ class DidKmsHttpClientTest {
     void createKeyPairThrowsOnNonZeroCode() {
         server.removeContext("/api/v1/key-pairs");
         server.createContext("/api/v1/key-pairs", exchange ->
-                respond(exchange, 400, "{\"code\":\"1002B0001\",\"message\":\"密钥编号已存在\",\"traceId\":\"-\"}"));
+                respond(exchange, 200, "{\"code\":\"1002B0001\",\"message\":\"密钥编号已存在\",\"traceId\":\"-\"}"));
         final DidKmsHttpClient client = new DidKmsHttpClient(baseUrl, new ObjectMapper());
 
         assertThatThrownBy(() -> client.createKeyPair("did-S1-1"))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("1002B0001");
+    }
+
+    @Test
+    void createKeyPairThrowsOnNonHttp200() {
+        server.removeContext("/api/v1/key-pairs");
+        server.createContext("/api/v1/key-pairs", exchange ->
+                respond(exchange, 503, "upstream unavailable"));
+        final DidKmsHttpClient client = new DidKmsHttpClient(baseUrl, new ObjectMapper());
+
+        assertThatThrownBy(() -> client.createKeyPair("did-S1-1"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("非 200");
     }
 
     @Test

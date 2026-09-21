@@ -9,7 +9,11 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.ctds.common.errorcode.BizException;
+import com.ctds.did.domain.DidErrorCodes;
 import com.ctds.did.domain.DidKmsClient;
+import com.ctds.did.domain.DidOperationLog;
+import com.ctds.did.infrastructure.DidJdbcRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.sql.Timestamp;
@@ -52,10 +56,16 @@ class DidIssuanceIntegrationTest {
     @Container
     @ServiceConnection
     static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:8.0")
-            .withDatabaseName("ctds_did");
+            .withDatabaseName("ctds_did")
+            .withUrlParam("connectionTimeZone", "UTC")
+            .withUrlParam("forceConnectionTimeZoneToSession", "true")
+            .withEnv("TZ", "UTC");
 
     @MockitoBean
     private DidKmsClient kmsClient;
+
+    @Autowired
+    private DidJdbcRepository didJdbcRepository;
 
     @Autowired
     private MockMvc mockMvc;
@@ -251,6 +261,35 @@ class DidIssuanceIntegrationTest {
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT status FROM did_identity WHERE did = ?", String.class,
                 "did:ctds:" + subjectNo + ".1")).isEqualTo("REVOKED");
+    }
+
+    @Test
+    void completeIssuanceOnRevokedIdentityIsRejectedWithoutLog() throws Exception {
+        // 交错用例（评审④ P1）：行状态已变（并发吊销/外部变更）后完成签发 → 乐观门槛拒绝（与 revoke 对称）
+        final String subjectNo = "S20260920000108";
+        doThrow(new IllegalStateException("KMS 不可达")).when(kmsClient).createKeyPair(anyString());
+        mockMvc.perform(post(BASE + "/issuances")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"subjectNo\":\"" + subjectNo + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("PENDING_ISSUE"));
+
+        jdbcTemplate.update("UPDATE did_identity SET status = 'REVOKED', guard_key = NULL "
+                + "WHERE subject_no = ?", subjectNo);
+        final Long identityId = jdbcTemplate.queryForObject(
+                "SELECT id FROM did_identity WHERE subject_no = ?", Long.class, subjectNo);
+
+        final DidOperationLog op = new DidOperationLog("did:ctds:" + subjectNo + ".1", subjectNo, "ISSUE",
+                "SYSTEM", null, "did-" + subjectNo + "-1", "PENDING_ISSUE", "ACTIVE",
+                LocalDateTime.now().withNano(0));
+        assertThatThrownBy(() -> didJdbcRepository.completeIssuance(identityId, PUBLIC_KEY_HEX, "{}", op))
+                .isInstanceOfSatisfying(BizException.class, e ->
+                        assertThat(e.getErrorCode()).isEqualTo(DidErrorCodes.DID_ISSUANCE_INTERNAL_ERROR));
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT status FROM did_identity WHERE id = ?", String.class, identityId)).isEqualTo("REVOKED");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(1) FROM did_operation_log WHERE subject_no = ?", Integer.class, subjectNo))
+                .isZero();
     }
 
     private int privateKeyPatternHits() {

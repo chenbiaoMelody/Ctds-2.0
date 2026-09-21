@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
+import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -67,6 +68,9 @@ public class DidIssuanceClient implements DidIssuancePort {
         } catch (final InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("DID 签发调用被中断", e);
+        }
+        if (response.statusCode() != HttpURLConnection.HTTP_OK) {
+            throw new IllegalStateException("DID 签发响应非 200: status=" + response.statusCode());
         }
         final JsonNode json;
         try {
