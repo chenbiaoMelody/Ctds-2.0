@@ -12,6 +12,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Clock;
+import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.Comparator;
 import java.util.List;
@@ -104,6 +106,10 @@ class CertificationIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    /** 应用时钟（与 CertificationService 判定"当日"同源；DB-22：造数时间戳须经此生成，禁 SQL NOW()）。 */
+    @Autowired
+    private Clock clock;
 
     @Test
     void uploadOcrConfirmationVerifyFullHappyPath() throws Exception {
@@ -450,10 +456,11 @@ class CertificationIntegrationTest {
     /** 评审视角 1 补齐：迁移默认回填口径固化（无 applicant 的存量行回填 legacy-demo）。 */
     @Test
     void legacyRowsAreBackfilledWithMigrationDefault() {
+        final LocalDateTime now = LocalDateTime.now(clock);
         jdbcTemplate.update("INSERT INTO subject (subject_no, subject_name, uscc, subject_type, reg_address, "
                         + "contact_name, contact_phone, admin_account, status, created_at, updated_at) "
                         + "VALUES ('S20260913999901', '存量回填演示公司', '91330100MA27X8ABZZ', 'ENTERPRISE', "
-                        + "'地址', '联系人', '13800001234', 'admin', 'PENDING_CERT', NOW(), NOW())");
+                        + "'地址', '联系人', '13800001234', 'admin', 'PENDING_CERT', ?, ?)", now, now);
         final String applicant = jdbcTemplate.queryForObject(
                 "SELECT applicant FROM subject WHERE subject_no = 'S20260913999901'", String.class);
         assertThat(applicant).isEqualTo("legacy-demo");
@@ -461,18 +468,21 @@ class CertificationIntegrationTest {
 
     // ==== 辅助 ====
 
-    /** 直插核验留痕行（T1/T8 造数）：dayOffset=0 落今日、-1 落昨日；counted 控制是否计入失败额度。 */
+    /** 直插核验留痕行（T1/T8 造数）：dayOffset=0 落今日、-1 落昨日；counted 控制是否计入失败额度。
+     *  时间戳经应用时钟生成并传参（DB-22：原 SQL NOW() 用的是数据库服务器时钟，与服务"当日"判定两把钟，
+     *  本地 0~8 点窗口必红）。 */
     private void insertVerificationRows(final String subjectNo, final String conclusion, final int counted,
             final int dayOffset, final int rows) {
+        final LocalDateTime createdAt = LocalDateTime.now(clock).plusDays(dayOffset);
         for (int i = 0; i < rows; i++) {
             jdbcTemplate.update("INSERT INTO cert_verification_log (subject_id, verify_type, channel_code, "
                             + "channel_request_no, legal_person_name, legal_person_id_cipher, conclusion, "
                             + "fail_reason, cost_ms, counted, created_at) SELECT id, 'LEGAL_PERSON', "
-                            + "'mock-certification', ?, ?, NULL, ?, ?, 1, ?, DATE_ADD(NOW(), INTERVAL ? DAY) "
+                            + "'mock-certification', ?, ?, NULL, ?, ?, 1, ?, ? "
                             + "FROM subject WHERE subject_no = ?",
                     "MOCK-SEED-" + conclusion + '-' + i, LEGAL_PERSON, conclusion,
                     "FAIL".equals(conclusion) ? "身份证号尾号 8（造数）" : null,
-                    counted, dayOffset, subjectNo);
+                    counted, createdAt, subjectNo);
         }
     }
 

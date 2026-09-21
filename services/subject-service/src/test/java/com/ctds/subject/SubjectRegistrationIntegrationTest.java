@@ -19,6 +19,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Comparator;
@@ -97,6 +98,10 @@ class SubjectRegistrationIntegrationTest {
 
     @Autowired
     private SubjectRepository subjectRepository;
+
+    /** 应用时钟（DB-22：造数时间戳须经此生成，禁 SQL NOW()）。 */
+    @Autowired
+    private Clock clock;
 
     @Test
     void registerCreatesPendingSubjectAndReturnsApplicationNo() throws Exception {
@@ -297,11 +302,12 @@ class SubjectRegistrationIntegrationTest {
     @Test
     void usccUniqueIndexGuardsConcurrentWindow() throws Exception {
         submitRegister(uscc(11), "唯一索引兜底演示公司");
+        final LocalDateTime now = LocalDateTime.now(clock);
         assertThatThrownBy(() -> jdbcTemplate.update(
                         "INSERT INTO subject (subject_no, subject_name, uscc, subject_type, reg_address, "
                                 + "contact_name, contact_phone, admin_account, status, created_at, updated_at) "
                                 + "VALUES ('S20260913999999', '重复行', ?, 'ENTERPRISE', '地址', '联系人', '13800001234', "
-                                + "'admin', 'PENDING_CERT', NOW(), NOW())", uscc(11)))
+                                + "'admin', 'PENDING_CERT', ?, ?)", uscc(11), now, now))
                 .isInstanceOf(DuplicateKeyException.class);
     }
 
