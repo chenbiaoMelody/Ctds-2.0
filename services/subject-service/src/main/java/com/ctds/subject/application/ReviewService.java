@@ -36,13 +36,16 @@ public class ReviewService {
     private final SubjectStatusService statusService;
     private final SubjectOpsSupport ops;
     private final CertificationProperties properties;
+    private final DidIssuanceTrigger didIssuanceTrigger;
 
     public ReviewService(final SubjectRepository subjectRepository, final SubjectStatusService statusService,
-            final SubjectOpsSupport ops, final CertificationProperties properties) {
+            final SubjectOpsSupport ops, final CertificationProperties properties,
+            final DidIssuanceTrigger didIssuanceTrigger) {
         this.subjectRepository = subjectRepository;
         this.statusService = statusService;
         this.ops = ops;
         this.properties = properties;
+        this.didIssuanceTrigger = didIssuanceTrigger;
     }
 
     /** 待审核清单（行为 5 第 1 条前半）：固定 PENDING_REVIEW 过滤，分页返回。 */
@@ -67,6 +70,8 @@ public class ReviewService {
         statusService.transition(subject.id(), SubjectStatus.PENDING_REVIEW, SubjectStatus.ADMITTED,
                 TriggerRole.REVIEWER, ops.operator(), APPROVE_REMARK);
         ops.audit(ops.operator(), ACTION_REVIEW_APPROVE, subjectNo, AuditOutcome.SUCCESS, null);
+        // DID 签发触发（hifi §4.3）：transition 事务已提交后调用；失败仅记 WARN、不影响批准响应
+        didIssuanceTrigger.afterAdmitted(subject);
         return new ReviewActionResult(subjectNo, SubjectStatus.ADMITTED.name());
     }
 

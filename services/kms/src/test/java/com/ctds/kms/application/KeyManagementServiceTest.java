@@ -8,6 +8,7 @@ import com.ctds.common.crypto.Sm4Service;
 import com.ctds.common.errorcode.BizException;
 import com.ctds.kms.domain.KeyAuditRecord;
 import com.ctds.kms.domain.KeyDescriptor;
+import com.ctds.kms.domain.KeyPair;
 import com.ctds.kms.domain.KeyRepository;
 import com.ctds.kms.domain.KeyVersion;
 import com.ctds.kms.domain.KmsErrorCodes;
@@ -186,6 +187,16 @@ class KeyManagementServiceTest {
             final String cipher = versions.get(keyRef + "|" + version);
             return cipher == null ? Optional.empty()
                     : Optional.of(new KeyVersion(keyRef, version, cipher, java.time.LocalDateTime.now()));
+        }
+
+        @Override
+        public void createKeyPair(final KeyPair keyPair, final KeyAuditRecord audit) {
+            throw new UnsupportedOperationException("SM2 key pair storage not exercised by this test");
+        }
+
+        @Override
+        public Optional<KeyPair> findKeyPair(final String keyRef) {
+            return Optional.empty();
         }
     }
 }

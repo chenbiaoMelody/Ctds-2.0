@@ -64,3 +64,8 @@ ctds:
     mode: memory
   lock:
     mode: memory
+  # DID 签发触发（WBS-3.1.8，ADR-016 §6 衔接契约）：审核通过事务提交后调用 DID 签发接口；
+  # 未配置 = 跳过触发（服务可独立启动）；失败仅记 WARN、不影响审核结论
+  did:
+    issuance:
+      base-url: ${CTDS_DID_ISSUANCE_BASEURL:}

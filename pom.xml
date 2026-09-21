@@ -30,6 +30,7 @@
     <module>services/example-service</module>
     <module>services/kms</module>
     <module>services/subject-service</module>
+    <module>services/did</module>
   </modules>
 
   <properties>

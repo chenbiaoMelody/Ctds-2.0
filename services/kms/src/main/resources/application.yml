@@ -9,7 +9,7 @@ spring:
       - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
 
 server:
-  port: 8080
+  port: 8081
 
 # 指标暴露（ADR-014 最小暴露面）：KMS 只开 health 探活，prometheus 暴露随 2.5.x 监控基座统一接入
 management:

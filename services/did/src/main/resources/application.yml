@@ -1,0 +1,35 @@
+spring:
+  application:
+    name: did-service
+  # 数据库迁移工具链（WBS 2.4.10 / ADR-009）：默认 profile 无数据库照常启动，mysql profile 才启用数据源 + Flyway
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+
+server:
+  port: 8082
+
+# 指标暴露（ADR-014 最小暴露面）：只开 health 探活
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+logging:
+  file:
+    name: logs/app.log
+  structured:
+    format:
+      console: logstash
+      file: logstash
+
+ctds:
+  # RBAC（WBS 2.4.5 模式 A）：运营管理员（吊销/重签/重试）需 did.admin 权限
+  auth:
+    permissions:
+      admin: did.admin
+  # DID → KMS 密钥对托管调用（内部回环，ADR-016 §2.7）；未配置则签发停留待签发
+  did:
+    kms:
+      base-url: ${CTDS_DID_KMS_BASEURL:}

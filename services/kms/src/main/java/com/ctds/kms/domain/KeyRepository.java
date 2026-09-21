@@ -18,4 +18,10 @@ public interface KeyRepository {
     Optional<KeyDescriptor> findDescriptor(String keyRef);
 
     Optional<KeyVersion> findVersion(String keyRef, int version);
+
+    /** 新建 SM2 密钥对（WBS-3.1.8）：kms_key（key_type + 公钥）+ kms_key_version v1（私钥 D 值信封）同事务。 */
+    void createKeyPair(KeyPair keyPair, KeyAuditRecord audit);
+
+    /** 按编号取 SM2 密钥对（含私钥 D 值信封，仅供签名时解密）。 */
+    Optional<KeyPair> findKeyPair(String keyRef);
 }

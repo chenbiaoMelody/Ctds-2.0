@@ -27,3 +27,78 @@
 | 决策点 | lofi §4 **Q1~Q4 已裁决（2026-09-20 编排师：四问均采建议口径）**——Q1 新建独立服务 `services/did` / Q2 端口 8080（主体）+8081（KMS）+8082（DID）全回环 / Q3 审核事务提交后调用 DID 签发接口、失败留"待签发"可重试 / Q4 吊销与重签写操作归 3.1.8（3.1.9 只读）；裁决留痕见 `docs/designs/WBS-3.1.8-lofi.md` 确认记录节 |
 | 验证口径 | ① 门禁全量复跑留痕（报告路径见会话日志）；② **行为 1 五条验收标准 → 测试用例 → 剧本步骤**映射表（自检单第 2 项）；③ 私钥零明文锚定测试（库表/接口响应/日志三处，删实现必变红）；④ 剧本 S1 六步在接口级演示留痕（界面步骤归 3.1.11，3.1.12 做端到端联调） |
 | 评审结论 | 待交付后 4 视角评审（规格与设计符合性 / 安全供应链 / 一致性重复 / 测试质量），循环 ≤3 |
+
+---
+
+## 编码会话执行记录（2026-09-21，冷启动承接 `-0806` 日志）
+
+### 实施前置检查（hifi §10，三项全部完成）
+
+| 项 | 结论 |
+| --- | --- |
+| ① kms 补端口 8081 + mysql 回环 | **已完成**：`application.yml` `server.port` 8080→8081；`application-mysql.yml` 补 `server.address: 127.0.0.1`；构件重建 |
+| ② kms 默认 profile 启动实测 | **不通过（如实登记）**：`UnsatisfiedDependencyException`——默认 profile 排除 `DataSourceAutoConfiguration` 后无 `JdbcClient` Bean，而 `KeyJdbcRepository` 构造器硬依赖之；与 `application.yml`"默认 profile 无数据库照常启动"注释不符。**演示与服务一律 mysql profile（既定口径，不影响本包）**；该偏差按债务口径登记 DB-24（不在本包夹带非本包修复） |
+| ③ `ReviewService.approve` 事务边界复核 | **确认**：`ReviewService` 无外层 `@Transactional`，事务在仓储层 `SubjectJdbcRepository.appendTransition`（`@Transactional`）提交；钩子挂在 `statusService.transition(...)` 返回之后，与 hifi §4.3 一致 |
+
+### 交付物清单（代码）
+
+| 对象 | 内容 |
+| --- | --- |
+| 新增服务 `services/did`（`did-service`） | 四层（domain/application/infrastructure/interfaces）+ ArchUnit 规则 + Flyway `V1__create_did_tables.sql`（`did_identity` + `did_operation_log`）+ 1005 段错误码 + 4 端点 |
+| `services/kms` 扩展 | Flyway `V2__add_sm2_key_pair.sql`（`key_type` + `public_key_hex`）+ `KeyPair` 域对象 + `KeyPairService` + `KeyPairController`（`/api/v1/key-pairs`、`/api/v1/key-pairs/{keyRef}/signatures`）+ 端口 8081/回环 |
+| `services/subject-service` 衔接 | `DidIssuancePort`（domain）+ `DidIssuanceTrigger`（application）+ `DidIssuanceClient`（infrastructure，JDK HttpClient）+ `ReviewService.approve` 挂钩 + 配置 `ctds.did.issuance.base-url` |
+| 根 pom | 模块表 +1（`services/did`） |
+| 契约 | **ADR-017 DID 服务契约**（新建）+ ADR-015 补记（SM2 托管 + 签名 + 8081 回环）+ ADR-016 §2.7 补记（KMS/DID 回环落实） |
+
+### 实施中发现并修复的缺陷（本包范围内）
+
+- **`issue` 硬编码签发序号 1 导致 `uk_did` 冲突**：原实现对"已吊销主体再次自动触发签发"的场景会以 `issuance_seq=1` 建新待签发行，转有效时生成 `did:ctds:<subjectNo>.1` 与旧吊销行 `uk_did` 唯一键冲突 → 500。**修复**：`issue` 改用 `repository.nextIssuanceSeq(subjectNo)`（新主体仍为 1，已吊销主体取历史最大序号 +1），与"旧标识永不复用"口径一致。集成测试（共享库、同主体多场景）暴露该缺陷，修复后全绿。
+
+### 自检单（章程附录 B1）
+
+1. **两级设计门禁**：低保真（Q1~Q4 采建议）+ 高保真（PO 签署 = 编码契约）均已过；实现与 `docs/designs/WBS-3.1.8-hifi.md` 逐条一致（库表/接口/错误码/配置/行为清单 B1~B7 全部落地）。
+2. **规格 → 设计 → 测试 → 剧本 映射表**：见下表。
+3. **复用声明（含检索过程）与规格外实现声明**：
+   - 复用：错误码体系（`common-errorcode`，占 1005 段）、RBAC 鉴权（`common-auth` `@RequirePermission` + `ctds.auth.permissions`）、国密运算（`common-crypto` `Sm2Service`/`Sm4Service`，零自研密码学）、JDK HttpClient（沿 `KmsKeyProvider` 先例，零新增依赖）、Flyway（`ADR-009`）、Testcontainers 基座（`ADR-010`）、审计/结构化日志（`common-logging`）。
+   - 检索过程：编码前检索 `common/` 各组件与 `services/kms`/`subject-service` 既有实现，确认横切能力均有既有组件可复用。
+   - **规格外实现声明：空**（无规格外功能、无未批准依赖、无演示专用代码路径）。
+4. **本地全部检查的命令与结果摘要**：
+   - `mvn -B -ntp compile`（全仓）：PASS
+   - `mvn -B -ntp -pl services/kms,services/did,services/subject-service test`：**kms 22 通过 / subject-service 136 通过 / did 17 通过，0 失败 0 错误 0 跳过**
+   - `mvn -B -ntp -pl services/kms,services/did,services/subject-service checkstyle:check`：0 违规
+   - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/gates/run-gates.ps1`：**GREEN**（PASS=10 FAIL=0 ERROR=0，退出码 0），报告 `scripts/gates/reports/gate-report-20260921-105815.md`（secretsScan 622 文件 0 命中 / adrFieldsCheck 17 ADR 全过 / compile / lint / unitTest / frontendLint / frontendTest 全 PASS）
+5. **高风险点自查**：
+   - **并发**：同一主体并发触发由 `uk_guard` 唯一键兜底（`createPending` 捕获 `DuplicateKeyException` 收敛为幂等返回）；集成测试含反向探针（直插第二条非吊销行 → 唯一键拒绝）。
+   - **事务**：`completeIssuance`/`revoke` 的状态变更与留痕同事务（`@Transactional`，保证留痕要素与状态原子）；审核批准事务提交后才触发 DID（`ReviewService` 无外层事务，钩子位置经实测确认）。
+   - **加解密**：私钥 D 值经根密钥 SM4 信封落库（零明文）；DID 服务结构上不接收私钥（`DidKmsClient` 只返回公钥）；三面锚定（库表/接口/日志）均有测试与反向探针。
+   - **性能**：DID→KMS 与 subject→DID 均取小超时（连接 1s / 读取 3s），触发失败不拖慢审核动作；本包非性能敏感路径（签发为低频动作），未跑基准脚本。
+6. **验收剧本更新建议**：**剧本正文不改**（与设计 §9 一致）。S1 步骤 5"重复触发"注入方式（运营侧演示）：对同一主体重复调用 `POST /api/v1/did/issuances`（幂等 → 管理页仍只见一条有效 DID），重放命令随交付说明提供；S1 步骤 2/3/5 由本包承载（步骤 4 展示层归 3.1.11、步骤 6 前置数据）。
+7. **业务可读交付说明**：见下节。
+
+### 验收标准 → 测试用例 → 剧本步骤 映射表
+
+| 规格验收标准（C-1.2 行为 1/4） | 已确认设计（hifi） | 测试用例 | 剧本步骤 |
+| --- | --- | --- | --- |
+| 审核通过 → 有效 DID 记录 + 留痕四要素 | B1 | `DidIssuanceIntegrationTest.issueCreatesActiveRowAndFourElementLog`、`DidIssuanceServiceTest.issueCreatesActiveIdentityWithFourElementLog` | S1 步骤 3 |
+| 重复触发 → 有效 DID 仍只有一个 | B2 | `DidIssuanceIntegrationTest.issueIsIdempotentAndUniqueGuardRejectsDuplicate`（+ 唯一键反向探针）、`DidIssuanceServiceTest.issueTwiceIsIdempotentSingleActive` | S1 步骤 5 |
+| 库表/日志无私钥明文 | B3 | `DidIssuanceIntegrationTest.issuanceResponseContainsNoPrivateKeyMaterial`（接口字段集 + 库表 64-hex 扫描 + 反向探针）、`KeyPairServiceTest.createStoresPrivateKeyAsEnvelopeNotPlaintext` | S1 步骤 3 |
+| 非已入驻主体无有效 DID | B1（触发方状态机保证） | 由 subject-service 侧状态机测试覆盖（`CertificationIntegrationTest`/`ReviewIntegrationTest` 已固化）；DID 侧不重复校验 | S1 步骤 2 |
+| 签发失败 → 主体仍已入驻、DID 记录待签发可重试 | B4 | `DidIssuanceIntegrationTest.kmsFailureLeavesPendingAndRetryCompletes`、`DidIssuanceServiceTest.kmsFailureLeavesPendingAndRetryCompletes` | S1 步骤 5 |
+| 吊销理由必填 + 五要素 + 不可逆 | B5 | `DidIssuanceIntegrationTest.revokeRequiresReasonAndRejectsNonActive`、`DidIssuanceServiceTest.revokeRequiresReasonAndRejectsNonActive/revokeTransitionsToRevokedWithFiveElementLog` | S3 |
+| 重签 → 新 DID + 新密钥对 + 旧记录保留 | B6 | `DidIssuanceIntegrationTest.reissueCreatesNewIdentityAndRetainsOld`、`DidIssuanceServiceTest.reissueCreatesNewDidAndKeyRefAndRetainsOld` | S3 |
+| 主体服务触发衔接（事务提交后、失败仅 WARN） | B7 | `DidIssuanceTriggerIntegrationTest.approveTriggersDidIssuanceWithSubjectNo/didIssuanceFailureDoesNotAffectApproval` | S1 步骤 3 |
+
+### 业务可读交付说明
+
+**完成了什么功能**：主体审核通过"入驻"后，系统**自动**为该主体签发出一个数字身份（DID）——包含一对国密 SM2 密钥（私钥锁在密钥管理服务里，任何界面、接口、日志都看不到私钥）、一份公开身份说明（DID 文档）和一条签发留痕。运营管理员可对身份执行**吊销**（必填理由、不可逆、留痕可溯）和**重签**（换新身份、新密钥，旧记录保留）。签发失败（如密钥服务暂不可用）不会影响入驻结论，身份停留"待签发"并可重试。
+
+**如何演示**：
+1. 启动三服务（主体 8080 / 密钥 8081 / DID 8082，均仅本机可访问，须用 mysql profile）；
+2. 走完"注册 → 认证 → 审核通过"（剧本 S1 步骤 1~3），随后调用 `GET`/查询可见该主体名下一条**有效** DID；
+3. **重复触发演示（S1 步骤 5）**：对同一主体重复调用 `POST /api/v1/did/issuances`（PowerShell `Invoke-RestMethod` 一行命令，随交付说明提供）——重复调用后仍只有**一条**有效 DID（幂等）；
+4. **吊销演示（S3）**：以运营管理员身份（`X-Ctds-Roles: admin`）调用 `POST /api/v1/did/{did}/revocation`，理由必填；吊销后解析可见"已吊销"且不可恢复；重签生成新身份。
+
+**有无注意事项**：
+- 密钥服务（KMS）与 DID 服务均**必须用 mysql profile 启动**（含回环绑定）；KMS 的**默认 profile 无法启动**（既有缺陷，已登记 DB-24，不影响演示）；
+- DID→KMS 的服务间调用在演示期沿用"信任身份头 + 回环网络隔离"口径（ADR-016 §2.7 / ADR-017 §2.7），上线前须由网关 + 真实令牌收紧；
+- 本包不含解析/验证/互认接口与 DID 管理界面（分别归 3.1.9/3.1.10/3.1.11）。
