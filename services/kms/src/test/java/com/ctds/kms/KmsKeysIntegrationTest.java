@@ -158,6 +158,10 @@ class KmsKeysIntegrationTest {
         final String keyPairsUrl = baseUrl().replace("/api/v1/keys", "/api/v1/key-pairs");
         final String keyPairRef = "did-S20260920000901-1";
 
+        // 权限三态（kms.admin）：未认证 401 / 无权限 403 / admin 200（权限注解缺失必变红）
+        assertThat(post(keyPairsUrl, "{\"keyRef\":\"perm-probe\"}", null, null).statusCode()).isEqualTo(401);
+        assertThat(post(keyPairsUrl, "{\"keyRef\":\"perm-probe\"}", "clerk", "user").statusCode()).isEqualTo(403);
+
         final JsonNode created = postJson(keyPairsUrl, "{\"keyRef\":\"" + keyPairRef + "\"}", "ops-admin", "admin");
         assertThat(created.get("code").asText()).isEqualTo("0");
         final String publicKeyHex = created.at("/data/publicKeyHex").asText();

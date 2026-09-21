@@ -30,6 +30,19 @@
 
 ---
 
+## 4 视角评审结论（循环 1/3，2026-09-21）
+
+| 视角 | 结论 | 要点与处置 |
+| --- | --- | --- |
+| ① 规格与设计符合性（独立评审智能体） | **打回（P1×1）→ 修复后符合** | **P1**：KMS 既有未鉴权端点 `GET /api/v1/keys/{keyRef}/material` 可明文取回本次新增的 SM2 私钥 D 值（`material`/`rotate` 无 `key_type` 门槛，与 hifi §4.2/ADR-017 §2.8 断言冲突）→ **已修复**（`a1e3b98`：`KeyManagementService.requireDataKey` 强制 `key_type` 校验，非 SM4 → 1002C0001，含 `rotate` 路径）。P2×4 已处置：did 默认 profile 注释更正、KMS 集成锚点补齐、时间精度秒级固化、`DidOperationLog` 仓储化；P3×9 处置/留痕（吊销乐观门槛已加、1005S0001 码注据实、ADR 补索引、重放命令原文、"无恢复端点"断言等） |
+| ② 安全与供应链（独立评审智能体） | **有条件通过（无 P1）** | **P1 修复经独立复核闭合**（6 条绕过路径逐一排除：key_type 唯一写入点同事务/无 TOCTOU/current_version 无指向 SM2 材料路径/反向越界被拒/NULL fail-closed）。条件 P2×3 已处置：① 权限 401/403 负向锚点补齐（did 管理三端点 + kms 密钥对创建）；② 内部无鉴权面后果表征（ADR-017 §2.7 补记 + 交付说明：签名/签发能力可外借、私钥导出被堵死、解除条件=网关+令牌+服务间鉴权）；③ DB-24 修复约束登记（选项①必须同时补默认 profile 回环）。硬事实：零新依赖、`common/` 零改动、无敏感数据、无自研密码学 |
+| ③ 一致性与重复 | **通过（降级自检；独立评审待补）** | 因模型配额限流（重试无效）降级为主智能体自检，独立评审智能体③**待补**（留痕）。自检结论：横切能力全部复用（鉴权/错误码/幂等库表守卫）；三处同型 HTTP 客户端沿 `KmsKeyProvider` 先例（hifi 明示），**沉淀建议 3 条留痕**：服务间 HTTP 客户端上收 common、`operator()` 取值上收、kms 内 `requireKeyRef` 收敛。机器证据：checkstyle 0 违规、ArchUnit 3 规则绿 |
+| ④ 测试质量 | **通过（降级自检；独立评审待补）** | 因模型配额限流（重试无效）降级为主智能体自检，独立评审智能体④**待补**（留痕）。自检结论：B1~B7 全覆盖 + 反向探针齐备（uk_guard 直插拒绝 / 库表 64-hex 扫描+植入 / KMS 信封解出 32 字节断言 / `/material` 拒 SM2 锚点 / 401·403·404 负向锚点）；**did 行覆盖实测 92.8%**（≥80% 达标，瞬时 jacoco 0.8.12 测量，未引入项目依赖）。如实声明：本包测试与实现同批落盘，未严格执行"先 RED 后 GREEN"逐步序列，以反向探针 + 全绿 + 覆盖率补偿 |
+
+**评审收口（主智能体，2026-09-21）**：①②独立评审均过（①打回后修复并独立复核闭合）；③④因配额降级自检且结论通过、独立评审**待补登记**。机器门禁全绿（kms 24/24、subject 136/136、did 23/23、checkstyle 0 违规、门禁 GREEN）。**待编排师验收合并**（分支 `feat/C-1.2-DID密钥管理与签发服务`：`2e48799` 实现 + `a1e3b98` P1 修复 + 评审收口提交）。
+
+---
+
 ## 编码会话执行记录（2026-09-21，冷启动承接 `-0806` 日志）
 
 ### 实施前置检查（hifi §10，三项全部完成）
@@ -64,9 +77,10 @@
    - **规格外实现声明：空**（无规格外功能、无未批准依赖、无演示专用代码路径）。
 4. **本地全部检查的命令与结果摘要**：
    - `mvn -B -ntp compile`（全仓）：PASS
-   - `mvn -B -ntp -pl services/kms,services/did,services/subject-service test`：**kms 22 通过 / subject-service 136 通过 / did 17 通过，0 失败 0 错误 0 跳过**
+   - `mvn -B -ntp -pl services/kms,services/did,services/subject-service test`：**kms 24 通过 / subject-service 136 通过 / did 23 通过，0 失败 0 错误 0 跳过**（含评审后补的权限 401/403 锚点、DidKmsHttpClient 桩测、边界分支用例）
    - `mvn -B -ntp -pl services/kms,services/did,services/subject-service checkstyle:check`：0 违规
-   - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/gates/run-gates.ps1`：**GREEN**（PASS=10 FAIL=0 ERROR=0，退出码 0），报告 `scripts/gates/reports/gate-report-20260921-105815.md`（secretsScan 622 文件 0 命中 / adrFieldsCheck 17 ADR 全过 / compile / lint / unitTest / frontendLint / frontendTest 全 PASS）
+   - **did 核心模块行覆盖率实测 92.8%**（≥80% 达标；瞬时 jacoco 0.8.12 测量 `services/did/target/site/jacoco/jacoco.csv`，未引入项目依赖；自动化覆盖率门禁仍 PENDING-JACOCO = DB-06 口径）
+   - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/gates/run-gates.ps1`：**GREEN**（PASS=10 FAIL=0 ERROR=0，退出码 0），**终跑报告 `scripts/gates/reports/gate-report-20260921-141100.md`**（初跑 `-105815` 早于评审修复，已复跑留档；secretsScan 625 文件 0 命中 / adrFieldsCheck 17 ADR 全过 / compile / lint / unitTest / frontendLint / frontendTest 全 PASS）
 5. **高风险点自查**：
    - **并发**：同一主体并发触发由 `uk_guard` 唯一键兜底（`createPending` 捕获 `DuplicateKeyException` 收敛为幂等返回）；集成测试含反向探针（直插第二条非吊销行 → 唯一键拒绝）。
    - **事务**：`completeIssuance`/`revoke` 的状态变更与留痕同事务（`@Transactional`，保证留痕要素与状态原子）；审核批准事务提交后才触发 DID（`ReviewService` 无外层事务，钩子位置经实测确认）。
@@ -105,4 +119,5 @@
 **有无注意事项**：
 - 密钥服务（KMS）与 DID 服务均**必须用 mysql profile 启动**（含回环绑定）；KMS 的**默认 profile 无法启动**（既有缺陷，已登记 DB-24，不影响演示）；
 - DID→KMS 的服务间调用在演示期沿用"信任身份头 + 回环网络隔离"口径（ADR-016 §2.7 / ADR-017 §2.7），上线前须由网关 + 真实令牌收紧；
+- **内部无鉴权面的后果（评审②P2-2 补记）**：签发面（`POST /api/v1/did/issuances`）与内部签名面（`/signatures`）在回环边界内**无身份门槛**——本机任意进程可为任意主体编号铸造身份、可为任意 DID 请求签名。**"私钥看不到"不等于"身份密钥不可被滥用"**：私钥导出已被代码门槛堵死（信封托管 + `key_type` 门槛），而签名/签发能力外借的解除条件 = 网关 + 真实令牌 + 服务间鉴权（3.5.2/3.9.1 兑现项）；演示机须为可信机器；
 - 本包不含解析/验证/互认接口与 DID 管理界面（分别归 3.1.9/3.1.10/3.1.11）。

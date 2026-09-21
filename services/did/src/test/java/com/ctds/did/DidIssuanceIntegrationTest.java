@@ -69,6 +69,32 @@ class DidIssuanceIntegrationTest {
     }
 
     @Test
+    void adminEndpointsEnforceDidAdminPermission() throws Exception {
+        final String subjectNo = "S20260920000107";
+        // 未认证 401（重试/重签/吊销三管理端点；权限注解缺失必变红）
+        assertThat(mockMvc.perform(post(BASE + "/subjects/" + subjectNo + "/issuance-retries"))
+                .andReturn().getResponse().getStatus()).isEqualTo(401);
+        assertThat(mockMvc.perform(post(BASE + "/subjects/" + subjectNo + "/reissuances"))
+                .andReturn().getResponse().getStatus()).isEqualTo(401);
+        assertThat(mockMvc.perform(post(BASE + "/did:ctds:unknown.1/revocation")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"理由\"}"))
+                .andReturn().getResponse().getStatus()).isEqualTo(401);
+        // 无权限 403（非 did.admin 角色）
+        assertThat(mockMvc.perform(post(BASE + "/subjects/" + subjectNo + "/issuance-retries")
+                        .header("X-Ctds-Subject", "clerk").header("X-Ctds-Roles", "applicant"))
+                .andReturn().getResponse().getStatus()).isEqualTo(403);
+        assertThat(mockMvc.perform(post(BASE + "/did:ctds:unknown.1/revocation")
+                        .header("X-Ctds-Subject", "clerk").header("X-Ctds-Roles", "applicant")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"理由\"}"))
+                .andReturn().getResponse().getStatus()).isEqualTo(403);
+        // 签发端点 = 内部触发面（回环边界，无鉴权——诚实边界登记于 ADR-017 §2.7）
+        assertThat(mockMvc.perform(post(BASE + "/issuances")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"subjectNo\":\"" + subjectNo + "\"}"))
+                .andReturn().getResponse().getStatus()).isEqualTo(200);
+    }
+
+    @Test
     void issueCreatesActiveRowAndFourElementLog() throws Exception {
         final String subjectNo = "S20260920000101";
         mockMvc.perform(post(BASE + "/issuances")

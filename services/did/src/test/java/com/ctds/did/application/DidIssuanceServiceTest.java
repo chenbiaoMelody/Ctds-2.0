@@ -159,6 +159,26 @@ class DidIssuanceServiceTest {
                         assertThat(e.getErrorCode()).isEqualTo(DidErrorCodes.DID_NO_REVOKED_TO_REISSUE));
     }
 
+    @Test
+    void invalidSubjectNoAndReasonBoundsAreRejected() {
+        assertThatThrownBy(() -> service.issue(null))
+                .isInstanceOfSatisfying(BizException.class, e ->
+                        assertThat(e.getErrorCode()).isEqualTo(DidErrorCodes.DID_PARAM_INVALID));
+        assertThatThrownBy(() -> service.issue("  "))
+                .isInstanceOfSatisfying(BizException.class, e ->
+                        assertThat(e.getErrorCode()).isEqualTo(DidErrorCodes.DID_PARAM_INVALID));
+        assertThatThrownBy(() -> service.issue("x".repeat(33)))
+                .isInstanceOfSatisfying(BizException.class, e ->
+                        assertThat(e.getErrorCode()).isEqualTo(DidErrorCodes.DID_PARAM_INVALID));
+        assertThatThrownBy(() -> service.revoke(null, "理由"))
+                .isInstanceOfSatisfying(BizException.class, e ->
+                        assertThat(e.getErrorCode()).isEqualTo(DidErrorCodes.DID_PARAM_INVALID));
+        service.issue(SUBJECT_NO);
+        assertThatThrownBy(() -> service.revoke("did:ctds:" + SUBJECT_NO + ".1", "x".repeat(257)))
+                .isInstanceOfSatisfying(BizException.class, e ->
+                        assertThat(e.getErrorCode()).isEqualTo(DidErrorCodes.DID_PARAM_INVALID));
+    }
+
     private static JsonNode parseDocument(final String json) {
         try {
             return new ObjectMapper().readTree(json);
