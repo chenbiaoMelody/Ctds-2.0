@@ -30,6 +30,7 @@ public class KeyManagementService {
     private static final int SM4_KEY_BYTES = 16;
     private static final int MAX_KEY_REF_CHARS = 64;
     private static final String KEY_REF_PATTERN = "[A-Za-z0-9._-]+";
+    private static final String KEY_TYPE_SM4 = "SM4";
     private static final String ACTION_CREATE = "CREATE";
     private static final String ACTION_ROTATE = "ROTATE";
 
@@ -63,6 +64,7 @@ public class KeyManagementService {
     /** 轮换：新增版本（当前 + 1），旧版本保留供解密旧密文（规格行为 2：旧密文不失效）。 */
     public KeyDescriptor rotate(final String keyRef) {
         requireKeyRef(keyRef);
+        requireDataKey(keyRef);
         final KeyDescriptor descriptor = repository.findDescriptor(keyRef)
                 .orElseThrow(() -> new BizException(KmsErrorCodes.KMS_KEY_NOT_FOUND, "密钥编号不存在"));
         final LocalDateTime now = LocalDateTime.now();
@@ -92,9 +94,22 @@ public class KeyManagementService {
 
     /** 指定版本密钥材料（解密旧密文用；版本不存在 → 1002B0002）。 */
     public KeyMaterial material(final String keyRef, final int version) {
-        final KeyVersion record = repository.findVersion(requireKeyRef(keyRef), version)
+        requireDataKey(requireKeyRef(keyRef));
+        final KeyVersion record = repository.findVersion(keyRef, version)
                 .orElseThrow(() -> new BizException(KmsErrorCodes.KMS_KEY_NOT_FOUND, "密钥编号或版本不存在"));
         return new KeyMaterial(keyRef, record.version(), decryptMaterial(record.materialCipher()));
+    }
+
+    /**
+     * 材料读取与轮换只服务 SM4 数据密钥（WBS-3.1.8 hifi §4.2：`GET /material` 不覆盖 SM2 密钥对，
+     * 私钥不出 KMS——由本门槛代码强制，而非注释断言）；非 SM4 编号 → 1002C0001。
+     */
+    private void requireDataKey(final String keyRef) {
+        final String keyType = repository.findKeyType(keyRef)
+                .orElseThrow(() -> new BizException(KmsErrorCodes.KMS_KEY_NOT_FOUND, "密钥编号不存在"));
+        if (!KEY_TYPE_SM4.equals(keyType)) {
+            throw new BizException(KmsErrorCodes.KMS_INPUT_INVALID, "非数据密钥不支持材料读取或轮换");
+        }
     }
 
     private String encryptMaterial(final byte[] material) {

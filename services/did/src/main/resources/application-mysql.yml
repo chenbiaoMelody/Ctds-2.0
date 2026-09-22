@@ -1,5 +1,5 @@
 server:
-  # 演示期安全边界（ADR-016 §2.7）：mysql profile 绑定回环，仅本机可访问（WBS-3.1.8 前置检查项）
+  # 演示期安全边界（ADR-016 §2.7）：mysql profile 绑定回环，仅本机可访问（WBS-3.1.8 hifi §7）
   address: 127.0.0.1
 
 spring:
@@ -7,7 +7,7 @@ spring:
   autoconfigure:
     exclude: ""
   datasource:
-    url: ${CTDS_DB_URL:jdbc:mysql://localhost:3306/ctds_kms}
+    url: ${CTDS_DB_URL:jdbc:mysql://localhost:3306/ctds_did}
     username: ${CTDS_DB_USER:root}
     # 口令只经环境变量注入（密钥零入库，章程红线 7）；默认空 = 未配置不可用
     password: ${CTDS_DB_PASSWORD:}

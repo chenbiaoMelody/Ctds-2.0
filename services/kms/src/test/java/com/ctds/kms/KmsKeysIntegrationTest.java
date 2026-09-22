@@ -4,8 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.ctds.common.crypto.KmsKeyProvider;
+import com.ctds.common.crypto.Sm2Service;
 import com.ctds.common.crypto.Sm4Service;
 import com.ctds.common.errorcode.BizException;
+import com.ctds.kms.domain.KmsKeys;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.net.URI;
@@ -144,5 +146,77 @@ class KmsKeysIntegrationTest {
     private static int keyVersionOf(final byte[] envelope) {
         return ((envelope[5] & 0xFF) << 24) | ((envelope[6] & 0xFF) << 16)
                 | ((envelope[7] & 0xFF) << 8) | (envelope[8] & 0xFF);
+    }
+
+    /**
+     * SM2 密钥对托管与签名（WBS-3.1.8 hifi §4.2）：只返回公钥、私钥信封落库（非明文）、
+     * 内部签名可用公钥验签；**P1 回归锚点**——既有 `/material` 与 `/rotations` 不覆盖 SM2 密钥对
+     * （私钥不可经未鉴权供给端点取回）；反向探针：合法 SM4 数据密钥的材料读取不受门槛影响。
+     */
+    @Test
+    void sm2KeyPairHostingAndMaterialEndpointDoesNotServePrivateKeys() throws Exception {
+        final String keyPairsUrl = baseUrl().replace("/api/v1/keys", "/api/v1/key-pairs");
+        final String keyPairRef = "did-S20260920000901-1";
+
+        // 权限三态（kms.admin）：未认证 401 / 无权限 403 / admin 200（权限注解缺失必变红）
+        assertThat(post(keyPairsUrl, "{\"keyRef\":\"perm-probe\"}", null, null).statusCode()).isEqualTo(401);
+        assertThat(post(keyPairsUrl, "{\"keyRef\":\"perm-probe\"}", "clerk", "user").statusCode()).isEqualTo(403);
+
+        final JsonNode created = postJson(keyPairsUrl, "{\"keyRef\":\"" + keyPairRef + "\"}", "ops-admin", "admin");
+        assertThat(created.get("code").asText()).isEqualTo("0");
+        final String publicKeyHex = created.at("/data/publicKeyHex").asText();
+        assertThat(publicKeyHex).hasSize(130).startsWith("04");
+        assertThat(created.at("/data").has("privateKeyHex")).isFalse();
+        assertThat(created.at("/data").has("material")).isFalse();
+
+        // 库表：私钥 D 值只以根密钥信封落库（非 64 位明文 hex；解信封得 32 字节 D 值）
+        final String storedCipher = jdbcTemplate.queryForObject(
+                "SELECT material_cipher FROM kms_key_version WHERE key_ref = ? AND version = 1",
+                String.class, keyPairRef);
+        assertThat(storedCipher).doesNotMatch("^[0-9a-f]{64}$");
+        final Sm4Service rootSm4 = new Sm4Service(keyRef -> TEST_ROOT_MATERIAL.clone());
+        assertThat(rootSm4.decrypt(Base64.getDecoder().decode(storedCipher), KmsKeys.ROOT_KEY_REF)).hasSize(32);
+
+        // 内部签名：私钥不出 KMS；返回 DER 签名，用公钥可验签
+        final byte[] plain = "身份主张原文".getBytes(StandardCharsets.UTF_8);
+        final JsonNode signed = postJson(keyPairsUrl + "/" + keyPairRef + "/signatures",
+                "{\"data\":\"" + Base64.getEncoder().encodeToString(plain) + "\"}", null, null);
+        assertThat(signed.get("code").asText()).isEqualTo("0");
+        final byte[] signature = Base64.getDecoder().decode(signed.at("/data/signature").asText());
+        assertThat(new Sm2Service().verify(plain, signature, publicKeyHex)).isTrue();
+
+        // P1 回归锚点：/material 与 /rotations 不覆盖 SM2 密钥对（私钥不可经此取回）
+        assertThat(errorCodeOf(get(baseUrl() + "/" + keyPairRef + "/material", null, null)))
+                .isEqualTo("1002C0001");
+        assertThat(errorCodeOf(get(baseUrl() + "/" + keyPairRef + "/versions/1/material", null, null)))
+                .isEqualTo("1002C0001");
+        assertThat(postJson(baseUrl() + "/" + keyPairRef + "/rotations", "", "ops-admin", "admin")
+                .get("code").asText()).isEqualTo("1002C0001");
+
+        // 反向探针：合法 SM4 数据密钥的材料读取与轮换不受门槛影响
+        postJson(baseUrl(), "{\"keyRef\":\"sm4-order-data\"}", "ops-admin", "admin");
+        final HttpResponse<String> sm4Material = get(baseUrl() + "/sm4-order-data/material", null, null);
+        assertThat(sm4Material.statusCode()).isEqualTo(200);
+        assertThat(MAPPER.readTree(sm4Material.body()).at("/data/material").asText()).isNotBlank();
+        assertThat(postJson(baseUrl() + "/sm4-order-data/rotations", "", "ops-admin", "admin")
+                .get("code").asText()).isEqualTo("0");
+    }
+
+    private HttpResponse<String> get(final String url, final String subject, final String roles) throws Exception {
+        final HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build();
+        final HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url)).GET();
+        if (subject != null) {
+            builder.header("X-Ctds-Subject", subject);
+        }
+        if (roles != null) {
+            builder.header("X-Ctds-Roles", roles);
+        }
+        return client.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    /** 错误响应封套的业务码（不断言 HTTP 状态，C/B 型 = 400 / S 型 = 500）。 */
+    private String errorCodeOf(final HttpResponse<String> response) throws Exception {
+        assertThat(response.statusCode()).isEqualTo(400);
+        return MAPPER.readTree(response.body()).get("code").asText();
     }
 }

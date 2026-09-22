@@ -8,6 +8,7 @@ import com.ctds.common.crypto.Sm4Service;
 import com.ctds.common.errorcode.BizException;
 import com.ctds.kms.domain.KeyAuditRecord;
 import com.ctds.kms.domain.KeyDescriptor;
+import com.ctds.kms.domain.KeyPair;
 import com.ctds.kms.domain.KeyRepository;
 import com.ctds.kms.domain.KeyVersion;
 import com.ctds.kms.domain.KmsErrorCodes;
@@ -138,11 +139,34 @@ class KeyManagementServiceTest {
                         assertThat(e.getErrorCode()).isEqualTo(KmsErrorCodes.KMS_INPUT_INVALID));
     }
 
+    /** P1 修复的 Docker-free 锚点：非 SM4 密钥（SM2 密钥对）不可经材料读取/轮换路径取用。 */
+    @Test
+    void nonDataKeyIsRejectedForMaterialAndRotation() {
+        service.create("did-key");
+        repository.seedKeyType("did-key", "SM2");
+
+        assertThatThrownBy(() -> service.currentMaterial("did-key"))
+                .isInstanceOfSatisfying(BizException.class, e ->
+                        assertThat(e.getErrorCode()).isEqualTo(KmsErrorCodes.KMS_INPUT_INVALID));
+        assertThatThrownBy(() -> service.material("did-key", 1))
+                .isInstanceOfSatisfying(BizException.class, e ->
+                        assertThat(e.getErrorCode()).isEqualTo(KmsErrorCodes.KMS_INPUT_INVALID));
+        assertThatThrownBy(() -> service.rotate("did-key"))
+                .isInstanceOfSatisfying(BizException.class, e ->
+                        assertThat(e.getErrorCode()).isEqualTo(KmsErrorCodes.KMS_INPUT_INVALID));
+    }
+
     /** 内存仓储桩：记录版本材料与审计，语义与 KeyJdbcRepository 一致。 */
     private static final class FakeKeyRepository implements KeyRepository {
         private final Map<String, KeyDescriptor> descriptors = new HashMap<>();
         private final Map<String, String> versions = new HashMap<>();
+        private final Map<String, String> keyTypes = new HashMap<>();
         private final List<KeyAuditRecord> audits = new ArrayList<>();
+
+        /** 测试接缝：改写编号的密钥类型（模拟 SM2 密钥对，P1 门槛的 Docker-free 锚点）。 */
+        void seedKeyType(final String keyRef, final String keyType) {
+            keyTypes.put(keyRef, keyType);
+        }
 
         @Override
         public void create(final KeyDescriptor descriptor, final KeyVersion versionOne,
@@ -150,6 +174,7 @@ class KeyManagementServiceTest {
             if (descriptors.putIfAbsent(descriptor.keyRef(), descriptor) != null) {
                 throw new BizException(KmsErrorCodes.KMS_KEY_ALREADY_EXISTS, "密钥编号已存在");
             }
+            keyTypes.put(descriptor.keyRef(), "SM4");
             versions.put(descriptor.keyRef() + "|" + versionOne.version(), versionOne.materialCipher());
             audits.add(audit);
         }
@@ -186,6 +211,22 @@ class KeyManagementServiceTest {
             final String cipher = versions.get(keyRef + "|" + version);
             return cipher == null ? Optional.empty()
                     : Optional.of(new KeyVersion(keyRef, version, cipher, java.time.LocalDateTime.now()));
+        }
+
+        @Override
+        public void createKeyPair(final KeyPair keyPair, final KeyAuditRecord audit) {
+            throw new UnsupportedOperationException("SM2 key pair storage not exercised by this test");
+        }
+
+        @Override
+        public Optional<KeyPair> findKeyPair(final String keyRef) {
+            return Optional.empty();
+        }
+
+        @Override
+        public Optional<String> findKeyType(final String keyRef) {
+            return descriptors.containsKey(keyRef)
+                    ? Optional.of(keyTypes.getOrDefault(keyRef, "SM4")) : Optional.empty();
         }
     }
 }

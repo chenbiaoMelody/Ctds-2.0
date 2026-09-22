@@ -42,6 +42,7 @@ class ReviewServiceTest {
     private SubjectStatusService statusService;
     private SubjectOpsSupport ops;
     private CertificationProperties properties;
+    private DidIssuanceTrigger didIssuanceTrigger;
     private ReviewService service;
     private Subject subject;
 
@@ -51,7 +52,8 @@ class ReviewServiceTest {
         statusService = mock(SubjectStatusService.class);
         ops = mock(SubjectOpsSupport.class);
         properties = new CertificationProperties();
-        service = new ReviewService(subjectRepository, statusService, ops, properties);
+        didIssuanceTrigger = mock(DidIssuanceTrigger.class);
+        service = new ReviewService(subjectRepository, statusService, ops, properties, didIssuanceTrigger);
         subject = new Subject(1L, SUBJECT_NO, "演示公司", "91330100MA27XW123X", SubjectType.ENTERPRISE,
                 "杭州市XX区XX路88号", "张三", "13800001234", "admin001", "applicant-01",
                 SubjectStatus.PENDING_REVIEW, LocalDateTime.now(), LocalDateTime.now());

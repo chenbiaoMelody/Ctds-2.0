@@ -3,6 +3,7 @@ package com.ctds.kms.infrastructure;
 import com.ctds.common.errorcode.BizException;
 import com.ctds.kms.domain.KeyAuditRecord;
 import com.ctds.kms.domain.KeyDescriptor;
+import com.ctds.kms.domain.KeyPair;
 import com.ctds.kms.domain.KeyRepository;
 import com.ctds.kms.domain.KeyStatus;
 import com.ctds.kms.domain.KeyVersion;
@@ -98,6 +99,45 @@ public class KeyJdbcRepository implements KeyRepository {
                 .optional();
     }
 
+    @Override
+    @Transactional
+    public void createKeyPair(final KeyPair keyPair, final KeyAuditRecord audit) {
+        try {
+            jdbc.sql("INSERT INTO kms_key (key_ref, status, current_version, key_type, public_key_hex, created_at) "
+                            + "VALUES (?, ?, ?, ?, ?, ?)")
+                    .params(keyPair.keyRef(), KeyStatus.ENABLED.name(), 1, keyPair.keyType(),
+                            keyPair.publicKeyHex(), Timestamp.valueOf(keyPair.createdAt()))
+                    .update();
+        } catch (final DuplicateKeyException e) {
+            throw new BizException(KmsErrorCodes.KMS_KEY_ALREADY_EXISTS, "密钥编号已存在");
+        }
+        insertKeyPairMaterial(keyPair);
+        appendAudit(audit);
+    }
+
+    @Override
+    public Optional<KeyPair> findKeyPair(final String keyRef) {
+        return jdbc.sql("SELECT k.key_ref, k.key_type, k.public_key_hex, v.material_cipher, k.created_at "
+                        + "FROM kms_key k JOIN kms_key_version v ON v.key_ref = k.key_ref "
+                        + "WHERE k.key_ref = ? AND v.version = k.current_version")
+                .param(keyRef)
+                .query((rs, rowNum) -> new KeyPair(
+                        rs.getString("key_ref"),
+                        rs.getString("key_type"),
+                        rs.getString("public_key_hex"),
+                        rs.getString("material_cipher"),
+                        rs.getTimestamp("created_at").toLocalDateTime()))
+                .optional();
+    }
+
+    @Override
+    public Optional<String> findKeyType(final String keyRef) {
+        return jdbc.sql("SELECT key_type FROM kms_key WHERE key_ref = ?")
+                .param(keyRef)
+                .query(String.class)
+                .optional();
+    }
+
     private void insertVersion(final KeyVersion record) {
         try {
             jdbc.sql("INSERT INTO kms_key_version (key_ref, version, material_cipher, created_at) "
@@ -109,5 +149,12 @@ public class KeyJdbcRepository implements KeyRepository {
             // 材料表版本冲突 = 描述符与版本不一致（并发轮换重复提交）→ 收敛编号已存在口径之外的业务错误
             throw new BizException(KmsErrorCodes.KMS_INTERNAL_ERROR, "密钥版本冲突，请重试");
         }
+    }
+
+    private void insertKeyPairMaterial(final KeyPair keyPair) {
+        jdbc.sql("INSERT INTO kms_key_version (key_ref, version, material_cipher, created_at) "
+                        + "VALUES (?, ?, ?, ?)")
+                .params(keyPair.keyRef(), 1, keyPair.privateCipher(), Timestamp.valueOf(keyPair.createdAt()))
+                .update();
     }
 }
