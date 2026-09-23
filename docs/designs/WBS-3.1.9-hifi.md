@@ -77,8 +77,15 @@ CREATE TABLE did_verification_log (
 | did | 超时 | 连接 1s / 读取 3s（沿 `KmsKeyProvider`/`DidIssuanceClient` 先例） |
 | subject | `ctds.auth.permissions` 新增一行 `did-internal: subject.read` | 服务间只读衔接的**专用角色**（不冒充 reviewer/applicant；仅只读权限）；did 侧调用头 `X-Ctds-Subject: did-service` + `X-Ctds-Roles: did-internal` |
 
-- 绑定核验调用：`GET {base-url}/api/v1/subject/registrations/{subjectNo}` → 解析 `data.status == "ADMITTED"` 为通过；非 ADMITTED 为 B8；网络失败/非 200/解析失败为 B9。**不复制主体状态到 DID 库**（单一事实源）。
+- 绑定核验调用（**实施修正后口径**，见下）：`GET {base-url}/api/v1/subject/internal/subjects/{subjectNo}/admission` → 解析 `data.status == "ADMITTED"` 为通过；非 ADMITTED 为 B8；**业务码 1000C0003（主体编号不存在）= 绑定不成立（B8）**；其余网络失败/非 200/解析失败/其他业务错误为 B9。**不复制主体状态到 DID 库**（单一事实源）。
 - 角色映射新增属配置扩展（不改任何既有鉴权行为与权限点语义），登记 ADR-017 补记。
+
+**实施修正（2026-09-22，前置检查②实测留痕）**：
+
+1. **原定复用既有 `GET /registrations/{subjectNo}` 不可行**：实测该端点带**对象级归属断言**（`OwnershipGuard`，ADR-016 §2.6 防申请编号枚举设计）——仅"申请人本人"或"持 `subject.review` 权限"可读；仅配 `subject.read` 的 `did-internal` 角色被拒为 400/1000C0003（运营证据：前置检查②首跑所得）。
+2. **修正方案（最小暴露，不改既有安全口径）**：subject-service **新增内部只读端点** `GET /api/v1/subject/internal/subjects/{subjectNo}/admission`——仅返回 `{subjectNo, status}` 两字段（无注册信息、无脱敏字段、无流转记录）；功能级门槛沿用 `subject.read`（不带头 401 / 无权限 403）；**不落归属断言**（内部只读面，诚实边界登记 ADR-017 补记，沿 3.1.8 签发面/签名面先例）。
+3. **不采纳的替代方案**：给 `did-internal` 追加 `subject.review` 权限可复用既有豁免——但该权限同时解锁审核端点（approve/reject），等于把"审批主体"能力授予 DID 服务，**安全面扩大不可接受**；放宽既有归属断言属破坏防枚举设计，同样不采纳。
+4. 本修正不改 Q2 方向（绑定核验经服务间只读调用），仅改"调用哪个端点"（实施细节）；已随本文件留痕、登记 ADR-017 补记与交付说明，供 4 视角评审核查。
 
 ## 6. 边界值与异常行为
 

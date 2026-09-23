@@ -20,6 +20,11 @@
       <groupId>com.ctds</groupId>
       <artifactId>common-errorcode</artifactId>
     </dependency>
+    <!-- 验签（SM2 公钥验签仅此行用途，WBS-3.1.9 行为 3 三查①；经 common-crypto 唯一入口，禁止自研密码学） -->
+    <dependency>
+      <groupId>com.ctds</groupId>
+      <artifactId>common-crypto</artifactId>
+    </dependency>
     <!-- 运营管理员吊销/重签/重试（did.admin 权限强制，WBS 2.4.5 复用） -->
     <dependency>
       <groupId>com.ctds</groupId>

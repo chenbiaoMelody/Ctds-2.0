@@ -51,7 +51,7 @@ C-1.2 分布式数字身份（DID）的第一个实施包（WBS-3.1.8）新建�
 | POST | `/api/v1/did/subjects/{subjectNo}/reissuances` | `did.admin` | 运营重签（无已吊销记录 → 1005B0002；新序号 + 全新密钥对 + 新 did） |
 | POST | `/api/v1/did/{did}/revocation` | `did.admin` | 吊销（理由必填 1005C0002、非有效 1005C0003；即时生效、不可逆） |
 
-- 解析/验证/互认/管理界面**不在本包**（3.1.9/3.1.10/3.1.11）；吊销写操作归属本包（Q4 已裁决，3.1.9 只读）。
+- 解析/验证端点由 **3.1.9 交付**（契约见 §2.9）；互认/管理界面**不在本 ADR**（3.1.10/3.1.11）；吊销写操作归属本包（Q4 已裁决，3.1.9 只读）。
 
 ### 2.5 触发衔接（ADR-016 §6 兑现）
 
@@ -76,9 +76,33 @@ C-1.2 分布式数字身份（DID）的第一个实施包（WBS-3.1.8）新建�
 - **接口**：DID/KMS 接口响应无私钥/材料字段；KMS 无任何返回 SM2 私钥/材料的端点——**由代码门槛强制**（非注释断言）：`KeyManagementService` 的材料读取与轮换路径经 `requireDataKey` 校验 `key_type`，非 `SM4` 一律拒（1002C0001），故既有 `GET /api/v1/keys/{keyRef}/material` 与 `/rotations` **不覆盖 SM2 密钥对**（KMS 集成测试含回归锚点 + 合法 SM4 数据密钥的反向探针）。
 - **日志**：密钥编号/公钥可入日志，私钥 D 值禁入（`Sm2KeyPair.toString()` 显式脱敏）。
 
+### 2.9 解析与验证契约（WBS-3.1.9 补记，2026-09-22）
+
+**接口契约**（`services/did` 扩展，统一响应 `ApiResult`）：
+
+| 方法 | 路径 | 权限 | 语义 |
+| --- | --- | --- | --- |
+| GET | `/api/v1/did/{did}` | 无（只读公开要素，回环边界） | 解析：文档公开要素 + 状态（仅 `ACTIVE`/`REVOKED` 两值）；未登记 → 1005B0003 明确业务答复；解析不留痕 |
+| POST | `/api/v1/did/{did}/verifications` | 无（对外验证能力，回环边界） | 验证三查（签名/状态/绑定）：`{data, signature}`（Base64）→ `{did, result, reason, verifiedAt}`；每次验证落痕（含未登记/不可用） |
+
+- **错误码（1005 段顺延，ADR-005 §3.5）**：`1005B0003`（解析目标未登记，400）、`1005C0004`（验证参数不合法：data/signature 缺失、非法 Base64、空内容或超上限，400）、`1005S0002`（验证内部错误，500）。
+- **验证结论枚举**（验证结论，**非 DID 状态枚举**——§2.3 两值口径不受影响）：`PASS` / `FAIL`（reason ∈ `SIGNATURE_INVALID` / `REVOKED` / `SUBJECT_BINDING_FAILED` / `NOT_REGISTERED`）/ `UNAVAILABLE`（reason = `BINDING_UNAVAILABLE`，**系统态不冒充"验证不通过"**）。
+- **库表**：`ctds_did` Flyway `V2__create_verification_log.sql` 新增 `did_verification_log`（`did` / `result` / `reason` / `occurred_at`）；**不存业务数据原文**（验证通道不是数据存储通道，行为 3 规则 3）。
+- **验签**经 common-crypto `Sm2Service.verify` 唯一入口（公钥 = 注册表 130-hex `04‖X‖Y`；签名 = DER，与 KMS 签名面同构）。
+
+**主体绑定核验衔接（服务间，Q2 落地）**：
+
+- subject-service 新增**内部只读端点** `GET /api/v1/subject/internal/subjects/{subjectNo}/admission`——仅返回 `{subjectNo, status}` 两字段（最小暴露）；功能级门槛复用 `subject.read`，服务身份角色 **`did-internal: subject.read`**（专配，不冒充 reviewer/applicant）；**不落对象级归属断言**。
+- **实施修正留痕（2026-09-22 前置检查②）**：原定复用既有 `GET /registrations/{subjectNo}` 不可行——该端点带防枚举归属断言（ADR-016 §2.6，仅"本人或持 `subject.review`"可读）；给 `did-internal` 追加 `subject.review` 会同时解锁审核端点（误授"审批主体"能力，安全面扩大），故以新增内部端点落地。细节见 `docs/designs/WBS-3.1.9-hifi.md` §5。
+- did 侧配置 `ctds.did.subject.base-url`；未配置/不可达/非 200 与响应不可解析/其他业务错误 → `UNAVAILABLE`；业务码 `1000C0003`（主体编号不存在）= `SUBJECT_BINDING_FAILED`（绑定不成立，非"不可用"）。**不复制主体状态到 DID 库**（单一事实源在 subject-service，§2.2 口径）。
+
+**内部无鉴权面诚实边界（补 §2.7 口径）**：`GET /api/v1/did/{did}` 与 `POST /api/v1/did/{did}/verifications` 在回环边界内**无身份门槛**——本机任意进程可解析任意 DID、可发起任意验证请求；验证为只读判定 + 留痕（无状态写入、结论不冒充授权，行为 3 规则 4）。解除条件同 §2.7（网关 HeaderStripFilter + 真实令牌 + 服务间鉴权，3.5.2/3.9.1 兑现项）；演示机须为可信机器。
+
+**后续包约束重申**（与 §3 一致）：3.1.10/3.1.11 不得新建平行错误码段/状态枚举/库表；解析/验证复用本契约定形。
+
 ## 3. 影响
 
-- 后续包约束：3.1.9/3.1.10/3.1.11 不得新建平行错误码段/状态枚举/库表；解析/验证走 DID 文档公开要素 + 注册表当前状态；互认协议收口 std-adapter `did` 域（ADR-008）。
+- 后续包约束（解析/验证契约见 **§2.9**，本包 3.1.9 已交付）：3.1.10/3.1.11 不得新建平行错误码段/状态枚举/库表；互认协议收口 std-adapter `did` 域（ADR-008）。
 - 根 pom 模块表 +1（`services/did`）；端口分派：主体 8080 / KMS **8081** / DID **8082**，三者 mysql profile 均绑定 `server.address=127.0.0.1`。
 - 演示注入方式（剧本 S1 步骤 5）：交付说明提供对同一主体重复调用 `POST /api/v1/did/issuances` 的重放命令（幂等 → 仍只见一条有效 DID），不新增演示专用代码路径。
 

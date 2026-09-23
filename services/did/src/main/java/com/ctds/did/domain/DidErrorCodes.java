@@ -20,6 +20,12 @@ public final class DidErrorCodes {
     public static final ErrorCode DID_NO_REVOKED_TO_REISSUE = ErrorCode.of("1005B0002");
     /** 签发内部失败：KMS 不可达经触发接口收敛为 PENDING_ISSUE（不直出）；文档组装/激活等内部异常按本码直出 500。→ 500 */
     public static final ErrorCode DID_ISSUANCE_INTERNAL_ERROR = ErrorCode.of("1005S0001");
+    /** 解析目标未登记（明确业务答复，不伪装系统异常；WBS-3.1.9 行为 2 规则 3）。→ 400 */
+    public static final ErrorCode DID_NOT_REGISTERED = ErrorCode.of("1005B0003");
+    /** 验证参数不合法：data/signature 缺失、非法 Base64、空内容或超上限（WBS-3.1.9 行为 3）。→ 400 */
+    public static final ErrorCode DID_VERIFICATION_INPUT_INVALID = ErrorCode.of("1005C0004");
+    /** 验证内部错误：注册表读取/文档公钥解析等非输入类故障（WBS-3.1.9 hifi §6）。→ 500 */
+    public static final ErrorCode DID_VERIFICATION_INTERNAL_ERROR = ErrorCode.of("1005S0002");
 
     private DidErrorCodes() {
     }

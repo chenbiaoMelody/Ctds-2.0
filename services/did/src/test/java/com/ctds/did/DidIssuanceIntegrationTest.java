@@ -5,19 +5,28 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.ctds.common.crypto.Sm2KeyPair;
+import com.ctds.common.crypto.Sm2Service;
 import com.ctds.common.errorcode.BizException;
 import com.ctds.did.domain.DidErrorCodes;
 import com.ctds.did.domain.DidKmsClient;
 import com.ctds.did.domain.DidOperationLog;
+import com.ctds.did.domain.DidStatus;
+import com.ctds.did.domain.SubjectAdmission;
+import com.ctds.did.domain.SubjectStatusPort;
 import com.ctds.did.infrastructure.DidJdbcRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
+import java.util.Base64;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -35,10 +44,12 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
- * DID 签发/吊销全链路集成测试（WBS-3.1.8 行为清单 B1~B6，ADR-010 容器化基座）：
- * 幂等唯一守卫（uk_guard 反向探针）/ 失败可重试 / 吊销五要素 + 不可逆 / 重签新序号新密钥 /
- * 私钥零明文（库表 64-hex 扫描 + 反向探针）。KMS 客户端 @MockitoBean 替换（私钥生成在 KMS，不在 DID）。
+ * DID 全链路集成测试（WBS-3.1.8 行为清单 B1~B6 + WBS-3.1.9 解析/验证 B1~B12，ADR-010 容器化基座）：
+ * 签发/幂等唯一守卫（uk_guard 反向探针）/ 失败可重试 / 吊销五要素 + 不可逆 / 重签新序号新密钥 /
+ * 私钥零明文（库表 64-hex 扫描 + 反向探针）/ 解析三态 / 验证三查（**真实 SM2 验签**）/ 留痕无数据原文。
+ * KMS 客户端与主体状态端口 @MockitoBean 替换（真实不可达链路见 SubjectStatusClientFailureIntegrationTest）。
  * 各用例独立 subject_no（库共享，防跨用例状态串扰）。本机 Docker 未运行时 disabledWithoutDocker 自动跳过。
+ * 注：3.1.9 与 3.1.8 用例合并于同一测试类共享容器（门禁 unitTest 段 600s 上限下压低容器启动开销）。
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 @AutoConfigureMockMvc
@@ -64,6 +75,9 @@ class DidIssuanceIntegrationTest {
     @MockitoBean
     private DidKmsClient kmsClient;
 
+    @MockitoBean
+    private SubjectStatusPort subjectStatusPort;
+
     @Autowired
     private DidJdbcRepository didJdbcRepository;
 
@@ -71,11 +85,15 @@ class DidIssuanceIntegrationTest {
     private MockMvc mockMvc;
 
     @Autowired
+    private Sm2Service sm2Service;
+
+    @Autowired
     private JdbcTemplate jdbcTemplate;
 
     @BeforeEach
     void stubKms() {
         doReturn(PUBLIC_KEY_HEX).when(kmsClient).createKeyPair(anyString());
+        doReturn(SubjectAdmission.ADMITTED).when(subjectStatusPort).check(anyString());
     }
 
     @Test
@@ -290,6 +308,237 @@ class DidIssuanceIntegrationTest {
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT COUNT(1) FROM did_operation_log WHERE subject_no = ?", Integer.class, subjectNo))
                 .isZero();
+    }
+
+    // ==== WBS-3.1.9 解析与验证用例（合并自原 DidResolutionVerificationIntegrationTest，共享本类容器）====
+
+    @Test
+    void resolveActiveReturnsDocumentAndStatus() throws Exception {
+        final String subjectNo = "S20260922000110";
+        final String did = "did:ctds:" + subjectNo + ".1";
+        insertIdentity(subjectNo, did, DidStatus.ACTIVE, PUBLIC_KEY_HEX);
+
+        mockMvc.perform(get(BASE + "/" + did))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("0"))
+                .andExpect(jsonPath("$.data.did").value(did))
+                .andExpect(jsonPath("$.data.status").value("ACTIVE"))
+                // B4：文档字段集严格 = 公开要素（不含私钥/密钥引用）
+                .andExpect(jsonPath("$.data.document.publicKey.type").value("SM2"))
+                .andExpect(jsonPath("$.data.document.controller").value(subjectNo))
+                .andExpect(jsonPath("$.data.document.keyRef").doesNotExist())
+                .andExpect(jsonPath("$.data.document.privateKey").doesNotExist());
+    }
+
+    @Test
+    void resolveRevokedStillReturnsDocumentWithRevokedStatus() throws Exception {
+        final String subjectNo = "S20260922000111";
+        final String did = "did:ctds:" + subjectNo + ".1";
+        insertIdentity(subjectNo, did, DidStatus.REVOKED, PUBLIC_KEY_HEX);
+
+        mockMvc.perform(get(BASE + "/" + did))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("REVOKED"));
+    }
+
+    @Test
+    void resolveUnknownDidReturnsNotRegisteredAnswer() throws Exception {
+        mockMvc.perform(get(BASE + "/did:ctds:S20260922009999.1"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("1005B0003"))
+                .andExpect(jsonPath("$.message").value("该 DID 未登记"));
+    }
+
+    @Test
+    void verifyPassesWithRealSm2Signature() throws Exception {
+        // 前置检查①（验签 round-trip）：真实 SM2 密钥对 + 真实签名 → 三查全过
+        final String subjectNo = "S20260922000113";
+        final String did = "did:ctds:" + subjectNo + ".1";
+        final byte[] data = "身份主张：我是该 DID 持有者".getBytes(StandardCharsets.UTF_8);
+        final Sm2KeyPair pair = sm2Service.generateKeyPair();
+        insertIdentity(subjectNo, did, DidStatus.ACTIVE, pair.publicKeyHex());
+        final byte[] signature = sm2Service.sign(data, pair.privateKeyHex());
+
+        mockMvc.perform(post(BASE + "/" + did + "/verifications")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(verifyBody(data, signature)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("0"))
+                .andExpect(jsonPath("$.data.result").value("PASS"))
+                .andExpect(jsonPath("$.data.reason").doesNotExist());
+
+        // 留痕三要素
+        final Map<String, Object> log = jdbcTemplate.queryForMap(
+                "SELECT did, result, reason, occurred_at FROM did_verification_log WHERE did = ?", did);
+        assertThat(log.get("result")).isEqualTo("PASS");
+        assertThat(log.get("reason")).isNull();
+        assertThat(log.get("occurred_at")).isNotNull();
+    }
+
+    @Test
+    void verifyFailsWhenDataTampered() throws Exception {
+        final String subjectNo = "S20260922000114";
+        final String did = "did:ctds:" + subjectNo + ".1";
+        final byte[] data = "身份主张：我是该 DID 持有者".getBytes(StandardCharsets.UTF_8);
+        final Sm2KeyPair pair = sm2Service.generateKeyPair();
+        insertIdentity(subjectNo, did, DidStatus.ACTIVE, pair.publicKeyHex());
+        final byte[] signature = sm2Service.sign(data, pair.privateKeyHex());
+        final byte[] tampered = "被篡改的数据".getBytes(StandardCharsets.UTF_8);
+
+        mockMvc.perform(post(BASE + "/" + did + "/verifications")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(verifyBody(tampered, signature)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.result").value("FAIL"))
+                .andExpect(jsonPath("$.data.reason").value("SIGNATURE_INVALID"));
+    }
+
+    @Test
+    void verifyFailsWithRevokedWhenSignatureIsCryptographicallyReal() throws Exception {
+        final String subjectNo = "S20260922000115";
+        final String did = "did:ctds:" + subjectNo + ".1";
+        final byte[] data = "身份主张：我是该 DID 持有者".getBytes(StandardCharsets.UTF_8);
+        final Sm2KeyPair pair = sm2Service.generateKeyPair();
+        insertIdentity(subjectNo, did, DidStatus.REVOKED, pair.publicKeyHex());
+        final byte[] signature = sm2Service.sign(data, pair.privateKeyHex());
+
+        mockMvc.perform(post(BASE + "/" + did + "/verifications")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(verifyBody(data, signature)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.result").value("FAIL"))
+                .andExpect(jsonPath("$.data.reason").value("REVOKED"));
+    }
+
+    @Test
+    void verifyFailsWhenSubjectBindingNotAdmitted() throws Exception {
+        final String subjectNo = "S20260922000116";
+        final String did = "did:ctds:" + subjectNo + ".1";
+        final byte[] data = "身份主张：我是该 DID 持有者".getBytes(StandardCharsets.UTF_8);
+        final Sm2KeyPair pair = sm2Service.generateKeyPair();
+        insertIdentity(subjectNo, did, DidStatus.ACTIVE, pair.publicKeyHex());
+        doReturn(SubjectAdmission.NOT_ADMITTED).when(subjectStatusPort).check(subjectNo);
+
+        mockMvc.perform(post(BASE + "/" + did + "/verifications")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(verifyBody(data, sm2Service.sign(data, pair.privateKeyHex()))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.result").value("FAIL"))
+                .andExpect(jsonPath("$.data.reason").value("SUBJECT_BINDING_FAILED"));
+    }
+
+    @Test
+    void verifyUnavailableWhenBindingServiceUnavailable() throws Exception {
+        final String subjectNo = "S20260922000117";
+        final String did = "did:ctds:" + subjectNo + ".1";
+        final byte[] data = "身份主张：我是该 DID 持有者".getBytes(StandardCharsets.UTF_8);
+        final Sm2KeyPair pair = sm2Service.generateKeyPair();
+        insertIdentity(subjectNo, did, DidStatus.ACTIVE, pair.publicKeyHex());
+        doReturn(SubjectAdmission.UNAVAILABLE).when(subjectStatusPort).check(subjectNo);
+
+        mockMvc.perform(post(BASE + "/" + did + "/verifications")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(verifyBody(data, sm2Service.sign(data, pair.privateKeyHex()))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.result").value("UNAVAILABLE"))
+                .andExpect(jsonPath("$.data.reason").value("BINDING_UNAVAILABLE"));
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT result FROM did_verification_log WHERE did = ?", String.class, did))
+                .isEqualTo("UNAVAILABLE");
+    }
+
+    @Test
+    void verifyUnknownDidFailsNotRegisteredWithLog() throws Exception {
+        final String did = "did:ctds:S20260922009998.1";
+
+        mockMvc.perform(post(BASE + "/" + did + "/verifications")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(verifyBody("身份主张数据".getBytes(StandardCharsets.UTF_8),
+                                "not-a-real-signature".getBytes(StandardCharsets.UTF_8))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.result").value("FAIL"))
+                .andExpect(jsonPath("$.data.reason").value("NOT_REGISTERED"));
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT reason FROM did_verification_log WHERE did = ?", String.class, did))
+                .isEqualTo("NOT_REGISTERED");
+    }
+
+    @Test
+    void verifyRejectsInvalidInputs() throws Exception {
+        final String did = "did:ctds:S20260922000118.1";
+        // 非法 Base64
+        mockMvc.perform(post(BASE + "/" + did + "/verifications")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"data\":\"not-base64!!\",\"signature\":\"AAAA\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("1005C0004"));
+        // 空数据
+        mockMvc.perform(post(BASE + "/" + did + "/verifications")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"data\":\"  \",\"signature\":\"AAAA\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("1005C0004"));
+        // 输入类拒绝不落留痕
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(1) FROM did_verification_log WHERE did = ?", Integer.class, did)).isZero();
+    }
+
+    @Test
+    void verificationLogContainsNoDataOrSignatureRawBytes() throws Exception {
+        final String subjectNo = "S20260922000119";
+        final String did = "did:ctds:" + subjectNo + ".1";
+        final byte[] data = "身份主张：我是该 DID 持有者".getBytes(StandardCharsets.UTF_8);
+        final Sm2KeyPair pair = sm2Service.generateKeyPair();
+        insertIdentity(subjectNo, did, DidStatus.ACTIVE, pair.publicKeyHex());
+        final byte[] signature = sm2Service.sign(data, pair.privateKeyHex());
+        final String dataB64 = Base64.getEncoder().encodeToString(data);
+
+        mockMvc.perform(post(BASE + "/" + did + "/verifications")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(verifyBody(data, signature)))
+                .andExpect(jsonPath("$.data.result").value("PASS"));
+
+        // B10 正向：留痕全表不含被验证数据的 Base64 片段（验证通道不是数据存储通道）
+        assertThat(rawPayloadHits(dataB64.substring(0, 16))).isZero();
+        // 反向探针：植入该片段 → 命中（证明扫描非空断言，删"不留存"实现必变红）
+        jdbcTemplate.update("INSERT INTO did_verification_log (did, result, reason, occurred_at) "
+                        + "VALUES (?, 'FAIL', ?, ?)", did, dataB64.substring(0, 16),
+                Timestamp.valueOf(LocalDateTime.now()));
+        assertThat(rawPayloadHits(dataB64.substring(0, 16))).isGreaterThan(0);
+        // 清理植入行 + 复扫归零
+        jdbcTemplate.update("DELETE FROM did_verification_log WHERE reason = ?", dataB64.substring(0, 16));
+        assertThat(rawPayloadHits(dataB64.substring(0, 16))).isZero();
+    }
+
+    private int rawPayloadHits(final String fragment) {
+        final Integer hits = jdbcTemplate.queryForObject(
+                "SELECT COUNT(1) FROM did_verification_log WHERE did LIKE ? OR result LIKE ? OR reason LIKE ?",
+                Integer.class, "%" + fragment + "%", "%" + fragment + "%", "%" + fragment + "%");
+        assertThat(hits).isNotNull();
+        return hits;
+    }
+
+    private static String verifyBody(final byte[] data, final byte[] signature) {
+        return "{\"data\":\"" + Base64.getEncoder().encodeToString(data) + "\",\"signature\":\""
+                + Base64.getEncoder().encodeToString(signature) + "\"}";
+    }
+
+    private void insertIdentity(final String subjectNo, final String did, final DidStatus status,
+            final String publicKeyHex) {
+        final String documentJson = "{\"did\":\"" + did + "\",\"publicKey\":{\"type\":\"SM2\","
+                + "\"algorithm\":\"sm2p256v1\",\"valueHex\":\"" + publicKeyHex + "\"},"
+                + "\"controller\":\"" + subjectNo + "\",\"service\":[{\"id\":\"#resolution\","
+                + "\"type\":\"DidResolution\",\"serviceEndpoint\":\"/api/v1/did\"}],"
+                + "\"created\":\"2026-09-22T20:00:00\"}";
+        jdbcTemplate.update("INSERT INTO did_identity (subject_no, issuance_seq, did, status, public_key_hex, "
+                        + "key_ref, document_json, guard_key, created_at, updated_at) "
+                        + "VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, ?)",
+                subjectNo, did, status.name(), publicKeyHex, "did-" + subjectNo + "-1", documentJson,
+                status == DidStatus.REVOKED ? null : subjectNo,
+                Timestamp.valueOf(LocalDateTime.now().withNano(0)),
+                Timestamp.valueOf(LocalDateTime.now().withNano(0)));
     }
 
     private int privateKeyPatternHits() {

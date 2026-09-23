@@ -30,6 +30,84 @@
 
 ---
 
-## 编码会话执行记录
+## 编码会话执行记录（2026-09-22，承接 `-2125` 日志）
 
-（待编码会话填写）
+### 实施前置检查（hifi §10，三项全部完成）
+
+| 项 | 结论 |
+| --- | --- |
+| ① 验签 round-trip 实测 | **通过**：真实 SM2 密钥对 + 真实签名 → 三查全过（集成测试 `verifyPassesWithRealSm2Signature`）；端到端再用 KMS `/signatures` 代签 → did 验证 `PASS`（编码口径对齐，不凭记忆） |
+| ② did→subject 衔接实测 | **通过（含实施修正）**：原定复用 `GET /registrations/{subjectNo}` 被**对象级归属断言**拦截（`did-internal` 仅持 `subject.read`，400/1000C0003）→ 改**新增内部只读端点** `GET /api/v1/subject/internal/subjects/{subjectNo}/admission`（仅 `{subjectNo,status}` 两字段；不落归属断言；门槛 `subject.read`）→ 实测：did-internal 200（仅两字段）/ 不带头 401 / 无效角色 403 / 不存在 1000C0003。修正留痕：`WBS-3.1.9-hifi.md §5 实施修正` + `ADR-017 §2.9`。**不采纳**给 `did-internal` 加 `subject.review`（会误授审批主体能力） |
+| ③ 构件重建与演示环境 | **完成**：did/subject 重打包；三服务重启（did 注入 `CTDS_DID_KMS_BASEURL` + `CTDS_DID_SUBJECT_BASEURL`）；netstat 复验 8080/8081/8082 均 127.0.0.1 回环 |
+
+### 交付物清单（代码）
+
+| 对象 | 内容 |
+| --- | --- |
+| `services/did` domain | `DidResolution` / `VerificationLog` / `VerificationOutcome` / `VerificationReason` / `SubjectAdmission` / `SignatureVerifier`（端口）/ `SubjectStatusPort`（端口）+ `DidErrorCodes` 三码 + `DidRepository.insertVerificationLog` |
+| `services/did` application | `DidResolutionService`（B1~B4）/ `DidVerificationService`（B5~B9/B12；三查逐一判定 + UNAVAILABLE 独立结论） |
+| `services/did` infrastructure | `Sm2SignatureVerifier`（common-crypto 唯一入口）/ `SubjectStatusHttpClient`（JDK HttpClient，did-internal 角色）/ `DidJdbcRepository` 留痕落库 |
+| `services/did` interfaces | `DidResolutionController`（GET `/{did}`）/ `DidVerificationController`（POST `/{did}/verifications`）+ `ResolutionView`/`VerificationView` |
+| `services/did` 迁移 | `V2__create_verification_log.sql`（`did_verification_log`） |
+| `services/subject-service` | `SubjectRegistrationService.admission`（内部只读，无归属断言）+ `InternalAdmissionController`（`/internal/subjects/{subjectNo}/admission`）+ 角色映射 `did-internal: subject.read` |
+| `services/did` pom | +`common-crypto`（验签唯一入口，内部模块零第三方新增） |
+| 契约 | **ADR-017 §2.9 补记**（解析/验证接口 + 1005 段顺延三码 + 验证留痕表 + 绑定核验内部端点 + 无鉴权面诚实边界）；hifi §5 实施修正 |
+
+### 自检单（章程附录 B1）
+
+1. **两级设计门禁**：lofi + hifi **一次确认**（2026-09-22"确认"= Q1~Q6 采建议口径 + 编码契约生效）；实现与 hifi 逐条一致（B1~B12 全部落地）；**唯一偏离 = hifi §5 实施修正**（前置检查②实测发现归属断言缺口 → 内部端点方案），已留痕于 hifi §5 + ADR-017 §2.9，待评审核查。
+2. **规格 → 设计 → 测试 → 剧本 映射表**：见下表。
+3. **复用声明（含检索过程）与规格外实现声明**：
+   - 复用：`common-crypto.Sm2Service.verify`（**验签唯一入口**，零自研密码学）；`common-auth` RBAC（`@RequirePermission("subject.read")` + `did-internal` 角色映射）；`common-errorcode`（1005 段顺延）；`JdbcClient`/Flyway（`V2` 迁移）；Testcontainers 基座（ADR-010）；JDK `HttpClient`（沿 `KmsKeyProvider`/`DidIssuanceClient` 先例）。
+   - 检索过程：编码前检索 `common/`（crypto/auth/errorcode）与 `services/did`/`subject-service` 既有实现，确认验签能力（`Sm2Service.verify:92`）与主体查询形态；实现期发现既有查询端点归属断言（`OwnershipGuard`）不可复用 → 走实施修正。
+   - **规格外实现声明：空**（无规格外功能、无未批准依赖、无演示专用代码路径）。**设计内新增（非规格外）且已登记**：验证结论第三值 `UNAVAILABLE`（规格未覆盖的核验不可用边界，hifi §1 B9 定形）、内部只读端点（hifi §5 实施修正）。
+4. **本地全部检查的命令与结果摘要**：
+   - `mvn -B -ntp compile`（全仓）：PASS
+   - `mvn -B -ntp -pl services/did test`：**61 通过**（含新增 33：解析单元 4 + 验证单元 9 + 解析/验证集成 11 + 客户端桩测 8 + 跨服务不可达 1），0 失败 0 错误 0 跳过
+   - `mvn -B -ntp -pl services/subject-service test`：**141 通过**（含内部端点集成 3，回归无破坏），0 失败 0 错误 0 跳过
+   - `mvn -B -ntp -pl services/did,services/subject-service checkstyle:check`：0 违规
+   - **did 核心模块行覆盖率实测 94.0%**（344/366 ≥80% 达标；瞬时 jacoco 0.8.12，未引入项目依赖；自动化覆盖率门禁仍 PENDING-JACOCO = DB-06 口径）
+   - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/gates/run-gates.ps1`：**GREEN**（复跑 `gate-report-20260923-225313.md`，RunLabel `20260923-224326-2508`，`PASS=10 FAIL=0 SKIP=1 ERROR=0`，`unitTest` PASS）
+   - **门禁 unitTest 超时合规处置（重要留痕）**：首跑红灯 = `mvn test timed out after 600s`（**非测试失败**）；实测全仓 `mvn test` 耗时 **595s（BUILD SUCCESS）**——测试规模增长已顶到门禁硬编码上限（`run-gates.ps1:298`，**按红线 3 不得擅改**）。**本包合规处置 = 压缩本包新增测试的容器启动开销（工程侧，不改门禁、不碰他人模块）**：① did 的解析/验证集成用例（11 例）并入既有 `DidIssuanceIntegrationTest` 共享容器（3 类→2 类，省 ~25s）；② subject 内部端点用例（3 例）并入既有权 `DidIssuanceTriggerIntegrationTest`（省 ~22s）。用例总数不变（did 61 / subject 141）、断言不变，仅测试类布局调整（类注释已注明理由）。**结构性矛盾如实登记 → 台账 DB-25**（集成测试容器共享化改造建议独立小卡）。
+5. **高风险点自查**：
+   - **并发**：解析/验证为只读判定 + 单条留痕插入（无共享状态、无竞争写）；留痕表无唯一键（每次验证独立记录，符合"每次验证留痕"设计）。
+   - **事务**：验证三查无状态写；留痕 `insertVerificationLog` 单语句，无跨表事务需求。
+   - **加解密**：验签经 `common-crypto` 唯一入口（零自研）；公钥为公开要素（文档已含）；无任何密钥材料落库/出站/入日志；留痕表结构上不含业务数据原文（锚定测试含反向探针）。
+   - **性能**：验证含一次服务间 HTTP（连接 1s / 读取 3s）；验证为低频动作，非性能敏感路径，未跑基准脚本。
+6. **验收剧本更新建议（业务语言）**：**剧本正文不改**。S2（解析）/S4（验证）由本包承载（接口级）：解析命令 `GET /api/v1/did/{did}`（有效/已吊销/未登记三态）；验证演示 = 经 KMS 代签（`POST /api/v1/key-pairs/{keyRef}/signatures`）→ 提交验证（PASS）→ 篡改数据（FAIL/SIGNATURE_INVALID）→ 已吊销 DID（FAIL/REVOKED）；命令原文随交付说明提供（统一 ASCII 数据样例，免中文编码坑）。
+7. **业务可读交付说明**：见下节。
+
+### 验收标准 → 测试用例 → 剧本步骤 映射表
+
+| 规格验收标准（C-1.2 行为 2/3/4-4） | 已确认设计（hifi） | 测试用例 | 剧本步骤 |
+| --- | --- | --- | --- |
+| 行为2-1 有效 DID 解析：文档 + "有效" + 无 L4 | B1/B4 | `DidResolutionServiceTest.resolveActiveReturnsDocumentAndStatus`（字段集精确断言）、集成 `resolveActiveReturnsDocumentAndStatus` | S2 |
+| 行为2-2 已吊销照常返回文档 + "已吊销" | B2 | `DidResolutionServiceTest.resolveRevokedStillReturnsDocumentWithRevokedStatus`、集成同名用例 | S2 |
+| 行为2-3 未登记 → 明确答复 | B3 | `DidResolutionServiceTest/集成 resolveUnknownDidReturnsNotRegisteredAnswer`（1005B0003） | S2 |
+| 行为2-4 解析全文无敏感明文 | B4 | 字段集断言（单元/集成）+ 留痕扫描 `verificationLogContainsNoDataOrSignatureRawBytes`（含反向探针） | S2 |
+| 行为3-1 三查全过 → "验证通过" + 留痕 | B5 | `DidVerificationServiceTest.verifyPassesWhenAllThreeChecksPass`、集成 `verifyPassesWithRealSm2Signature`（**真实 SM2 验签**）、`SubjectStatusClientFailureIntegrationTest`（真实网络链路 B9） | S4 |
+| 行为3-2 签名不匹配 → "验证不通过"+原因 | B6 | `verifyFailsWithSignatureInvalidWhenDataTampered`、集成 `verifyFailsWhenDataTampered` | S4 |
+| 行为3-3 已吊销真签名 → "验证不通过"（原因=吊销） | B7 | `verifyFailsWithRevokedWhenIdentityRevoked`、集成 `verifyFailsWithRevokedWhenSignatureIsCryptographicallyReal` | S4 |
+| 行为3-4 留痕三要素 + 无数据原文 | B10 | `verificationLogKeepsThreeElementsAndNoDataRawForEveryAttempt`、集成留痕表断言 + 数据原文扫描 | S4 |
+| 行为3-5 验证通过 ≠ 授权 | B11 | 集成响应字段集断言（data 仅 did/result/reason/verifiedAt）+ ADR-017 §2.9 声明 | S4 |
+| 行为4-验收4 吊销后解析/验证双向口径 | B2/B7 | 集成 REVOKED 两例（解析可见 + 验证不通过） | S3/S4 |
+
+### 业务可读交付说明
+
+**完成了什么功能**：给数字身份加上了"查验能力"——任何人凭一个身份编号（DID）可查到它的**公开说明书**（公钥、关联主体、解析入口）与当前状态（只两种：**有效 / 已吊销**）；查不到的编号得到明确答复"未登记"（不会显示成系统故障）。**身份验证**：别人拿"编号 + 一段数据 + 一段签名"来主张"这数据是我发的"，系统做三道检查——①签名是否对得上（国密算法）②身份是否有效 ③其主体是否已入驻——全过才判"验证通过"；任一不过给出**明确原因**（签名不对 / 身份已吊销 / 主体未入驻 / 未登记）；如果第③道检查所依赖的主体服务暂时不可用，系统**如实答复"核验不可用"，不会把它伪装成"验证不通过"**。每次验证留一条"时间/身份/结果（含原因）"记录，但**不保存被验证的数据原文**。
+
+**如何演示**（三服务运行中：主体 8080 / 密钥 8081 / 身份 8082）：
+1. **解析**：查有效样本 `http://127.0.0.1:8082/api/v1/did/did:ctds:S20260922000001.1` → 文档 + `ACTIVE`；查已吊销样本 `did:ctds:S20260921000001.1` → 文档 + `REVOKED`；查 `did:ctds:S20260922999999.1` → `1005B0003 该 DID 未登记`；
+2. **验证（通过）**：先请密钥服务代签（`POST http://127.0.0.1:8081/api/v1/key-pairs/did-S20260922000001-1/signatures`，body `{"data":"<数据Base64>"}`）拿到签名 → 提交验证（`POST http://127.0.0.1:8082/api/v1/did/did:ctds:S20260922000001.1/verifications`，body `{"data":"...","signature":"..."}`）→ `PASS`；
+3. **验证（三类失败）**：把数据改一个字符再提交 → `FAIL/SIGNATURE_INVALID`；对已吊销身份提交真签名 → `FAIL/REVOKED`；对未登记编号提交 → `FAIL/NOT_REGISTERED`；
+4. **留痕核验**：查库 `SELECT did,result,reason,occurred_at FROM ctds_did.did_verification_log` 可见每次验证的记录（命令与口令读取方式同前次交付说明）。
+
+**有无注意事项**：
+- 解析与验证接口在演示期**无需登录身份**（仅本机可访问；登记于 ADR-017 §2.9 诚实边界，上线前由网关 + 令牌收紧）——演示机须为可信机器；
+- 绑定核验需要**主体服务同时在线**（本包的验证依赖它查询"主体是否已入驻"）；主体服务不可达时验证答复为 `UNAVAILABLE`（这是设计行为，不是故障伪装）；
+- 验证通过**只证明身份**，不代表任何业务授权（授权由各业务模块另行管理）；
+- 本包不含跨空间互认（归 3.1.10）与 DID 管理界面（归 3.1.11）。
+
+### 实施中的设计与实现修正（如实登记）
+
+- **hifi §5 实施修正**：绑定核验原定复用既有主体查询端点，实测被其防枚举归属断言拦截（`did-internal` 仅持只读权限）；改为新增**内部只读端点**（仅状态两字段、不落归属断言），避免为服务读放宽既有安全口径。修正不影响 Q2 方向（仍为服务间只读调用），已留痕 hifi §5 + ADR-017 §2.9。

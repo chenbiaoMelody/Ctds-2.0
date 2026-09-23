@@ -119,6 +119,18 @@ public class SubjectRegistrationService {
     }
 
     /**
+     * 服务间内部只读：主体入驻状态（WBS-3.1.9 绑定核验用；hifi §5 实施修正 2026-09-22）。
+     * 仅返回状态枚举——**最小暴露**（不含任何注册信息）；**不落归属断言**（内部只读面，沿 3.1.8
+     * 签发面先例登记诚实边界；功能级权限仍由 @RequirePermission("subject.read") 拦截）。
+     */
+    public SubjectStatus admission(final String subjectNo) {
+        ops.requireSubjectNo(subjectNo);
+        return repository.findBySubjectNo(subjectNo)
+                .map(Subject::status)
+                .orElseThrow(() -> new BizException(ErrorCodes.RESOURCE_NOT_FOUND, "申请编号不存在"));
+    }
+
+    /**
      * 入驻进度自助查询（CHG-C-1.1-V1.2 规格行为 8）：申请编号 + 统一社会信用代码双凭证，
      * 凭证断言取代归属断言（hifi §3 留痕口径）。编号不存在与信用代码不符统一出站同文案防枚举：
      * 仅编号不存在不落 DENIED（无对象可归属）；凭证不匹配落 DENIED（reason progress_denied）。

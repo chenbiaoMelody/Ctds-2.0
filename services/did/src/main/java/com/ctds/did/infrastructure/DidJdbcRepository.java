@@ -6,6 +6,7 @@ import com.ctds.did.domain.DidIdentity;
 import com.ctds.did.domain.DidOperationLog;
 import com.ctds.did.domain.DidRepository;
 import com.ctds.did.domain.DidStatus;
+import com.ctds.did.domain.VerificationLog;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
@@ -134,6 +135,15 @@ public class DidJdbcRepository implements DidRepository {
             throw new BizException(DidErrorCodes.DID_REVOKE_NOT_ACTIVE, "非有效 DID 不可吊销");
         }
         insertOperationLog(operationLog);
+    }
+
+    @Override
+    public void insertVerificationLog(final VerificationLog log) {
+        jdbc.sql("INSERT INTO did_verification_log (did, result, reason, occurred_at) VALUES (?, ?, ?, ?)")
+                .params(log.did(), log.result().name(),
+                        log.reason() == null ? null : log.reason().name(),
+                        Timestamp.valueOf(log.occurredAt()))
+                .update();
     }
 
     private void insertOperationLog(final DidOperationLog log) {
