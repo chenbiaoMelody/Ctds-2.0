@@ -160,6 +160,17 @@ class DidVerificationServiceTest {
     }
 
     @Test
+    void verifyRejectsDataExceedingUpperBound() {
+        repository.put(identity(DidStatus.ACTIVE));
+        // 边界值表：data 解码后超上限（>1MB）→ 1005C0004（与 signature >512 同类，输入类拒绝不落留痕）
+        final byte[] oversized = new byte[1024 * 1024 + 1];
+        assertThatThrownBy(() -> service.verify(DID, base64(oversized), base64(SIGNATURE)))
+                .isInstanceOfSatisfying(BizException.class, e ->
+                        assertThat(e.getErrorCode()).isEqualTo(DidErrorCodes.DID_VERIFICATION_INPUT_INVALID));
+        assertThat(repository.verificationLogs()).isEmpty();
+    }
+
+    @Test
     void verifyThrowsInternalErrorWhenVerifierFailsUnexpectedly() {
         repository.put(identity(DidStatus.ACTIVE));
         verifier.throwing = true;
@@ -182,11 +193,15 @@ class DidVerificationServiceTest {
         service.verify(DID, base64(DATA), base64(SIGNATURE));
 
         assertThat(repository.verificationLogs()).hasSize(3);
-        // B10：留痕只含 did/result/reason/occurredAt 四要素；record 结构上不含 data/signature 原文
+        // B10：留痕只含 did/result/reason/occurredAt 四要素；记录值与文本均不得出现数据/签名原文（值 + 结构双重锚定）
+        final String dataB64 = base64(DATA);
+        final String signatureB64 = base64(SIGNATURE);
         assertThat(repository.verificationLogs()).allSatisfy(log -> {
             assertThat(log.did()).isEqualTo(DID);
             assertThat(log.result()).isNotNull();
             assertThat(log.occurredAt()).isNotNull();
+            assertThat(log.toString()).doesNotContain(dataB64.substring(0, 16))
+                    .doesNotContain(signatureB64.substring(0, 16));
         });
     }
 

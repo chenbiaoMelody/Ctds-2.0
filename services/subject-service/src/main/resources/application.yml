@@ -38,8 +38,9 @@ ctds:
     permissions:
       applicant: subject.register,subject.read,subject.cancel,subject.certify
       reviewer: subject.read,subject.review
-      # DID 服务间只读衔接（WBS-3.1.9 hifi §5）：服务身份专用角色，仅只读权限（绑定核验用）
-      did-internal: subject.read
+      # DID 服务间只读衔接（WBS-3.1.9 hifi §5）：服务身份专用角色，仅服务间内部只读权限
+      # （subject.internal.read 仅本角色持有——申请人/审核员不持有，防状态枚举；评审②P2-1 收敛）
+      did-internal: subject.internal.read
   # L4 加密唯一入口（ADR-006）：密钥文件经环境变量注入（*.keys，密钥零入库）；
   # 运行期接 KMS（ADR-015）= 设环境变量 CTDS_CRYPTO_KMS_BASEURL（属性存在即启用并覆盖本地文件实现）
   crypto:

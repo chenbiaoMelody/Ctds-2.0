@@ -34,3 +34,6 @@ ctds:
   did:
     kms:
       base-url: ${CTDS_DID_KMS_BASEURL:}
+    # DID → 主体服务 绑定核验调用（内部回环，ADR-016 §2.7）；未配置 = 绑定核验不可用（验证回 UNAVAILABLE）
+    subject:
+      base-url: ${CTDS_DID_SUBJECT_BASEURL:}

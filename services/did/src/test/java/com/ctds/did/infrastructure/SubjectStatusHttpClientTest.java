@@ -91,6 +91,18 @@ class SubjectStatusHttpClientTest {
     }
 
     @Test
+    void nonHttp200WithSuccessShapedBodyIsUnavailable() {
+        // 评审①P3-2 反向锚定：非 200 响应不得因 body 形似成功而被判"已入驻"（系统态不冒充绑定成立）
+        server.removeContext("/api/v1/subject/internal/subjects/");
+        server.createContext("/api/v1/subject/internal/subjects/", exchange ->
+                respond(exchange, 502, "{\"code\":\"0\",\"data\":{\"status\":\"ADMITTED\"}}"));
+        final SubjectStatusHttpClient client = new SubjectStatusHttpClient(baseUrl,
+                new ObjectMapper());
+
+        assertThat(client.check(SUBJECT_NO)).isEqualTo(SubjectAdmission.UNAVAILABLE);
+    }
+
+    @Test
     void nonZeroBizCodeIsUnavailable() {
         server.removeContext("/api/v1/subject/internal/subjects/");
         server.createContext("/api/v1/subject/internal/subjects/", exchange ->

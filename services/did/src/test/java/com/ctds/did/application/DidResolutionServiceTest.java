@@ -71,6 +71,15 @@ class DidResolutionServiceTest {
     }
 
     @Test
+    void resolveThrowsInternalErrorWhenDocumentCorrupted() {
+        // hifi §6 边界表：注册表文档损坏 → 1005S0002（500；不暴露内部细节、不伪装"未登记"）
+        repository.put(identity(DidStatus.ACTIVE, "{not-a-json"));
+        assertThatThrownBy(() -> service.resolve(DID))
+                .isInstanceOfSatisfying(BizException.class, e ->
+                        assertThat(e.getErrorCode()).isEqualTo(DidErrorCodes.DID_VERIFICATION_INTERNAL_ERROR));
+    }
+
+    @Test
     void resolveInvalidDidFormatIsRejected() {
         assertThatThrownBy(() -> service.resolve(null))
                 .isInstanceOfSatisfying(BizException.class, e ->
@@ -84,8 +93,12 @@ class DidResolutionServiceTest {
     }
 
     private static DidIdentity identity(final DidStatus status) {
+        return identity(status, DOCUMENT);
+    }
+
+    private static DidIdentity identity(final DidStatus status, final String documentJson) {
         return new DidIdentity(1L, SUBJECT_NO, 1, DID, status, PUBLIC_KEY_HEX, "did-" + SUBJECT_NO + "-1",
-                DOCUMENT, status == DidStatus.REVOKED ? null : SUBJECT_NO,
+                documentJson, status == DidStatus.REVOKED ? null : SUBJECT_NO,
                 LocalDateTime.of(2026, 9, 22, 20, 45, 17), LocalDateTime.of(2026, 9, 22, 20, 45, 17));
     }
 }

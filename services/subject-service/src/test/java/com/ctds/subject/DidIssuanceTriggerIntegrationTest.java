@@ -163,6 +163,13 @@ class DidIssuanceTriggerIntegrationTest {
         mockMvc.perform(get(BASE + "/internal/subjects/" + subjectNo + "/admission")
                         .header("X-Ctds-Subject", "someone").header("X-Ctds-Roles", "nobody"))
                 .andExpect(status().isForbidden());
+        // 评审②P2-1：持 subject.read 的申请人/审核员亦不得读内部状态（专用权限点收敛，防按编号枚举）
+        mockMvc.perform(get(BASE + "/internal/subjects/" + subjectNo + "/admission")
+                        .header("X-Ctds-Subject", APPLICANT).header("X-Ctds-Roles", "applicant"))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get(BASE + "/internal/subjects/" + subjectNo + "/admission")
+                        .header("X-Ctds-Subject", REVIEWER).header("X-Ctds-Roles", "reviewer"))
+                .andExpect(status().isForbidden());
     }
 
     @Test

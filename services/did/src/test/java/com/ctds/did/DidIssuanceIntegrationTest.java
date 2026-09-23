@@ -27,6 +27,8 @@ import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -63,6 +65,9 @@ class DidIssuanceIntegrationTest {
     private static final String ADMIN = "ops-admin";
     /** 私钥 D 值样式：恰好 64 位 hex、两侧非 hex 边界（区分 130 位公钥 04‖X‖Y）。 */
     private static final String PRIVATE_KEY_PATTERN = "(^|[^0-9a-fA-F])[0-9a-fA-F]{64}([^0-9a-fA-F]|$)";
+    /** 敏感明文样式（B4 解析侧正向扫描）：18 位身份证号 / 手机号 / 64-hex 私钥样式。 */
+    private static final Pattern SENSITIVE_PATTERN = Pattern.compile(
+            "(\\d{17}[0-9Xx])|(1[3-9]\\d{9})|(" + PRIVATE_KEY_PATTERN + ")");
 
     @Container
     @ServiceConnection
@@ -359,13 +364,17 @@ class DidIssuanceIntegrationTest {
         insertIdentity(subjectNo, did, DidStatus.ACTIVE, pair.publicKeyHex());
         final byte[] signature = sm2Service.sign(data, pair.privateKeyHex());
 
-        mockMvc.perform(post(BASE + "/" + did + "/verifications")
+        final String body = mockMvc.perform(post(BASE + "/" + did + "/verifications")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(verifyBody(data, signature)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value("0"))
                 .andExpect(jsonPath("$.data.result").value("PASS"))
-                .andExpect(jsonPath("$.data.reason").doesNotExist());
+                .andReturn().getResponse().getContentAsString();
+
+        // B11：验证响应字段集严格 = 身份结论四字段（无任何授权/权限字段；PASS 时 reason 为空值）
+        assertThat(MAPPER.readTree(body).get("data").fieldNames()).toIterable()
+                .containsExactlyInAnyOrder("did", "result", "reason", "verifiedAt");
 
         // 留痕三要素
         final Map<String, Object> log = jdbcTemplate.queryForMap(
@@ -512,6 +521,45 @@ class DidIssuanceIntegrationTest {
         assertThat(rawPayloadHits(dataB64.substring(0, 16))).isZero();
     }
 
+    @Test
+    void resolutionResponseContainsNoSensitivePlaintext() throws Exception {
+        // B4（行为 2 规则 2 / 验收 4）：解析响应全文不得出现身份证号/手机号/私钥样式明文
+        final String subjectNo = "S20260922000120";
+        final String did = "did:ctds:" + subjectNo + ".1";
+        insertIdentity(subjectNo, did, DidStatus.ACTIVE, PUBLIC_KEY_HEX);
+
+        final String body = mockMvc.perform(get(BASE + "/" + did))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+
+        assertThat(sensitiveHits(body)).isZero();
+        // 反向探针：同一扫描器能命中植入的 L4 样本（证明扫描非空断言；实现若回填 L4 字段必变红）
+        assertThat(sensitiveHits("{\"idCard\":\"110101199001011234\"}")).isGreaterThanOrEqualTo(1);
+        assertThat(sensitiveHits("{\"phone\":\"13800138000\"}")).isGreaterThanOrEqualTo(1);
+        assertThat(sensitiveHits("{\"privateKey\":\"" + "ab".repeat(32) + "\"}")).isGreaterThanOrEqualTo(1);
+    }
+
+    @Test
+    void resolveThrowsInternalErrorWhenDocumentCorrupted() throws Exception {
+        // hifi §6 边界表：注册表文档损坏 → 1005S0002（不暴露内部细节、不伪装"未登记"）
+        final String subjectNo = "S20260922000121";
+        final String did = "did:ctds:" + subjectNo + ".1";
+        insertIdentity(subjectNo, did, DidStatus.ACTIVE, PUBLIC_KEY_HEX, "{not-a-json");
+
+        mockMvc.perform(get(BASE + "/" + did))
+                .andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.code").value("1005S0002"));
+    }
+
+    private static int sensitiveHits(final String text) {
+        final Matcher matcher = SENSITIVE_PATTERN.matcher(text);
+        int hits = 0;
+        while (matcher.find()) {
+            hits++;
+        }
+        return hits;
+    }
+
     private int rawPayloadHits(final String fragment) {
         final Integer hits = jdbcTemplate.queryForObject(
                 "SELECT COUNT(1) FROM did_verification_log WHERE did LIKE ? OR result LIKE ? OR reason LIKE ?",
@@ -527,18 +575,27 @@ class DidIssuanceIntegrationTest {
 
     private void insertIdentity(final String subjectNo, final String did, final DidStatus status,
             final String publicKeyHex) {
-        final String documentJson = "{\"did\":\"" + did + "\",\"publicKey\":{\"type\":\"SM2\","
+        insertIdentity(subjectNo, did, status, publicKeyHex, documentJson(did, subjectNo, publicKeyHex));
+    }
+
+    /** 造数（文档损坏边界用）：直接写入受控 document_json。 */
+    private void insertIdentity(final String subjectNo, final String did, final DidStatus status,
+            final String publicKeyHex, final String documentJsonValue) {
+        jdbcTemplate.update("INSERT INTO did_identity (subject_no, issuance_seq, did, status, public_key_hex, "
+                        + "key_ref, document_json, guard_key, created_at, updated_at) "
+                        + "VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, ?)",
+                subjectNo, did, status.name(), publicKeyHex, "did-" + subjectNo + "-1", documentJsonValue,
+                status == DidStatus.REVOKED ? null : subjectNo,
+                Timestamp.valueOf(LocalDateTime.now().withNano(0)),
+                Timestamp.valueOf(LocalDateTime.now().withNano(0)));
+    }
+
+    private static String documentJson(final String did, final String subjectNo, final String publicKeyHex) {
+        return "{\"did\":\"" + did + "\",\"publicKey\":{\"type\":\"SM2\","
                 + "\"algorithm\":\"sm2p256v1\",\"valueHex\":\"" + publicKeyHex + "\"},"
                 + "\"controller\":\"" + subjectNo + "\",\"service\":[{\"id\":\"#resolution\","
                 + "\"type\":\"DidResolution\",\"serviceEndpoint\":\"/api/v1/did\"}],"
                 + "\"created\":\"2026-09-22T20:00:00\"}";
-        jdbcTemplate.update("INSERT INTO did_identity (subject_no, issuance_seq, did, status, public_key_hex, "
-                        + "key_ref, document_json, guard_key, created_at, updated_at) "
-                        + "VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, ?)",
-                subjectNo, did, status.name(), publicKeyHex, "did-" + subjectNo + "-1", documentJson,
-                status == DidStatus.REVOKED ? null : subjectNo,
-                Timestamp.valueOf(LocalDateTime.now().withNano(0)),
-                Timestamp.valueOf(LocalDateTime.now().withNano(0)));
     }
 
     private int privateKeyPatternHits() {

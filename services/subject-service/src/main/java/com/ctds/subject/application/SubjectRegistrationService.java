@@ -121,7 +121,8 @@ public class SubjectRegistrationService {
     /**
      * 服务间内部只读：主体入驻状态（WBS-3.1.9 绑定核验用；hifi §5 实施修正 2026-09-22）。
      * 仅返回状态枚举——**最小暴露**（不含任何注册信息）；**不落归属断言**（内部只读面，沿 3.1.8
-     * 签发面先例登记诚实边界；功能级权限仍由 @RequirePermission("subject.read") 拦截）。
+     * 签发面先例登记诚实边界；功能级权限由专用权限点 subject.internal.read 拦截——仅 did-internal
+     * 持有，申请人/审核员均不持有，防按编号枚举状态，见评审②P2-1 收敛）。
      */
     public SubjectStatus admission(final String subjectNo) {
         ops.requireSubjectNo(subjectNo);

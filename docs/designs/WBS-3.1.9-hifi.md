@@ -2,7 +2,7 @@
 
 - 契约性质：**本文件 = 编码契约**。经 PO 一次确认后生效（本包 ≤1 天，两级同批确认，章程 2.6.3）；实现与本文不一致 = 打回项。
 - 定稿口径：按 `docs/designs/WBS-3.1.9-lofi.md` §3 **建议口径定稿**（Q1=A 扩展既有服务 / Q2=A 服务间只读调用 + 不可用如实表征 / Q3=A 验证无鉴权 / Q4=A 解析无鉴权 / Q5=A 解析不留痕 / Q6=A 原因四类 + 不可用类）；若确认时对 Q 点有不同意见，按新口径修订本文后再编码。
-- 依据：规格 `docs/specs/C-1.2-分布式数字身份DID.md` 行为 2（4 规则 + 4 验收标准）、行为 3（4 规则 + 5 验收标准）；ADR-017 §2.3/§2.4/§2.9；ADR-006（`Sm2Service.verify`）；ADR-005 §3.5（1005 段顺延）。
+- 依据：规格 `docs/specs/C-1.2-分布式数字身份DID.md` 行为 2（4 规则 + 4 验收标准）、行为 3（4 规则 + 5 验收标准）；ADR-017 §2.3/§2.4/§2.9；ADR-006（`Sm2Service.verify`）+ **ADR-006 §3.5**（错误码模块位顺延制度；评审③P2-1 引用更正，ADR-005 为错误码体系基线）。
 
 ## 确认记录（人签署；未签署 = 未确认 = 禁止进入编码）
 
@@ -59,7 +59,7 @@ CREATE TABLE did_verification_log (
 
 - 不建外键、不存 data/signature 原文（红线：验证通道不是数据存储通道）。
 
-## 4. 错误码（1005 段顺延，ADR-005 §3.5；登记 ADR-017 补记）
+## 4. 错误码（1005 段顺延，ADR-006 §3.5；登记 ADR-017 补记）
 
 | 码 | 常量 | 语义 | HTTP |
 | --- | --- | --- | --- |
@@ -75,9 +75,9 @@ CREATE TABLE did_verification_log (
 | --- | --- | --- |
 | did | `ctds.did.subject.base-url: ${CTDS_DID_SUBJECT_BASEURL:}` | 主体绑定核验的调用地址；**未配置 = 绑定核验不可用**（验证返回 UNAVAILABLE，服务可独立启动） |
 | did | 超时 | 连接 1s / 读取 3s（沿 `KmsKeyProvider`/`DidIssuanceClient` 先例） |
-| subject | `ctds.auth.permissions` 新增一行 `did-internal: subject.read` | 服务间只读衔接的**专用角色**（不冒充 reviewer/applicant；仅只读权限）；did 侧调用头 `X-Ctds-Subject: did-service` + `X-Ctds-Roles: did-internal` |
+| subject | `ctds.auth.permissions` 新增一行 `did-internal: subject.internal.read`（**评审②P2-1 收敛**：服务身份专用权限点，仅本角色持有，申请人/审核员均不持有） | 服务间只读衔接的**专用角色**（不冒充 reviewer/applicant；权限面 = 仅服务间内部只读）；did 侧调用头 `X-Ctds-Subject: did-service` + `X-Ctds-Roles: did-internal` |
 
-- 绑定核验调用（**实施修正后口径**，见下）：`GET {base-url}/api/v1/subject/internal/subjects/{subjectNo}/admission` → 解析 `data.status == "ADMITTED"` 为通过；非 ADMITTED 为 B8；**业务码 1000C0003（主体编号不存在）= 绑定不成立（B8）**；其余网络失败/非 200/解析失败/其他业务错误为 B9。**不复制主体状态到 DID 库**（单一事实源）。
+- 绑定核验调用（**实施修正后口径**，见下）：`GET {base-url}/api/v1/subject/internal/subjects/{subjectNo}/admission` → 解析 `data.status == "ADMITTED"` 为通过；非 ADMITTED 为 B8；**业务码 1000C0003（主体编号不存在）= 绑定不成立（B8）**；其余网络失败/非 200/解析失败/其他业务错误为 B9。**非 200 响应即使 body 形似成功（`code=0`）也不判通过**（评审①P3-2 收紧：系统态不得冒充"绑定成立"）。**不复制主体状态到 DID 库**（单一事实源）。
 - 角色映射新增属配置扩展（不改任何既有鉴权行为与权限点语义），登记 ADR-017 补记。
 
 **实施修正（2026-09-22，前置检查②实测留痕）**：
@@ -86,6 +86,13 @@ CREATE TABLE did_verification_log (
 2. **修正方案（最小暴露，不改既有安全口径）**：subject-service **新增内部只读端点** `GET /api/v1/subject/internal/subjects/{subjectNo}/admission`——仅返回 `{subjectNo, status}` 两字段（无注册信息、无脱敏字段、无流转记录）；功能级门槛沿用 `subject.read`（不带头 401 / 无权限 403）；**不落归属断言**（内部只读面，诚实边界登记 ADR-017 补记，沿 3.1.8 签发面/签名面先例）。
 3. **不采纳的替代方案**：给 `did-internal` 追加 `subject.review` 权限可复用既有豁免——但该权限同时解锁审核端点（approve/reject），等于把"审批主体"能力授予 DID 服务，**安全面扩大不可接受**；放宽既有归属断言属破坏防枚举设计，同样不采纳。
 4. 本修正不改 Q2 方向（绑定核验经服务间只读调用），仅改"调用哪个端点"（实施细节）；已随本文件留痕、登记 ADR-017 补记与交付说明，供 4 视角评审核查。
+
+**评审修复（2026-09-23，4 视角评审有条件通过后的必修项落地）**：
+
+5. **权限点收敛（评审②P2-1）**：第 2 条"功能级门槛沿用 `subject.read`"经评审指出——`subject.read` 同时被 `applicant`/`reviewer` 持有，内部端点虽不落归属断言，仍等于把"按编号读入驻状态"开放给这两类角色（网关上线后可按编号枚举）。**修正 = 新增服务身份专用权限点 `subject.internal.read`**（`InternalAdmissionController` 门槛改用它 + `ctds.auth.permissions` 仅授 `did-internal`）；申请人/审核员访问一律 403。权限面只减不增。
+6. **非 200 判定收紧（评审①P3-2）**：原实现先看业务码再看状态码，非 200 且 body 形似成功（`code=0`）会被判"已入驻"（系统态冒充绑定成立）。**修正 = 非 200 一律不判通过**（业务码 `1000C0003` 仍按"绑定不成立"处理——该码本身即主体服务的 400 业务答复）；配反向锚定用例 `nonHttp200WithSuccessShapedBodyIsUnavailable`。
+7. **引用更正（评审③P2-1）**：本文 §1 依据行、§4 与 ADR-017 §2.9 原引"ADR-005 §3.5"有误——**ADR-006 §3.5** 才是错误码模块位顺延制度出处（ADR-005 为错误码体系基线），三处同步更正。
+8. **解析侧文档损坏口径对齐（评审④P2-4）**：§6 边界表"文档公钥损坏 → 1005S0002"原实现抛裸 `IllegalStateException`（无业务码），**已改为 `BizException(1005S0002)`** 并补单元 + 集成锚定用例。
 
 ## 6. 边界值与异常行为
 
@@ -100,7 +107,8 @@ CREATE TABLE did_verification_log (
 | 未登记 DID 的解析 | 1005B0003（400）；**不留痕**（解析无留痕，Q5=A） |
 | 未登记 DID 的验证 | `FAIL/NOT_REGISTERED`（200）+ 留痕（B12） |
 | 同一 DID 反复验证 | 每次独立留痕；无幂等语义（只读判定，ADR-007 不适用） |
-| PENDING_ISSUE 记录（无 did 值） | 解析按"未登记"处理（该主体尚无对外 DID 标识） |
+| PENDING_ISSUE 记录（无 did 值） | 解析按"未登记"处理（该主体尚无对外 DID 标识）：该记录无 did 值 → `findByDid` 不命中，与"未登记"**同一代码路径**（复用 `resolveUnknownDidReturnsNotRegisteredAnswer` 锚定，不另立重复用例） |
+| 输入类拒绝（1005C0004）/ 内部错误（1005S0002） | **不落验证留痕**——"每次验证留痕"（行为 3 规则 3）指**产生验证结论**的请求；参数非法未构成一次验证判定、内部错误无结论可记（评审①P3-6 显式化） |
 
 ## 7. 测试锚点（先行 RED → 实现 GREEN）
 

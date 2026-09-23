@@ -78,12 +78,14 @@ public class SubjectStatusHttpClient implements SubjectStatusPort {
             return SubjectAdmission.UNAVAILABLE;
         }
         final String code = body.path("code").asText();
-        if (!"0".equals(code)) {
-            // 主体编号不存在（业务答复 1000C0003）= 绑定不成立；其余业务错误如实归"不可用"
-            if (SUBJECT_NOT_FOUND_CODE.equals(code)) {
-                return SubjectAdmission.NOT_ADMITTED;
-            }
-            log.warn("主体服务业务码非 0，绑定核验不可用: subjectNo={}, code={}", subjectNo, code);
+        // 主体编号不存在（业务答复 1000C0003，主体服务以 400 返回）= 绑定不成立（hifi §5）
+        if (SUBJECT_NOT_FOUND_CODE.equals(code)) {
+            return SubjectAdmission.NOT_ADMITTED;
+        }
+        // 非 200 或业务码非 0：一律如实归"不可用"（hifi §6：不得把系统态当作绑定成立/不成立）
+        if (response.statusCode() != 200 || !"0".equals(code)) {
+            log.warn("主体服务响应非正常，绑定核验不可用: subjectNo={}, status={}, code={}", subjectNo,
+                    response.statusCode(), code);
             return SubjectAdmission.UNAVAILABLE;
         }
         final String status = body.path("data").path("status").asText();

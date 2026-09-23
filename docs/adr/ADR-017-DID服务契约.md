@@ -85,16 +85,16 @@ C-1.2 分布式数字身份（DID）的第一个实施包（WBS-3.1.8）新建�
 | GET | `/api/v1/did/{did}` | 无（只读公开要素，回环边界） | 解析：文档公开要素 + 状态（仅 `ACTIVE`/`REVOKED` 两值）；未登记 → 1005B0003 明确业务答复；解析不留痕 |
 | POST | `/api/v1/did/{did}/verifications` | 无（对外验证能力，回环边界） | 验证三查（签名/状态/绑定）：`{data, signature}`（Base64）→ `{did, result, reason, verifiedAt}`；每次验证落痕（含未登记/不可用） |
 
-- **错误码（1005 段顺延，ADR-005 §3.5）**：`1005B0003`（解析目标未登记，400）、`1005C0004`（验证参数不合法：data/signature 缺失、非法 Base64、空内容或超上限，400）、`1005S0002`（验证内部错误，500）。
+- **错误码（1005 段顺延，ADR-006 §3.5；评审③P2-1 更正：原引"ADR-005 §3.5"有误，ADR-005 为错误码体系基线）**：`1005B0003`（解析目标未登记，400）、`1005C0004`（验证参数不合法：data/signature 缺失、非法 Base64、空内容或超上限，400）、`1005S0002`（验证内部错误：注册表读取/文档损坏/验签过程非输入类故障，500）。
 - **验证结论枚举**（验证结论，**非 DID 状态枚举**——§2.3 两值口径不受影响）：`PASS` / `FAIL`（reason ∈ `SIGNATURE_INVALID` / `REVOKED` / `SUBJECT_BINDING_FAILED` / `NOT_REGISTERED`）/ `UNAVAILABLE`（reason = `BINDING_UNAVAILABLE`，**系统态不冒充"验证不通过"**）。
 - **库表**：`ctds_did` Flyway `V2__create_verification_log.sql` 新增 `did_verification_log`（`did` / `result` / `reason` / `occurred_at`）；**不存业务数据原文**（验证通道不是数据存储通道，行为 3 规则 3）。
 - **验签**经 common-crypto `Sm2Service.verify` 唯一入口（公钥 = 注册表 130-hex `04‖X‖Y`；签名 = DER，与 KMS 签名面同构）。
 
 **主体绑定核验衔接（服务间，Q2 落地）**：
 
-- subject-service 新增**内部只读端点** `GET /api/v1/subject/internal/subjects/{subjectNo}/admission`——仅返回 `{subjectNo, status}` 两字段（最小暴露）；功能级门槛复用 `subject.read`，服务身份角色 **`did-internal: subject.read`**（专配，不冒充 reviewer/applicant）；**不落对象级归属断言**。
+- subject-service 新增**内部只读端点** `GET /api/v1/subject/internal/subjects/{subjectNo}/admission`——仅返回 `{subjectNo, status}` 两字段（最小暴露）；功能级门槛 = **服务身份专用权限点 `subject.internal.read`**（**评审②P2-1 收敛**：仅 `did-internal: subject.internal.read` 持有，申请人/审核员均不持有，二者访问一律 403；不冒充 reviewer/applicant）；**不落对象级归属断言**。
 - **实施修正留痕（2026-09-22 前置检查②）**：原定复用既有 `GET /registrations/{subjectNo}` 不可行——该端点带防枚举归属断言（ADR-016 §2.6，仅"本人或持 `subject.review`"可读）；给 `did-internal` 追加 `subject.review` 会同时解锁审核端点（误授"审批主体"能力，安全面扩大），故以新增内部端点落地。细节见 `docs/designs/WBS-3.1.9-hifi.md` §5。
-- did 侧配置 `ctds.did.subject.base-url`；未配置/不可达/非 200 与响应不可解析/其他业务错误 → `UNAVAILABLE`；业务码 `1000C0003`（主体编号不存在）= `SUBJECT_BINDING_FAILED`（绑定不成立，非"不可用"）。**不复制主体状态到 DID 库**（单一事实源在 subject-service，§2.2 口径）。
+- did 侧配置 `ctds.did.subject.base-url`（`application.yml` 显式声明为 `${CTDS_DID_SUBJECT_BASEURL:}`，与 `kms.base-url` 同形——占位符按环境变量名精确匹配，不依赖 `@Value` 松散绑定；评审②P3-1） ；未配置/不可达/超时/**非 200（即使 body 形似成功）**/响应不可解析/其他业务错误 → `UNAVAILABLE`；业务码 `1000C0003`（主体编号不存在）= `SUBJECT_BINDING_FAILED`（绑定不成立，非"不可用"）。**不复制主体状态到 DID 库**（单一事实源在 subject-service，§2.2 口径）。
 
 **内部无鉴权面诚实边界（补 §2.7 口径）**：`GET /api/v1/did/{did}` 与 `POST /api/v1/did/{did}/verifications` 在回环边界内**无身份门槛**——本机任意进程可解析任意 DID、可发起任意验证请求；验证为只读判定 + 留痕（无状态写入、结论不冒充授权，行为 3 规则 4）。解除条件同 §2.7（网关 HeaderStripFilter + 真实令牌 + 服务间鉴权，3.5.2/3.9.1 兑现项）；演示机须为可信机器。
 

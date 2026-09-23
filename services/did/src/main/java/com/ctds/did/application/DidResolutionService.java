@@ -37,12 +37,12 @@ public class DidResolutionService {
                 .orElseThrow(() -> new BizException(DidErrorCodes.DID_NOT_REGISTERED, "该 DID 未登记"));
     }
 
-    /** 文档为签发时写入的公开要素 JSON（库内一致）；损坏属内部数据异常，不对外暴露细节。 */
+    /** 文档为签发时写入的公开要素 JSON（库内一致）；损坏属内部数据异常（hifi §6 边界表 → 1005S0002），不对外暴露细节。 */
     private JsonNode parseDocument(final String documentJson) {
         try {
             return objectMapper.readTree(documentJson);
         } catch (final JsonProcessingException e) {
-            throw new IllegalStateException("DID 文档数据异常: did 文档解析失败");
+            throw new BizException(DidErrorCodes.DID_VERIFICATION_INTERNAL_ERROR, "解析内部错误");
         }
     }
 

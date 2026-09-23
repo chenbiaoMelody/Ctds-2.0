@@ -44,7 +44,7 @@
 
 | 对象 | 内容 |
 | --- | --- |
-| `services/did` domain | `DidResolution` / `VerificationLog` / `VerificationOutcome` / `VerificationReason` / `SubjectAdmission` / `SignatureVerifier`（端口）/ `SubjectStatusPort`（端口）+ `DidErrorCodes` 三码 + `DidRepository.insertVerificationLog` |
+| `services/did` domain | `VerificationLog` / `VerificationOutcome` / `VerificationReason` / `SubjectAdmission` / `SignatureVerifier`（端口）/ `SubjectStatusPort`（端口）+ `DidErrorCodes` 三码 + `DidRepository.insertVerificationLog`（**评审修复 2026-09-23**：原列的死类 `DidResolution` 全仓无引用——解析结果用 `DidResolutionService.ResolutionResult`，已删除） |
 | `services/did` application | `DidResolutionService`（B1~B4）/ `DidVerificationService`（B5~B9/B12；三查逐一判定 + UNAVAILABLE 独立结论） |
 | `services/did` infrastructure | `Sm2SignatureVerifier`（common-crypto 唯一入口）/ `SubjectStatusHttpClient`（JDK HttpClient，did-internal 角色）/ `DidJdbcRepository` 留痕落库 |
 | `services/did` interfaces | `DidResolutionController`（GET `/{did}`）/ `DidVerificationController`（POST `/{did}/verifications`）+ `ResolutionView`/`VerificationView` |
@@ -69,6 +69,7 @@
    - **did 核心模块行覆盖率实测 94.0%**（344/366 ≥80% 达标；瞬时 jacoco 0.8.12，未引入项目依赖；自动化覆盖率门禁仍 PENDING-JACOCO = DB-06 口径）
    - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/gates/run-gates.ps1`：**GREEN**（复跑 `gate-report-20260923-225313.md`，RunLabel `20260923-224326-2508`，`PASS=10 FAIL=0 SKIP=1 ERROR=0`，`unitTest` PASS）
    - **门禁 unitTest 超时合规处置（重要留痕）**：首跑红灯 = `mvn test timed out after 600s`（**非测试失败**）；实测全仓 `mvn test` 耗时 **595s（BUILD SUCCESS）**——测试规模增长已顶到门禁硬编码上限（`run-gates.ps1:298`，**按红线 3 不得擅改**）。**本包合规处置 = 压缩本包新增测试的容器启动开销（工程侧，不改门禁、不碰他人模块）**：① did 的解析/验证集成用例（11 例）并入既有 `DidIssuanceIntegrationTest` 共享容器（3 类→2 类，省 ~25s）；② subject 内部端点用例（3 例）并入既有权 `DidIssuanceTriggerIntegrationTest`（省 ~22s）。用例总数不变（did 61 / subject 141）、断言不变，仅测试类布局调整（类注释已注明理由）。**结构性矛盾如实登记 → 台账 DB-25**（集成测试容器共享化改造建议独立小卡）。
+   - **评审修复后复测（2026-09-23，4 视角评审必修项落地）**：did **66 通过**（61 + 5：解析文档损坏单元/集成各 1、data 超上限单元 1、主体服务非 200 反向锚定 1、解析侧敏感扫描集成 1）、subject **141 通过**（内部端点权限收敛断言并入既有用例，**用例数不变**）、`checkstyle:check` 两模块 **0 违规**、did 行覆盖率 **94.8%**（347/366，在树 jacoco 0.8.12 报告）；门禁全量复跑结果见文末"4 视角评审与修复"节。
 5. **高风险点自查**：
    - **并发**：解析/验证为只读判定 + 单条留痕插入（无共享状态、无竞争写）；留痕表无唯一键（每次验证独立记录，符合"每次验证留痕"设计）。
    - **事务**：验证三查无状态写；留痕 `insertVerificationLog` 单语句，无跨表事务需求。
@@ -84,13 +85,16 @@
 | 行为2-1 有效 DID 解析：文档 + "有效" + 无 L4 | B1/B4 | `DidResolutionServiceTest.resolveActiveReturnsDocumentAndStatus`（字段集精确断言）、集成 `resolveActiveReturnsDocumentAndStatus` | S2 |
 | 行为2-2 已吊销照常返回文档 + "已吊销" | B2 | `DidResolutionServiceTest.resolveRevokedStillReturnsDocumentWithRevokedStatus`、集成同名用例 | S2 |
 | 行为2-3 未登记 → 明确答复 | B3 | `DidResolutionServiceTest/集成 resolveUnknownDidReturnsNotRegisteredAnswer`（1005B0003） | S2 |
-| 行为2-4 解析全文无敏感明文 | B4 | 字段集断言（单元/集成）+ 留痕扫描 `verificationLogContainsNoDataOrSignatureRawBytes`（含反向探针） | S2 |
+| 行为2-4 解析全文无敏感明文 | B4 | 解析侧 `resolutionResponseContainsNoSensitivePlaintext`（响应全文敏感样式扫描 0 命中 + 身份证/手机号/私钥三类植入样本反向探针）+ 字段集精确断言（单元/集成 `resolveActiveReturnsDocumentAndStatus`） | S2 |
 | 行为3-1 三查全过 → "验证通过" + 留痕 | B5 | `DidVerificationServiceTest.verifyPassesWhenAllThreeChecksPass`、集成 `verifyPassesWithRealSm2Signature`（**真实 SM2 验签**）、`SubjectStatusClientFailureIntegrationTest`（真实网络链路 B9） | S4 |
 | 行为3-2 签名不匹配 → "验证不通过"+原因 | B6 | `verifyFailsWithSignatureInvalidWhenDataTampered`、集成 `verifyFailsWhenDataTampered` | S4 |
 | 行为3-3 已吊销真签名 → "验证不通过"（原因=吊销） | B7 | `verifyFailsWithRevokedWhenIdentityRevoked`、集成 `verifyFailsWithRevokedWhenSignatureIsCryptographicallyReal` | S4 |
 | 行为3-4 留痕三要素 + 无数据原文 | B10 | `verificationLogKeepsThreeElementsAndNoDataRawForEveryAttempt`、集成留痕表断言 + 数据原文扫描 | S4 |
-| 行为3-5 验证通过 ≠ 授权 | B11 | 集成响应字段集断言（data 仅 did/result/reason/verifiedAt）+ ADR-017 §2.9 声明 | S4 |
+| 行为3-5 验证通过 ≠ 授权 | B11 | 集成 `verifyPassesWithRealSm2Signature` 响应字段集断言（data 恰为 `did/result/reason/verifiedAt` 四字段）+ ADR-017 §2.9 声明 | S4 |
 | 行为4-验收4 吊销后解析/验证双向口径 | B2/B7 | 集成 REVOKED 两例（解析可见 + 验证不通过） | S3/S4 |
+| 边界：文档损坏 → 1005S0002（hifi §6） | —（边界表） | 单元 `resolveThrowsInternalErrorWhenDocumentCorrupted` + 集成同名用例 | S2 |
+| 边界：data 超上限 → 1005C0004（hifi §6） | —（边界表） | 单元 `verifyRejectsDataExceedingUpperBound` | S4 |
+| 边界：主体服务非 200（body 形似成功）→ UNAVAILABLE（hifi §6） | B9 | `SubjectStatusHttpClientTest.nonHttp200WithSuccessShapedBodyIsUnavailable` | S4 |
 
 ### 业务可读交付说明
 
@@ -111,3 +115,55 @@
 ### 实施中的设计与实现修正（如实登记）
 
 - **hifi §5 实施修正**：绑定核验原定复用既有主体查询端点，实测被其防枚举归属断言拦截（`did-internal` 仅持只读权限）；改为新增**内部只读端点**（仅状态两字段、不落归属断言），避免为服务读放宽既有安全口径。修正不影响 Q2 方向（仍为服务间只读调用），已留痕 hifi §5 + ADR-017 §2.9。
+
+---
+
+## 4 视角评审与修复（2026-09-23，循环 1/3）
+
+### 评审结论（四个独立评审智能体、只读评审；评审对象 = 提交快照 `693949d`）
+
+| 视角 | 结论 | 必修项（P1/P2） |
+| --- | --- | --- |
+| ① 规格与设计符合性 | 有条件通过 | 映射表"行为3-5"声称的集成响应字段集断言**不存在**（失实）；"行为2-4"引用错位（以验证留痕扫描冒充解析侧敏感探针） |
+| ② 安全供应链 | 有条件通过 | 内部端点功能门槛复用共享权限 `subject.read`（`applicant`/`reviewer` 亦持有），未落地"服务身份专用"；`ctds.did.subject.base-url` 未在 yml 声明 |
+| ③ 一致性重复 | 有条件通过 | "ADR-005 §3.5"引用错误（模块位顺延制度实际出处 = **ADR-006 §3.5**） |
+| ④ 测试质量 | 有条件通过 | 同①的映射失实（记为 P1）；`data>1MB` 分支无用例；解析侧文档损坏抛裸 `IllegalStateException`，与 hifi §6 的 1005S0002 不符；解析侧缺可证伪反向探针 |
+
+**四视角共同确认的硬事实（无 P1 阻断项）**：验签经 `common-crypto` 唯一入口、零自研密码学、无密钥/数据原文落库或出日志、无新增第三方依赖、无平行错误码段/状态枚举/库表、无未声明的规格外实现（`UNAVAILABLE` 第三值与内部端点均已诚实登记）。
+
+### 必修项修复（全部落地）
+
+| 编号 | 评审问题 | 处置 | 证据 |
+| --- | --- | --- | --- |
+| R1 | ②P2-1：内部端点权限门槛过宽（可按编号枚举状态） | 新增服务身份专用权限点 `subject.internal.read`（仅 `did-internal` 持有，`InternalAdmissionController` 门槛改用它）；申请人/审核员访问一律 403 | `InternalAdmissionController` / `subject-service application.yml` / `DidIssuanceTriggerIntegrationTest`（applicant·reviewer 双 403 断言） |
+| R2 | ①P3-2：非 200 响应若 body 形似成功会被判"已入驻" | 非 200 一律不判通过（业务码 `1000C0003` 除外——其语义为"绑定不成立"，且本身即主体服务 400 业务答复） | `SubjectStatusHttpClient` + `nonHttp200WithSuccessShapedBodyIsUnavailable` |
+| R3 | ④P2-4：解析文档损坏未按 hifi §6 出 1005S0002 | 改为 `BizException(1005S0002)` | `DidResolutionService` + 单元/集成各 1 例 |
+| R4 | ①P2-1 / ④P1：映射表"行为3-5"失实（无字段集断言） | 集成用例补**响应字段集断言**（data 恰为 `did/result/reason/verifiedAt`），映射表同步更正 | `DidIssuanceIntegrationTest.verifyPassesWithRealSm2Signature` + 本卡映射表 |
+| R5 | ①P2-2 / ④P2-2：解析侧无敏感探针（映射错位） | 新增解析侧敏感样式扫描用例（响应全文 0 命中）+ 身份证/手机号/私钥三类**植入样本反向探针**；映射表行为2-4 改指本用例 | `resolutionResponseContainsNoSensitivePlaintext` |
+| R6 | ③P2-1：ADR 引用错误 | 三处（hifi 依据行/§4、ADR-017 §2.9）更正为 **ADR-006 §3.5** | `WBS-3.1.9-hifi.md` / `ADR-017` |
+
+### 其余问题处置（P2/P3）
+
+| 项 | 问题 | 处置 |
+| --- | --- | --- |
+| A | ④：`data>1MB` 边界无用例 | 补单元用例 `verifyRejectsDataExceedingUpperBound` |
+| B | ②P3-1：`ctds.did.subject.base-url` 未入 yml（env 注入方式存疑） | `application.yml` 显式声明 `${CTDS_DID_SUBJECT_BASEURL:}`（与 `kms.base-url` 同形）——占位符按环境变量名**精确匹配**，不再依赖 `@Value` 松散绑定；ADR-017 §2.9 同步 |
+| C | ①P3-4：留痕单元用例名实不符（未断言"无原文"） | 补"留痕记录文本不含数据/签名原文"断言（值 + 结构双重锚定） |
+| D | ①P3-3 / ④P3-6：死类 `DidResolution` | 删除（全仓无引用；解析结果用 `ResolutionResult`） |
+| E | ①P3-6：输入类拒绝/内部错误不留痕的口径未显式 | hifi §6 补例外行（"每次验证留痕"指**产生验证结论**的请求） |
+| F | ①P3-5 / ④P3-9：`PENDING_ISSUE` 边界无独立用例 | 该记录无 did 值 → 与"未登记"**同一代码路径**，复用既有锚定用例；hifi §6 明确（不另立重复用例） |
+| G | ④P3-5：覆盖率数字口径 | 以在树 jacoco 报告为准更新为 **94.8%（347/366）** |
+| H | ②P3-2：回环绑定仅 mysql profile 生效 | **既有口径**（3.1.8 起如此、非本包引入）；不夹带修复，留既有登记（DB-24 约束注记/ADR-017 §3） |
+| I | ③沉淀建议：服务间 JDK HttpClient 三客户端同构 | **不夹带**；建议随 3.1.10+ 或独立小卡上收 `common`（3.1.8 评审③已登记同项） |
+
+### 评审修复后验证
+
+| 项 | 结果 |
+| --- | --- |
+| did 测试 | **66/66**（61 + 5：解析文档损坏单元/集成、data 超限单元、非 200 反向锚定、解析敏感扫描集成） |
+| subject 测试 | **141/141**（权限收敛断言并入既有用例，用例数不变） |
+| checkstyle | 两模块 **0 违规** |
+| did 行覆盖率 | **94.8%**（347/366，jacoco 0.8.12 在树报告） |
+| 门禁 | **GREEN**（`gate-report-20260923-235835.md`，RunLabel `20260923-234855-9213`，`PASS=10 FAIL=0 SKIP=1 ERROR=0 PENDING=9`，`unitTest` PASS，退出码 0）——评审修复后全量复跑 |
+
+**评审修复结论**：四视角必修项 6 条 + 其余 9 项（含 2 项登记不夹带）全部闭环；未新增规格外实现、未引入依赖、未放宽既有安全口径（内部端点权限面只减不增）。
