@@ -10,6 +10,7 @@ import com.ctds.did.domain.DidKmsClient;
 import com.ctds.did.domain.DidOperationLog;
 import com.ctds.did.domain.DidRepository;
 import com.ctds.did.domain.DidStatus;
+import com.ctds.did.domain.VerificationLog;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.LocalDateTime;
@@ -373,6 +374,11 @@ class DidIssuanceServiceTest {
             final DidIdentity old = rows.get(identityId);
             rows.put(identityId, new DidIdentity(identityId, old.subjectNo(), old.issuanceSeq(), old.did(),
                     DidStatus.REVOKED, null, null, null, null, old.createdAt(), old.updatedAt()));
+        }
+
+        @Override
+        public synchronized void insertVerificationLog(final VerificationLog log) {
+            throw new UnsupportedOperationException("签发测试未使用");
         }
     }
 }

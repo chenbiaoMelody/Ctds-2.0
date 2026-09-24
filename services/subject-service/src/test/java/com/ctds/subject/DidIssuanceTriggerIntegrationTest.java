@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -132,6 +133,51 @@ class DidIssuanceTriggerIntegrationTest {
 
         verify(didIssuancePort, never()).triggerIssuance(anyString(), anyString(), anyString());
         assertThat(subjectStatus(subjectNo)).isEqualTo("REJECTED");
+    }
+
+    // ==== WBS-3.1.9 内部入驻状态端点用例（合并自原 InternalAdmissionIntegrationTest，共享本类容器）====
+
+    @Test
+    void internalAdmissionReturnsStatusOnlyWithDidInternalRole() throws Exception {
+        final String subjectNo = registerGovSubject("91330100MA27XW1507", "内部状态查询局");
+
+        final String body = mockMvc.perform(get(BASE + "/internal/subjects/" + subjectNo + "/admission")
+                        .header("X-Ctds-Subject", "did-service").header("X-Ctds-Roles", "did-internal"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("0"))
+                .andExpect(jsonPath("$.data.status").value("PENDING_CERT"))
+                .andReturn().getResponse().getContentAsString();
+
+        // 最小暴露：仅 subjectNo + status 两字段（无注册信息、无脱敏字段、无流转记录）
+        assertThat(MAPPER.readTree(body).get("data").fieldNames()).toIterable()
+                .containsExactlyInAnyOrder("subjectNo", "status");
+    }
+
+    @Test
+    void internalAdmissionEnforcesReadPermission() throws Exception {
+        final String subjectNo = registerGovSubject("91330100MA27XW1508", "内部状态权限局");
+        // 未认证 401
+        mockMvc.perform(get(BASE + "/internal/subjects/" + subjectNo + "/admission"))
+                .andExpect(status().isUnauthorized());
+        // 无权限角色 403
+        mockMvc.perform(get(BASE + "/internal/subjects/" + subjectNo + "/admission")
+                        .header("X-Ctds-Subject", "someone").header("X-Ctds-Roles", "nobody"))
+                .andExpect(status().isForbidden());
+        // 评审②P2-1：持 subject.read 的申请人/审核员亦不得读内部状态（专用权限点收敛，防按编号枚举）
+        mockMvc.perform(get(BASE + "/internal/subjects/" + subjectNo + "/admission")
+                        .header("X-Ctds-Subject", APPLICANT).header("X-Ctds-Roles", "applicant"))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get(BASE + "/internal/subjects/" + subjectNo + "/admission")
+                        .header("X-Ctds-Subject", REVIEWER).header("X-Ctds-Roles", "reviewer"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void internalAdmissionUnknownSubjectIsResourceNotFound() throws Exception {
+        mockMvc.perform(get(BASE + "/internal/subjects/S20260922999999/admission")
+                        .header("X-Ctds-Subject", "did-service").header("X-Ctds-Roles", "did-internal"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("1000C0003"));
     }
 
     // ==== 辅助 ====

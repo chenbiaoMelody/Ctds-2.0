@@ -40,4 +40,7 @@ public interface DidRepository {
 
     /** 吊销：ACTIVE → REVOKED + 释放 guard_key + 落吊销留痕（同事务；带 status 乐观门槛）。 */
     void revoke(long identityId, DidOperationLog operationLog);
+
+    /** 验证留痕落库（WBS-3.1.9 行为 3 规则 3：时间/DID/结果+原因；不保存业务数据原文）。 */
+    void insertVerificationLog(VerificationLog log);
 }
