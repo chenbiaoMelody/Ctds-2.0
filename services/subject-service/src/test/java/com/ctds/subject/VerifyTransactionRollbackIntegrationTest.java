@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.ctds.common.errorcode.BizException;
 import com.ctds.subject.domain.StatusTransition;
+import com.ctds.subject.support.SharedMySqlContainer;
 import com.ctds.subject.domain.SubjectErrorCodes;
 import com.ctds.subject.domain.SubjectRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -25,7 +26,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockMultipartFile;
@@ -36,8 +36,6 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
-import org.testcontainers.containers.MySQLContainer;
-import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
@@ -65,10 +63,11 @@ class VerifyTransactionRollbackIntegrationTest {
     private static Path auditDir;
     private static Path keyFile;
 
-    @Container
-    @ServiceConnection
-    static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:8.0")
-            .withDatabaseName("ctds_subject");
+    /** DB-25：模块共享容器 + 本类独立库名（ADR-010 §8 形态 B）。 */
+    @DynamicPropertySource
+    static void sharedMySqlDatasource(final DynamicPropertyRegistry registry) {
+        SharedMySqlContainer.register(registry, "ctds_subject_verify_tx");
+    }
 
     @Autowired
     private MockMvc mockMvc;

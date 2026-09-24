@@ -5,22 +5,22 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.ctds.example.support.SharedMySqlContainer;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
-import org.testcontainers.containers.MySQLContainer;
-import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
  * 容器化集成测试（WBS 2.4.11，写法规范见 ADR-010；升级 2.4.10 的环境变量门控为容器自动供给）：
- * 本机 Docker 运行时自动起一次性 MySQL 8 容器（随机端口/随机凭据，测后自动销毁）执行，
+ * 本机 Docker 运行时经模块共享容器（DB-25 起：ADR-010 §8 形态 B，本类独立库名）真实执行，
  * 未运行时 disabledWithoutDocker 自动跳过——门禁不红（跳过态留痕于 mvn 输出）。
  * 断言集与 2.4.10 定稿一致：V1/V2 依次应用、flyway_schema_history 两行成功记录、demo_note 恰 2 行、
  * 数据标题契约、重复迁移 no-op（幂等）、demo-notes 端点 200/401 双向。
@@ -31,11 +31,11 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @Testcontainers(disabledWithoutDocker = true)
 class FlywayMigrationTest {
 
-    /** 显式镜像标签 mysql:8.0（与 2.4.10 演练镜像同源；ADR-010 禁止 latest），库名与示例迁移目标一致 */
-    @Container
-    @ServiceConnection
-    static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:8.0")
-            .withDatabaseName("ctds_demo");
+    /** DB-25：模块共享容器 + 本类独立库名（ADR-010 §8 形态 B；库名与示例迁移目标一致）。 */
+    @DynamicPropertySource
+    static void sharedMySqlDatasource(final DynamicPropertyRegistry registry) {
+        SharedMySqlContainer.register(registry, "ctds_demo");
+    }
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
