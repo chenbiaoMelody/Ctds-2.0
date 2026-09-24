@@ -167,3 +167,42 @@
 | 门禁 | **GREEN**（`gate-report-20260923-235835.md`，RunLabel `20260923-234855-9213`，`PASS=10 FAIL=0 SKIP=1 ERROR=0 PENDING=9`，`unitTest` PASS，退出码 0）——评审修复后全量复跑 |
 
 **评审修复结论**：四视角必修项 6 条 + 其余 9 项（含 2 项登记不夹带）全部闭环；未新增规格外实现、未引入依赖、未放宽既有安全口径（内部端点权限面只减不增）。
+
+---
+
+## 验收环境与实测记录（2026-09-24，承接会话日志 `-2359`）
+
+> 性质：**验收环境就绪 + 交付态全链路实测**（不改代码、不改规格、不新增用例）。交付态 = `a4f5ba6`（与 origin 同步）；编排师走查命令见本节与会话日志 `-1950`。
+
+### 环境恢复（含一处必须动作：构件按交付态重建）
+
+| 项 | 结论 |
+| --- | --- |
+| Docker | 首查引擎停止（`npipe` 不可达）→ 启动 Docker Desktop，`sc-mysql`/`sc-minio`/`sc-redis` 自愈（数据保留） |
+| 库与演示数据 | 三库在位（`ctds_subject`/`ctds_kms`/`ctds_did`）；`did_identity` 演示样本三条（`S20260921000001.1` REVOKED + `.2` ACTIVE、`S20260922000001.1` ACTIVE）；`kms_key` 三把 SM2 键（`ENABLED`）；`did_verification_log` 既有 4 条 |
+| **构件重建（关键）** | 原 jar（09-23 22:03）**早于当晚评审修复** → 按交付态重建 `services/did` + `services/subject-service`（`mvn -B -ntp -pl services/did,services/subject-service package -DskipTests`，11.5s）；**jar 内验证修复在位**：subject 内部端点类含 `subject.internal.read`（旧 `"subject.read"` 0 命中）、did 错误码类含 `1005S0002` |
+| 三服务启动 | mysql profile + 回环：kms 8081（`CTDS_KMS_ROOT_KEY` 沿用演示根密钥）/ subject 8080（`CTDS_DID_ISSUANCE_BASEURL` + `CTDS_SM4_KEY_FILE`）/ did 8082（`CTDS_DID_KMS_BASEURL` + `CTDS_DID_SUBJECT_BASEURL`）；`netstat` 三端口均 `127.0.0.1`；`/actuator/health` 三服务 `UP` |
+| 根密钥一致性 | KMS 真实代签成功（`did-S20260922000001-1`）→ 既有 SM2 私钥可解密，**未触发"换新根密钥须清库"路径** |
+
+### 全链路实测（编排师走查同款命令，逐条实测通过）
+
+| # | 场景 | 命令（Git Bash / cmd 均可） | 实测结果 |
+| --- | --- | --- | --- |
+| 1 | 解析·有效 | `curl.exe "http://127.0.0.1:8082/api/v1/did/did:ctds:S20260922000001.1"` | `code=0` + 文档（SM2 公钥 130 hex、解析入口）+ `status=ACTIVE` |
+| 2 | 解析·已吊销 | 同上，替换 DID 为 `did:ctds:S20260921000001.1` | 文档照常返回 + `status=REVOKED`（吊销后仍可解析） |
+| 3 | 解析·未登记 | 同上，替换为 `did:ctds:S20260922999999.1` | `1005B0003 该 DID 未登记`（HTTP 400，明确业务答复） |
+| 4 | 验证·通过 | `curl.exe -H "Content-Type: application/json" --data-binary @build-output/demo-files/did/verify-pass.json "http://127.0.0.1:8082/api/v1/did/did:ctds:S20260922000001.1/verifications"` | `result=PASS`（data 恰为 `did/result/reason/verifiedAt` 四字段） |
+| 5 | 验证·数据篡改 | 同上，body 换 `verify-tamper.json` | `FAIL / SIGNATURE_INVALID` |
+| 6 | 验证·已吊销（真签名） | 同上，body 用 `verify-revoked.json` 打 `did:ctds:S20260921000001.1` | `FAIL / REVOKED` |
+| 7 | 验证·未登记 | `verify-pass.json` 打 `did:ctds:S20260922999999.1` | `FAIL / NOT_REGISTERED` |
+| 8 | 边界·data 超 1MB | 1,048,577 字节 Base64（请求体 1,398,226 字节）打有效 DID | `1005C0004 验证参数不合法`（HTTP 400）且**不留痕**（hifi §6 输入类拒绝例外口径） |
+| 9 | **核验不可用**（反向演示） | 停止 subject 服务后提交 #4 同款请求 | `result=UNAVAILABLE / reason=BINDING_UNAVAILABLE`（**系统态未伪装成"验证不通过"**）；重启 subject 后复验回到 `PASS` |
+| 10 | 内部端点权限收敛（R1 落地验证） | `curl.exe -H "X-Ctds-Subject: did-internal" -H "X-Ctds-Roles: did-internal" "http://127.0.0.1:8080/api/v1/subject/internal/subjects/S20260922000001/admission"` | 服务身份 `200`（仅 `subjectNo`/`status` 两字段）；`applicant`/`reviewer` **403**（`1000C0005`）；无身份头 **401**；主体不存在 `1000C0003`（400） |
+| 11 | 留痕核验 | `powershell -NoProfile -ExecutionPolicy Bypass -File build-output/demo-files/did/show-verification-log.ps1` | 每次产生结论的验证各一条记录（三要素 did / result+reason / occurred_at）；本次冒烟新增 **9 条**（含 UNAVAILABLE 一条） |
+| 12 | 留痕无原文 | 留痕表全文转储后扫描样本数据 Base64 与签名 DER 串 | **0 命中**（值 + 结构双重锚定） |
+
+### 与交付说明的口径差异（如实登记）
+
+1. **走查免手工代签**：交付说明原步骤为"先请密钥服务代签 → 复制签名 → 再提交验证"；本次预置三份**免编码坑请求体**（`build-output/demo-files/did/verify-{pass,tamper,revoked}.json`，纯 ASCII，gitignored），编排师**直接提交即可**（SM2 签名随机化只影响新签名形态，**既有签名对同一样本永久有效**）。
+2. **`UNAVAILABLE` 属破坏性演示**：需先停 subject 服务；本次已实测并恢复。复看步骤见会话日志 `-1950` 交接提醒⑤。
+3. 走查样本编号与既往交付说明一致；三服务以 `127.0.0.1` 回环运行（ADR-016 §2.7），**演示机须为可信机器**。
