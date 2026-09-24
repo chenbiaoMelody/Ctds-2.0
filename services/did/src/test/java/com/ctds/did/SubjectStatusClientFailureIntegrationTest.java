@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.ctds.common.crypto.Sm2KeyPair;
 import com.ctds.common.crypto.Sm2Service;
 import com.ctds.did.domain.DidStatus;
+import com.ctds.did.support.SharedMySqlContainer;
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.nio.charset.StandardCharsets;
@@ -18,15 +19,12 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
-import org.testcontainers.containers.MySQLContainer;
-import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
@@ -45,13 +43,11 @@ class SubjectStatusClientFailureIntegrationTest {
     /** 启动时动态取一个当前空闲端口（占位后立即释放），保证主体服务地址确实不可达。 */
     private static final int UNREACHABLE_PORT = unusedPort();
 
-    @Container
-    @ServiceConnection
-    static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:8.0")
-            .withDatabaseName("ctds_did")
-            .withUrlParam("connectionTimeZone", "UTC")
-            .withUrlParam("forceConnectionTimeZoneToSession", "true")
-            .withEnv("TZ", "UTC");
+    /** DB-25：模块共享容器 + 本类独立库名（ADR-010 §8 形态 B）；UTC 连接参数由共享容器统一承载。 */
+    @DynamicPropertySource
+    static void sharedMySqlDatasource(final DynamicPropertyRegistry registry) {
+        SharedMySqlContainer.register(registry, "ctds_did_subject_status_failure");
+    }
 
     @Autowired
     private MockMvc mockMvc;

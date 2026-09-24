@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.ctds.common.errorcode.BizException;
+import com.ctds.subject.support.SharedMySqlContainer;
 import com.ctds.subject.domain.StatusTransition;
 import com.ctds.subject.domain.Subject;
 import com.ctds.subject.domain.SubjectErrorCodes;
@@ -36,7 +37,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -45,8 +45,6 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
-import org.testcontainers.containers.MySQLContainer;
-import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
@@ -67,11 +65,11 @@ class SubjectRegistrationIntegrationTest {
     private static final String APPLICANT = "applicant-01";
     private static Path auditDir;
 
-    /** 显式镜像标签 mysql:8.0（ADR-010 禁止 latest），类级共享容器。 */
-    @Container
-    @ServiceConnection
-    static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:8.0")
-            .withDatabaseName("ctds_subject");
+    /** DB-25：模块共享容器 + 本类独立库名（ADR-010 §8 形态 B）。 */
+    @DynamicPropertySource
+    static void sharedMySqlDatasource(final DynamicPropertyRegistry registry) {
+        SharedMySqlContainer.register(registry, "ctds_subject_registration");
+    }
 
     @BeforeAll
     static void createAuditDir() throws Exception {

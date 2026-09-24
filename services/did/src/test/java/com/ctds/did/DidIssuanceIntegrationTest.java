@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.ctds.common.crypto.Sm2KeyPair;
+import com.ctds.did.support.SharedMySqlContainer;
 import com.ctds.common.crypto.Sm2Service;
 import com.ctds.common.errorcode.BizException;
 import com.ctds.did.domain.DidErrorCodes;
@@ -34,15 +35,14 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
-import org.testcontainers.containers.MySQLContainer;
-import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
@@ -69,13 +69,11 @@ class DidIssuanceIntegrationTest {
     private static final Pattern SENSITIVE_PATTERN = Pattern.compile(
             "(\\d{17}[0-9Xx])|(1[3-9]\\d{9})|(" + PRIVATE_KEY_PATTERN + ")");
 
-    @Container
-    @ServiceConnection
-    static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:8.0")
-            .withDatabaseName("ctds_did")
-            .withUrlParam("connectionTimeZone", "UTC")
-            .withUrlParam("forceConnectionTimeZoneToSession", "true")
-            .withEnv("TZ", "UTC");
+    /** DB-25：模块共享容器 + 本类独立库名（ADR-010 §8 形态 B）；UTC 连接参数由共享容器统一承载。 */
+    @DynamicPropertySource
+    static void sharedMySqlDatasource(final DynamicPropertyRegistry registry) {
+        SharedMySqlContainer.register(registry, "ctds_did_issuance");
+    }
 
     @MockitoBean
     private DidKmsClient kmsClient;
