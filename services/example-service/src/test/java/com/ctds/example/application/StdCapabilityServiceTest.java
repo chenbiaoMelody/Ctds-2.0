@@ -3,7 +3,8 @@ package com.ctds.example.application;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.ctds.std.StdDomain;
-import com.ctds.std.did.PlaceholderDidInteropStandardApi;
+import com.ctds.std.did.DidInteropSamples;
+import com.ctds.std.did.MockDidInteropStandardApi;
 import com.ctds.std.evidence.PlaceholderEvidenceStandardApi;
 import com.ctds.std.interconnect.PlaceholderInterconnectStandardApi;
 import java.util.List;
@@ -20,7 +21,7 @@ class StdCapabilityServiceTest {
         final StdCapabilityService service = new StdCapabilityService(List.of(
                 new PlaceholderEvidenceStandardApi(),
                 new PlaceholderInterconnectStandardApi(),
-                new PlaceholderDidInteropStandardApi()));
+                new MockDidInteropStandardApi(DidInteropSamples.fromClasspath())));
         assertThat(service.statuses())
                 .extracting(status -> status.domain())
                 .containsExactly(StdDomain.INTERCONNECT, StdDomain.DID_INTEROP, StdDomain.EVIDENCE);

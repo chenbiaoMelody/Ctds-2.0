@@ -30,6 +30,12 @@
       <groupId>com.ctds</groupId>
       <artifactId>common-auth</artifactId>
     </dependency>
+    <!-- 互认协议收口模块（WBS-3.1.10 W1/W3）：互认域接口与真实实现唯一落点；
+         本服务只依赖 DidInteropStandardApi 接口类型，不引用具体实现类（收口守卫 InteropSeamTest） -->
+    <dependency>
+      <groupId>com.ctds</groupId>
+      <artifactId>std-adapter</artifactId>
+    </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-web</artifactId>

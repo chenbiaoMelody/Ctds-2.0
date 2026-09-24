@@ -1,0 +1,38 @@
+{
+  "peerSpace" : "linjiang",
+  "peerSpaceName" : "临江数据空间",
+  "samples" : [ {
+    "sampleId" : "E1-VALID",
+    "did" : "did:linjiang:peer-0001",
+    "scenario" : "VALID",
+    "data" : "5Li05rGf5riv6Iiq5pWw5o2u5pyN5Yqh5pyJ6ZmQ5YWs5Y+46Lqr5Lu95Li75byg5Y6f5paH77yI5ryU56S65qC35L6LIEUx77yaMjAyNi0wOS0yNSDlh7rlhbfvvIk=",
+    "signature" : "MEUCIElz2rIYb4XVWXL9fiowl01TG/dN+zHtEDzeAfbHh8aeAiEA9hSSKqBvlXGcS4gNxwcwzDEKLhSsFBuMCKneJMi8Zrc=",
+    "publicKeyHex" : "044ea09d456dea8797a15ba167bebea12aa10a585a460f35d35fd387a40207f9ae955579b2ee005e8030e35cfb2f2114767ec5e1cb3516e945d2ec69d1d4f99eca",
+    "peerRevoked" : false,
+    "peerBindingLost" : false,
+    "expectedResult" : "PASS",
+    "expectedReason" : null
+  }, {
+    "sampleId" : "E1-PEER-REVOKED",
+    "did" : "did:linjiang:peer-0002",
+    "scenario" : "PEER_REVOKED",
+    "data" : "5Li05rGf5riv6Iiq5pWw5o2u5pyN5Yqh5pyJ6ZmQ5YWs5Y+46Lqr5Lu95Li75byg5Y6f5paH77yI5ryU56S65qC35L6LIEUx77yaMjAyNi0wOS0yNSDlh7rlhbfvvIk=",
+    "signature" : "MEYCIQC5JOqatKgIlEtOWADSYEaJMN+/dUjw4HGJTN89YcvL5QIhAMwcl32U5+yoQwmbEYoBZXINiHvn6Fd2kRtvsiWgGAso",
+    "publicKeyHex" : "049cc887d0018d0dfa0e0f87c09dc942d86c37e7515471ec5dc0a7bea23938ba25f0863baa64dde4a0442790e2b6071fa15a63b04fb2d3c2b315589feaadb12f36",
+    "peerRevoked" : true,
+    "peerBindingLost" : false,
+    "expectedResult" : "FAIL",
+    "expectedReason" : "REVOKED"
+  }, {
+    "sampleId" : "E1-TAMPERED",
+    "did" : "did:linjiang:peer-0003",
+    "scenario" : "TAMPERED",
+    "data" : "5Li05rGf5riv6Iiq5pWw5o2u5pyN5Yqh5pyJ6ZmQ5YWs5Y+46Lqr5Lu95Li75byg5Y6f5paH77yI5ryU56S65qC35L6LIEUx77yaMjAyNi0wOS0yNSDlh7rlhbfvvInigJTigJTvvIjmlbDmja7lt7Looqvnr6HmlLnvvIk=",
+    "signature" : "MEUCICDE8CGDGb3ruZVrJm5vbGdf/7jggRO63oea6N1qX3cDAiEAlT8fcobhdTCEYi+KzvWdZLJDOIYnJHkPREIOlMcchcU=",
+    "publicKeyHex" : "048f4f175e65988956769e89c6b181a623e77dd7a8294ce28628da36885bec2a5bef9166da393c1cf3b26ffede4328dc2f67035bb03ca564501f26bff30a8ed59f",
+    "peerRevoked" : false,
+    "peerBindingLost" : false,
+    "expectedResult" : "FAIL",
+    "expectedReason" : "SIGNATURE_INVALID"
+  } ]
+}

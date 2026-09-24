@@ -73,9 +73,12 @@ CREATE TABLE did_interop_log (
 
 | 项 | 内容 |
 | --- | --- |
-| 新增配置 | **零新增**（模拟对端空间标识与显示名以常量落在 `std-adapter` 的 mock 实现内：`linjiang` / "临江数据空间"） |
-| 装配点（did 服务） | 新增配置类注册 `MockDidInteropStandardApi` Bean，并注入 `LocalDidStatusPort` 实现（进程内委托既有解析能力，**不新增 HTTP 自调用**） |
-| 装配点（example-service） | `StdAdapterPlaceholderConfig` 的 `did` 域 Bean 由 `PlaceholderDidInteropStandardApi` 替换为真实实现（ADR-008 §3.4 替换示范点） |
+| 新增配置 | **零新增**（模拟对端空间标识与显示名落在样例资源 `std/did-interop-samples.json`：`linjiang` / "临江数据空间"） |
+| 装配点（std-adapter） | **新增** `DidInteropStandardConfig`（`@Configuration` + `@Bean @ConditionalOnMissingBean(DidInteropStandardApi.class)`）提供互认域真实实现；使用方 `@Import` 显式引入（不向所有引入 std-adapter 的服务注入无用 Bean） |
+| 装配点（did 服务） | `DidInteropConfig`：`@Import(DidInteropStandardConfig.class)` + 注册 `LocalDidStatusPort` 实现（`LocalDidStatusAdapter` 进程内委托既有解析能力，**不新增 HTTP 自调用**） |
+| 装配点（example-service） | `StdAdapterPlaceholderConfig`：删除 `did` 域占位 Bean 注册，改 `@Import(DidInteropStandardConfig.class)`；演示壳服务未提供 `LocalDidStatusPort` → 出向语义在该服务内为"不可用"（互认端点由 did 服务承载）；占位类已删除（ADR-008 §3.4 替换示范点） |
+
+> **装配形态修正（编码会话，2026-09-25；设计自冲突处置）**：本表原稿"装配点（did 服务）新增配置类注册 `MockDidInteropStandardApi` Bean"与 §7 T11"`MockDidInteropStandardApi` 不出现在 did 服务源集"**互斥**。处置 = 取严、T11 原文不改：互认域真实实现只由其唯一落点（std-adapter）的装配类注册，使用方经 `@Import` 引入；本表按此回写，差异同时登记 `ADR-008` §9。守卫经反向探针实测可证伪（did 服务源集出现实现类名 → `InteropSeamTest` 红灯）。
 | 占位类处置 | `PlaceholderDidInteropStandardApi` **删除**（§1.2 替换规则：删除占位而非并存；含 std-adapter 内相关测试同步调整） |
 | 既有能力复用 | 验签 = `common-crypto` `Sm2Service.verify`（SM2，公钥 130 hex 非压缩点）；留痕仓储 = JDBC 既有写法；错误码 = `common-errorcode`；无新增依赖 |
 
@@ -145,3 +148,14 @@ CREATE TABLE did_interop_log (
 4. 样例生成：一次性程序（**不入库**）生成对端密钥对与三态样例 → 私钥仅落 gitignored 目录并废弃 → 样例 JSON 入库 + 生成步骤留痕；
 5. 替换前基线：example 探活 `did` 域当前输出（`implemented=false`）留痕；
 6. 确认 `did` 服务既有解析能力可作为 `LocalDidStatusPort` 实现来源（进程内委托，不新增 HTTP 调用）。
+
+### §10 实测留痕（编码会话，2026-09-25）
+
+| 检查项 | 实测结果 |
+| --- | --- |
+| ① 冷启动读序 | `AGENTS.md` → 停机交接日志 `-0022` → 设计确认日志 `-2347` → 任务卡 → lofi/hifi 确认记录 → 台账快照 → ADR-008/ADR-017 → 规格 C-1.2 行为 5 → 剧本 S4 + 附录 A 组 E1 逐份读取；分支核验 `feat/C-1.2-跨空间身份互认接口` = `f246b25` = 远端（同步）、工作树干净 |
+| ② 演示环境 | Docker 三容器 `sc-mysql` / `sc-minio` / `sc-redis` 均 Up；回环 8080 = subject-service、8081 = kms、8082 = did，`/actuator/health` 均 200；**example-service 未在运行**（其默认端口 8080 已由 subject-service 占用）→ 探活基线以集成测试实测承载（⑤） |
+| ③ SM2 签名/公钥口径 | `mvn -pl common/crypto test -Dtest=Sm2ServiceTest` → **8/8 GREEN**；口径确认：`verify(data, signature, publicKeyHex)`、公钥 130 hex（`04` 前缀非压缩点）、私钥 64 hex、签名 DER 字节（传输层 Base64）；`Sm2Service` Bean 由 `CryptoAutoConfiguration` 提供 |
+| ④ 样例生成 | 一次性生成器（临时测试类，运行后即删）经 `Sm2Service` 生成三对密钥 → 三态样例：VALID 与 PEER_REVOKED **真实验签通过**、TAMPERED **验签失败**（生成期断言自检通过）；样例 JSON 入库 `std-adapter/src/main/resources/std/did-interop-samples.json`；**私钥只落 gitignored 的 `build-output/demo-files/did-interop/peer-private-keys.json` 并即时删除**（红线 7）；走查材料（三态来访请求体）落同目录 `requests/` |
+| ⑤ 替换前探活基线 | `mvn -pl services/example-service test -Dtest=StdCapabilitiesIntegrationTest` → **2/2 GREEN**（替换前基线）：`did` 域 `implemented=false` + 定稿文案"该能力域尚未开放：政务 CA 接入与跨空间身份互认接口将由后续工作包实现（WBS 3.1.4 / 3.1.10）" |
+| ⑥ `LocalDidStatusPort` 来源 | 确认 = `DidResolutionService.resolve(did)`（`ResolutionResult(did, DidStatus, document)`；未登记抛 `1005B0003`）；`DidStatus` = PENDING_ISSUE / ACTIVE / REVOKED，**非 ACTIVE 即状态核验失败**（沿 3.1.9 口径）；端口实现 `LocalDidStatusAdapter` 进程内委托，无 HTTP 自调用 |

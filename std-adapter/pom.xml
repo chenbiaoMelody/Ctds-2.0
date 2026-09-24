@@ -22,6 +22,12 @@
       <groupId>com.ctds</groupId>
       <artifactId>common-errorcode</artifactId>
     </dependency>
+    <!-- 互认域签名核验（WBS-3.1.10 W1/W2）：经 common-crypto 唯一入口做 SM2 验签，禁止自研密码学（ADR-006）。
+         平台内部模块依赖（版本随 reactor 统一管理），未引入任何新第三方组件。 -->
+    <dependency>
+      <groupId>com.ctds</groupId>
+      <artifactId>common-crypto</artifactId>
+    </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-test</artifactId>

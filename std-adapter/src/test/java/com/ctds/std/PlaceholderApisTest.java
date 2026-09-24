@@ -2,8 +2,6 @@ package com.ctds.std;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.ctds.std.did.DidInteropStandardApi;
-import com.ctds.std.did.PlaceholderDidInteropStandardApi;
 import com.ctds.std.evidence.EvidenceStandardApi;
 import com.ctds.std.evidence.PlaceholderEvidenceStandardApi;
 import com.ctds.std.interconnect.InterconnectStandardApi;
@@ -11,7 +9,9 @@ import com.ctds.std.interconnect.PlaceholderInterconnectStandardApi;
 import org.junit.jupiter.api.Test;
 
 /**
- * H4：三域占位实现逐一断言域映射、implemented=false 与定稿文案（hifi"占位实现状态值"表）。
+ * H4：占位域实现逐一断言域映射、implemented=false 与定稿文案（hifi"占位实现状态值"表）。
+ * <p>注：DID 互认域占位类已由 WBS-3.1.10 按替换规则删除（真实实现 = {@code MockDidInteropStandardApi}，
+ * 守卫与断言见 {@code com.ctds.std.did.MockDidInteropStandardApiTest}）。</p>
  */
 class PlaceholderApisTest {
 
@@ -23,16 +23,6 @@ class PlaceholderApisTest {
         assertThat(api.status().implemented()).isFalse();
         assertThat(api.status().message())
                 .isEqualTo("该能力域尚未开放：区域枢纽对接与产品互挂接口将按信通院互联互通规范由后续工作包实现（WBS 4.x）");
-    }
-
-    @Test
-    void DID互认域占位返回未开放状态与定稿文案() {
-        final DidInteropStandardApi api = new PlaceholderDidInteropStandardApi();
-        assertThat(api.domain()).isEqualTo(StdDomain.DID_INTEROP);
-        assertThat(api.status().domain()).isEqualTo(StdDomain.DID_INTEROP);
-        assertThat(api.status().implemented()).isFalse();
-        assertThat(api.status().message())
-                .isEqualTo("该能力域尚未开放：政务 CA 接入与跨空间身份互认接口将由后续工作包实现（WBS 3.1.4 / 3.1.10）");
     }
 
     @Test

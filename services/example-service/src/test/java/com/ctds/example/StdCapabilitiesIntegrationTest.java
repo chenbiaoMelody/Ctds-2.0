@@ -18,8 +18,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
- * H6 演示接线集成（真实 Spring 上下文 + 真实 std-adapter 占位实现）：
- * ①探活端点三域齐全且全部未开放（PO 用浏览器/curl 可验证）；
+ * H6 演示接线集成（真实 Spring 上下文 + 真实 std-adapter 实现）：
+ * ①探活端点三域齐全，互联互通/测评证据仍为占位（未开放）、**did 域已由 WBS-3.1.10 真实实现替换（已开放）**
+ * （PO 用浏览器/curl 可验证）；
  * ②1003C0001 经 GlobalExceptionHandler 出站 = 400 + 统一文案（不含内部实现）。
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
@@ -35,7 +36,7 @@ class StdCapabilitiesIntegrationTest {
     private GlobalExceptionHandler globalExceptionHandler;
 
     @Test
-    void 探活端点返回三标准域状态且全部未开放() throws Exception {
+    void 探活端点返回三标准域状态且did域已开放() throws Exception {
         mockMvc.perform(get(CAPABILITIES_URL))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value("0"))
@@ -48,9 +49,10 @@ class StdCapabilitiesIntegrationTest {
                         "该能力域尚未开放：区域枢纽对接与产品互挂接口将按信通院互联互通规范由后续工作包实现（WBS 4.x）"))
                 .andExpect(jsonPath("$.data[1].code").value("did"))
                 .andExpect(jsonPath("$.data[1].name").value("跨空间身份互认"))
-                .andExpect(jsonPath("$.data[1].implemented").value(false))
+                // WBS-3.1.10 交付后：did 域已由真实实现替换（占位类删除），探活语义由"未开放"转为"已开放"
+                .andExpect(jsonPath("$.data[1].implemented").value(true))
                 .andExpect(jsonPath("$.data[1].message").value(
-                        "该能力域尚未开放：政务 CA 接入与跨空间身份互认接口将由后续工作包实现（WBS 3.1.4 / 3.1.10）"))
+                        "跨空间身份互认能力已开放（演示期模拟对端，业务口径方法）"))
                 .andExpect(jsonPath("$.data[2].code").value("evidence"))
                 .andExpect(jsonPath("$.data[2].name").value("测评证据"))
                 .andExpect(jsonPath("$.data[2].implemented").value(false))
