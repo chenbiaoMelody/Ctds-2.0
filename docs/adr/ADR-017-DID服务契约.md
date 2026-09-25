@@ -129,3 +129,14 @@ C-1.2 分布式数字身份（DID）的第一个实施包（WBS-3.1.8）新建�
 - KMS 密钥对托管为 ADR-015 扩展，调用方只见 `DidKmsClient` 端口（生成密钥对返回公钥）——未来换商业 KMS 或信封加密模式，替换 `DidKmsHttpClient` 实现，DID 业务代码零改动。
 - DID 注册表访问收敛 `DidRepository` 端口，MySQL 实现可替换；链上/分布式账本承载演进（规格 §7 Q2 弃项）如需采用，走技术栈变更流程。
 - 触发衔接收敛 `DidIssuancePort` 端口，DID 服务契约变更不影响 subject-service 业务三层。
+
+## 8. 变更补记（WBS-3.1.10，2026-09-25）
+
+- **互认端点契约（`services/did` 扩展，前缀 `/api/v1/did-interop`）**：来访验证 `POST /inbound-verifications`（入参 `peerSpace` / `did` / `data` / `signature`，Base64）、出向验证 `POST /outbound-verifications`（入参 `did` = 本空间 DID）、样例清单 `GET /samples`（只读）。出参与错误码见 `docs/designs/WBS-3.1.10-hifi.md` §2/§4。
+- **错误码零新增**：复用 `1005C0004`（互认入参不合法）/ `1005S0002`（互认内部错误）；"该标准互联功能尚未开放"（`1003C0001`）属 std-adapter 骨架期占位语义，本包交付后 did 域已开放，占位答复契约保留在 std-adapter（ADR-008 §9）。
+- **库表**：`ctds_did` 新增 **V3 迁移** `did_interop_log`（方向 / 对端空间标识 / DID / 结果 / 原因 / 时间；**不保存业务数据原文**；不改 3.1.9 的 `did_verification_log`）。满足"不得新建平行库表"约束：本表为互认独立业务留痕表，不与解析/验证契约重叠。
+- **状态枚举零新增**：出向验证读取本空间状态经 std-adapter 的 `LocalDidStatusPort`（`LocalDidStatus{registered, effective}` 业务口径两布尔表达），端口实现**进程内委托** §2.9 解析能力（无 HTTP 自调用、不复制状态）；未新增 DID 状态枚举。
+- **留痕口径**：业务结论（通过 / 不通过 / 不可用）一律留痕（方向 + 对端空间标识 + DID + 结果 + 原因 + 时间）；**输入类拒绝与内部错误不留痕**；超长入参（`peerSpace` > 64、`did` > 128）按输入类拒绝（防落库异常）。
+- **系统态诚实表征**：互认通道取数异常（含本空间 DID 文档损坏、端口异常）→ `UNAVAILABLE` + `BINDING_UNAVAILABLE` 并留痕，**不冒充"验证不通过"**。
+- **诚实边界（沿 §2.7/§2.9 口径）**：互认三端点演示期**无鉴权**——调用方为对端系统，演示期回环网络隔离是真实边界；解除条件同 §2.7（网关 HeaderStripFilter + 真实令牌 + 服务间鉴权）；**本包为"业务口径互认 + 模拟对端"，非信通院协议实现**（真实协议对接归 C-9.1）。
+- **依赖**：`services/did` 新增 `com.ctds:std-adapter` 内部模块依赖（互认协议实现收口唯一落点，ADR-008 §3.1）；无新第三方坐标。
