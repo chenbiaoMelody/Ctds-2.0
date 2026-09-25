@@ -188,6 +188,15 @@ describe('DID 演示与验证页（WBS-3.1.11 T14/T15）', () => {
     expect(wrapper.text()).toContain('2026-09-25T12:20:00')
   })
 
+  it('验证留痕空态：展示"暂无验证留痕"，并仍明示不含数据原文（F2）', async () => {
+    // beforeEach 已把留痕置空（total=0）——空态必须给出明确文案，不能留白
+    const { wrapper } = await mountPage()
+
+    expect(wrapper.find('.el-table__empty-block').exists()).toBe(true)
+    expect(wrapper.text()).toContain('暂无验证留痕')
+    expect(wrapper.text()).toContain('留痕仅含时间/DID/结果/原因，不保存任何业务数据原文')
+  })
+
   it('页面顶部固定提示：入口仅演示/调试期、生产默认关闭', async () => {
     const { wrapper } = await mountPage()
     expect(wrapper.text()).toContain('仅演示/调试期使用')

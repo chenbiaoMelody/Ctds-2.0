@@ -3,6 +3,10 @@
  * 3.1.2 注册/查询、3.1.3 认证、3.1.4 政务 CA、3.1.5 审核；不改接口只做界面化）。
  */
 import { apiJson, apiUpload } from './client'
+import type { PageData } from './types'
+
+/** 分页数据（WBS-3.1.12 F5 类型收口：唯一声明在 `./types`；此处保持原导出面不变）。 */
+export type { PageData }
 
 // ==== 类型（对齐后端响应记录） ====
 
@@ -13,14 +17,6 @@ export interface ReviewQueueItem {
   subjectName: string
   subjectType: string
   createdAt: string
-}
-
-export interface PageData<T> {
-  list: T[]
-  total: number
-  pageNum: number
-  pageSize: number
-  totalPages: number
 }
 
 export interface OcrElements {

@@ -13,6 +13,7 @@ import com.ctds.common.crypto.Sm2KeyPair;
 import com.ctds.common.crypto.Sm2Service;
 import com.ctds.did.domain.DidKmsClient;
 import com.ctds.did.domain.DidStatus;
+import com.ctds.did.support.IsoSecondTimestamp;
 import com.ctds.did.support.SharedMySqlContainer;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -95,7 +96,8 @@ class DidDemoSignatureIntegrationTest {
                 .containsExactlyInAnyOrder("did", "data", "signature", "signedAt");
         assertThat(data.path("data").asText())
                 .isEqualTo(Base64.getEncoder().encodeToString(plaintext));
-        assertThat(data.path("signedAt").asText()).isNotEmpty();
+        // T2：演示签名 signedAt 钉 ISO-8601 秒级本地时间形（原仅断非空）
+        IsoSecondTimestamp.assertSecondPrecisionIso("signedAt", data.path("signedAt").asText());
 
         final byte[] signature = Base64.getDecoder().decode(data.path("signature").asText());
         // 真实证据：原文 + 签名 + DID 文档公钥 → 验签通过；改动原文即不通过

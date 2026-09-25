@@ -2,6 +2,7 @@
  * WBS-3.1.11 DID 管理界面共享常量（hifi §6.4：状态与文案集中收口，禁止页面内散写字面量）。
  * 键值与后端枚举逐字对齐；**未感知的取值一律原样显示**（不吞掉、不显示空白）。
  */
+import type { DidRecordStatus } from '../api/did'
 
 /** 记录状态 → 中文标签（键 = 后端 DidStatus 三值；PENDING_ISSUE 为记录中间态）。 */
 export const RECORD_STATUS_LABELS: Record<string, string> = {
@@ -17,8 +18,8 @@ export const RECORD_STATUS_TYPES: Record<string, string> = {
   PENDING_ISSUE: 'warning',
 }
 
-/** 记录状态筛选下拉的取值（与后端 DidStatus 三值一致；空串 = 不筛选）。 */
-export type RecordStatusFilterValue = '' | 'ACTIVE' | 'REVOKED' | 'PENDING_ISSUE'
+/** 记录状态筛选下拉的取值（三值集合与 `DidRecordStatus` 合一，避免两处各写一遍；空串 = 不筛选）。 */
+export type RecordStatusFilterValue = '' | DidRecordStatus
 
 /**
  * 记录状态筛选选项（hifi §6.4：页面禁止散写文案）。

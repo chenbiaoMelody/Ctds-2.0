@@ -57,6 +57,17 @@ describe('DID 界面源集守卫（WBS-3.1.11 T17）', () => {
     expect(hits(source, 'unrevoke')).toBe(0)
   })
 
+  it('吊销回滚字样：三条扫描口径各自可证伪（F4 专用反向探针，规格行为 4 规则 4）', () => {
+    // 同一 hits() 口径对三类违规样本分别必命中（证明三处断言都非空转）
+    expect(hits('const restore = () => revokeUndo()', 'restore')).toBe(1)
+    expect(hits("const tip = '恢复身份'", '恢复')).toBe(1)
+    expect(hits('await unrevokeDid(did)', 'unrevoke')).toBe(1)
+    // 反向的反向：合规样本不误判（避免"扫描口径过宽"造成的假红）
+    expect(hits('const rollback = false', 'restore')).toBe(0)
+    expect(hits("const text = '已吊销'", '恢复')).toBe(0)
+    expect(hits('const revoke = () => {}', 'unrevoke')).toBe(0)
+  })
+
   it('界面不得出现私钥字样（只见 KMS 密钥引用与公开要素）', () => {
     expect(hits(scanned(), 'privateKey')).toBe(0)
     expect(hits(scanned(), 'PrivateKey')).toBe(0)

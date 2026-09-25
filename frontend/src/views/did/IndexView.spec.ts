@@ -125,6 +125,20 @@ describe('DID 管理页 · 记录清单（WBS-3.1.11 T10）', () => {
     ])
   })
 
+  it('状态三值集合单一口径：筛选取值集 = 状态标签键集（F5 类型收口）', () => {
+    // F5 收口后：`RecordStatusFilterValue = '' | DidRecordStatus` 由类型保证；
+    // 运行时再钉一次"筛选选项取值集 ⊆/= 状态标签键集"（增删状态值而漏改任一侧即红）
+    const labelKeys = Object.keys(RECORD_STATUS_LABELS).sort()
+    const optionValues = RECORD_STATUS_FILTER_OPTIONS.map((option) => option.value)
+      .filter((value) => value !== '')
+      .sort()
+
+    expect(optionValues).toEqual(labelKeys)
+    for (const value of optionValues) {
+      expect(RECORD_STATUS_LABELS[value]).toBeTruthy()
+    }
+  })
+
   it('无记录时展示空态文案（未入驻主体不签发 DID，非报错）', async () => {
     mockedRecords.mockResolvedValue(page([]) as never)
     const { wrapper } = await mountPage()
@@ -169,6 +183,38 @@ describe('DID 管理页 · 记录清单（WBS-3.1.11 T10）', () => {
     await flushPromises()
     expect(mockedRecords).toHaveBeenLastCalledWith({ subjectNo: '', status: '', pageNum: 2, pageSize: 10 })
   })
+
+  it('分页越界：末页下一页禁用，越界页码不发出请求（F1）', async () => {
+    // 既有分页契约：页码按当前页透传；越界保护由 total/pageSize 驱动的"下一页禁用"承担（不自行纠偏页码）
+    mockedRecords.mockResolvedValue({
+      list: [activeRow],
+      total: 11,
+      pageNum: 1,
+      pageSize: 10,
+      totalPages: 2,
+    } as never)
+    const { wrapper } = await mountPage()
+
+    const nextOfPage1 = wrapper.find('.el-pagination .btn-next')
+    expect(
+      nextOfPage1.attributes('disabled') !== undefined || nextOfPage1.classes().includes('is-disabled'),
+    ).toBe(false)
+
+    await nextOfPage1.trigger('click')
+    await flushPromises()
+    expect(mockedRecords).toHaveBeenLastCalledWith({ subjectNo: '', status: '', pageNum: 2, pageSize: 10 })
+
+    // 末页（第 2 页 / 共 2 页）：下一页禁用 → 再点击不产生任何新请求
+    const callsAtLastPage = mockedRecords.mock.calls.length
+    const nextAtLastPage = wrapper.find('.el-pagination .btn-next')
+    expect(
+      nextAtLastPage.attributes('disabled') !== undefined ||
+        nextAtLastPage.classes().includes('is-disabled'),
+    ).toBe(true)
+    await nextAtLastPage.trigger('click')
+    await flushPromises()
+    expect(mockedRecords.mock.calls.length).toBe(callsAtLastPage)
+  })
 })
 
 describe('DID 管理页 · 吊销两段式（WBS-3.1.11 T11/T12，规格行为 4）', () => {
@@ -207,6 +253,39 @@ describe('DID 管理页 · 吊销两段式（WBS-3.1.11 T11/T12，规格行为 4
     expect(confirm).toHaveBeenCalled()
     expect(String(confirm.mock.calls[0][0])).toContain('吊销不可逆')
     expect(mockedRevoke).not.toHaveBeenCalled()
+  })
+
+  it('填理由后二次确认：取消 → 留痕零新增（独立于"零请求"的断言，F3）', async () => {
+    vi.spyOn(ElMessageBox, 'confirm').mockRejectedValue('cancel' as never)
+    mockedLogs.mockResolvedValue([
+      {
+        operation: 'ISSUE',
+        operator: 'SYSTEM',
+        reason: null,
+        keyRef: activeRow.keyRef,
+        statusFrom: 'PENDING_ISSUE',
+        statusTo: 'ACTIVE',
+        occurredAt: '2026-09-25T10:00:00',
+      },
+    ] as never)
+    const { wrapper } = await mountPage()
+    const loadsBefore = mockedRecords.mock.calls.length
+
+    await buttonByText(wrapper, '吊销')!.trigger('click')
+    await flushPromises()
+    await wrapper.find('.revoke-reason textarea').setValue('私钥疑似泄露')
+    await wrapper.find('.revoke-next-btn').trigger('click')
+    await flushPromises()
+
+    // ① 清单未刷新：界面不做任何乐观更新（与吊销留痕"服务器为准"口径一致）
+    expect(mockedRecords.mock.calls.length).toBe(loadsBefore)
+
+    // ② 详情留痕仍为服务端原值：只有签发一条，且界面不出现被取消的吊销理由
+    await buttonByText(wrapper, '查看详情')!.trigger('click')
+    await flushPromises()
+    expect(mockedLogs).toHaveBeenCalledWith(activeRow.did)
+    expect(wrapper.find('.el-drawer').text()).toContain('签发')
+    expect(document.body.textContent).not.toContain('私钥疑似泄露')
   })
 
   it('填理由后二次确认：确认 → 调吊销接口并刷新清单', async () => {

@@ -11,9 +11,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.ctds.common.crypto.Sm2KeyPair;
+import com.ctds.did.support.IsoSecondTimestamp;
 import com.ctds.did.support.SharedMySqlContainer;
 import com.ctds.common.crypto.Sm2Service;
 import com.ctds.common.errorcode.BizException;
+import com.ctds.did.application.DidIssuanceService;
 import com.ctds.did.domain.DidErrorCodes;
 import com.ctds.did.domain.DidKmsClient;
 import com.ctds.did.domain.DidOperationLog;
@@ -26,12 +28,24 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.List;
 import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -92,6 +106,9 @@ class DidIssuanceIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private DidIssuanceService didIssuanceService;
 
     @BeforeEach
     void stubKms() {
@@ -373,6 +390,9 @@ class DidIssuanceIntegrationTest {
         // B11：验证响应字段集严格 = 身份结论四字段（无任何授权/权限字段；PASS 时 reason 为空值）
         assertThat(MAPPER.readTree(body).get("data").fieldNames()).toIterable()
                 .containsExactlyInAnyOrder("did", "result", "reason", "verifiedAt");
+        // T2：verifiedAt 钉 ISO-8601 秒级本地时间形（原仅由字段集隐性锚定）
+        IsoSecondTimestamp.assertSecondPrecisionIso("verifiedAt",
+                MAPPER.readTree(body).path("data").path("verifiedAt").asText());
 
         // 留痕三要素
         final Map<String, Object> log = jdbcTemplate.queryForMap(
@@ -380,6 +400,94 @@ class DidIssuanceIntegrationTest {
         assertThat(log.get("result")).isEqualTo("PASS");
         assertThat(log.get("reason")).isNull();
         assertThat(log.get("occurred_at")).isNotNull();
+    }
+
+    @Test
+    void verificationPlaintextNeverLandsInLogFile() throws Exception {
+        // T4：**落盘**日志扫描（application.yml `logging.file.name=logs/app.log`，测试与被测服务同目录运行）。
+        // 防假绿：先发一条探针日志并断言其确实落在该文件（证明 appender 生效且已写出），再断言业务原文 0 命中。
+        final String aliveProbe = "WBS312-LOG-ALIVE-" + UUID.randomUUID();
+        LoggerFactory.getLogger("com.ctds.did.logprobe").info("落盘扫描探针 {}", aliveProbe);
+
+        final Path logFile = Path.of("logs", "app.log");
+        assertThat(logFile).as("落盘日志文件存在（logging.file.name 生效；不存在即红，不作跳过）").exists();
+
+        // 纯 ASCII 探针原文（规避 JSON 转义导致的假阴性）
+        final String marker = "WBS312-PLAINTEXT-PROBE-" + UUID.randomUUID();
+        final byte[] data = marker.getBytes(StandardCharsets.UTF_8);
+        final String subjectNo = "S20260922000130";
+        final String did = "did:ctds:" + subjectNo + ".1";
+        final Sm2KeyPair pair = sm2Service.generateKeyPair();
+        insertIdentity(subjectNo, did, DidStatus.ACTIVE, pair.publicKeyHex());
+        final byte[] signature = sm2Service.sign(data, pair.privateKeyHex());
+
+        // 验证通过（真签名）与验证不通过（篡改原文）两条路径各走一次
+        mockMvc.perform(post(BASE + "/" + did + "/verifications")
+                        .contentType(MediaType.APPLICATION_JSON).content(verifyBody(data, signature)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.result").value("PASS"));
+        mockMvc.perform(post(BASE + "/" + did + "/verifications")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(verifyBody("tampered-plaintext-probe".getBytes(StandardCharsets.UTF_8), signature)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.result").value("FAIL"));
+
+        // 容错解码（落盘文件含控制台混入的非 UTF-8 字节；参与断言的探针为纯 ASCII，替换字符不影响判定）
+        final String logged = new String(Files.readAllBytes(logFile), StandardCharsets.UTF_8);
+        assertThat(logged).as("探针日志必须已落盘（证明扫描对象有效、非空转）").contains(aliveProbe);
+        assertThat(logged).as("验证业务数据原文（含 Base64 形）不得落盘")
+                .doesNotContain(marker)
+                .doesNotContain(Base64.getEncoder().encodeToString(data));
+    }
+
+    @Test
+    void concurrentRevokeAppliesExactlyOnceWithSingleLog() throws Exception {
+        // T8：并发吊销——仓储侧乐观门槛（UPDATE ... WHERE id=? AND status='ACTIVE'）下恰一次生效，
+        // 其余按状态门槛拒绝（1005C0003），且 REVOKE 留痕恰 1 条（去掉乐观门槛即红）
+        final String subjectNo = "S20260922000131";
+        final String did = "did:ctds:" + subjectNo + ".1";
+        insertIdentity(subjectNo, did, DidStatus.ACTIVE, PUBLIC_KEY_HEX);
+
+        final int threadCount = 8;
+        final ExecutorService pool = Executors.newFixedThreadPool(threadCount);
+        final AtomicInteger succeeded = new AtomicInteger();
+        final AtomicInteger rejected = new AtomicInteger();
+        try {
+            final CountDownLatch ready = new CountDownLatch(threadCount);
+            final CountDownLatch start = new CountDownLatch(1);
+            final List<Future<?>> futures = new ArrayList<>();
+            for (int i = 0; i < threadCount; i++) {
+                futures.add(pool.submit(() -> {
+                    ready.countDown();
+                    try {
+                        start.await();
+                        didIssuanceService.revoke(did, "并发吊销探针");
+                        succeeded.incrementAndGet();
+                    } catch (final BizException e) {
+                        assertThat(e.getErrorCode()).isEqualTo(DidErrorCodes.DID_REVOKE_NOT_ACTIVE);
+                        rejected.incrementAndGet();
+                    } catch (final InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                    return null;
+                }));
+            }
+            ready.await(5, TimeUnit.SECONDS);
+            start.countDown();
+            for (final Future<?> future : futures) {
+                future.get(20, TimeUnit.SECONDS);
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+
+        assertThat(succeeded.get()).as("恰一次生效").isEqualTo(1);
+        assertThat(rejected.get()).as("其余按状态门槛拒绝").isEqualTo(threadCount - 1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(1) FROM did_operation_log WHERE did = ? AND operation = 'REVOKE'", Long.class, did))
+                .as("REVOKE 留痕恰 1 条").isEqualTo(1L);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT status FROM did_identity WHERE did = ?", String.class, did)).isEqualTo("REVOKED");
     }
 
     @Test
