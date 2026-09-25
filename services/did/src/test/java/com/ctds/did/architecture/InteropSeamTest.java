@@ -24,6 +24,9 @@ class InteropSeamTest {
 
     private static final String IMPLEMENTATION_CLASS = "MockDidInteropStandardApi";
 
+    /** did 域包名前缀（互认域反向耦合判定口径）。 */
+    private static final String DID_PACKAGE = "com.ctds.did.";
+
     @Test
     void 互认协议实现不出现在did服务源集() throws IOException {
         final Path mainSources = Path.of("src", "main", "java");
@@ -50,6 +53,33 @@ class InteropSeamTest {
                 .anyMatch(type -> type.equals(DidInteropStandardApi.class));
 
         assertThat(dependsOnInterface).as("DidInteropService 经接口类型取得互认能力").isTrue();
+    }
+
+    @Test
+    void 互认域实现源集不得依赖did域具体类型() throws IOException {
+        // WBS-3.1.12 T3（反向守卫）：ADR-008 §3.1 收口是"互认域不得反向耦合业务域"，原守卫只覆盖 did→std 单向。
+        final Path interopSources =
+                Path.of("..", "..", "std-adapter", "src", "main", "java", "com", "ctds", "std", "did");
+        assertThat(interopSources).as("以模块目录（services/did）为工作目录运行测试，std-adapter 位于仓库根").exists();
+
+        final List<String> hits = new ArrayList<>();
+        try (Stream<Path> files = Files.walk(interopSources)) {
+            for (final Path file : files.filter(path -> path.toString().endsWith(".java")).toList()) {
+                if (referencesDidDomain(read(file))) {
+                    hits.add(file.toString());
+                }
+            }
+        }
+
+        assertThat(hits).as("互认域实现不得引用 did 域具体类型（%s）", DID_PACKAGE).isEmpty();
+        // 反向探针：同一判定口径对违规样本必命中（证明扫描非空转）
+        assertThat(referencesDidDomain("import " + DID_PACKAGE + "domain.DidIdentity;"))
+                .as("反向探针：引用 did 域类型的样本必须被判为违规").isTrue();
+    }
+
+    /** 互认域源集引用 did 域具体类型即违规（判据 = did 域包名前缀）。 */
+    private static boolean referencesDidDomain(final String source) {
+        return source.contains(DID_PACKAGE);
     }
 
     private static String read(final Path file) {

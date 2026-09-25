@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.ctds.did.domain.DidKmsClient;
 import com.ctds.did.domain.DidStatus;
+import com.ctds.did.support.IsoSecondTimestamp;
 import com.ctds.did.support.SharedMySqlContainer;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -91,6 +92,20 @@ class DidManagementIntegrationTest {
                 "subjectNo", "issuanceSeq", "did", "status", "keyRef", "createdAt", "updatedAt");
         assertThat(body).doesNotContain("privateKey").doesNotContain("publicKeyHex")
                 .doesNotContain("documentJson").doesNotContain("material");
+
+        // T5：白名单与"无私钥材料/无原文"口径扩到**全部元素**（原仅 list.get(0) 字段集 + 整响应字符串黑名单）
+        final JsonNode allRows = MAPPER.readTree(body).path("data").path("list");
+        assertThat(allRows).as("本用例插入 3 行，逐元素校验（防假绿：空列表不得视为通过）").hasSize(3);
+        for (final JsonNode row : allRows) {
+            assertThat(row.fieldNames()).toIterable().as("行 %s 字段集", row.path("subjectNo").asText())
+                    .containsExactlyInAnyOrder(
+                            "subjectNo", "issuanceSeq", "did", "status", "keyRef", "createdAt", "updatedAt");
+            // 列级口径：库内公钥值不得出现在任何行（DTO 增材料字段即红）
+            assertThat(row.toString()).as("行内不得出现库内公钥明文").doesNotContain(PUBLIC_KEY_HEX);
+            // T2：时间字段钉 ISO-8601 秒级本地时间形
+            IsoSecondTimestamp.assertSecondPrecisionIso("createdAt", row.path("createdAt").asText());
+            IsoSecondTimestamp.assertSecondPrecisionIso("updatedAt", row.path("updatedAt").asText());
+        }
 
         // 分页：pageSize=2 → 第二页 1 条、总页数 2
         mockMvc.perform(getAdmin(BASE + "/records").param("subjectNo", "S20260925100101")
@@ -176,8 +191,10 @@ class DidManagementIntegrationTest {
         // T2：无身份 → 401（1000C0002）；非 did.admin 角色 → 403（1000C0005）
         for (final String path : new String[] {"/records", "/verification-logs",
             "/records/did:ctds:S20260925100104.1/operation-logs"}) {
-            assertThat(mockMvc.perform(get(BASE + path)).andReturn().getResponse().getStatus())
-                    .isEqualTo(401);
+            // T6：GET 分支补业务码断言（与 POST 分支口径一致：未认证 = 401 + 1000C0002）
+            mockMvc.perform(get(BASE + path))
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(jsonPath("$.code").value("1000C0002"));
         }
         mockMvc.perform(post(BASE + "/did:ctds:S20260925100104.1/demo-signatures")
                         .contentType(MediaType.APPLICATION_JSON).content("{\"data\":\"x\"}"))
@@ -226,7 +243,8 @@ class DidManagementIntegrationTest {
         final JsonNode revoke = MAPPER.readTree(body).path("data").get(1);
         assertThat(revoke.fieldNames()).toIterable().containsExactlyInAnyOrder(
                 "operation", "operator", "reason", "keyRef", "statusFrom", "statusTo", "occurredAt");
-        assertThat(revoke.path("occurredAt").asText()).isNotEmpty();
+        // T2：occurredAt 钉 ISO-8601 秒级本地时间形（原仅断非空）
+        IsoSecondTimestamp.assertSecondPrecisionIso("occurredAt", revoke.path("occurredAt").asText());
         // 出参无任何私钥/材料字段
         assertThat(body).doesNotContain("privateKey").doesNotContain("publicKeyHex");
     }
@@ -265,15 +283,26 @@ class DidManagementIntegrationTest {
         insertVerificationLog(other, "PASS", null);
         insertVerificationLog(other, "FAIL", "REVOKED");
 
+        // T7：total 去隐性耦合——不再硬编码行数，改为与本类独立库 did_verification_log 的 COUNT 比对
+        // （前提：本类共享同一独立库 ctds_did_management；页大小 2，总页数取上整）
+        final long logTotal = jdbcTemplate.queryForObject(
+                "SELECT COUNT(1) FROM did_verification_log", Long.class);
         final String body = mockMvc.perform(getAdmin(BASE + "/verification-logs").param("pageSize", "2"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.total").value(5))
+                .andExpect(jsonPath("$.data.total").value(logTotal))
                 .andExpect(jsonPath("$.data.pageSize").value(2))
-                .andExpect(jsonPath("$.data.totalPages").value(3))
+                .andExpect(jsonPath("$.data.totalPages").value((logTotal + 1) / 2))
                 .andExpect(jsonPath("$.data.list.length()").value(2))
                 .andReturn().getResponse().getContentAsString();
-        assertThat(MAPPER.readTree(body).path("data").path("list").get(0).fieldNames()).toIterable()
-                .containsExactlyInAnyOrder("did", "result", "reason", "occurredAt");
+
+        // T5：白名单与"无原文/无材料"口径扩到**全部元素**（原仅 list.get(0)）
+        final JsonNode logRows = MAPPER.readTree(body).path("data").path("list");
+        assertThat(logRows).as("首页固定 2 条（防假绿：空列表不得视为通过）").hasSize(2);
+        for (final JsonNode row : logRows) {
+            assertThat(row.fieldNames()).toIterable().as("验证留痕行字段集（无原文）")
+                    .containsExactlyInAnyOrder("did", "result", "reason", "occurredAt");
+            IsoSecondTimestamp.assertSecondPrecisionIso("occurredAt", row.path("occurredAt").asText());
+        }
 
         mockMvc.perform(getAdmin(BASE + "/verification-logs").param("did", did))
                 .andExpect(jsonPath("$.data.total").value(3))

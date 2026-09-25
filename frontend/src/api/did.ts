@@ -6,6 +6,10 @@
  * （最小权限面）。X-Ctds-Subject 复用 getDemoSubject()（由 apiJson 统一附加）。
  */
 import { apiJson } from './client'
+import type { PageData } from './types'
+
+/** 分页数据（WBS-3.1.12 F5 类型收口：唯一声明在 `./types`；此处保持原导出面不变）。 */
+export type { PageData }
 
 /** 记录状态（复用既有 DidStatus 三值：PENDING_ISSUE 为签发记录中间态，非 DID 状态）。 */
 export type DidRecordStatus = 'ACTIVE' | 'REVOKED' | 'PENDING_ISSUE'
@@ -23,15 +27,6 @@ export type VerificationReason =
   | 'SUBJECT_BINDING_FAILED'
   | 'NOT_REGISTERED'
   | 'BINDING_UNAVAILABLE'
-
-/** 分页数据（与后端 common/pagination PageResult 字段同构）。 */
-export interface PageData<T> {
-  list: T[]
-  total: number
-  pageNum: number
-  pageSize: number
-  totalPages: number
-}
 
 /** 签发记录行（did/keyRef 在"待签发"记录为空）。 */
 export interface DidRecordView {

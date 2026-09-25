@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import com.ctds.did.support.IsoSecondTimestamp;
 import com.ctds.did.support.SharedMySqlContainer;
 import com.ctds.std.did.DidInteropStandardApi;
 import com.ctds.std.did.InteropSample;
@@ -78,7 +79,8 @@ class DidInteropIntegrationTest {
         assertThat(data.path("did").asText()).isEqualTo(sample.did());
         assertThat(data.path("result").asText()).isEqualTo("PASS");
         assertNoReason(data);
-        assertThat(data.path("verifiedAt").asText()).isNotBlank();
+        // T2：来访留痕 verifiedAt 钉 ISO-8601 秒级本地时间形（原仅断非空）
+        IsoSecondTimestamp.assertSecondPrecisionIso("verifiedAt", data.path("verifiedAt").asText());
 
         final List<Map<String, Object>> rows = logsOf(sample.did());
         assertThat(rows).hasSize(1);

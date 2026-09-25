@@ -20,6 +20,22 @@ class MockDidInteropStandardApiTest {
     private final DidInteropSamples samples = DidInteropSamples.fromClasspath();
 
     @Test
+    void 全部样例的实现结论与样例预期逐字段一致() {
+        // WBS-3.1.12 T1：样例即契约——实现结论/原因必须与样例 expectedResult/expectedReason 全量逐字段一致
+        // （原用例为场景硬编码期望，本用例以样例清单驱动，改样例期望或改实现判定都会变红）
+        final List<InteropSample> all = samples.samples();
+        assertThat(all).as("样例清单非空（防假绿：空清单不得视为通过）").isNotEmpty();
+
+        for (final InteropSample sample : all) {
+            final InteropVerification verification = inboundMock().verifyInbound(claimOf(sample));
+            assertThat(verification.result()).as("样例 %s 的结论", sample.sampleId())
+                    .isEqualTo(sample.expectedResult());
+            assertThat(verification.reason()).as("样例 %s 的原因", sample.sampleId())
+                    .isEqualTo(sample.expectedReason());
+        }
+    }
+
+    @Test
     void 有效样例来访三查全过() {
         final InteropSample sample = sample(InteropScenario.VALID);
 
