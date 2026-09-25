@@ -121,7 +121,26 @@
 
 ## 七、4 视角评审记录（编码交付后回填）
 
-待填。
+**评审会话**：2026-09-25 21:0x~21:5x（日志 `-2153`）；评审输入 = 任务卡 §五 自检单 + hifi §11 变更登记 + 分支全量差异（`593bc26..d8fc07a`，27 文件）；**评审方式**：逐文件 diff 审查 + 关键验证命令独立复跑。
+
+**结论：✅ 四视角全部通过，无打回项，无需修复重交。**
+
+| 视角 | 结论 | 依据（审查 + 复验） |
+| --- | --- | --- |
+| 1. 规格与设计符合性 | **通过** | T1~T8 / F1~F5 与 hifi §3.1/§4.1 定稿**逐条一致**（新增用例 8 个 + 断言强化落点全部核对到 diff）；映射表闭环（行为 1~5 ↔ 锚点 ↔ 剧本），§2.2 三条无锚点项均有处置结论；F5 为行为零变化收口（re-export 保持导出面）；关闭条件四项逐项满足（覆盖/变异/门禁/用例数只增不减） |
+| 2. 安全供应链 | **通过** | 分支 27 文件中**无** `pom.xml`/`package*.json`/`gates-config.json`/`run-gates.ps1`/`dependencies.md`/迁移 SQL 变更（零新增依赖、零门禁改动实证）；本次复跑 `secretsScan` 扫描 769 文件 **0 命中**；未自行实现密码学（验签走 `common-crypto` `Sm2Service`） |
+| 3. 一致性重复 | **通过** | `PageData<T>` 全前端**单一声明**（`api/types.ts`，全仓搜索无第二处定义，`did.ts`/`subject.ts` 为 import + re-export）；`RecordStatusFilterValue` 单一（`'' \| DidRecordStatus`）；`IsoSecondTimestamp` 单一支撑类被 4 个集成类复用、无平行实现 |
+| 4. 测试质量 | **通过** | 独立复验全绿：`mvn -B -ntp -pl std-adapter,services/did test checkstyle:check` → did **111 例** / std-adapter **35 例** / **0 失败** / Checkstyle **0 违规**；前端 **118 例 / 0 失败**、lint 通过；**全仓门禁复跑 GREEN**（`gate-report-20260925-215307.md`，ExitCode 0，PASS=10/FAIL=0/ERROR=0）。断言非空洞：T1 样例非空防假绿、T4 appender 生效探针、T5/T7 全元素遍历 + 库表 COUNT 比对、T8 真并发 8 线程"恰一次生效 + 留痕恰 1 条"、F1~F4 各带反向/正向探针；删锚验证 10/10（T6 例外已在 hifi §3.1 如实登记） |
+
+**评审复验验证结果**：
+
+| 验证 | 命令 | 结果 |
+| --- | --- | --- |
+| 后端测试 + 风格 | `mvn -B -ntp -pl std-adapter,services/did test checkstyle:check` | BUILD SUCCESS；did **111**、std-adapter **35**、**0 失败**、Checkstyle **0 违规** |
+| 前端测试 / 风格 | `npm test` / `npm run lint` | **118 passed**（14 文件）/ lint 通过 |
+| 全仓门禁 | `powershell -File scripts/gates/run-gates.ps1` | **GREEN**（ExitCode 0；PASS=10 / FAIL=0 / ERROR=0；`coverage`/`mutationTest` 等仍 PENDING = 未开门禁 ✓）；报告 `gate-report-20260925-215307.md` |
+
+**观察项（不影响通过，均已在他处登记）**：① T3 守卫判据为包名前缀字符串匹配（口径偏宽，误报方向为安全侧）；② T4 依赖 `logs/app.log` 相对路径（有 `exists()` 红锚兜底）；③ F1 断言 Element Plus 分页组件的 disabled 属性/class（依赖组件库实现细节，属可接受的测试耦合）；④ `DidManagementQueryService` 变异无覆盖（口径限制，已登记交 2.2.8）；⑤ 根 `target/precheck/` 未清理目录（被 `.gitignore` 覆盖不入库，建议验收后人工删除）。
 
 ---
 
