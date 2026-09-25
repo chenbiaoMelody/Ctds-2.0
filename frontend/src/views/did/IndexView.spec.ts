@@ -12,6 +12,7 @@ import {
   revokeDid,
 } from '../../api/did'
 import { ApiError } from '../../api/client'
+import { RECORD_STATUS_FILTER_OPTIONS, RECORD_STATUS_LABELS } from '../../constants/did'
 
 /**
  * WBS-3.1.11 DID 管理页测试（hifi T10~T13）：清单渲染/空态/筛选与分页透传、
@@ -103,6 +104,25 @@ describe('DID 管理页 · 记录清单（WBS-3.1.11 T10）', () => {
     expect(wrapper.text()).toContain('待签发（记录中间态）')
     expect(wrapper.text()).toContain('did-S20260925000001-1')
     expect(wrapper.text()).toContain('2026-09-25T10:00:00')
+  })
+
+  it('状态文案经常量收口且与设计口径逐字一致（hifi §6.4；R2 修复）', async () => {
+    mockedRecords.mockResolvedValue(page([activeRow, revokedRow, pendingRow]) as never)
+    await mountPage()
+
+    // 常量即契约：三值文案逐字锁定（防止"待签发"与"待签发（记录中间态）"再次漂移）
+    expect(RECORD_STATUS_LABELS).toEqual({
+      ACTIVE: '有效',
+      REVOKED: '已吊销',
+      PENDING_ISSUE: '待签发（记录中间态）',
+    })
+    // 筛选下拉选项全部取自同一常量（页面不得散写状态中文）
+    expect(RECORD_STATUS_FILTER_OPTIONS).toEqual([
+      { label: '全部', value: '' },
+      { label: '有效', value: 'ACTIVE' },
+      { label: '已吊销', value: 'REVOKED' },
+      { label: '待签发（记录中间态）', value: 'PENDING_ISSUE' },
+    ])
   })
 
   it('无记录时展示空态文案（未入驻主体不签发 DID，非报错）', async () => {
@@ -304,12 +324,36 @@ describe('DID 管理页 · 行内操作与详情（WBS-3.1.11 T13）', () => {
     expect(wrapper.text()).toContain('暂无操作留痕')
   })
 
-  it('演示与验证入口：跳转 DID 演示与验证页', async () => {
+  it('演示与验证入口：跳转携带当前列表目标 DID（hifi §6.3；R1 修复）', async () => {
     mockedRecords.mockResolvedValue(page([activeRow]) as never)
     const { wrapper, router } = await mountPage()
     await wrapper.find('.demo-entry-btn').trigger('click')
     await flushPromises()
 
     expect(router.currentRoute.value.name).toBe('did-demo')
+    expect(router.currentRoute.value.query.did).toBe(activeRow.did)
+  })
+
+  it('演示与验证入口：列表无可用 DID 时不携带参数（待签发记录 did 为空）', async () => {
+    mockedRecords.mockResolvedValue(page([pendingRow]) as never)
+    const { wrapper, router } = await mountPage()
+    await wrapper.find('.demo-entry-btn').trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.name).toBe('did-demo')
+    expect(router.currentRoute.value.query.did).toBeUndefined()
+  })
+
+  it('详情抽屉的演示入口：携带该记录 DID', async () => {
+    mockedRecords.mockResolvedValue(page([activeRow]) as never)
+    mockedLogs.mockResolvedValue([] as never)
+    const { wrapper, router } = await mountPage()
+    await buttonByText(wrapper, '查看详情')!.trigger('click')
+    await flushPromises()
+    await wrapper.find('.drawer-demo-btn').trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.name).toBe('did-demo')
+    expect(router.currentRoute.value.query.did).toBe(activeRow.did)
   })
 })

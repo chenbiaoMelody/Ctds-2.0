@@ -6,7 +6,7 @@
  * 吊销 = 两段式：理由必填（前置拦截，后端 1005C0002 兜底）→ 二次确认（明示"吊销不可逆"）→
  * 取消不发起任何请求（状态不变、无留痕）。界面只展示 KMS 密钥引用，不展示任何私钥。
  */
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ApiError } from '../../api/client'
@@ -25,19 +25,13 @@ import {
 import {
   OPERATION_LABELS,
   RECORDS_EMPTY_TEXT,
+  RECORD_STATUS_FILTER_OPTIONS,
   labelOf,
   recordStatusLabel,
   recordStatusType,
 } from '../../constants/did'
 
 const router = useRouter()
-
-const STATUS_OPTIONS: { label: string; value: DidRecordStatus | '' }[] = [
-  { label: '全部', value: '' },
-  { label: '有效', value: 'ACTIVE' },
-  { label: '已吊销', value: 'REVOKED' },
-  { label: '待签发', value: 'PENDING_ISSUE' },
-]
 
 const loading = ref(false)
 const rows = ref<DidRecordView[]>([])
@@ -46,6 +40,9 @@ const pageNum = ref(1)
 const pageSize = ref(10)
 const subjectNoFilter = ref('')
 const statusFilter = ref<DidRecordStatus | ''>('')
+
+/** 演示入口默认目标：当前清单中第一条已登记（有 DID）的记录（hifi §6.3"从列表带入"）。 */
+const demoEntryDid = computed(() => rows.value.find((row) => row.did)?.did ?? null)
 
 const detailVisible = ref(false)
 const detailRecord = ref<DidRecordView | null>(null)
@@ -94,8 +91,9 @@ function changePage(page: number): void {
   void load()
 }
 
-function goDemo(): void {
-  void router.push('/did/demo')
+/** 进入演示与验证页：带目标 DID（hifi §6.3"从列表带入 ?did="；无可用 DID 时不带参数）。 */
+function goDemo(did?: string | null): void {
+  void router.push({ path: '/did/demo', query: did ? { did } : {} })
 }
 
 async function copyDid(did: string | null): Promise<void> {
@@ -262,7 +260,9 @@ onMounted(() => {
           重试，并可进入演示与验证区。
         </p>
       </div>
-      <el-button type="primary" plain class="demo-entry-btn" @click="goDemo">演示与验证</el-button>
+      <el-button type="primary" plain class="demo-entry-btn" @click="goDemo(demoEntryDid)">
+        演示与验证
+      </el-button>
     </div>
 
     <el-card shadow="never" class="block">
@@ -276,7 +276,7 @@ onMounted(() => {
         />
         <el-select v-model="statusFilter" class="filter-status" placeholder="记录状态">
           <el-option
-            v-for="option in STATUS_OPTIONS"
+            v-for="option in RECORD_STATUS_FILTER_OPTIONS"
             :key="option.value"
             :label="option.label"
             :value="option.value"
@@ -367,7 +367,7 @@ onMounted(() => {
         <p class="hint">仅公开要素，界面不展示任何私钥（密钥由 KMS 托管）。</p>
         <el-alert v-if="documentError" class="document-alert" type="warning" :closable="false" :title="documentError" />
         <template v-if="documentResult">
-          <p>状态：{{ documentResult.status === 'ACTIVE' ? '有效' : '已吊销' }}</p>
+          <p>状态：{{ recordStatusLabel(documentResult.status) }}</p>
           <p>公钥类型：{{ documentResult.document.publicKey?.type ?? '—' }}</p>
           <p>公钥值：{{ documentResult.document.publicKey?.valueHex ?? '—' }}</p>
           <p>控制者（主体编号）：{{ documentResult.document.controller ?? '—' }}</p>
@@ -395,7 +395,14 @@ onMounted(() => {
         </el-table>
 
         <div class="drawer-actions">
-          <el-button type="primary" plain class="drawer-demo-btn" @click="goDemo">演示与验证</el-button>
+          <el-button
+            type="primary"
+            plain
+            class="drawer-demo-btn"
+            @click="goDemo(detailRecord.did)"
+          >
+            演示与验证
+          </el-button>
         </div>
       </template>
     </el-drawer>

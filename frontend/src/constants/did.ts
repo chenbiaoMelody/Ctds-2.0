@@ -17,6 +17,21 @@ export const RECORD_STATUS_TYPES: Record<string, string> = {
   PENDING_ISSUE: 'warning',
 }
 
+/** 记录状态筛选下拉的取值（与后端 DidStatus 三值一致；空串 = 不筛选）。 */
+export type RecordStatusFilterValue = '' | 'ACTIVE' | 'REVOKED' | 'PENDING_ISSUE'
+
+/**
+ * 记录状态筛选选项（hifi §6.4：页面禁止散写文案）。
+ * label 一律取自 RECORD_STATUS_LABELS，保证筛选下拉与列表标签口径永久一致
+ * （"待签发"与"待签发（记录中间态）"不得再出现两种说法）。
+ */
+export const RECORD_STATUS_FILTER_OPTIONS: { label: string; value: RecordStatusFilterValue }[] = [
+  { label: '全部', value: '' },
+  { label: RECORD_STATUS_LABELS.ACTIVE, value: 'ACTIVE' },
+  { label: RECORD_STATUS_LABELS.REVOKED, value: 'REVOKED' },
+  { label: RECORD_STATUS_LABELS.PENDING_ISSUE, value: 'PENDING_ISSUE' },
+]
+
 /** 操作类型 → 中文标签。 */
 export const OPERATION_LABELS: Record<string, string> = {
   ISSUE: '签发',

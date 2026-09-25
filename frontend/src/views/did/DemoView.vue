@@ -25,6 +25,7 @@ import {
   VERIFICATION_REASON_LABELS,
   VERIFICATION_RESULT_LABELS,
   labelOf,
+  recordStatusLabel,
 } from '../../constants/did'
 
 const route = useRoute()
@@ -236,7 +237,7 @@ onMounted(() => {
         :title="resolveMessage"
       />
       <div v-if="resolveResult" class="resolve-result">
-        <p>状态：{{ resolveResult.status === 'ACTIVE' ? '有效' : '已吊销' }}</p>
+        <p>状态：{{ recordStatusLabel(resolveResult.status) }}</p>
         <p>公钥值：{{ resolveResult.document.publicKey?.valueHex ?? '—' }}</p>
         <p>控制者（主体编号）：{{ resolveResult.document.controller ?? '—' }}</p>
         <p>创建时间：{{ resolveResult.document.created ?? '—' }}</p>
