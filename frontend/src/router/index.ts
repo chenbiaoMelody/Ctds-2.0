@@ -100,6 +100,19 @@ const routes = [
         component: () => import('../views/subject/ProgressQueryView.vue'),
         meta: { title: '入驻进度查询', menu: true, menuOrder: 7, icon: 'Search' },
       },
+      // WBS-3.1.11 DID 管理界面：运营管理面（记录/状态/吊销/重签/重试）+ 演示与验证区
+      {
+        path: 'did',
+        name: 'did-management',
+        component: () => import('../views/did/IndexView.vue'),
+        meta: { title: 'DID 管理', menu: true, menuOrder: 8, icon: 'Key', permission: 'did.admin' },
+      },
+      {
+        path: 'did/demo',
+        name: 'did-demo',
+        component: () => import('../views/did/DemoView.vue'),
+        meta: { title: 'DID 演示与验证', permission: 'did.admin' },
+      },
       {
         path: ':pathMatch(.*)*',
         name: 'not-found',

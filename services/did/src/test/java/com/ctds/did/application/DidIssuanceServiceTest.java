@@ -279,6 +279,11 @@ class DidIssuanceServiceTest {
             }
             return publicKeyHex();
         }
+
+        @Override
+        public String sign(final String keyRef, final String dataBase64) {
+            throw new UnsupportedOperationException("签发测试未使用");
+        }
     }
 
     /** 内存仓储桩：语义对齐 DidJdbcRepository（uk_guard 幂等守卫 + guard_key 释放 + completeIssuance 乐观门槛）。
@@ -378,6 +383,33 @@ class DidIssuanceServiceTest {
 
         @Override
         public synchronized void insertVerificationLog(final VerificationLog log) {
+            throw new UnsupportedOperationException("签发测试未使用");
+        }
+
+        @Override
+        public synchronized List<DidIdentity> findRecords(final String subjectNo, final String status,
+                final int offset, final int limit) {
+            throw new UnsupportedOperationException("签发测试未使用");
+        }
+
+        @Override
+        public synchronized long countRecords(final String subjectNo, final String status) {
+            throw new UnsupportedOperationException("签发测试未使用");
+        }
+
+        @Override
+        public synchronized List<DidOperationLog> findOperationLogs(final String did) {
+            throw new UnsupportedOperationException("签发测试未使用");
+        }
+
+        @Override
+        public synchronized List<VerificationLog> findVerificationLogs(final String did, final int offset,
+                final int limit) {
+            throw new UnsupportedOperationException("签发测试未使用");
+        }
+
+        @Override
+        public synchronized long countVerificationLogs(final String did) {
             throw new UnsupportedOperationException("签发测试未使用");
         }
     }

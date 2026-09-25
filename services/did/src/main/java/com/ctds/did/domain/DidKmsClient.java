@@ -8,4 +8,10 @@ public interface DidKmsClient {
 
     /** 生成 SM2 密钥对并返回公钥 hex；KMS 不可达/失败抛异常。 */
     String createKeyPair(String keyRef);
+
+    /**
+     * 内部签名（WBS-3.1.11 §6.6 演示签名入口）：私钥不出 KMS，入参/出参均为 Base64
+     * （入参 = 原文 Base64，出参 = SM2 DER 签名 Base64）；KMS 不可达/失败抛异常。
+     */
+    String sign(String keyRef, String dataBase64);
 }
