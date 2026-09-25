@@ -10,6 +10,13 @@ export default defineConfig({
   plugins: [vue()],
   server: {
     proxy: {
+      // DID 服务（8082）独立端口：按前缀优先转发（键顺序在前，先于通用 /api 匹配）。
+      // WBS-3.1.11 实施补充：界面走查需在浏览器经 5173 访问 DID 服务，属开发期转发配置，
+      // 不改任何服务契约与门禁配置。
+      '/api/v1/did': {
+        target: 'http://localhost:8082',
+        changeOrigin: true,
+      },
       '/api': {
         target: 'http://localhost:8080',
         changeOrigin: true,

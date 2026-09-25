@@ -140,3 +140,24 @@ C-1.2 分布式数字身份（DID）的第一个实施包（WBS-3.1.8）新建�
 - **系统态诚实表征**：互认通道取数异常（含本空间 DID 文档损坏、端口异常）→ `UNAVAILABLE` + `BINDING_UNAVAILABLE` 并留痕，**不冒充"验证不通过"**。
 - **诚实边界（沿 §2.7/§2.9 口径）**：互认三端点演示期**无鉴权**——调用方为对端系统，演示期回环网络隔离是真实边界；解除条件同 §2.7（网关 HeaderStripFilter + 真实令牌 + 服务间鉴权）；**本包为"业务口径互认 + 模拟对端"，非信通院协议实现**（真实协议对接归 C-9.1）。
 - **依赖**：`services/did` 新增 `com.ctds:std-adapter` 内部模块依赖（互认协议实现收口唯一落点，ADR-008 §3.1）；无新第三方坐标。
+
+## 9. 变更补记（WBS-3.1.11 DID 管理界面，2026-09-25）
+
+> 编码契约 = `docs/designs/WBS-3.1.11-hifi.md`（Q1~Q8 一次确认，体量 D1 不拆分）。本节固化本包新占用/新澄清的契约，供下游包遵守；**§3 后续包约束（不得新建平行错误码段/状态枚举/库表）在本包继续有效并已由测试守卫兑现**。
+
+**管理面读数端点（`services/did` 扩展，前缀 `/api/v1/did`，一律 `did.admin`）**：
+
+| 方法 | 路径 | 语义 |
+| --- | --- | --- |
+| GET | `/records` | 签发记录列表：分页（`pageNum`/`pageSize`，复用 `common-pagination`，越界 `1000C0001`）+ `subjectNo`（≤32）/`status`（∈既有三值）过滤；最新签发在前（`created_at DESC, id DESC`）；无匹配返回空列表（**非错误**） |
+| GET | `/records/{did}/operation-logs` | 单 DID 操作留痕（**不分页**：写入点仅签发/重签与吊销，同一 DID 至多两行），时间正序；未登记 → `1005B0003` |
+| GET | `/verification-logs` | 验证留痕列表：分页 + 可选 `did`（≤128）过滤，最新在前；**只含时间/DID/结果/原因，无数据原文** |
+| POST | `/{did}/demo-signatures` | 演示代签：入参 `{data}` = 待签原文（1~1024 字符），出参 `{did, data(原文 Base64), signature(SM2 DER Base64), signedAt}`；**配置门槛默认关闭** |
+
+- **出参视图字段即契约**：`DidRecordView{subjectNo, issuanceSeq, did, status, keyRef, createdAt, updatedAt}`（`did`/`keyRef` 在待签发记录为 `null`）、`DidOperationLogView{operation, operator, reason, keyRef, statusFrom, statusTo, occurredAt}`、`VerificationLogView{did, result, reason, occurredAt}`、`DemoSignatureView{did, data, signature, signedAt}`。各视图**不含**私钥、公钥 hex、文档原文（行为 1 规则 3）。
+- **记录状态展示口径**：管理面列表复用 `DidStatus` 三值并对 `PENDING_ISSUE` 显式标注"待签发（记录中间态）"；**解析端点对外口径仍锁 `ACTIVE`/`REVOKED` 两值**（§2.3 不受影响）。
+- **演示签名入口边界（规格 §6 第 6 条）**：配置 `ctds.did.demo-signature.enabled`（`CTDS_DID_DEMO_SIGNATURE_ENABLED`，**默认 false = 生产禁用**）；关闭时返回既有 `1000C0003`（**不新增错误码**）且**不产生任何 KMS 调用**、不区分目标是否存在（不构成状态枚举通道）。开启期为演示/调试专用：签名经 KMS 内部签名面 `POST /api/v1/key-pairs/{keyRef}/signatures`（§2.6），私钥不出 KMS；**原文与签名不入库、不落日志**（仅 WARN 级记录 DID + 密钥引用 + 结果）。
+- **错误码与库表**：**零新增错误码**（复用 `1000C0001`/`1000C0003`/`1005B0001`/`1005B0003`/`1005C0001`/`1005S0002` 与鉴权 `1000C0002`/`1000C0005`）；**零新增库表与迁移**（读数复用 `did_identity`/`did_operation_log`/`did_verification_log`）。
+- **依赖**：`services/did` 新增平台内部模块 `com.ctds:common-pagination`（ADR-005 §3.2 分页契约）；无新第三方坐标，前端零新增依赖。
+- **前端页面级角色头口径**：DID 管理面请求在 `frontend/src/api/did.ts` 内附 `X-Ctds-Roles: applicant,reviewer,admin`，**不动全局 `demoRolesHeader()`**（避免在 example-service 意外激活 `greeting.delete`，最小权限面）。
+- **诚实边界补充（沿 §2.7/§2.9 口径）**：演示签名入口开启期**签名能力可外借**（回环边界内无服务间鉴权）——生产禁用 + 演示机须为可信机器；解除条件同 §2.7（网关 HeaderStripFilter + 真实令牌 + 服务间鉴权，3.5.2/3.9.1 兑现项）。

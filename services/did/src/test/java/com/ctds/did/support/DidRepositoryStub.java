@@ -74,4 +74,30 @@ public final class DidRepositoryStub implements DidRepository {
     public void revoke(final long identityId, final DidOperationLog operationLog) {
         throw new UnsupportedOperationException("单元测试未使用");
     }
+
+    @Override
+    public List<DidIdentity> findRecords(final String subjectNo, final String status, final int offset,
+            final int limit) {
+        throw new UnsupportedOperationException("单元测试未使用");
+    }
+
+    @Override
+    public long countRecords(final String subjectNo, final String status) {
+        throw new UnsupportedOperationException("单元测试未使用");
+    }
+
+    @Override
+    public List<DidOperationLog> findOperationLogs(final String did) {
+        throw new UnsupportedOperationException("单元测试未使用");
+    }
+
+    @Override
+    public List<VerificationLog> findVerificationLogs(final String did, final int offset, final int limit) {
+        throw new UnsupportedOperationException("单元测试未使用");
+    }
+
+    @Override
+    public long countVerificationLogs(final String did) {
+        throw new UnsupportedOperationException("单元测试未使用");
+    }
 }

@@ -20,6 +20,11 @@
       <groupId>com.ctds</groupId>
       <artifactId>common-errorcode</artifactId>
     </dependency>
+    <!-- 管理面读数分页契约（ADR-005 §3.2，WBS-3.1.11）：平台内部模块，复用 PageQuery/PageResult -->
+    <dependency>
+      <groupId>com.ctds</groupId>
+      <artifactId>common-pagination</artifactId>
+    </dependency>
     <!-- 验签（SM2 公钥验签仅此行用途，WBS-3.1.9 行为 3 三查①；经 common-crypto 唯一入口，禁止自研密码学） -->
     <dependency>
       <groupId>com.ctds</groupId>

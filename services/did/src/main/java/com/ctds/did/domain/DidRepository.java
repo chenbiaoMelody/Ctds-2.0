@@ -1,6 +1,7 @@
 package com.ctds.did.domain;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -43,4 +44,22 @@ public interface DidRepository {
 
     /** 验证留痕落库（WBS-3.1.9 行为 3 规则 3：时间/DID/结果+原因；不保存业务数据原文）。 */
     void insertVerificationLog(VerificationLog log);
+
+    /**
+     * 管理面读数：签发记录列表（WBS-3.1.11 B1；最新在前）。subjectNo/status 为 null = 不筛选；
+     * 分页以 offset/limit 表达——domain 不依赖 common-pagination（分层规则 LayerRulesTest）。
+     */
+    List<DidIdentity> findRecords(String subjectNo, String status, int offset, int limit);
+
+    /** 管理面读数：签发记录总数（与 {@link #findRecords} 同过滤口径）。 */
+    long countRecords(String subjectNo, String status);
+
+    /** 单 DID 操作留痕（B7：签发/重签/吊销，时间正序便于读"先签发后吊销"）。 */
+    List<DidOperationLog> findOperationLogs(String did);
+
+    /** 验证留痕列表（B14；did 为 null = 不筛选，最新在前）。 */
+    List<VerificationLog> findVerificationLogs(String did, int offset, int limit);
+
+    /** 验证留痕总数（与 {@link #findVerificationLogs} 同过滤口径）。 */
+    long countVerificationLogs(String did);
 }

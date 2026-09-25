@@ -35,18 +35,39 @@ describe('路由表结构（H3）', () => {
     }
   })
 
-  it('权限路由声明权限点，其余菜单路由未声明（WBS-3.1.5：权限路由扩为 admin-only 与 review-queue）', () => {
+  it('权限路由声明权限点，其余菜单路由未声明（WBS-3.1.5 扩 admin-only/review-queue；WBS-3.1.11 扩 did-management）', () => {
     const adminRoute = children.find((r) => r.name === 'admin-only')
     expect(adminRoute?.meta?.permission).toBe('demo:admin')
     const reviewRoute = children.find((r) => r.name === 'review-queue')
     expect(reviewRoute?.meta?.permission).toBe('subject.review')
-    const permissionRouteNames = ['admin-only', 'review-queue']
+    const didRoute = children.find((r) => r.name === 'did-management')
+    expect(didRoute?.meta?.permission).toBe('did.admin')
+    const permissionRouteNames = ['admin-only', 'review-queue', 'did-management']
     const normalRoutes = children.filter(
       (r) => r.meta?.menu === true && !permissionRouteNames.includes(String(r.name)),
     )
     for (const r of normalRoutes) {
       expect(r.meta?.permission).toBeUndefined()
     }
+  })
+
+  it('DID 管理路由（WBS-3.1.11）：menuOrder=8 追加菜单末尾、icon=Key、did.admin 权限；演示页不占菜单', () => {
+    // 菜单末尾追加（lofi Q1/Q8：不重排既有菜单），menuOrder 全站最大值 7→8
+    const menuOrders = children.filter((r) => r.meta?.menu === true).map((r) => r.meta?.menuOrder ?? 0)
+    expect(Math.max(...menuOrders)).toBe(8)
+    const didRoute = children.find((r) => r.name === 'did-management')
+    expect(didRoute?.path).toBe('did')
+    expect(didRoute?.meta?.title).toBe('DID 管理')
+    expect(didRoute?.meta?.menu).toBe(true)
+    expect(didRoute?.meta?.menuOrder).toBe(8)
+    expect(didRoute?.meta?.icon).toBe('Key')
+    expect(didRoute?.meta?.permission).toBe('did.admin')
+    // 演示与验证页由 /did 页内入口进入，不占菜单（hifi §6.1）
+    const demoRoute = children.find((r) => r.name === 'did-demo')
+    expect(demoRoute?.path).toBe('did/demo')
+    expect(demoRoute?.meta?.title).toBe('DID 演示与验证')
+    expect(demoRoute?.meta?.permission).toBe('did.admin')
+    expect(demoRoute?.meta?.menu).toBeUndefined()
   })
 
   it('存在 404 兜底路由', () => {
@@ -63,9 +84,10 @@ describe('路由表结构（H3）', () => {
     expect(progressRoute?.meta?.menuOrder).toBe(7)
     expect(progressRoute?.meta?.icon).toBe('Search')
     expect(progressRoute?.meta?.permission).toBeUndefined()
-    // menuOrder=7 为全站菜单最大序号（lofi Q2-B：追加末尾，不重排既有菜单）
+    // menuOrder=7 为入驻进度查询占位；WBS-3.1.11 新增 DID 管理（menuOrder=8）后全站最大值为 8
     const menuOrders = children.filter((r) => r.meta?.menu === true).map((r) => r.meta?.menuOrder ?? 0)
-    expect(Math.max(...menuOrders)).toBe(7)
+    expect(menuOrders).toContain(7)
+    expect(Math.max(...menuOrders)).toBe(8)
   })
 
   it('登录页为顶层路由（WBS-2.4.12 B4）：不套布局、无菜单标记', () => {
@@ -130,6 +152,14 @@ describe('守卫 beforeEach 实际行为（H4）', () => {
     const { default: router } = await import('../router/index')
     setDemoRole('user')
     await router.push('/review')
+    expect(router.currentRoute.value.name).toBe('dashboard')
+    expect(router.currentRoute.value.query.denied).toBe('1')
+  })
+
+  it('普通用户直连 /did：守卫拦截重定向工作台带 denied（WBS-3.1.11 E25）', async () => {
+    const { default: router } = await import('../router/index')
+    setDemoRole('user')
+    await router.push('/did')
     expect(router.currentRoute.value.name).toBe('dashboard')
     expect(router.currentRoute.value.query.denied).toBe('1')
   })

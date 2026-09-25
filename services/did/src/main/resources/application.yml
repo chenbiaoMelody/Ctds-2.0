@@ -37,3 +37,7 @@ ctds:
     # DID → 主体服务 绑定核验调用（内部回环，ADR-016 §2.7）；未配置 = 绑定核验不可用（验证回 UNAVAILABLE）
     subject:
       base-url: ${CTDS_DID_SUBJECT_BASEURL:}
+    # 演示签名入口（规格 C-1.2 §6 第 6 条边界，WBS-3.1.11）：仅演示/调试期可用，
+    # **默认关闭 = 生产禁用**（关闭时复用既有 1000C0003，不新增错误码）；演示期以环境变量显式开启
+    demo-signature:
+      enabled: ${CTDS_DID_DEMO_SIGNATURE_ENABLED:false}

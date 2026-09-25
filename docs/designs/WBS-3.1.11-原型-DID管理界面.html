@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>WBS-3.1.11 线框原型 · DID 管理界面（低保真）</title>
+<style>
+  /* 低保真线框：只表达信息架构与操作流，不做视觉定稿（高保真阶段定稿） */
+  body { font-family: sans-serif; margin: 0; background: #f5f5f5; }
+  .frame { border: 2px dashed #999; margin: 16px; padding: 12px; }
+  .frame h2 { margin-top: 0; }
+  .layout { display: flex; gap: 12px; }
+  .side { width: 170px; border: 1px dashed #999; padding: 8px; min-height: 300px; }
+  .main { flex: 1; border: 1px dashed #999; padding: 8px; }
+  table { border-collapse: collapse; width: 100%; background: #fff; }
+  th, td { border: 1px solid #bbb; padding: 6px 8px; font-size: 13px; text-align: left; }
+  th { background: #eee; }
+  .btn { display: inline-block; border: 1px solid #666; padding: 3px 10px; margin: 2px; font-size: 13px; background: #fff; text-decoration: none; color: #000; }
+  .note { color: #888; font-size: 12px; }
+  .field { margin: 4px 0; font-size: 13px; }
+  .label { display: inline-block; width: 130px; color: #555; }
+  .section { border: 1px dashed #aaa; padding: 6px; margin: 6px 0; background: #fff; }
+  .placeholder { color: #aaa; font-style: italic; }
+  .modal { border: 2px solid #666; background: #fff; padding: 10px; margin: 8px 0; width: 560px; }
+  .modal h3 { margin: 0 0 6px 0; font-size: 15px; }
+  .warn { color: #a00; font-weight: bold; }
+</style>
+</head>
+<body>
+
+<div class="frame">
+  <h2>画面 1：DID 管理 · 签发记录（/did）</h2>
+  <div class="layout">
+    <div class="side">
+      <div class="field"><b>侧边菜单</b>（按权限显隐）</div>
+      <div class="field">工作台</div>
+      <div class="field">标准能力</div>
+      <div class="field">数据目录</div>
+      <div class="field">主体入驻</div>
+      <div class="field">主体审核</div>
+      <div class="field">入驻进度查询</div>
+      <div class="field"><b>DID 管理</b> ◀（menuOrder 8；仅 did.admin 权限角色可见）</div>
+    </div>
+    <div class="main">
+      <div class="section"><b>筛选</b>
+        <div class="field"><span class="label">主体申请编号</span> [ 如 S20260925000001 ]　<span class="label">记录状态</span> [ 全部 ▾ ]　<a class="btn" href="#">查询</a><a class="btn" href="#">重置</a></div>
+      </div>
+      <div class="field"><b>签发记录</b>（分页；按签发序号倒序）</div>
+      <table>
+        <tr><th>主体申请编号</th><th>签发序号</th><th>DID 标识</th><th>记录状态</th><th>密钥引用</th><th>签发时间</th><th>操作</th></tr>
+        <tr><td>S20260922000001</td><td>1</td><td>did:ctds:S20260922000001.1</td><td>有效</td><td>did-S20260922000001-1</td><td>2026-09-22 15:41</td><td><a class="btn" href="#detail">详情</a><a class="btn" href="#revoke">吊销</a></td></tr>
+        <tr><td>S20260921000001</td><td>1</td><td>did:ctds:S20260921000001.1</td><td>已吊销</td><td>did-S20260921000001-1</td><td>2026-09-21 10:02</td><td><a class="btn" href="#detail">详情</a><a class="btn" href="#reissue">重签</a></td></tr>
+        <tr><td>S20260925000009</td><td>1</td><td><span class="placeholder">（尚未签发）</span></td><td>待签发（记录中间态）</td><td><span class="placeholder">（无）</span></td><td>2026-09-25 09:10</td><td><a class="btn" href="#detail">详情</a><a class="btn" href="#retry">重试</a></td></tr>
+      </table>
+      <div class="field note">分页控件：上一页 / 下一页 / 页码（对齐 common-pagination 的 pageNum/pageSize/total/totalPages）</div>
+      <div class="field note">空态文案（未入驻主体 / 无匹配）：未找到符合条件的主体 DID 记录（未入驻主体不签发 DID）——是空态，不是报错</div>
+      <div class="field note">来自 3.1.8/3.1.9 既有端点（调用，不改语义）：吊销 / 重签 / 重试 / 解析 / 验证</div>
+    </div>
+  </div>
+</div>
+
+<div class="frame" id="detail">
+  <h2>画面 2：记录详情抽屉（公开要素 + 操作留痕）</h2>
+  <div class="main">
+    <div class="section"><b>记录要素</b>
+      <div class="field"><span class="label">主体申请编号</span> S20260922000001　<span class="label">签发序号</span> 1　<span class="label">记录状态</span> 有效</div>
+      <div class="field"><span class="label">DID 标识</span> did:ctds:S20260922000001.1　<a class="btn" href="#">复制</a></div>
+      <div class="field"><span class="label">密钥引用</span> did-S20260922000001-1（KMS 引用，<b>界面不展示任何私钥</b>）</div>
+      <div class="field"><span class="label">签发 / 更新时间</span> 2026-09-22 15:41 / 2026-09-22 15:41</div>
+      <div class="field"><a class="btn" href="#demo">前往"演示与验证"</a></div>
+    </div>
+
+    <div class="section"><b>DID 文档公开要素</b>（点击"查看 DID 文档" → 调解析端点）
+      <div class="field"><span class="label">状态</span> 有效　<span class="label">公钥</span> 04‖X‖Y（130 hex，公开）</div>
+      <div class="field"><span class="label">controller</span> S20260922000001　<span class="label">service</span> #resolution → /api/v1/did　<span class="label">created</span> 2026-09-22T15:41:07</div>
+      <div class="field note">固定提示：仅公开要素，界面不展示任何私钥（规格行为 1 规则 3 / 红线 7）</div>
+    </div>
+
+    <div class="section"><b>操作留痕</b>（吊销留痕五要素：操作人 / 时间 / 理由 / DID / 状态变更）
+      <table>
+        <tr><th>操作类型</th><th>操作人</th><th>时间</th><th>理由</th><th>状态变更</th><th>密钥引用</th></tr>
+        <tr><td>签发</td><td>SYSTEM</td><td>2026-09-22 15:41</td><td><span class="placeholder">（无）</span></td><td>待签发 → 有效</td><td>did-S20260922000001-1</td></tr>
+        <tr><td>吊销</td><td>demo-applicant</td><td>2026-09-25 14:02</td><td>私钥疑似泄露，紧急吊销</td><td>有效 → 已吊销</td><td><span class="placeholder">（吊销不写密钥引用）</span></td></tr>
+      </table>
+      <div class="field note">待签发记录：暂无操作留痕（尚未完成签发）；<b>界面不存在任何"恢复/撤销吊销"入口</b>（不可逆）</div>
+    </div>
+  </div>
+</div>
+
+<div class="frame" id="revoke">
+  <h2>画面 3：吊销弹窗（理由必填 —— 规格行为 4 规则 2）</h2>
+  <div class="modal">
+    <h3>DID 吊销</h3>
+    <div class="field"><span class="label">目标 DID</span> did:ctds:S20260922000001.1</div>
+    <div class="field"><span class="label">吊销理由 *</span><br><span class="placeholder">[ 请填写吊销理由，如：私钥疑似泄露 ]</span>　<span class="note">maxlength 256，show-word-limit</span></div>
+    <div class="field warn">吊销不可逆：确认后该 DID 永久失效，不可恢复；需继续使用身份时须重新签发。</div>
+    <div class="field"><a class="btn" href="#confirm">下一步</a><a class="btn" href="#list">取消</a></div>
+    <div class="field note">理由留空点"下一步"：提示"吊销理由必填"且<b>不发起任何请求</b>（后端 1005C0002 为第二道兜底）</div>
+  </div>
+</div>
+
+<div class="frame" id="confirm">
+  <h2>画面 4：吊销二次确认（明示后果 —— 剧本 S3 步骤 3）</h2>
+  <div class="modal">
+    <h3>吊销二次确认</h3>
+    <div class="field">吊销后该 DID 永久失效且不可恢复（<span class="warn">吊销不可逆</span>）。确认吊销 DID：did:ctds:S20260922000001.1？</div>
+    <div class="field"><a class="btn" href="#list">确认吊销</a><a class="btn" href="#revoke">取消</a></div>
+    <div class="field note">选"取消"：状态不变、无吊销留痕（不发起请求）；选"确认"：调既有吊销端点 → 状态即时变"已吊销" + 留痕五要素</div>
+    <div class="field note">错误如实展示：1005C0002（吊销理由必填）/ 1005C0003（非有效 DID 不可吊销）/ 1000C0005（无权限执行该操作）</div>
+  </div>
+</div>
+
+<div class="frame" id="reissue">
+  <h2>画面 5：重签与重试（复用既有端点，无新增写接口）</h2>
+  <div class="modal">
+    <h3>重签确认</h3>
+    <div class="field">重签将为该主体生成全新的 DID 与密钥对（签发序号 +1）；旧 DID 永久保留且不可复用。确认重签？</div>
+    <div class="field"><a class="btn" href="#list">确认重签</a><a class="btn" href="#list">取消</a></div>
+    <div class="field note">成功后：列表出现新记录（新序号 / 新 DID），旧记录保留在列表中（可追溯）；无已吊销记录 → 1005B0002 如实展示</div>
+  </div>
+  <div class="modal" id="retry">
+    <h3>重试确认</h3>
+    <div class="field">将对该主体的待签发记录重新执行签发，确认重试？</div>
+    <div class="field"><a class="btn" href="#list">确认重试</a><a class="btn" href="#list">取消</a></div>
+    <div class="field note">成功后：记录转"有效"并补齐签发留痕；无待签发记录 → 1005B0001 如实展示</div>
+  </div>
+</div>
+
+<div class="frame" id="demo">
+  <h2>画面 6：DID 演示与验证（/did/demo，不占菜单项）</h2>
+  <div class="main">
+    <div class="field note">顶部提示：仅演示/调试期使用——平台侧演示签名入口在生产环境默认关闭（规格 §6.6）</div>
+
+    <div class="section"><b>区块 A · 演示代签</b>
+      <div class="field"><span class="label">DID</span> [ did:ctds:S20260922000001.1 ]　<span class="label">待签文本</span> [ 蓝天数据科技有限公司确认接入城市可信数据空间 ]</div>
+      <div class="field"><a class="btn" href="#">生成演示签名</a></div>
+      <div class="field"><span class="label">数据（Base64）</span> <span class="placeholder">[ 只读，可复制 ]</span>　<span class="label">签名（Base64）</span> <span class="placeholder">[ 只读，可复制 ]</span></div>
+      <div class="field note">已自动填入下方验证区；入口未启用（默认态）→ 1000C0003 提示"演示签名入口未启用（仅演示/调试期）"（warning 样式，与环境未开启区分于操作失败）</div>
+    </div>
+
+    <div class="section"><b>区块 B · 验证（三查结论）</b>
+      <div class="field"><span class="label">数据（Base64）</span> [ 可自动填充或手工粘贴——承载剧本 S3 步骤 5 复核 ]</div>
+      <div class="field"><span class="label">签名（Base64）</span> [ 同上 ]　<a class="btn" href="#">验证</a></div>
+      <div class="field"><span class="label">结论</span> 通过 / 不通过（原因：签名核验失败 / 状态已吊销 / 主体绑定不成立 / 未登记）/ 不可用（系统态）</div>
+      <div class="field note">"不可用"（系统态，warning）与"不通过"（业务态，error）样式分离，不冒充；留痕列表同步新增一行</div>
+    </div>
+
+    <div class="section"><b>区块 C · 解析（文档与状态）</b>
+      <div class="field"><span class="label">DID</span> [ did:ctds:UNKNOWN.1 ]　<a class="btn" href="#">解析</a></div>
+      <div class="field"><span class="label">结果</span> 状态 + 公开要素（公钥 / controller / service / created）</div>
+      <div class="field note">未登记：以"业务答复"样式提示"未登记该 DID"（warning，非报错弹窗——行为 2 规则 3）</div>
+    </div>
+
+    <div class="section"><b>区块 D · 验证留痕</b>
+      <table>
+        <tr><th>时间</th><th>DID</th><th>结果</th><th>原因</th></tr>
+        <tr><td>2026-09-25 14:05</td><td>did:ctds:S20260922000001.1</td><td>通过</td><td><span class="placeholder">（无）</span></td></tr>
+        <tr><td>2026-09-25 14:07</td><td>did:ctds:S20260922000001.1</td><td>不通过</td><td>签名核验失败</td></tr>
+      </table>
+      <div class="field note">仅时间 / DID / 结果 / 原因——<b>不保存任何业务数据原文</b>（行为 3 规则 3）；分页 + 刷新</div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

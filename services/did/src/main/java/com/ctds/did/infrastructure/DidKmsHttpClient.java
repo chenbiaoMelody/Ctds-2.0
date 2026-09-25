@@ -18,9 +18,10 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 
 /**
- * DID → KMS 密钥对托管客户端（JDK HttpClient，沿 KmsKeyProvider 先例，零新增依赖）。
+ * DID → KMS 密钥对托管与内部签名客户端（JDK HttpClient，沿 KmsKeyProvider 先例，零新增依赖）。
  * 内部回环诚实边界（ADR-016 §2.7）：以服务身份头（did-service / admin 角色 → kms.admin）调用，
- * 网络隔离是真实边界；失败抛异常由应用层收敛为 PENDING_ISSUE（行为 1 规则 5）。
+ * 网络隔离是真实边界；失败抛异常由应用层收敛（签发侧 PENDING_ISSUE、演示签名侧 1005S0002）。
+ * 私钥零明文：本客户端只调用生成/签名面，**不接触任何密钥材料读取面**（ADR-017 §2.8）。
  */
 @Component
 public class DidKmsHttpClient implements DidKmsClient {
@@ -43,19 +44,29 @@ public class DidKmsHttpClient implements DidKmsClient {
 
     @Override
     public String createKeyPair(final String keyRef) {
+        return post("/api/v1/key-pairs", Map.of("keyRef", keyRef)).path("publicKeyHex").asText();
+    }
+
+    @Override
+    public String sign(final String keyRef, final String dataBase64) {
+        return post("/api/v1/key-pairs/" + keyRef + "/signatures", Map.of("data", dataBase64))
+                .path("signature").asText();
+    }
+
+    /** 统一回环 POST（JSON）：返回 ApiResult.data 节点；非 200 / 非 0 业务码一律抛异常。 */
+    private JsonNode post(final String path, final Map<String, String> body) {
         if (baseUrl == null || baseUrl.isBlank()) {
             throw new IllegalStateException("ctds.did.kms.base-url 未配置");
         }
         final HttpResponse<String> response;
         try {
             final HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(baseUrl + "/api/v1/key-pairs"))
+                    .uri(URI.create(baseUrl + path))
                     .timeout(READ_TIMEOUT)
                     .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
                     .header("X-Ctds-Subject", INTERNAL_SUBJECT)
                     .header("X-Ctds-Roles", INTERNAL_ROLES)
-                    .POST(HttpRequest.BodyPublishers.ofString(
-                            objectMapper.writeValueAsString(Map.of("keyRef", keyRef))))
+                    .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(body)))
                     .build();
             response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
         } catch (final JsonProcessingException e) {
@@ -69,16 +80,16 @@ public class DidKmsHttpClient implements DidKmsClient {
         if (response.statusCode() != HttpURLConnection.HTTP_OK) {
             throw new IllegalStateException("KMS 响应非 200: status=" + response.statusCode());
         }
-        final JsonNode body;
+        final JsonNode envelope;
         try {
-            body = objectMapper.readTree(response.body());
+            envelope = objectMapper.readTree(response.body());
         } catch (final JsonProcessingException e) {
             throw new IllegalStateException("KMS 响应解析失败", e);
         }
-        final String code = body.path("code").asText();
+        final String code = envelope.path("code").asText();
         if (!"0".equals(code)) {
-            throw new IllegalStateException("KMS 密钥对创建失败: code=" + code);
+            throw new IllegalStateException("KMS 调用失败: code=" + code);
         }
-        return body.path("data").path("publicKeyHex").asText();
+        return envelope.path("data");
     }
 }

@@ -7,10 +7,14 @@ import com.ctds.did.domain.DidOperationLog;
 import com.ctds.did.domain.DidRepository;
 import com.ctds.did.domain.DidStatus;
 import com.ctds.did.domain.VerificationLog;
+import com.ctds.did.domain.VerificationOutcome;
+import com.ctds.did.domain.VerificationReason;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -144,6 +148,99 @@ public class DidJdbcRepository implements DidRepository {
                         log.reason() == null ? null : log.reason().name(),
                         Timestamp.valueOf(log.occurredAt()))
                 .update();
+    }
+
+    @Override
+    public List<DidIdentity> findRecords(final String subjectNo, final String status, final int offset,
+            final int limit) {
+        final List<Object> params = new ArrayList<>();
+        final String where = recordFilter(subjectNo, status, params);
+        params.add(limit);
+        params.add(offset);
+        return jdbc.sql("SELECT " + IDENTITY_COLUMNS + " FROM did_identity WHERE " + where
+                        + " ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?")
+                .params(params.toArray())
+                .query(this::mapIdentity)
+                .list();
+    }
+
+    @Override
+    public long countRecords(final String subjectNo, final String status) {
+        final List<Object> params = new ArrayList<>();
+        final String where = recordFilter(subjectNo, status, params);
+        return jdbc.sql("SELECT COUNT(1) FROM did_identity WHERE " + where)
+                .params(params.toArray())
+                .query(Long.class)
+                .single();
+    }
+
+    @Override
+    public List<DidOperationLog> findOperationLogs(final String did) {
+        return jdbc.sql("SELECT did, subject_no, operation, operator, reason, key_ref, status_from, status_to, "
+                        + "occurred_at FROM did_operation_log WHERE did = ? ORDER BY occurred_at, id")
+                .param(did)
+                .query(this::mapOperationLog)
+                .list();
+    }
+
+    @Override
+    public List<VerificationLog> findVerificationLogs(final String did, final int offset, final int limit) {
+        final List<Object> params = new ArrayList<>();
+        final String where = verificationLogFilter(did, params);
+        params.add(limit);
+        params.add(offset);
+        return jdbc.sql("SELECT did, result, reason, occurred_at FROM did_verification_log WHERE " + where
+                        + " ORDER BY occurred_at DESC, id DESC LIMIT ? OFFSET ?")
+                .params(params.toArray())
+                .query(this::mapVerificationLog)
+                .list();
+    }
+
+    @Override
+    public long countVerificationLogs(final String did) {
+        final List<Object> params = new ArrayList<>();
+        final String where = verificationLogFilter(did, params);
+        return jdbc.sql("SELECT COUNT(1) FROM did_verification_log WHERE " + where)
+                .params(params.toArray())
+                .query(Long.class)
+                .single();
+    }
+
+    /** 记录列表过滤条件（参数化拼接，值一律经占位符传入；列名/操作符为服务端常量）。 */
+    private static String recordFilter(final String subjectNo, final String status, final List<Object> params) {
+        final StringBuilder where = new StringBuilder("1 = 1");
+        if (subjectNo != null) {
+            where.append(" AND subject_no = ?");
+            params.add(subjectNo);
+        }
+        if (status != null) {
+            where.append(" AND status = ?");
+            params.add(status);
+        }
+        return where.toString();
+    }
+
+    /** 验证留痕过滤条件（同上）。 */
+    private static String verificationLogFilter(final String did, final List<Object> params) {
+        if (did == null) {
+            return "1 = 1";
+        }
+        params.add(did);
+        return "did = ?";
+    }
+
+    private DidOperationLog mapOperationLog(final ResultSet rs, final int rowNum) throws SQLException {
+        return new DidOperationLog(rs.getString("did"), rs.getString("subject_no"), rs.getString("operation"),
+                rs.getString("operator"), rs.getString("reason"), rs.getString("key_ref"),
+                rs.getString("status_from"), rs.getString("status_to"),
+                rs.getTimestamp("occurred_at").toLocalDateTime());
+    }
+
+    private VerificationLog mapVerificationLog(final ResultSet rs, final int rowNum) throws SQLException {
+        final String reason = rs.getString("reason");
+        return new VerificationLog(rs.getString("did"), VerificationOutcome.valueOf(rs.getString("result")),
+                reason == null ? null : VerificationReason.valueOf(reason),
+                rs.getTimestamp("occurred_at").toLocalDateTime());
     }
 
     private void insertOperationLog(final DidOperationLog log) {
