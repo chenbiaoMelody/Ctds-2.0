@@ -444,7 +444,7 @@ if ($covStage -and $covStage.enabled) {
                 foreach ($coreRep in $reports) {
                     [xml]$doc2 = [System.IO.File]::ReadAllText($coreRep.FullName, [System.Text.Encoding]::UTF8)
                     $cnt2 = $doc2.report.counter | Where-Object { $_.type -eq "LINE" } | Select-Object -First 1
-                    if (-not $cnt2) { continue }
+                    if (-not $cnt2) { $bad += ("core:" + (Split-Path -Leaf (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $coreRep.FullName))))) + " report has no LINE counter (silent skip is not allowed)"); continue }
                     $c2 = [long]$cnt2.covered; $m2 = [long]$cnt2.missed
                     $mName = Split-Path -Leaf (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $coreRep.FullName))))
                     if (($coreNames -contains $mName) -and (($c2 + $m2) -gt 0)) {
@@ -503,7 +503,8 @@ if ($mutStage -and $mutStage.enabled) {
                 if ($rCp.ExitCode -ne 0) { $badMods += ($m.name + ": classpath generation failed"); continue }
                 $cpText = ([System.IO.File]::ReadAllText((Join-Path $modDir "target\pit-cp.txt"), [System.Text.Encoding]::UTF8)).Trim()
                 $fullCp = "target/classes;target/test-classes;" + $cpText + ";" + ((Join-Path $RepoRoot "target\precheck\pit-bundle") + "\*")
-                $pitArgs = "-cp `"" + $fullCp + "`" org.pitest.mutationtest.commandline.MutationCoverageReport --reportDir=target/pit-reports --outputFormats=XML,CSV --targetClasses=`"" + $m.targetPackages + "`" --targetTests=`"com.ctds.*`" --excludedTestClasses=`"" + $mutExc + "`" --sourceDirs=`"" + $m.sourceDir + "`""
+                $mutTargetTests = "com.ctds.*"; if ($mutStage.targetTests) { $mutTargetTests = $mutStage.targetTests }
+                $pitArgs = "-cp `"" + $fullCp + "`" org.pitest.mutationtest.commandline.MutationCoverageReport --reportDir=target/pit-reports --outputFormats=XML,CSV --targetClasses=`"" + $m.targetPackages + "`" --targetTests=`"" + $mutTargetTests + "`" --excludedTestClasses=`"" + $mutExc + "`" --sourceDirs=`"" + $m.sourceDir + "`""
                 $r = Invoke-MetricProcess $javaExe $pitArgs $modDir $mutTimeout ("mutationTest." + $m.name)
                 $xmlPath = Join-Path $modDir "target\pit-reports\mutations.xml"
                 if ($r.ExitCode -eq -1) {
@@ -582,7 +583,14 @@ if ($sastStage -and $sastStage.enabled) {
                         Add-Result "sast" "ERROR" "semgrep returned unparseable output (no JSON)"
                     } else {
                         $hits = @($sj.results)
-                        if ($hits.Count -eq 0) {
+                        $scanErrs = @($sj.errors)
+                        if ($scanErrs.Count -gt 0) {
+                            # 部分文件扫描失败时 results 可能为空——errors 非空即 ERROR，防"扫不动=0 热点"假绿
+                            $e0 = ($scanErrs | Select-Object -First 1).message
+                            if ($e0) { $e0 = $e0.ToString() } 
+                            if ($e0 -and $e0.Length -gt 120) { $e0 = $e0.Substring(0, 120) }
+                            Add-Result "sast" "ERROR" ("semgrep reported " + $scanErrs.Count + " scan error(s) [" + $e0 + "] - results incomplete, not a clean 0-finding pass")
+                        } elseif ($hits.Count -eq 0) {
                             Add-Result "sast" "PASS" ("semgrep " + $ruleset + ": 0 findings across " + ($copied -join ", ") + " main source sets")
                         } else {
                             $first = ($hits | Select-Object -First 3 | ForEach-Object { $_.check_id + "@" + $_.path }) -join "; "

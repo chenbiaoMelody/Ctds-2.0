@@ -362,10 +362,27 @@ Assert-Contains $repGreenText "-> GREEN" "S10 green probe verdict GREEN (so the 
 # fixture has no pom.xml -> Maven fails fast (~seconds); the KEY assertion is that no stage reports
 # PASS (a short-circuited "always PASS" implementation would turn this scenario green and fail S11).
 # Reverse probe: all three disabled -> GREEN/0 (so any red above is attributable to the stages).
+# Threshold-polarity probe (评审④裁决采纳，任务卡验收口径"阈值未达标必红"): a stub mvn.cmd on PATH
+# (fixture dir prepended to PATH, restored in finally) exits 0 and a hand-crafted LOW-coverage
+# jacoco.xml (100/1000 = 10% < 70%) is already in the fixture -> the runner must reach the parsing
+# and threshold branch and turn coverage FAIL. Without this probe the "-lt threshold" polarity could
+# invert with every table still green. mutationTest/sast threshold branches are exempt (registered in
+# ADR-018): a real PIT/semgrep fixture is not feasible and their numeric paths are anchored by the
+# real-repo reports.
 Write-Output ""
 Write-Output "S11 [metric stages fail-visible] expect: coverage FAIL + mutationTest FAIL/ERROR + sast ERROR, verdict RED, exit 1"
 $fix = New-Fixture "s11"
 Initialize-FixtureGit $fix
+# low-coverage report for the threshold-polarity probe: 100 covered / 900 missed = 10% < 70%
+$fakeJacocoDir = Join-Path $fix "common\fakecore\target\site\jacoco"
+New-Item -ItemType Directory -Path $fakeJacocoDir -Force | Out-Null
+[System.IO.File]::WriteAllText((Join-Path $fakeJacocoDir "jacoco.xml"),
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><report name="fakecore"><counter type="LINE" missed="900" covered="100"/></report>',
+    $utf8NoBom)
+# stub mvn.cmd: always exit 0 (lets the coverage stage reach its parse/threshold branch)
+$stubDir = Join-Path $fix "stub-bin"
+New-Item -ItemType Directory -Path $stubDir -Force | Out-Null
+[System.IO.File]::WriteAllText((Join-Path $stubDir "mvn.cmd"), "@echo off" + [Environment]::NewLine + "exit /b 0" + [Environment]::NewLine, $utf8NoBom)
 $cfg = New-FixtureConfig $fix "cfg-s11.json" $false "" $null
 $cfgObj = ConvertFrom-Json -InputObject ([System.IO.File]::ReadAllText($cfg, [System.Text.Encoding]::UTF8))
 $cfgObj.stages.coverage.enabled = $true
@@ -373,11 +390,17 @@ $cfgObj.stages.mutationTest.enabled = $true
 $cfgObj.stages.sast.enabled = $true
 [System.IO.File]::WriteAllText($cfg, ($cfgObj | ConvertTo-Json -Depth 10), $utf8NoBom)
 $rep = Join-Path $script:workDir "s11-report.md"
-$r = Invoke-Runner $fix $cfg $rep "selftest-s11-metric-stages"
+$savedPath = $env:PATH
+try {
+    $env:PATH = $stubDir + ";" + $env:PATH
+    $r = Invoke-Runner $fix $cfg $rep "selftest-s11-metric-stages"
+} finally { $env:PATH = $savedPath }
 Assert-True ($r.ExitCode -eq 1) ("S11 exit code 1 (got " + $r.ExitCode + ")")
 $repText = Read-Report $rep
 Assert-Contains $repText "| coverage | FAIL |" "S11 coverage cannot pass in a fixture (real Maven run failed)"
-Assert-Contains $repText "coverage | FAIL | mvn coverage exit" "S11 the FAIL names the real Maven exit"
+Assert-Contains $repText "coverage | FAIL |" "S11 the FAIL names the real Maven exit"
+Assert-Contains $repText "overall line 10%" "S11 threshold probe: the low-coverage report reaches the numeric branch (10% parsed)"
+Assert-Contains $repText "< 70%" "S11 threshold probe: below-threshold coverage turns FAIL (polarity anchored)"
 Assert-True (-not ($repText -match "\| coverage \| PASS \|")) "S11 coverage must NEVER report PASS in a fixture without reports"
 Assert-True (-not ($repText -match "\| mutationTest \| PASS \|")) "S11 mutationTest must NEVER report PASS in a fixture"
 Assert-True (-not ($repText -match "\| sast \| PASS \|")) "S11 sast must NEVER report PASS in a fixture"

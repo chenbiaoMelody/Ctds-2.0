@@ -85,9 +85,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gates\selftest.ps1
 | frontendLint 前端格式与风格 | ✅ 已启用（WBS 2.4.12 接入） | `npm run lint`（ESLint 9，覆盖 src 与 e2e），零错误 |
 | frontendTest 前端单元测试 | ✅ 已启用（WBS 2.4.12 接入） | `npm run test`（Vitest + jsdom），全部通过 |
 | frontendE2E 前端端到端测试 | ⏸ PENDING-CI（WBS 2.4.12 登记） | `npm run e2e`（Playwright + Chromium）；CI 环境浏览器二进制供给待 2.5.x 评估，本机可手动全量 |
-| gateSelfTest 运行器自检 | ⏸ PENDING-SELFTEST | `selftest.ps1` 十一场景（S1~S11，66 断言）；未接入 CI 前固定 PENDING，让"自检未跑"在每份报告中可见 |
+| gateSelfTest 运行器自检 | ⏸ PENDING-SELFTEST | `selftest.ps1` 十一场景（S1~S11，68 断言，含 coverage 阈值极性探针）；未接入 CI 前固定 PENDING，让"自检未跑"在每份报告中可见 |
 | coverage 覆盖率 | ✅ 已启用（清债卡1/DB-06 接入，ADR-018） | jacoco 0.8.12 命令行形态（零 pom 变更）；解析各模块 jacoco.xml，整体 ≥70%、coreModules 核心 ≥80%（thresholds 首次被实际读取） |
-| mutationTest 变异测试 | ✅ 已启用（清债卡1/DB-06 接入，ADR-018） | PIT 1.30.0 CLI + junit5-plugin 1.2.1（bundle 聚合至 target/precheck/pit-bundle）；范围 = coreModules 中配置的模块/包（当前 did 服务层）；杀除率 ≥60%（保守口径：NO_COVERAGE 计入分母） |
+| mutationTest 变异测试 | ✅ 已启用（清债卡1/DB-06 接入，ADR-018） | PIT 1.30.0 CLI + junit5-plugin 1.2.1（bundle 聚合至 target/precheck/pit-bundle）；范围 = `stages.mutationTest.modules` 独立清单（当前 did 服务层——coreModules 其余核心模块的变异扩展在 modules 表加行即可）；杀除率 ≥60%（保守口径：NO_COVERAGE 计入分母） |
 | sast 静态安全扫描 | ✅ 已启用（清债卡1/DB-06 接入，ADR-018） | semgrep 官方镜像 + p/java 社区规则集（docker 运行，扫描 Java 主源集副本）；热点 = 0；缺镜像 = ERROR 提示手动 pull |
 | dependencyScan 依赖扫描 | ⏸ PENDING-TOOLCHAIN（DB-06 如实登记） | OWASP Dependency-Check：首次运行需 GB 级 NVD 库同步（数小时），本机预算不可行——另立卡评估镜像/离线库方案 |
 | duplication 重复度 | ⏸ PENDING | PMD CPD，新增重复行 = 0 |
@@ -96,7 +96,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gates\selftest.ps1
 
 ## 工具链
 
-Maven 阶段需要 JDK 17 与 Maven 3.9+：脚本优先读环境变量 `JAVA_HOME`，缺省回退到 `gates-config.json` 的 `toolchain.javaHome`（当前本机 `C:\Program Files\Java\jdk-17`）；`mavenBin`/`mavenArgs` 同理可覆盖。依赖解析走用户级 `%USERPROFILE%\.m2\settings.xml`（阿里云镜像）。单阶段超时：Java 阶段 600 秒 / 前端阶段 300 秒。前端阶段（WBS 2.4.12 接入）在 `frontend/` 目录执行 npm 命令（workdir 可按阶段在 gates-config.json 配置）。
+Maven 阶段需要 JDK 17 与 Maven 3.9+：脚本优先读环境变量 `JAVA_HOME`，缺省回退到 `gates-config.json` 的 `toolchain.javaHome`（当前本机 `C:\Program Files\Java\jdk-17`）；`mavenBin`/`mavenArgs` 同理可覆盖。依赖解析走用户级 `%USERPROFILE%\.m2\settings.xml`（阿里云镜像）。单阶段超时：Java 阶段 600 秒 / 前端阶段 300 秒 / 质量度量段独立预算（coverage 900 秒 / mutationTest 1800 秒 / sast 900 秒，config `timeoutSeconds` 可覆盖，ADR-018）。前端阶段（WBS 2.4.12 接入）在 `frontend/` 目录执行 npm 命令（workdir 可按阶段在 gates-config.json 配置）。
 
 **工具前置探测（V1.2 起）**：`mvn` / `npm` 不在 PATH 时记 `ERROR`（退出码 2）而不是让阶段以"命令不存在"的失败面目出现——工具缺失是环境问题，不是代码结论。配置值含非法字符时**整个阶段跳过、不执行任何命令**（不得"检出后仍启动命令"）。
 
