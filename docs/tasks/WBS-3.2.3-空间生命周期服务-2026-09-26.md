@@ -65,11 +65,11 @@
 
 | 项 | 内容 |
 | --- | --- |
-| 状态 | ⏳ **立卡中（2026-09-26）**：分支已建（自 `90d98c4`），三件套落盘，待编排师一次确认 Q1~Q6 + D1 |
+| 状态 | ✅ **实现交付（2026-09-26 编码会话）**：实现提交 `600f0e7`（四层代码 + subject yml 1 行 + ADR-016 §6 补记 + V2 迁移 + deploy/k8s 入列）；本地门禁全绿（**Tests run: 58, Failures: 0**【T1~T12 集成 12 Testcontainers 实跑 / 迁移冒烟 7 / 归一化 T13 9 / 错误码 T14 9 / client 三态 9 / 枚举封闭 12（3.2.2 既有）】+ checkstyle **0 违规**）+ **subject 回归 144/144**（yml 改动）+ kustomize 结构校验 6 资源正常——待 4 视角评审与编排师验收 |
 | 立卡前素材盘点（只读） | ① WBS 行 253 + 规格 V1.0 行为 1/2/6 全文；② **资格通道实测**：subject `InternalAdmissionController`（`@RequirePermission("subject.internal.read")`）+ 授权映射在 subject `application.yml:49`（`did-internal: subject.internal.read`）→ space 复用 = 加 1 行；did `SubjectStatusHttpClient`（93 行，JDK HttpClient，UNAVAILABLE 语义）为 client 先例；③ **幂等先例**：`@Idempotent(key = "#orderNo")` SpEL（example/subject）；④ **状态机先例**：`SubjectStatusService.appendTransition` 同事务乐观门槛（3.1.3 教训固化）；⑤ **身份**：`AuthContext.subject()` + 角色头经 `AuthProperties`；⑥ **盘点发现**：跨 owner 同名空间先后解散撞 `name_lock` PK = 规格未定义真实路径（Q6 处置）；⑦ 部署清单现仅 example+frontend（`deploy/k8s/`），space 入列随本包 |
-| 规格外实现声明 | 无（端点/规则全部由规格行为 1/2/6 派生；读面边界 Q2、二次确认形态 Q3、运营方表达 Q4 均为规格授权范围内的实现形态决策） |
-| 复用声明 | 复用 subject 内部端点（ADR-016 §6 衔接契约）、did client 先例形态、subject 状态机乐观门槛模式、common 幂等/鉴权/分页/错误码、3.2.2 六表与 domain 模型；**未新增第三方依赖**（client = JDK HttpClient） |
-| 体量登记 | 预估 ~1100~1400 行（见 D1；确认后以实际 `wc -l` 重测回填） |
+| 规格外实现声明 | 无（端点/规则全部由规格行为 1/2/6 派生；读面边界 Q2、二次确认形态 Q3、运营方表达 Q4 均为规格授权范围内的实现形态决策）。**实现期两处工程性登记**（非需求扩展）：① `space_action_log` from_value/to_value VARCHAR(64)→1024（V2 迁移，只放宽不收窄）——配置变更留痕"从何值→到何值"须容纳简介全文（≤512），T11 契约所需；② 配置变更状态门槛采"ACTIVE/FROZEN 可改、CREATED/DISSOLVED 拒"（hifi §2 1006C0002"未启用不可变更"+终态口径推得，冻结语义不含配置限制） |
+| 复用声明 | 复用 subject 内部端点（ADR-016 §6 衔接契约）、did client 先例形态、subject 状态机乐观门槛模式、common 幂等/鉴权/分页/错误码、3.2.2 六表与 domain 模型；**未新增第三方依赖**（client = JDK HttpClient；web/validation 为 Boot 官方 starter 既有登记） |
+| 体量登记 | 预估 ~1100~1400 行（见 D1）；**实测（`600f0e7`）：3.2.3 增量主代码 1434 行**（四层 ~20 文件，javadoc 契约注释密度沿仓内先例）**+ 新增测试 ~840 行**（集成 480 + 单测/client ~360）**+ 迁移/部署/配置 ~200 行 ≈ 2470 行**——超出预估主因注释密度与双轨权限/留痕的防御性分支，超出部分全在设计契约内 |
 
 ---
 
