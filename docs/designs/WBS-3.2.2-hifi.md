@@ -7,8 +7,8 @@
 
 | 项 | 内容 |
 | --- | --- |
-| 编排师确认 | （待签署——与 lofi Q1~Q9 + D1 同批一次确认） |
-| 确认时间 | （待回填） |
+| 编排师确认 | **已确认（2026-09-26 会话四问表决）：Q1+Q2 采建议 A / Q3~Q8 均采建议 A / Q9 采建议 A / D1 不拆分豁免**——本文转**编码契约**，实现与本文件不一致 = 打回项 |
+| 确认时间 | 2026-09-26（立卡会话续段；随实现提交回填入库） |
 
 ## 1. 库表设计（6 表，库 `ctds_space`，MySQL 8）
 
@@ -137,7 +137,7 @@
 
 **模块骨架**：`services/space-service`——`pom.xml`（parent=`com.ctds:ctds-parent:2.0.0-SNAPSHOT`，`relativePath=../../pom.xml`；依赖 spring-boot-starter-jdbc、flyway-core、mysql-connector-j、test 侧 spring-boot-starter-test + testcontainers mysql/junit-jupiter——**全部为既有依赖族，版本沿父 pom/dependencyManagement，零新增依赖族**）+ `SpaceServiceApplication.java` + `application.yml`（port `8083`、库 `ctds_space`、flyway enabled；配置结构沿 subject-service 同款，profile 拆分照抄）+ 空 application/domain 包。根 pom `<modules>` 追加一行。
 
-**测试计划**（`src/test/java/.../space/SpaceMigrationIT.java`，Testcontainers MySQL 8 实跑——**不用 H2 兜底**：生成列/IF 方言行为必须真库实证，沿 2.4.11 教训；探针用例间状态隔离用方法级容器或 @BeforeEach 清空，沿"共享库撞状态"教训）：
+**测试计划**（`src/test/java/.../space/SpaceMigrationIntegrationTest.java`，Testcontainers MySQL 8 实跑——**不用 H2 兜底**：生成列/IF 方言行为必须真库实证，沿 2.4.11 教训；探针用例间状态隔离用方法级容器或 @BeforeEach 清空，沿"共享库撞状态"教训。**勘误注记（实现落盘时，非设计变更）**：测试类名由初稿 `SpaceMigrationIT` 改为 `SpaceMigrationIntegrationTest`——沿 subject-service 先例 `*IntegrationTest` 命名（surefire 直接执行，工程未配 failsafe，`*IT` 命名会静默漏跑）；容器支持内联于测试类（建库/授权用容器 root、断言用应用用户——沿 SharedMySqlContainer 同款分工），独立库名隔离语义等价方法级容器）：
 
 | # | 探针 | GIVEN/WHEN/THEN | 映射规格 |
 | --- | --- | --- | --- |
