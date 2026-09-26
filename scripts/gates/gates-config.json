@@ -1,7 +1,7 @@
 {
-  "version": "V1.3",
+  "version": "V1.4",
   "note": "C-TDS quality gate config. Consumed by scripts/gates/run-gates.ps1. Thresholds come from charter 4.2 table.",
-  "changeLog": "V1.3 (2026-09-26, 清债卡4 前端类型收口, 留痕载体 docs/tasks/DB-06-23-24-前端类型-清债小卡-2026-09-25.md 卡4, 编排师裁决 Q4=含): 新增 frontendTypeCheck 阶段（npm run typecheck = vue-tsc -b, workdir frontend, 走既有 npm 阶段循环：goals 白名单/300s 超时/UTF-8 解码全复用）——防止 3.1.12 观察到的 4 处既有 vue-tsc 类型错误类回归（该类缺陷曾阻断前端生产构建 npm run build）。强度只增不减：既有阶段零改动, 仅 runner 前端循环数组加入本段 + selftest.ps1 增 S10 红/绿双探针（typecheck 退出非 0 必 FAIL/1；退出 0 必 PASS/GREEN——防假绿灯）。 | V1.2 (2026-09-15, WBS-2.2.7 第 2 轮修复, 对应债务 DB-16): ① 排除项语义改为【根锚定 + 显式通配】——不以 * 开头只排仓库根下该路径（logs 不再连带排除 docs/logs/），需任意层级的写 '**/x/**'；修复 V1.1 中 61 份入库开发日志（docs/logs/）逃逸密钥扫描的缺陷；② 新增机器护栏：排除项命中 git ls-files 追踪路径即记 ERROR（退出码 2），把【禁止借排除项规避扫描】从注释变成强制；③ 新增 gateSelfTest 阶段（PENDING-SELFTEST，使【自检未跑】在每份报告中可见）。 | V1.1 (2026-09-15, WBS-2.2.7): secretsScan 排除项增补未入库的构建/运行产物目录（target/logs/dist/test-results/playwright-report/coverage）；原因：本地后端运行占用 logs/app.log 导致脚本 ReadAllBytes 抛异常、整个门禁崩溃且不出报告（REV-ALL-2026-09-15 DB-01）。V1.1 声明【扫描面不变】，但因 logs 裸词连带排除 docs/logs/ 而实际不成立，已在 V1.2 修正（该失实声明由第 1 轮三视角独立命中，留痕见任务卡与开发日志 -1525）。门禁配置变更须走变更流程留痕（AGENTS §8 第 3 条）。",
+  "changeLog": "V1.4 (2026-09-26, 清债卡1 DB-06 质量度量门禁接入, 留痕载体 docs/tasks/DB-06-23-24-前端类型-清债小卡-2026-09-25.md 卡1 + ADR-018, 编排师裁决 Q1=A 命令行形态): ① coverage 段 PENDING→enabled——jacoco 0.8.12 全限定插件目标命令行调用（零 pom 变更）：prepare-agent test report 一次完成，解析各模块 jacoco.xml 聚合行覆盖，阈值判定接入 thresholds（coreLineCoverage 80 / overallLineCoverage 70，coreModules 按目录尾名映射）；② mutationTest 段 PENDING→enabled——PIT 1.30.0 CLI（主类 MutationCoverageReport）+ junit5-plugin 1.2.1，bundle 经临时 pom dependency:copy-dependencies 聚合至 target/precheck/pit-bundle（可复现、走用户级 settings 阿里云镜像、SHA1 由 Maven 解析保证），范围 = coreModules 中配置的模块/包（当前仅 did 服务层），杀除率阈值 60（detected=KILLED+TIMED_OUT，total 含 NO_COVERAGE 的保守口径）；③ sast 段 PENDING→enabled——semgrep 官方镜像（p/java 社区规则集，docker 运行时挂载临时副本规避仓库路径空格），扫描 Java 主源集热点=0 判定；④ dependencyScan 维持 PENDING（OWASP DC 首次运行需 GB 级 NVD 库同步，本机预算不可行——如实登记另立卡，不得以 PENDING 冒充已接入）；⑤ thresholds 节自 V1.0 起首次被 run-gates.ps1 实际读取（此前零引用）。强度只增不减：既有阶段零改动。 | V1.3 (2026-09-26, 清债卡4 前端类型收口, 留痕载体 docs/tasks/DB-06-23-24-前端类型-清债小卡-2026-09-25.md 卡4, 编排师裁决 Q4=含): 新增 frontendTypeCheck 阶段（npm run typecheck = vue-tsc -b, workdir frontend, 走既有 npm 阶段循环：goals 白名单/300s 超时/UTF-8 解码全复用）——防止 3.1.12 观察到的 4 处既有 vue-tsc 类型错误类回归（该类缺陷曾阻断前端生产构建 npm run build）。强度只增不减：既有阶段零改动, 仅 runner 前端循环数组加入本段 + selftest.ps1 增 S10 红/绿双探针（typecheck 退出非 0 必 FAIL/1；退出 0 必 PASS/GREEN——防假绿灯）。 | V1.2 (2026-09-15, WBS-2.2.7 第 2 轮修复, 对应债务 DB-16): ① 排除项语义改为【根锚定 + 显式通配】——不以 * 开头只排仓库根下该路径（logs 不再连带排除 docs/logs/），需任意层级的写 '**/x/**'；修复 V1.1 中 61 份入库开发日志（docs/logs/）逃逸密钥扫描的缺陷；② 新增机器护栏：排除项命中 git ls-files 追踪路径即记 ERROR（退出码 2），把【禁止借排除项规避扫描】从注释变成强制；③ 新增 gateSelfTest 阶段（PENDING-SELFTEST，使【自检未跑】在每份报告中可见）。 | V1.1 (2026-09-15, WBS-2.2.7): secretsScan 排除项增补未入库的构建/运行产物目录（target/logs/dist/test-results/playwright-report/coverage）；原因：本地后端运行占用 logs/app.log 导致脚本 ReadAllBytes 抛异常、整个门禁崩溃且不出报告（REV-ALL-2026-09-15 DB-01）。V1.1 声明【扫描面不变】，但因 logs 裸词连带排除 docs/logs/ 而实际不成立，已在 V1.2 修正（该失实声明由第 1 轮三视角独立命中，留痕见任务卡与开发日志 -1525）。门禁配置变更须走变更流程留痕（AGENTS §8 第 3 条）。",
   "thresholds": {
     "coreLineCoverage": 80,
     "overallLineCoverage": 70,
@@ -31,12 +31,25 @@
     "frontendTest": { "enabled": true, "tool": "npm", "goals": "run test", "workdir": "frontend" },
     "frontendE2E": { "enabled": false, "status": "PENDING-CI", "tool": "playwright", "goals": "run e2e", "workdir": "frontend", "note": "WBS-2.4.12: CI 环境浏览器二进制供给待 2.5.x 部署基建评估；本机可 npm run e2e 手动全量" },
     "gateSelfTest": { "enabled": false, "status": "PENDING-SELFTEST", "tool": "scripts/gates/selftest.ps1", "note": "运行器自检（WBS-2.2.7 交付物⑤）：可复现验证 ①未入库锁定文件->SKIP 且不中断 ②入库文件不可读->ERROR ③JAVA_HOME 无效->ERROR/2（含反向探针）④报告路径不可写->ERROR/2 且报告仍打印 ⑤排除项命中入库路径->ERROR。以独立脚本运行（selftest.ps1）；未接入 CI 前固定 PENDING，使【自检未跑】在每份报告中可见，WBS-2.2.9 接入 CI 后改 enabled=true" },
-    "coverage": { "enabled": false, "status": "PENDING-JACOCO", "tool": "jacoco" },
-    "mutationTest": { "enabled": false, "status": "PENDING-TOOLCHAIN", "tool": "pitest" },
+    "coverage": { "enabled": true, "tool": "jacoco", "version": "0.8.12", "goals": "org.jacoco:jacoco-maven-plugin:0.8.12:prepare-agent test org.jacoco:jacoco-maven-plugin:0.8.12:report", "timeoutSeconds": 900, "note": "DB-06/ADR-018：命令行全限定目标（零 pom 变更）；报告解析各模块 target/site/jacoco/jacoco.xml，coreModules 按目录尾名映射核心判定，阈值见 thresholds" },
+    "mutationTest": {
+      "enabled": true, "tool": "pitest", "version": "1.30.0", "timeoutSeconds": 1800,
+      "excludedTestClasses": "*IntegrationTest",
+      "modules": [ { "name": "did", "moduleDir": "services/did", "targetPackages": "com.ctds.did.application.*", "sourceDir": "src/main/java" } ],
+      "bundle": {
+        "dir": "target/precheck/pit-bundle",
+        "dependencies": [
+          { "groupId": "org.pitest", "artifactId": "pitest-command-line", "version": "1.30.0" },
+          { "groupId": "org.pitest", "artifactId": "pitest-junit5-plugin", "version": "1.2.1" },
+          { "groupId": "org.junit.platform", "artifactId": "junit-platform-launcher", "version": "1.12.2" }
+        ]
+      },
+      "note": "DB-06/ADR-018：PIT CLI 主类 org.pitest.mutationtest.commandline.MutationCoverageReport；工作目录=模块根（源集守卫测试依赖相对路径）；杀除率 detected=KILLED+TIMED_OUT / total=全部（含 NO_COVERAGE 保守口径，3.1.12 基线 68.18%）"
+    },
+    "sast": { "enabled": true, "tool": "semgrep", "image": "semgrep/semgrep:latest", "ruleset": "p/java", "timeoutSeconds": 900, "scanRoots": [ "services", "common", "std-adapter" ], "note": "DB-06/ADR-018：docker 运行官方镜像（不自动 pull，缺镜像=ERROR 留手动留痕）；仓库路径含空格故先复制 Java 主源集到 %TEMP% 副本再挂载扫描；热点=0 判定" },
+    "dependencyScan": { "enabled": false, "status": "PENDING-TOOLCHAIN", "tool": "owasp-dependency-check", "note": "DB-06 如实登记：OWASP DC 首次运行需 GB 级 NVD 库全量同步（数小时），本机预算不可行——另立卡评估镜像/离线库方案，禁止以 PENDING 冒充已接入" },
     "duplication": { "enabled": false, "status": "PENDING-TOOLCHAIN", "tool": "pmd-cpd" },
     "complexity": { "enabled": false, "status": "PENDING-TOOLCHAIN", "tool": "sonarqube" },
-    "sast": { "enabled": false, "status": "PENDING-TOOLCHAIN", "tool": "semgrep" },
-    "dependencyScan": { "enabled": false, "status": "PENDING-TOOLCHAIN", "tool": "owasp-dependency-check" },
     "moduleDependency": { "enabled": false, "status": "PENDING-TOOLCHAIN", "tool": "archunit-crossmodule" }
   },
   "secretsPatterns": [

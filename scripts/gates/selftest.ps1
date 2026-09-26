@@ -20,6 +20,9 @@
 #   S10 frontendTypeCheck wiring (config V1.3, 清债卡4) -> stub typecheck exit 1 = FAIL/RED/exit 1,
 #                                    exit 0 = PASS/GREEN/exit 0 (red/green double probe: the npm-loop
 #                                    stage is genuinely executed and a type failure can never be green)
+#   S11 metric stages fail-visible (config V1.4, 清债卡1/DB-06) -> coverage/mutationTest/sast in a
+#                                    bare fixture: FAIL/ERROR rows + verdict RED, NEVER a silent PASS;
+#                                    reverse probe (stages off) -> GREEN (fail-visible, not fail-silent)
 # How: every scenario builds a hermetic fixture repo under %TEMP% (git init + git add, cheap stages
 # only), generates its config FROM THE REAL gates-config.json (so the real exclude list is what gets
 # exercised), runs scripts/gates/run-gates.ps1 against it and asserts on the report file / stdout /
@@ -89,7 +92,7 @@ function Set-StageEnabled($cfgObj, [string]$stageName, [bool]$enabled) {
 function New-FixtureConfig([string]$dir, [string]$fileName, [bool]$mavenStages, [string]$javaHome, [string[]]$extraExclude) {
     $cfgText = [System.IO.File]::ReadAllText($realConfig, [System.Text.Encoding]::UTF8)
     $cfgObj = ConvertFrom-Json -InputObject $cfgText
-    foreach ($n in @("compile", "lint", "unitTest", "frontendTypeCheck", "frontendLint", "frontendTest", "frontendE2E")) { Set-StageEnabled $cfgObj $n $false }
+    foreach ($n in @("compile", "lint", "unitTest", "frontendTypeCheck", "frontendLint", "frontendTest", "frontendE2E", "coverage", "mutationTest", "sast")) { Set-StageEnabled $cfgObj $n $false }
     if ($mavenStages) {
         foreach ($n in @("compile", "lint", "unitTest")) { Set-StageEnabled $cfgObj $n $true }
         $cfgObj.toolchain.javaHome = $javaHome
@@ -351,6 +354,41 @@ Assert-True ($rGreen.ExitCode -eq 0) ("S10 green probe exit code 0 (got " + $rGr
 $repGreenText = Read-Report $repGreen
 Assert-Contains $repGreenText "| frontendTypeCheck | PASS |" "S10 green probe: the passing typecheck turns the stage PASS"
 Assert-Contains $repGreenText "-> GREEN" "S10 green probe verdict GREEN (so the S10 red is attributable to the injected type failure)"
+
+# ---------- S11: quality metric stages wiring (DB-06/清债卡1, config V1.4) - fail-visible + reverse probe ----------
+# The three metric stages (coverage / mutationTest / sast) must never pass silently in a fixture that
+# cannot support them: coverage runs real Maven (fails -> FAIL, never PASS), mutationTest cannot find
+# module classes (FAIL via badMods), sast finds no source sets (ERROR). Fixture enables all three:
+# fixture has no pom.xml -> Maven fails fast (~seconds); the KEY assertion is that no stage reports
+# PASS (a short-circuited "always PASS" implementation would turn this scenario green and fail S11).
+# Reverse probe: all three disabled -> GREEN/0 (so any red above is attributable to the stages).
+Write-Output ""
+Write-Output "S11 [metric stages fail-visible] expect: coverage FAIL + mutationTest FAIL/ERROR + sast ERROR, verdict RED, exit 1"
+$fix = New-Fixture "s11"
+Initialize-FixtureGit $fix
+$cfg = New-FixtureConfig $fix "cfg-s11.json" $false "" $null
+$cfgObj = ConvertFrom-Json -InputObject ([System.IO.File]::ReadAllText($cfg, [System.Text.Encoding]::UTF8))
+$cfgObj.stages.coverage.enabled = $true
+$cfgObj.stages.mutationTest.enabled = $true
+$cfgObj.stages.sast.enabled = $true
+[System.IO.File]::WriteAllText($cfg, ($cfgObj | ConvertTo-Json -Depth 10), $utf8NoBom)
+$rep = Join-Path $script:workDir "s11-report.md"
+$r = Invoke-Runner $fix $cfg $rep "selftest-s11-metric-stages"
+Assert-True ($r.ExitCode -eq 1) ("S11 exit code 1 (got " + $r.ExitCode + ")")
+$repText = Read-Report $rep
+Assert-Contains $repText "| coverage | FAIL |" "S11 coverage cannot pass in a fixture (real Maven run failed)"
+Assert-Contains $repText "coverage | FAIL | mvn coverage exit" "S11 the FAIL names the real Maven exit"
+Assert-True (-not ($repText -match "\| coverage \| PASS \|")) "S11 coverage must NEVER report PASS in a fixture without reports"
+Assert-True (-not ($repText -match "\| mutationTest \| PASS \|")) "S11 mutationTest must NEVER report PASS in a fixture"
+Assert-True (-not ($repText -match "\| sast \| PASS \|")) "S11 sast must NEVER report PASS in a fixture"
+Assert-Contains $repText "-> RED" "S11 verdict RED (coverage FAIL drives it)"
+# reverse probe: same fixture, all three stages off -> GREEN/0
+$cfgControl = New-FixtureConfig $fix "cfg-s11-control.json" $false "" $null
+$repControl = Join-Path $script:workDir "s11-control-report.md"
+$rControl = Invoke-Runner $fix $cfgControl $repControl "selftest-s11-control-probe"
+Assert-True ($rControl.ExitCode -eq 0) ("S11 reverse probe exit code 0 (got " + $rControl.ExitCode + ")")
+Assert-Contains (Read-Report $repControl) "-> GREEN" "S11 reverse probe verdict GREEN (so the S11 red is attributable to the metric stages)"
+
 
 } catch {
     Write-Output ""

@@ -69,3 +69,14 @@
 | --- | --- | --- | --- | --- | --- |
 | `eclipse-temurin:17-jre` | 后端容器运行环境（Java 17 JRE，ADR-001 冻结栈配套；非 root 专用用户 uid 1001 运行——uid 1000 已被基础镜像默认用户 ubuntu 占用，useradd 退 4 实测留痕，MaxRAMPercentage=75 随容器内存伸缩） | GPLv2 with CE（temurin 官方发行许可，运行时使用无传染问题） | Docker Hub 官方 eclipse-temurin 仓库（Eclipse Temurin 官方维护，tag 显式锁定 17-jre），2026-09-12 实测拉取 | PO 预授权：WBS-2.5.1 lofi 问题 3"确认"（AskUserQuestion 即时选定"确认进入编码"，2026-09-12），判定留痕见 `docs/designs/WBS-2.5.1-lofi.md` §4 | WBS 2.5.1 |
 | `nginx:1.29-alpine` | 前端容器静态托管（SPA history 路由 fallback + gzip；显式 tag 禁 latest/mainline 漂移） | BSD-2-Clause（nginx 官方镜像） | Docker Hub 官方 nginx 仓库（1.29 主线稳定 + alpine 最小攻击面），2026-09-12 实测拉取 | 同上 | WBS 2.5.1 |
+
+## 门禁质量度量工具（WBS-2.2.8 / DB-06，ADR-018）
+
+> 门禁工具链不入 pom（Q1=A 命令行形态裁决）：jacoco 经 Maven 全限定插件目标调用、PIT 经临时 pom 聚合 bundle 至 `target/precheck/pit-bundle/`（运行期产物不入库）、semgrep 为 docker 镜像。登记义务覆盖工具坐标与版本线；升级须走门禁配置变更留痕。
+
+| 坐标 | 锁定版本 | 用途 | 许可证 | 核验来源与日期 | 审批记录 | 引入任务 |
+| --- | --- | --- | --- | --- | --- | --- |
+| `org.jacoco:jacoco-maven-plugin` | 0.8.12 | 行覆盖插桩与报告（命令行 prepare-agent/test/report 三目标一次运行；JDK 17 兼容线，3.1.12 实证） | EPL-2.0 | 本地 m2 缓存（3.1.12 经阿里云镜像拉取实测），2026-09-26 | 编排师裁决 Q1=A"都按建议"（2026-09-25 清债小卡确认留痕），留痕载体 = 清债小卡卡1 + ADR-018 | 清债卡1 / DB-06 |
+| `org.pitest:pitest-command-line`（含 pitest-entry/pitest/pitest-html-report 传递依赖） | 1.30.0 | 变异测试 CLI（主类 MutationCoverageReport；maven 直调路径 3.1.12 实测不可行，见 ADR-018 备选） | Apache-2.0 | 阿里云镜像实测 200（2026-09-26，本卡下载通道核验）+ m2 缓存 pitest 全家 1.30.0 | 同上 | 清债卡1 / DB-06 |
+| `org.pitest:pitest-junit5-plugin` | 1.2.1（PIT 1.30.0 同期配套线） | PIT 的 JUnit 5 平台适配（缺它 `Ran 0 tests` 全 NO_COVERAGE——3.1.12 §11-1 实证教训） | Apache-2.0 | 阿里云镜像 maven-metadata 实测版本线 1.1.1~1.2.3，2026-09-26 | 同上 | 清债卡1 / DB-06 |
+| `semgrep/semgrep`（docker 镜像，latest） | latest（官方镜像 tag；扫描引擎实测 1.177.0） | sast 段 Java 静态安全扫描（p/java 社区规则集，热点=0 判定；docker 形态——semgrep 不支持 Windows 原生运行） | LGPL-2.1（semgrep OSS） | docker pull 实测成功（2026-09-26，本机直连 Docker Hub）+ 规则源 registry 可达实测（--config p/java 扫描返回正常 JSON） | 同上 | 清债卡1 / DB-06 |

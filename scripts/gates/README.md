@@ -61,6 +61,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gates\selftest.ps1
 **机器护栏（V1.2 起）**：门禁启动时用 `git ls-files` 取入库路径清单，**任一排除项命中入库路径即记 `secretsScan.excludeGuard ERROR` 并以退出码 2 结束**。"排除项不得规避已入库文件"这条约束不再只写在注释里，而是每次运行都在校验——**改动排除项若误伤入库文件，门禁当次即红**。
 
 > 变更留痕：
+> - **V1.4（2026-09-26，清债卡1 / DB-06 质量度量门禁接入，任务卡 `docs/tasks/DB-06-23-24-前端类型-清债小卡-2026-09-25.md` 卡1 + ADR-018，编排师裁决 Q1=A）**：coverage / mutationTest / sast 三段 PENDING → enabled——jacoco 0.8.12 命令行形态（整体 ≥70% / 核心 ≥80%，`thresholds` 节自 V1.0 起首次被实际读取）；PIT 1.30.0 CLI + junit5-plugin 1.2.1（did 服务层 132 突变 / 杀除率 68.18% 实测，保守口径）；semgrep docker 形态（p/java 热点=0）；dependencyScan **如实登记维持 PENDING**（NVD 库同步预算不可行，另立卡）。selftest 增 S11（三段在裸 fixture 中 fail-visible + 反向探针）。强度只增不减；既有阶段零改动。
 > - **V1.3（2026-09-26，清债卡4，任务卡 `docs/tasks/DB-06-23-24-前端类型-清债小卡-2026-09-25.md`，编排师裁决 Q4=含）**：新增 `frontendTypeCheck` 阶段——`npm run typecheck`（= `vue-tsc -b` 全工程类型检查），走既有前端 npm 循环（goals 白名单 / 300 秒超时 / UTF-8 解码全复用），防 3.1.12 观察到的既有 vue-tsc 类型错误类回归再次阻断生产构建。既有阶段与阈值零改动，强度只增不减；selftest 增 S10 红/绿双探针（typecheck 退出非 0 必 FAIL/RED/退出码 1、退出 0 必 PASS/GREEN/0——防假绿灯；fixture 以 stub 脚本替代 vue-tsc 验证接线与判定，真实链路由全量门禁运行覆盖）。实测全量门禁 GREEN（RunLabel `20260926-100833-7510`，`PASS=11 FAIL=0 SKIP=2 ERROR=0 PENDING=9`，报告 `gate-report-20260926-101728.md`）。上文阶段表与 gateSelfTest 场景数已同步。
 > - **DB-18 显性化（2026-09-19，清债小卡 `docs/tasks/DB-17-21-清债小卡-2026-09-19.md`，配置零改动）**：secretsScan 三类"静默逃逸"改为报告可见——目录枚举失败记 `secretsScan.enumGap ERROR`（退出码 2）；≥1MB 超大文件与 NUL 二进制按入库/未入库区分，入库的逐条列名（`secretsScan.oversized` / `secretsScan.binary` SKIP 行），PASS 行"not scanned"细分为 excluded/oversized/binary/unreadable。检查强度只增不减；上文 SKIP 语义句已同步。前端段另设 `StandardOutput/ErrorEncoding = UTF-8`（DB-19，修复报告 FAIL 明细中文乱码，Maven 段不动）。
 > - **V1.2（2026-09-15，WBS-2.2.7 第 2 轮，对应债务 DB-16）**：修复 V1.1 的排除项缺陷——`logs` 裸词经"任意层级"匹配规则连带排除了 `docs/logs/`（61 份入库开发日志）与 `services/*/logs/`（24 份运行期日志），**V1.1 中"扫描面未缩减"的声明因此失实**；同时新增上述 `git ls-files` 护栏、`gateSelfTest` 阶段与报告头字段。实测（RunLabel `20260915-160705-4156`，连跑 3 次一致）：GREEN，`PASS=10 FAIL=0 SKIP=0 ERROR=0 PENDING=9`，**扫描 546 个文件、0 命中**；同一工作区按 V1.1 规则复算为 460 个文件，故本轮**扫描面净增 86**（`docs/logs/` 62 份 + `services/*/logs/` 24 份）。
@@ -68,7 +69,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gates\selftest.ps1
 
 **已知观察项（不在本卡范围，登记待收敛）**：V1.2 下 `services/*/logs/`（服务运行期日志，共 24 个未入库文件）重新进入扫描范围。它们**未入库**，被占用时只记 SKIP、不影响绿灯判定，代价仅是每轮多扫若干日志文本。若要重新排除，必须写成带模块前缀的形式（如 `services/**/logs/**`）——**写成 `**/logs/**` 会被上述护栏直接拦下**（它会命中入库的 `docs/logs/`）。建议随 DB-12（运行期数据置于项目目录外）一并收敛。
 
-## 当前检查项（V1.3）
+## 当前检查项（V1.4）
 
 | 检查项 | 状态 | 说明 |
 | --- | --- | --- |
@@ -84,13 +85,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gates\selftest.ps1
 | frontendLint 前端格式与风格 | ✅ 已启用（WBS 2.4.12 接入） | `npm run lint`（ESLint 9，覆盖 src 与 e2e），零错误 |
 | frontendTest 前端单元测试 | ✅ 已启用（WBS 2.4.12 接入） | `npm run test`（Vitest + jsdom），全部通过 |
 | frontendE2E 前端端到端测试 | ⏸ PENDING-CI（WBS 2.4.12 登记） | `npm run e2e`（Playwright + Chromium）；CI 环境浏览器二进制供给待 2.5.x 评估，本机可手动全量 |
-| gateSelfTest 运行器自检 | ⏸ PENDING-SELFTEST | `selftest.ps1` 十场景（S1~S10，57 断言）；未接入 CI 前固定 PENDING，让"自检未跑"在每份报告中可见 |
-| coverage 覆盖率 | ⏸ PENDING | JaCoCo 行/分支覆盖（核心 ≥80%、整体 ≥70%，章程 4.2），接入属工具链变更走 ADR |
-| mutationTest 变异测试 | ⏸ PENDING | 核心模块出现后接入（pitest），阈值 60% |
+| gateSelfTest 运行器自检 | ⏸ PENDING-SELFTEST | `selftest.ps1` 十一场景（S1~S11，66 断言）；未接入 CI 前固定 PENDING，让"自检未跑"在每份报告中可见 |
+| coverage 覆盖率 | ✅ 已启用（清债卡1/DB-06 接入，ADR-018） | jacoco 0.8.12 命令行形态（零 pom 变更）；解析各模块 jacoco.xml，整体 ≥70%、coreModules 核心 ≥80%（thresholds 首次被实际读取） |
+| mutationTest 变异测试 | ✅ 已启用（清债卡1/DB-06 接入，ADR-018） | PIT 1.30.0 CLI + junit5-plugin 1.2.1（bundle 聚合至 target/precheck/pit-bundle）；范围 = coreModules 中配置的模块/包（当前 did 服务层）；杀除率 ≥60%（保守口径：NO_COVERAGE 计入分母） |
+| sast 静态安全扫描 | ✅ 已启用（清债卡1/DB-06 接入，ADR-018） | semgrep 官方镜像 + p/java 社区规则集（docker 运行，扫描 Java 主源集副本）；热点 = 0；缺镜像 = ERROR 提示手动 pull |
+| dependencyScan 依赖扫描 | ⏸ PENDING-TOOLCHAIN（DB-06 如实登记） | OWASP Dependency-Check：首次运行需 GB 级 NVD 库同步（数小时），本机预算不可行——另立卡评估镜像/离线库方案 |
 | duplication 重复度 | ⏸ PENDING | PMD CPD，新增重复行 = 0 |
 | complexity 复杂度 | ⏸ PENDING | SonarQube，圈复杂度 >15 打回 |
-| sast 静态安全扫描 | ⏸ PENDING | Semgrep，安全热点 = 0 |
-| dependencyScan 依赖扫描 | ⏸ PENDING | OWASP Dependency-Check，高危 = 0 |
 | moduleDependency 模块依赖 | ⏸ PENDING | 跨模块依赖规则（ArchUnit 跨模块检查随多模块出现后启用） |
 
 ## 工具链
