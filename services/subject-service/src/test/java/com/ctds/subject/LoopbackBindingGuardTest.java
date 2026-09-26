@@ -55,6 +55,7 @@ class LoopbackBindingGuardTest {
         // DB-24 新口径：默认 profile 补防御性回环（ADR-016 §2.7 DB-24 补记）——任意 profile 均配置级
         // 绑定回环，回环绑定不再依赖 profile 选择或启动方式注入。
         runner.run(context -> {
+            assertThat(context).hasSingleBean(ServerProperties.class);
             ServerProperties props = context.getBean(ServerProperties.class);
             assertThat(props.getAddress())
                     .as("默认 profile 也必须配置 server.address（DB-24 防御性回环，ADR-016 §2.7）")

@@ -3,7 +3,8 @@ spring:
     name: kms-service
   # 数据库迁移工具链（WBS 2.4.10 / ADR-009）：**默认 profile 不可启动**——KeyJdbcRepository 构造器
   # 硬依赖 JdbcClient，排除 DataSourceAutoConfiguration 后无该 Bean（DB-24 实测
-  # UnsatisfiedDependencyException，2026-09-25；同族口径见 did / subject 注释）；
+  # UnsatisfiedDependencyException，2026-09-21〔2026-09-25 立卡只读复核〕；
+  # 同族口径见 did / subject 注释）；
   # 演示与服务一律 mysql profile（application-mysql.yml）。
   # classpath 上有 spring-boot-starter-jdbc 会激活 DataSourceAutoConfiguration 并要求配置数据源，
   # 默认 profile 显式排除；mysql profile 清空本排除项后数据源 + Flyway 生效。
