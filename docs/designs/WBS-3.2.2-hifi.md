@@ -13,6 +13,7 @@
 ## 1. 库表设计（6 表，库 `ctds_space`，MySQL 8）
 
 通用惯例（沿 subject-service 先例）：`ENGINE=InnoDB`、`CHARSET=utf8mb4`、`id BIGINT AUTO_INCREMENT` 技术主键、`created_at/updated_at` 公共列、每表每列中文注释、状态列 `VARCHAR` 存枚举码、跨库引用一律**逻辑引用**（不建外键，引用关系在注释中标明，一致性由应用层校验——沿 subject 先例）。
+排序规则（勘误注记 2026-09-26 评审轮）：各表未显式声明 COLLATE，落 MySQL 8 默认 `utf8mb4_0900_ai_ci`——大小写/重音不敏感（判重为"过阻断"方向）；0900 系 NO PAD，尾随空格参与比较，防重依赖应用层写入已归一化值；**下游不得以"大小写不同即可再建名"作业务前提**。
 
 ### 1.1 `space` 空间表（一行 = 一个逻辑空间）
 
@@ -20,7 +21,7 @@
 | --- | --- | --- | --- |
 | id | BIGINT | PK AUTO_INCREMENT | 技术 id，即 REST `/data-spaces/{id}` 的 `{id}`（lofi Q7-A） |
 | name | VARCHAR(128) | NOT NULL | 空间名称（原始输入，展示用） |
-| normalized_name | VARCHAR(128) | NOT NULL | 归一化名称（去首尾空白与控制字符；归一化算法**复用主体服务既有口径**，落实现时以 subject 归一化代码为准，本包不重复实现） |
+| normalized_name | VARCHAR(128) | NOT NULL | 归一化名称（去首尾空白与控制字符；**复用**主体服务归一化**口径**，实现归 3.2.3——主体既有实现为文件名归一化 `normalizeFileName`，空白集须显式定义含 Unicode 空白（如全角空格 U+3000），不可直接照搬；勘误注记 2026-09-26 评审轮） |
 | scene_type | VARCHAR(16) | NOT NULL | 场景类型：`FINTECH` 普惠金融 / `MEDICAL` 医疗验证 / `OTHER` 其他（lofi Q8-A，枚举类 SceneType） |
 | access_mode | VARCHAR(16) | NOT NULL | 参与方范围：`OPEN` 公开 / `INVITE` 邀请制 / `APPROVAL` 审批制（规格 Q2 裁决三档） |
 | visibility | VARCHAR(16) | NOT NULL | 可见性：`PUBLIC` / `PRIVATE`（可见性 ≠ 资源可访问性，规格行为 6 规则 3） |
@@ -129,13 +130,13 @@
 
 ## 3. 领域模型类（domain 包，与表逐列对应）
 
-- 实体 POJO（字段 + 全参/无参构造 + getter，风格沿 `Subject.java`）：`Space`、`SpaceMember`、`SpaceAdmission`、`SpacePolicy`、`SpaceActionLog`。
-- 枚举（`values()` 含码与中文描述，风格沿 `SubjectStatus.java`）：`SpaceStatus`、`AccessMode`、`Visibility`、`SceneType`、`MemberRole`、`MemberStatus`、`AdmissionType`、`AdmissionStatus`、`PolicyScope`、`PolicyStatus`、`TargetType`、`ActionResult`（12 个）。
+- 实体 **record**（风格沿 `Subject.java` 本然——`Subject.java` 即 record；勘误注记 2026-09-26 评审轮）：`Space`、`SpaceMember`、`SpaceAdmission`、`SpacePolicy`、`SpaceActionLog`。
+- 枚举（`displayName` 构造器 + `getDisplayName()`，风格沿 `SubjectStatus.java` 本然；勘误注记同轮）：`SpaceStatus`、`AccessMode`、`Visibility`、`SceneType`、`MemberRole`、`MemberStatus`、`AdmissionType`、`AdmissionStatus`、`PolicyScope`、`PolicyStatus`、`TargetType`、`ActionResult`（12 个）。
 - **不建**：Repository 接口、错误码常量类（无错误码）、配置类（lofi Q2-A）。
 
 ## 4. 模块骨架与测试计划
 
-**模块骨架**：`services/space-service`——`pom.xml`（parent=`com.ctds:ctds-parent:2.0.0-SNAPSHOT`，`relativePath=../../pom.xml`；依赖 spring-boot-starter-jdbc、flyway-core、mysql-connector-j、test 侧 spring-boot-starter-test + testcontainers mysql/junit-jupiter——**全部为既有依赖族，版本沿父 pom/dependencyManagement，零新增依赖族**）+ `SpaceServiceApplication.java` + `application.yml`（port `8083`、库 `ctds_space`、flyway enabled；配置结构沿 subject-service 同款，profile 拆分照抄）+ 空 application/domain 包。根 pom `<modules>` 追加一行。
+**模块骨架**：`services/space-service`——`pom.xml`（parent=`com.ctds:ctds-platform:2.0.0-SNAPSHOT`，`relativePath=../../pom.xml`；依赖 spring-boot-starter-jdbc、flyway-core、flyway-mysql、mysql-connector-j、test 侧 spring-boot-starter-test + testcontainers mysql/junit-jupiter——**全部为既有依赖族，版本沿父 pom/dependencyManagement，零新增依赖族**）+ `SpaceServiceApplication.java` + `application.yml`（port `8083`、库 `ctds_space`、flyway enabled；配置结构沿 subject-service 同款，profile 拆分照抄）+ domain 包（勘误注记 2026-09-26 评审轮：application 包随 3.2.3 建立，git 不跟踪空目录不落空壳）。根 pom `<modules>` 追加一行。
 
 **测试计划**（`src/test/java/.../space/SpaceMigrationIntegrationTest.java`，Testcontainers MySQL 8 实跑——**不用 H2 兜底**：生成列/IF 方言行为必须真库实证，沿 2.4.11 教训；探针用例间状态隔离用方法级容器或 @BeforeEach 清空，沿"共享库撞状态"教训。**勘误注记（实现落盘时，非设计变更）**：测试类名由初稿 `SpaceMigrationIT` 改为 `SpaceMigrationIntegrationTest`——沿 subject-service 先例 `*IntegrationTest` 命名（surefire 直接执行，工程未配 failsafe，`*IT` 命名会静默漏跑）；容器支持内联于测试类（建库/授权用容器 root、断言用应用用户——沿 SharedMySqlContainer 同款分工），独立库名隔离语义等价方法级容器）：
 
@@ -156,7 +157,7 @@
 | 表/字段组 | 类目 | 建议级别 | 定级理由 | 管控锚点 |
 | --- | --- | --- | --- | --- |
 | space：名称/场景/范围/可见性/简介/生效期/状态 | CAT-01 | L2 | 平台应用配置；聚合可推平台空间名录 | 表注释；展示层无脱敏需求 |
-| space.owner_subject_no、space_member.subject_no、space_admission.subject_no | CAT-02 | L2 | 主体标识+权限映射（对外业务标识，非鉴别信息；C-1.1 出站口径） | 跨库逻辑引用；不入日志原文 |
+| space.owner_subject_no、space_member.subject_no/role、space_admission.subject_no | CAT-02 | L2 | 主体标识+权限映射（对外业务标识，非鉴别信息；C-1.1 出站口径；role 为权限映射载体，2026-09-26 评审轮与规范 §6.1 对齐） | 跨库逻辑引用；不入日志原文 |
 | space_policy：entry_key/entry_value/is_redline | CAT-01 | L2 | 应用配置；**若未来策略值引用数据资源则就高随来源**（诚实条款登记） | 3.2.5 定稿时复核 |
 | space_action_log：全部字段 | CAT-06 | L3 | 安全与审计数据，篡改可掩盖痕迹（对齐审计明细 L3 先例） | 只插不改；不含敏感原文（reason 业务文案） |
 | space_name_lock | CAT-01 | L2 | 运营索引数据 | PK 硬约束 |
@@ -170,4 +171,6 @@
 
 ## 7. 交付物核对清单（实现完成即对照打勾）
 
-1. `services/space-service/pom.xml` + 根 pom modules 追加；2. 主类 + application.yml（8083/ctds_space/flyway）；3. `V1__create_space_tables.sql`（6 表 = §1 逐列一致）；4. domain 包 5 实体 + 12 枚举；5. `SpaceMigrationIT`（探针 0~6 全过）；6. 分级规范 §6.1 回写 5 行（§5）；7. 本卡与 lofi/hifi 确认记录签署回填；8. 台账 L1-3 行与日志。
+1. `services/space-service/pom.xml` + 根 pom modules 追加；2. 主类 + application.yml（8083/ctds_space/flyway）；3. `V1__create_space_tables.sql`（6 表 = §1 逐列一致）；4. domain 包 5 实体 + 12 枚举；5. `SpaceMigrationIntegrationTest` + `SpaceDomainEnumsTest`（探针 0~6 全过 + 枚举值域封闭性，评审修复批补齐）；6. 分级规范 §6.1 回写 5 行（§5）；7. 本卡与 lofi/hifi 确认记录签署回填；8. 台账 L1-3 行与日志。
+
+**勘误注记（2026-09-26 评审修复轮，非设计变更）**：① §3 实体/枚举风格描述更正为先例本然（record / displayName，先勘误为"POJO/getter"系初稿笔误，实现一直沿先例）；② §4 parent 坐标更正 `ctds-parent` → `ctds-platform`（实现文件一向正确）；③ §4 依赖清单补 flyway-mysql（subject 同款既有依赖，非新增）；④ §7 测试类名同步 §4 勘误；⑤ §1.1 归一化表述更正为"复用口径、实现归 3.2.3"（主体既有实现系文件名归一化不可照搬，空白集须显式定义含 Unicode 空白）；⑥ §1 补 COLLATE 默认行为登记；⑦ application 空包改为"随 3.2.3 建立"；⑧ V1 迁移内注释与 §1 逐列核对语义一致、文字级差异不逐一同步（**表/列注释以 SQL 文件为准**，探针 6 按 SQL 注释断言）。

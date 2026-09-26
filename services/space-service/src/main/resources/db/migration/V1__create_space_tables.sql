@@ -4,9 +4,12 @@
 -- space_policy（行为7 策略继承覆盖载体——条目语言与可配置项集合归 3.2.5）、space_action_log（行为1~7 统一留痕含拒绝留痕）。
 -- 跨库引用（subject_no → ctds_subject.subject）一律逻辑引用不建外键，一致性由应用层校验（沿 subject-service 先例）。
 -- 错误码 1006 段已预留（规格 Q7），码值随 3.2.3/3.2.4 实施包落定，本迁移不含任何业务码值。
+-- 排序规则：各表未显式声明 COLLATE，落 MySQL 8 默认 utf8mb4_0900_ai_ci——大小写/重音不敏感（判重为
+-- "过阻断"方向非绕过）；0900 系 NO PAD，尾随空格参与比较，防重依赖应用层写入已归一化值（评审②登记）。
 
 -- 空间表：一行 = 一个逻辑空间。归一化名称（去首尾空白与控制字符）为唯一性判定口径，
--- 算法复用主体服务既有归一化实现，本库只存结果。
+-- 口径复用主体服务归一化先例、实现归 3.2.3（主体既有实现为文件名归一化，空白集须显式定义
+-- 含 Unicode 空白，不可直接照搬）；DB 不做归一化，本库只存应用层写入的归一化结果。
 CREATE TABLE space (
     id               BIGINT       NOT NULL AUTO_INCREMENT COMMENT '技术主键（对外即 REST /data-spaces/{id} 的 {id}，ADR-005 先例）',
     name             VARCHAR(128) NOT NULL COMMENT '空间名称（原始输入，展示用）',

@@ -12,6 +12,10 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.SQLIntegrityConstraintViolationException;
 import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
@@ -37,14 +41,67 @@ class SpaceMigrationIntegrationTest {
     /** 独立库名计数器（每用例一库，库由本类创建，命名受控无注入面）。 */
     private static final AtomicInteger DB_SEQ = new AtomicInteger();
 
-    /** 探针 0：迁移冒烟——空库执行 V1 成功，六表齐备且迁移历史成功。 */
+    /** hifi §1 逐表列清单（键 = 表名；值 = 按 ordinal_position 的列序）——"列齐"为建表正确性核心承诺。 */
+    private static final Map<String, List<String>> EXPECTED_COLUMNS = buildExpectedColumns();
+
+    /** hifi §1 六表表注释（以 V1 迁移 SQL 注释为准的文档化承诺，探针 6 逐表核对）。 */
+    private static final Map<String, String> EXPECTED_TABLE_COMMENTS = buildExpectedTableComments();
+
+    /** 硬约束载体列与代表性列注释（hifi §4 探针 6"列 COMMENT"承诺，探针 6 逐列核对）。 */
+    private static final Map<String, String> EXPECTED_COLUMN_COMMENTS = buildExpectedColumnComments();
+
+    private static Map<String, List<String>> buildExpectedColumns() {
+        final Map<String, List<String>> columns = new LinkedHashMap<>();
+        columns.put("space", List.of("id", "name", "normalized_name", "scene_type", "access_mode",
+                "visibility", "intro", "effective_from", "effective_to", "owner_subject_no",
+                "status", "created_at", "updated_at"));
+        columns.put("space_name_lock", List.of("normalized_name", "space_id", "locked_at"));
+        columns.put("space_member", List.of("id", "space_id", "subject_no", "role", "status",
+                "joined_at", "exited_at", "active_flag", "owner_uniq", "created_at", "updated_at"));
+        columns.put("space_admission", List.of("id", "space_id", "subject_no", "type", "status",
+                "operator", "reason", "member_id", "created_at", "updated_at"));
+        columns.put("space_policy", List.of("id", "scope", "space_id", "platform_entry_id",
+                "entry_key", "entry_value", "is_redline", "status", "scope_uniq",
+                "created_at", "updated_at"));
+        columns.put("space_action_log", List.of("id", "space_id", "target_type", "target_id",
+                "action", "operator", "from_value", "to_value", "result", "reason", "created_at"));
+        return columns;
+    }
+
+    private static Map<String, String> buildExpectedTableComments() {
+        final Map<String, String> comments = new LinkedHashMap<>();
+        comments.put("space", "空间表（一行=一个逻辑空间；活跃空间名称同一所有者唯一，解散名称全平台锁定见 space_name_lock）");
+        comments.put("space_name_lock", "解散空间名称全平台锁定表（行为2规则4；PK 硬约束兜底）");
+        comments.put("space_member", "空间成员表（一行=一条成员关系；同一空间同一主体至多一条生效关系、至多一个活跃所有者均由唯一索引硬兜底；退出/移除行保留改终态）");
+        comments.put("space_admission", "空间准入单（申请/邀请载体：未确认邀请与未审批申请不产生成员关系；通过后回填 member_id 贯通追溯）");
+        comments.put("space_policy", "空间策略条目载体表（平台级默认+空间级覆盖；条目键与值语义归 3.2.5 策略继承引擎定稿；红线=不得放宽标记；历史版本走留痕）");
+        comments.put("space_action_log", "空间域统一操作留痕（四要素：谁/何时/对象/动作+结果与理由；拒绝动作同样留痕；不含敏感原文；只插不改）");
+        return comments;
+    }
+
+    private static Map<String, String> buildExpectedColumnComments() {
+        final Map<String, String> comments = new LinkedHashMap<>();
+        comments.put("space.normalized_name", "归一化名称（去首尾空白与控制字符，唯一性判定口径）");
+        comments.put("space.owner_subject_no",
+                "所有者主体编号（逻辑引用 ctds_subject.subject.subject_no；ADMITTED 资格由应用层调 C-1.1 判定，本库不存副本）");
+        comments.put("space_member.active_flag", "活跃标志生成列（ACTIVE=1 其余 NULL，支撑同空间同主体至多一条生效关系）");
+        comments.put("space_member.owner_uniq", "唯一所有者生成列（活跃 OWNER=1 其余 NULL，支撑同空间至多一个活跃所有者——行为5规则3 硬兜底）");
+        comments.put("space_policy.scope_uniq",
+                "作用域唯一生成列（平台级 ACTIVE 记 0、空间级 ACTIVE 记 space_id、归档 NULL——支撑同作用域同键至多一条 ACTIVE）");
+        comments.put("space_action_log.result", "结果：SUCCESS/DENIED（拒绝同样留痕）");
+        return comments;
+    }
+
+    /** 探针 0：迁移冒烟——空库执行 V1 成功，六表齐备且逐表"列齐"（含顺序）、迁移历史成功。 */
     @Test
     void migrationSmokeAllSixTablesCreated() throws SQLException {
         final String db = freshDatabaseWithMigration("smoke");
-        for (final String table : new String[] {"space", "space_name_lock", "space_member",
-                "space_admission", "space_policy", "space_action_log"}) {
+        for (final Map.Entry<String, List<String>> expected : EXPECTED_COLUMNS.entrySet()) {
             assertEquals(1, count(db, "SELECT COUNT(*) FROM information_schema.tables"
-                    + " WHERE table_schema = ? AND table_name = ?", db, table), "表应存在：" + table);
+                    + " WHERE table_schema = ? AND table_name = ?", db, expected.getKey()),
+                    "表应存在：" + expected.getKey());
+            assertEquals(expected.getValue(), columnNames(db, expected.getKey()),
+                    "表列应齐备且顺序与 hifi §1 一致：" + expected.getKey());
         }
         assertEquals(1, count(db, "SELECT COUNT(*) FROM flyway_schema_history WHERE success = 1"));
     }
@@ -53,6 +110,8 @@ class SpaceMigrationIntegrationTest {
     @Test
     void sameOwnerSameActiveNameRejected() throws SQLException {
         final String db = freshDatabaseWithMigration("same_owner");
+        // name 传原始未归一化串仅示意"原始输入"：DB 不做归一化（V1 头注"只存结果"），唯一性判定键是
+        // 应用层写入的 normalized_name（归一化实现归 3.2.3）——本探针只证 normalized_name 参与唯一索引。
         insertSpace(db, "普惠金融空间", "普惠金融空间", "S1001", "ACTIVE");
         assertThrows(SQLIntegrityConstraintViolationException.class,
                 () -> insertSpace(db, "  普惠金融空间 ", "普惠金融空间", "S1001", "ACTIVE"));
@@ -90,6 +149,9 @@ class SpaceMigrationIntegrationTest {
                 () -> insertMember(db, 1, "S1002", "MEMBER", "ACTIVE"));
         // 生效关系之外允许保留终态历史行（ACTIVE + LEFT 共存，生成列 NULL 不参与唯一去重）
         assertDoesNotThrow(() -> insertMember(db, 1, "S1002", "MEMBER", "LEFT"));
+        // 第二条终态行（REMOVED）亦共存——钉死"NULL 不参与去重"语义：两条终态行 + 一条活跃行并存
+        //（若 active_flag 误写为 IF(...,1,0) 非 NULL 形态，此处即红，评审④变异推演补的对称保护）
+        assertDoesNotThrow(() -> insertMember(db, 1, "S1002", "MEMBER", "REMOVED"));
         // 第二个活跃所有者被拒（uk_active_owner，唯一所有者保护硬兜底）
         assertThrows(SQLIntegrityConstraintViolationException.class,
                 () -> insertMember(db, 1, "S1003", "OWNER", "ACTIVE"));
@@ -115,16 +177,27 @@ class SpaceMigrationIntegrationTest {
         });
     }
 
-    /** 探针 6：文档化承诺可核对——表/列注释在位、生成列为 STORED GENERATED（information_schema 实查）。 */
+    /** 探针 6：文档化承诺可核对——六表注释、代表性列注释、生成列定义在位（information_schema 实查）。 */
     @Test
     void commentsAndGeneratedColumnsInPlace() throws SQLException {
         final String db = freshDatabaseWithMigration("docs");
-        assertEquals("空间表（一行=一个逻辑空间；活跃空间名称同一所有者唯一，解散名称全平台锁定见 space_name_lock）",
-                scalar(db, "SELECT table_comment FROM information_schema.tables"
-                        + " WHERE table_schema = ? AND table_name = 'space'", db));
+        for (final Map.Entry<String, String> expected : EXPECTED_TABLE_COMMENTS.entrySet()) {
+            assertEquals(expected.getValue(), scalar(db, "SELECT table_comment FROM information_schema.tables"
+                    + " WHERE table_schema = ? AND table_name = ?", db, expected.getKey()),
+                    "表注释应在位：" + expected.getKey());
+        }
+        for (final Map.Entry<String, String> expected : EXPECTED_COLUMN_COMMENTS.entrySet()) {
+            final String[] parts = expected.getKey().split("\\.", 2);
+            assertEquals(expected.getValue(), scalar(db, "SELECT column_comment FROM information_schema.columns"
+                    + " WHERE table_schema = ? AND table_name = ? AND column_name = ?", db, parts[0], parts[1]),
+                    "列注释应在位：" + expected.getKey());
+        }
         assertTrue(scalar(db, "SELECT extra FROM information_schema.columns WHERE table_schema = ?"
                 + " AND table_name = 'space_member' AND column_name = 'active_flag'", db).contains("GENERATED"),
                 "active_flag 应为生成列");
+        assertTrue(scalar(db, "SELECT generation_expression FROM information_schema.columns"
+                + " WHERE table_schema = ? AND table_name = 'space_member' AND column_name = 'active_flag'", db)
+                .toUpperCase().contains("ACTIVE"), "active_flag 生成表达式应含 ACTIVE 判定");
         assertTrue(scalar(db, "SELECT generation_expression FROM information_schema.columns"
                 + " WHERE table_schema = ? AND table_name = 'space_member' AND column_name = 'owner_uniq'", db)
                 .toUpperCase().contains("OWNER"), "owner_uniq 生成表达式应含 OWNER 判定");
@@ -143,9 +216,14 @@ class SpaceMigrationIntegrationTest {
         if (!db.matches("[a-z0-9_]{1,64}")) {
             throw new IllegalArgumentException("非法库名：" + db);
         }
+        // 用户名白名单防御沿 SharedMySqlContainer 先例（GRANT 语句拼接前的纵深防御，评审②补齐）
+        final String appUser = MYSQL.getUsername();
+        if (!appUser.matches("[A-Za-z0-9_]{1,32}")) {
+            throw new IllegalArgumentException("非法数据库用户名：" + appUser);
+        }
         execRoot("CREATE DATABASE IF NOT EXISTS `" + db + "`");
-        execRoot("GRANT ALL PRIVILEGES ON `" + db + "`.* TO '" + MYSQL.getUsername() + "'@'%'");
-        Flyway.configure().dataSource(urlFor(db), MYSQL.getUsername(), MYSQL.getPassword())
+        execRoot("GRANT ALL PRIVILEGES ON `" + db + "`.* TO '" + appUser + "'@'%'");
+        Flyway.configure().dataSource(urlFor(db), appUser, MYSQL.getPassword())
                 .locations("classpath:db/migration").load().migrate();
         return db;
     }
@@ -187,6 +265,24 @@ class SpaceMigrationIntegrationTest {
             }
             try (ResultSet rs = ps.executeQuery()) {
                 return rs.next() ? String.valueOf(rs.getObject(1)) : "";
+            }
+        }
+    }
+
+    /** 按 ordinal_position 返回表列名序列（information_schema 实查，探针 0"列齐"断言用）。 */
+    private List<String> columnNames(final String db, final String table) throws SQLException {
+        try (Connection c = DriverManager.getConnection(urlFor(db), MYSQL.getUsername(),
+                MYSQL.getPassword()); PreparedStatement ps = c.prepareStatement(
+                "SELECT column_name FROM information_schema.columns"
+                        + " WHERE table_schema = ? AND table_name = ? ORDER BY ordinal_position")) {
+            ps.setString(1, db);
+            ps.setString(2, table);
+            try (ResultSet rs = ps.executeQuery()) {
+                final List<String> names = new ArrayList<>();
+                while (rs.next()) {
+                    names.add(rs.getString(1));
+                }
+                return names;
             }
         }
     }
