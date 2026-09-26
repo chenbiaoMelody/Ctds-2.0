@@ -199,9 +199,10 @@ public class SubjectRegistrationService {
                 .isPresent();
     }
 
-    /** 申请编号 = S + 日期 + 6 位当日序号（序号经 subject_daily_seq 行级原子自增取号）。 */
+    /** 申请编号 = S + 日期 + 6 位当日序号（序号经 subject_daily_seq 行级原子自增取号）。
+     *  取号日期经注入时钟（DB-09：与其他逻辑日期同源，禁直连系统钟——两把钟统一收口）。 */
     private String generateSubjectNo() {
-        final LocalDate today = LocalDate.now();
+        final LocalDate today = LocalDate.now(clock);
         return "S" + SEQ_DATE.format(today) + String.format("%06d", repository.nextDailySeq(today));
     }
 
