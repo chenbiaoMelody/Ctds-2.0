@@ -1,7 +1,7 @@
 {
-  "version": "V1.2",
+  "version": "V1.3",
   "note": "C-TDS quality gate config. Consumed by scripts/gates/run-gates.ps1. Thresholds come from charter 4.2 table.",
-  "changeLog": "V1.2 (2026-09-15, WBS-2.2.7 第 2 轮修复, 对应债务 DB-16): ① 排除项语义改为【根锚定 + 显式通配】——不以 * 开头只排仓库根下该路径（logs 不再连带排除 docs/logs/），需任意层级的写 '**/x/**'；修复 V1.1 中 61 份入库开发日志（docs/logs/）逃逸密钥扫描的缺陷；② 新增机器护栏：排除项命中 git ls-files 追踪路径即记 ERROR（退出码 2），把【禁止借排除项规避扫描】从注释变成强制；③ 新增 gateSelfTest 阶段（PENDING-SELFTEST，使【自检未跑】在每份报告中可见）。 | V1.1 (2026-09-15, WBS-2.2.7): secretsScan 排除项增补未入库的构建/运行产物目录（target/logs/dist/test-results/playwright-report/coverage）；原因：本地后端运行占用 logs/app.log 导致脚本 ReadAllBytes 抛异常、整个门禁崩溃且不出报告（REV-ALL-2026-09-15 DB-01）。V1.1 声明【扫描面不变】，但因 logs 裸词连带排除 docs/logs/ 而实际不成立，已在 V1.2 修正（该失实声明由第 1 轮三视角独立命中，留痕见任务卡与开发日志 -1525）。门禁配置变更须走变更流程留痕（AGENTS §8 第 3 条）。",
+  "changeLog": "V1.3 (2026-09-26, 清债卡4 前端类型收口, 留痕载体 docs/tasks/DB-06-23-24-前端类型-清债小卡-2026-09-25.md 卡4, 编排师裁决 Q4=含): 新增 frontendTypeCheck 阶段（npm run typecheck = vue-tsc -b, workdir frontend, 走既有 npm 阶段循环：goals 白名单/300s 超时/UTF-8 解码全复用）——防止 3.1.12 观察到的 4 处既有 vue-tsc 类型错误类回归（该类缺陷曾阻断前端生产构建 npm run build）。强度只增不减：既有阶段零改动, 仅 runner 前端循环数组加入本段 + selftest.ps1 增 S10 红/绿双探针（typecheck 退出非 0 必 FAIL/1；退出 0 必 PASS/GREEN——防假绿灯）。 | V1.2 (2026-09-15, WBS-2.2.7 第 2 轮修复, 对应债务 DB-16): ① 排除项语义改为【根锚定 + 显式通配】——不以 * 开头只排仓库根下该路径（logs 不再连带排除 docs/logs/），需任意层级的写 '**/x/**'；修复 V1.1 中 61 份入库开发日志（docs/logs/）逃逸密钥扫描的缺陷；② 新增机器护栏：排除项命中 git ls-files 追踪路径即记 ERROR（退出码 2），把【禁止借排除项规避扫描】从注释变成强制；③ 新增 gateSelfTest 阶段（PENDING-SELFTEST，使【自检未跑】在每份报告中可见）。 | V1.1 (2026-09-15, WBS-2.2.7): secretsScan 排除项增补未入库的构建/运行产物目录（target/logs/dist/test-results/playwright-report/coverage）；原因：本地后端运行占用 logs/app.log 导致脚本 ReadAllBytes 抛异常、整个门禁崩溃且不出报告（REV-ALL-2026-09-15 DB-01）。V1.1 声明【扫描面不变】，但因 logs 裸词连带排除 docs/logs/ 而实际不成立，已在 V1.2 修正（该失实声明由第 1 轮三视角独立命中，留痕见任务卡与开发日志 -1525）。门禁配置变更须走变更流程留痕（AGENTS §8 第 3 条）。",
   "thresholds": {
     "coreLineCoverage": 80,
     "overallLineCoverage": 70,
@@ -26,6 +26,7 @@
     "compile": { "enabled": true, "tool": "maven", "goals": "compile" },
     "lint": { "enabled": true, "tool": "checkstyle", "goals": "checkstyle:check" },
     "unitTest": { "enabled": true, "tool": "junit5+archunit", "goals": "test" },
+    "frontendTypeCheck": { "enabled": true, "tool": "npm", "goals": "run typecheck", "workdir": "frontend" },
     "frontendLint": { "enabled": true, "tool": "npm", "goals": "run lint", "workdir": "frontend" },
     "frontendTest": { "enabled": true, "tool": "npm", "goals": "run test", "workdir": "frontend" },
     "frontendE2E": { "enabled": false, "status": "PENDING-CI", "tool": "playwright", "goals": "run e2e", "workdir": "frontend", "note": "WBS-2.4.12: CI 环境浏览器二进制供给待 2.5.x 部署基建评估；本机可 npm run e2e 手动全量" },

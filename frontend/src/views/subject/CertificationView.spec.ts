@@ -171,7 +171,7 @@ describe('认证与档案页（WBS-3.1.5 界面化）', () => {
         const l = i.find('.el-form-item__label')
         return l.exists() && l.text().replace('：', '') === label
       })[0]
-    return item.find('input.el-input__inner')
+    return item.find<HTMLInputElement>('input.el-input__inner')
   }
 
   it('OCR 四要素以值回填核对表单输入框（F2①：行为 2 第 2 条"回填供核对"的前端兑现——模板绑定改坏即红）', async () => {

@@ -311,8 +311,9 @@ foreach ($stageName in @("compile", "lint", "unitTest")) {
     if ($oldJavaHome) { $env:JAVA_HOME = $oldJavaHome } else { Remove-Item Env:JAVA_HOME -ErrorAction SilentlyContinue }
 }
 
-# ---------- Frontend stages (npm; WBS 2.4.12 G1-G3, change-trace: docs/designs/WBS-2.4.12-{lofi,hifi}.md + ADR-011) ----------
-foreach ($stageName in @("frontendLint", "frontendTest", "frontendE2E")) {
+# ---------- Frontend stages (npm; WBS 2.4.12 G1-G3, change-trace: docs/designs/WBS-2.4.12-{lofi,hifi}.md + ADR-011;
+#   frontendTypeCheck added 2026-09-26 by 清债卡4 (config V1.3), change-trace: docs/tasks/DB-06-23-24-前端类型-清债小卡-2026-09-25.md 卡4) ----------
+foreach ($stageName in @("frontendTypeCheck", "frontendLint", "frontendTest", "frontendE2E")) {
     $s = $cfg.stages.$stageName
     if (-not $s -or -not $s.enabled) { continue }
     # defensive allowlist: config values are joined into a cmd.exe command line (same rule as Maven stages);
