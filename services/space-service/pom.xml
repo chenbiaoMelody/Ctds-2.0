@@ -13,9 +13,37 @@
 
   <artifactId>space-service</artifactId>
   <name>space-service</name>
-  <description>空间服务：逻辑空间数据模型（WBS 3.2.2，设计定稿 docs/designs/WBS-3.2.2-hifi.md——本包只建表与领域模型，生命周期/成员权限/策略引擎服务归 3.2.3~3.2.5）</description>
+  <description>空间服务：逻辑空间数据模型与生命周期服务（WBS 3.2.2 建表 + WBS 3.2.3 生命周期，设计定稿 docs/designs/WBS-3.2.3-hifi.md——成员权限归 3.2.4、策略引擎归 3.2.5）</description>
 
   <dependencies>
+    <!-- 平台组件（WBS-3.2.3 hifi §9 第一动作；版本走父 BOM，非第三方新增依赖） -->
+    <dependency>
+      <groupId>com.ctds</groupId>
+      <artifactId>common-errorcode</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.ctds</groupId>
+      <artifactId>common-auth</artifactId>
+    </dependency>
+    <!-- 创建防重复提交（ADR-007 模式 B）：@Idempotent(key=所有者+归一化名)，演示/单测 memory 模式 -->
+    <dependency>
+      <groupId>com.ctds</groupId>
+      <artifactId>common-idempotency</artifactId>
+    </dependency>
+    <!-- 空间检索分页（ADR-005 §3.2）：横切能力复用 common-pagination -->
+    <dependency>
+      <groupId>com.ctds</groupId>
+      <artifactId>common-pagination</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+    <!-- 解散二次确认/要素校验通道（WBS-3.2.3 hifi §1）：依赖 dependencies.md 已登记的 Boot 官方 starter -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-validation</artifactId>
+    </dependency>
     <!-- 数据库迁移工具链（WBS 2.4.10 / ADR-009）：默认 profile 不装载数据源，mysql profile 才启用 -->
     <dependency>
       <groupId>org.springframework.boot</groupId>

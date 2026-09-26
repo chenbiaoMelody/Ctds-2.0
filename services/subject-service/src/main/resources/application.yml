@@ -47,6 +47,8 @@ ctds:
       # DID 服务间只读衔接（WBS-3.1.9 hifi §5）：服务身份专用角色，仅服务间内部只读权限
       # （subject.internal.read 仅本角色持有——申请人/审核员不持有，防状态枚举；评审②P2-1 收敛）
       did-internal: subject.internal.read
+      # 空间服务间只读衔接（WBS-3.2.3 hifi §4，ADR-016 §6 衔接契约补记）：did-internal 先例同款 1 行授权
+      space-internal: subject.internal.read
   # L4 加密唯一入口（ADR-006）：密钥文件经环境变量注入（*.keys，密钥零入库）；
   # 运行期接 KMS（ADR-015）= 设环境变量 CTDS_CRYPTO_KMS_BASEURL（属性存在即启用并覆盖本地文件实现）
   crypto:

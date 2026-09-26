@@ -92,7 +92,7 @@ class SpaceMigrationIntegrationTest {
         return comments;
     }
 
-    /** 探针 0：迁移冒烟——空库执行 V1 成功，六表齐备且逐表"列齐"（含顺序）、迁移历史成功。 */
+    /** 探针 0：迁移冒烟——空库执行迁移脚本成功，六表齐备且逐表"列齐"（含顺序）、迁移历史成功。 */
     @Test
     void migrationSmokeAllSixTablesCreated() throws SQLException {
         final String db = freshDatabaseWithMigration("smoke");
@@ -103,7 +103,8 @@ class SpaceMigrationIntegrationTest {
             assertEquals(expected.getValue(), columnNames(db, expected.getKey()),
                     "表列应齐备且顺序与 hifi §1 一致：" + expected.getKey());
         }
-        assertEquals(1, count(db, "SELECT COUNT(*) FROM flyway_schema_history WHERE success = 1"));
+        // 迁移历史 = V1 建表（3.2.2）+ V2 留痕表动作码登记与值列放宽（3.2.3），随迁移集演进
+        assertEquals(2, count(db, "SELECT COUNT(*) FROM flyway_schema_history WHERE success = 1"));
     }
 
     /** 探针 1：同一所有者活跃同名第二行被拒（规格行为 1 规则 3，uk_owner_norm_name）。 */

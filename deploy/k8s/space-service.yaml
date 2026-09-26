@@ -1,0 +1,17 @@
+# C-TDS space-service Service (WBS-3.2.3, spec: docs/designs/WBS-3.2.3-hifi.md §6;
+# template follows backend-service.yaml per ADR-013, WBS-2.5.2 label conventions).
+apiVersion: v1
+kind: Service
+metadata:
+  name: ctds-space-service
+  labels:
+    app.kubernetes.io/part-of: ctds
+    app.kubernetes.io/name: ctds-space-service
+    app.kubernetes.io/component: backend
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: ctds-space-service
+  ports:
+    - port: 8083
+      targetPort: 8083
