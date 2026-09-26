@@ -368,6 +368,242 @@ foreach ($stageName in @("frontendTypeCheck", "frontendLint", "frontendTest", "f
     }
 }
 
+# ---------- Quality metrics: coverage / mutationTest / sast (DB-06/清债卡1, config V1.4, ADR-018) ----------
+# 通用辅助：按 config 超时运行进程（不经 cmd 拼接，参数直接传递，无 shell 注入面）
+function Invoke-MetricProcess([string]$exe, [string]$argLine, [string]$workDir, [int]$timeoutSec, [string]$stage) {
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $exe
+    $psi.Arguments = $argLine
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.WorkingDirectory = $workDir
+    # DB-19 同款口径：JVM 系工具输出按 UTF-8 解码（中文 Windows 默认 GBK 会乱码红灯明细）
+    $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
+    $psi.StandardErrorEncoding = [System.Text.Encoding]::UTF8
+    $proc = [System.Diagnostics.Process]::Start($psi)
+    $outTask = $proc.StandardOutput.ReadToEndAsync()
+    $errTask = $proc.StandardError.ReadToEndAsync()
+    if (-not $proc.WaitForExit($timeoutSec * 1000)) {
+        try { $proc.Kill() } catch { }
+        return @{ ExitCode = -1; Output = ($stage + " timed out after " + $timeoutSec + "s") }
+    }
+    $null = $outTask.Wait(10000); $null = $errTask.Wait(10000)
+    return @{ ExitCode = $proc.ExitCode; Output = ($outTask.Result + [Environment]::NewLine + $errTask.Result) }
+}
+
+$javaExe = "java"
+if ($toolJavaHome) { $javaExe = Join-Path $toolJavaHome "bin\java.exe" }
+
+# ----- coverage (jacoco 命令行形态：prepare-agent test report 一次完成，零 pom 变更) -----
+$covStage = $cfg.stages.coverage
+if ($covStage -and $covStage.enabled) {
+    if (-not $toolJavaHome -or -not (Test-Path $toolJavaHome)) {
+        Add-Result "coverage" "ERROR" "JAVA_HOME not found (set env JAVA_HOME or gates-config toolchain.javaHome)"
+    } elseif (-not (Get-Command $toolMavenBin -ErrorAction SilentlyContinue)) {
+        Add-Result "coverage" "ERROR" ("Maven executable not found on PATH: " + $toolMavenBin)
+    } elseif ($covStage.goals -and ($covStage.goals -notmatch '^[A-Za-z0-9:._\-\s]+$')) {
+        Add-Result "coverage" "ERROR" "Illegal characters in gates-config stages.coverage.goals - stage SKIPPED, command NOT executed"
+    } else {
+        $covTimeout = 900; if ($covStage.timeoutSeconds) { $covTimeout = [int]$covStage.timeoutSeconds }
+        # cmd /c 包一层（同 maven 段形态）：Process.Start 不解析 PATH，mvn 须经 cmd 定位
+        $argLine = "/c " + $toolMavenBin + " " + $toolMavenArgs + " " + $covStage.goals
+        $r = Invoke-MetricProcess "cmd.exe" $argLine $RepoRoot $covTimeout "coverage"
+        if ($r.ExitCode -eq -1) {
+            Add-Result "coverage" "FAIL" $r.Output
+        } elseif ($r.ExitCode -ne 0) {
+            $tail = (($r.Output -split "`r?`n") | Where-Object { $_.Trim() -ne "" } | Select-Object -Last 5) -join " | "
+            Add-Result "coverage" "FAIL" ("mvn coverage exit " + $r.ExitCode + ": " + $tail)
+        } else {
+            $reportGlobs = @("common\*\target\site\jacoco\jacoco.xml", "services\*\target\site\jacoco\jacoco.xml", "std-adapter\target\site\jacoco\jacoco.xml")
+            $reports = @(); foreach ($g in $reportGlobs) { $reports += @(Get-ChildItem (Join-Path $RepoRoot $g) -ErrorAction SilentlyContinue) }
+            if ($reports.Count -eq 0) {
+                Add-Result "coverage" "FAIL" "mvn coverage exit 0 but no jacoco.xml reports found (report generation silently skipped?)"
+            } else {
+                $totCovered = [long]0; $totMissed = [long]0; $coreRows = @()
+                $coreNames = @(); if ($cfg.coreModules) { $coreNames = @($cfg.coreModules) }
+                foreach ($rep in $reports) {
+                    [xml]$doc = [System.IO.File]::ReadAllText($rep.FullName, [System.Text.Encoding]::UTF8)
+                    $cnt = $doc.report.counter | Where-Object { $_.type -eq "LINE" } | Select-Object -First 1
+                    if (-not $cnt) { continue }
+                    $c = [long]$cnt.covered; $m = [long]$cnt.missed
+                    $totCovered += $c; $totMissed += $m
+                    $moduleName = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $rep.FullName)))
+                    $moduleName = Split-Path -Leaf $moduleName
+                    if ($coreNames -contains $moduleName) {
+                        $pct = if (($c + $m) -gt 0) { [math]::Round(100.0 * $c / ($c + $m), 2) } else { 0 }
+                        $coreRows += ($moduleName + " " + $pct + "%")
+                    }
+                }
+                $overallPct = if (($totCovered + $totMissed) -gt 0) { [math]::Round(100.0 * $totCovered / ($totCovered + $totMissed), 2) } else { 0 }
+                $coreLine = 80.0; $overallLine = 70.0
+                if ($cfg.thresholds -and $cfg.thresholds.coreLineCoverage) { $coreLine = [double]$cfg.thresholds.coreLineCoverage }
+                if ($cfg.thresholds -and $cfg.thresholds.overallLineCoverage) { $overallLine = [double]$cfg.thresholds.overallLineCoverage }
+                $bad = @()
+                if ($overallPct -lt $overallLine) { $bad += ("overall " + $overallPct + "% < " + $overallLine + "%") }
+                foreach ($coreRep in $reports) {
+                    [xml]$doc2 = [System.IO.File]::ReadAllText($coreRep.FullName, [System.Text.Encoding]::UTF8)
+                    $cnt2 = $doc2.report.counter | Where-Object { $_.type -eq "LINE" } | Select-Object -First 1
+                    if (-not $cnt2) { $bad += ("core:" + (Split-Path -Leaf (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $coreRep.FullName))))) + " report has no LINE counter (silent skip is not allowed)"); continue }
+                    $c2 = [long]$cnt2.covered; $m2 = [long]$cnt2.missed
+                    $mName = Split-Path -Leaf (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $coreRep.FullName))))
+                    if (($coreNames -contains $mName) -and (($c2 + $m2) -gt 0)) {
+                        $p2 = 100.0 * $c2 / ($c2 + $m2)
+                        if ($p2 -lt $coreLine) { $bad += ("core:" + $mName + " " + [math]::Round($p2, 2) + "% < " + $coreLine + "%") }
+                    }
+                }
+                $detail = ("overall line " + $overallPct + "% (" + $totCovered + "/" + ($totCovered + $totMissed) + "), core [" + ($coreRows -join ", ") + "], thresholds core>=" + $coreLine + "% overall>=" + $overallLine + "%")
+                if ($bad.Count -gt 0) { Add-Result "coverage" "FAIL" ($detail + " - " + ($bad -join "; ")) }
+                else { Add-Result "coverage" "PASS" $detail }
+            }
+        }
+    }
+}
+
+# ----- mutationTest (PIT CLI: bundle 聚合 -> classpath 生成 -> 模块根运行 -> CSV 解析) -----
+$mutStage = $cfg.stages.mutationTest
+if ($mutStage -and $mutStage.enabled) {
+    if (-not (Test-Path $javaExe)) {
+        Add-Result "mutationTest" "ERROR" ("java executable not found: " + $javaExe + " (check JAVA_HOME / toolchain.javaHome)")
+    } else {
+        $bundleDir = Join-Path $RepoRoot "target\precheck\pit-bundle"
+        $marker = Join-Path $bundleDir "bundle-ready.flag"
+        $bundleOk = (Test-Path $marker) -and (@(Get-ChildItem (Join-Path $bundleDir "*.jar") -ErrorAction SilentlyContinue).Count -gt 0)
+        if (-not $bundleOk) {
+            $deps = @(); if ($mutStage.bundle -and $mutStage.bundle.dependencies) { $deps = @($mutStage.bundle.dependencies) }
+            $pomLines = @('<?xml version="1.0" encoding="UTF-8"?>', '<project xmlns="http://maven.apache.org/POM/4.0.0">', '  <modelVersion>4.0.0</modelVersion>', '  <groupId>ctds.gate</groupId><artifactId>pit-bundle-assembly</artifactId><version>1.0.0</version><packaging>pom</packaging>', '  <dependencies>')
+            foreach ($d in $deps) { $pomLines += ('    <dependency><groupId>' + $d.groupId + '</groupId><artifactId>' + $d.artifactId + '</artifactId><version>' + $d.version + '</version></dependency>') }
+            $pomLines += @('  </dependencies>', '</project>')
+            New-Item -ItemType Directory -Path $bundleDir -Force | Out-Null
+            [System.IO.File]::WriteAllLines((Join-Path $bundleDir "pom.xml"), $pomLines)
+            $r = Invoke-MetricProcess "cmd.exe" ("/c " + $toolMavenBin + " -f pom.xml -B -ntp -q dependency:copy-dependencies -DoutputDirectory=.") $bundleDir 300 "mutationTest.bundle"
+            $keyJars = @(); foreach ($d in $deps) { $keyJars += ($d.artifactId + "-" + $d.version + ".jar") }
+            $missing = @($keyJars | Where-Object { -not (Test-Path (Join-Path $bundleDir $_)) })
+            if ($r.ExitCode -ne 0 -or $missing.Count -gt 0) {
+                Add-Result "mutationTest" "ERROR" ("PIT bundle assembly failed (mvn exit " + $r.ExitCode + ", missing: " + ($missing -join ", ") + ") - run once with network/mirror access; see ADR-018")
+            } else {
+                [System.IO.File]::WriteAllText($marker, "ok")
+                $bundleOk = $true
+            }
+        }
+        if ($bundleOk) {
+            $mutTimeout = 1800; if ($mutStage.timeoutSeconds) { $mutTimeout = [int]$mutStage.timeoutSeconds }
+            $mutExc = "*IntegrationTest"; if ($mutStage.excludedTestClasses) { $mutExc = $mutStage.excludedTestClasses }
+            $killTh = 60.0; if ($cfg.thresholds -and $cfg.thresholds.mutationKillRate) { $killTh = [double]$cfg.thresholds.mutationKillRate }
+            if (-not (Test-Path $javaExe)) {
+                Add-Result "mutationTest" "ERROR" ("java executable not found: " + $javaExe + " (check JAVA_HOME / toolchain.javaHome)")
+            } else {
+            $modRows = @(); $badMods = @()
+            foreach ($m in @($mutStage.modules)) {
+                $modDir = Join-Path $RepoRoot $m.moduleDir
+                if (-not (Test-Path (Join-Path $modDir "target\classes"))) {
+                    $badMods += ($m.name + ": classes not found (compile stage must run first)"); continue
+                }
+                $rCp = Invoke-MetricProcess "cmd.exe" ("/c " + $toolMavenBin + " dependency:build-classpath -Dmdep.outputFile=target/pit-cp.txt -B -ntp -q") $modDir 300 "mutationTest.classpath"
+                if ($rCp.ExitCode -ne 0) { $badMods += ($m.name + ": classpath generation failed"); continue }
+                $cpText = ([System.IO.File]::ReadAllText((Join-Path $modDir "target\pit-cp.txt"), [System.Text.Encoding]::UTF8)).Trim()
+                $fullCp = "target/classes;target/test-classes;" + $cpText + ";" + ((Join-Path $RepoRoot "target\precheck\pit-bundle") + "\*")
+                $mutTargetTests = "com.ctds.*"; if ($mutStage.targetTests) { $mutTargetTests = $mutStage.targetTests }
+                $pitArgs = "-cp `"" + $fullCp + "`" org.pitest.mutationtest.commandline.MutationCoverageReport --reportDir=target/pit-reports --outputFormats=XML,CSV --targetClasses=`"" + $m.targetPackages + "`" --targetTests=`"" + $mutTargetTests + "`" --excludedTestClasses=`"" + $mutExc + "`" --sourceDirs=`"" + $m.sourceDir + "`""
+                $r = Invoke-MetricProcess $javaExe $pitArgs $modDir $mutTimeout ("mutationTest." + $m.name)
+                $xmlPath = Join-Path $modDir "target\pit-reports\mutations.xml"
+                if ($r.ExitCode -eq -1) {
+                    $badMods += ($m.name + ": timed out after " + $mutTimeout + "s"); continue
+                }
+                if (-not (Test-Path $xmlPath)) {
+                    $why = (($r.Output -split "`r?`n") | Where-Object { $_ -match "PitHelpError|SEVERE" } | Select-Object -First 1)
+                    $badMods += ($m.name + ": no mutation report (exit " + $r.ExitCode + ") " + $why); continue
+                }
+                # PIT 的 mutations.csv 无表头行，改解析 mutations.xml（mutation 元素 detected/status 属性；
+                # detected=true 含 KILLED 与 TIMED_OUT，SURVIVED/NO_COVERAGE 计入分母 = 保守口径）
+                [xml]$mx = [System.IO.File]::ReadAllText($xmlPath, [System.Text.Encoding]::UTF8)
+                $all = @($mx.mutations.mutation)
+                $total = $all.Count
+                $detected = @($all | Where-Object { $_.detected -eq "true" }).Count
+                if ($total -eq 0) { $badMods += ($m.name + ": empty mutation report"); continue }
+                $score = [math]::Round(100.0 * $detected / $total, 2)
+                $modRows += ($m.name + " " + $score + "% (" + $detected + "/" + $total + ")")
+                if ($score -lt $killTh) { $badMods += ($m.name + " " + $score + "% < " + $killTh + "%") }
+            }
+            $detail = ("kill rate thresholds>=" + $killTh + "% [" + ($modRows -join ", ") + "]")
+            if ($badMods.Count -gt 0) { Add-Result "mutationTest" "FAIL" ($detail + " - " + ($badMods -join "; ")) }
+            elseif ($modRows.Count -eq 0) { Add-Result "mutationTest" "FAIL" "no modules executed (configuration error)" }
+            else { Add-Result "mutationTest" "PASS" $detail }
+            }
+        }
+    }
+}
+
+# ----- sast (semgrep 官方镜像，docker 运行时扫描 Java 主源集副本——规避仓库路径空格) -----
+$sastStage = $cfg.stages.sast
+if ($sastStage -and $sastStage.enabled) {
+    if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+        Add-Result "sast" "ERROR" "docker executable not found on PATH (required for semgrep stage)"
+    } else {
+        $image = $sastStage.image; $ruleset = $sastStage.ruleset
+        $null = docker image inspect $image 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Add-Result "sast" "ERROR" ("image not present locally: " + $image + " - pull it manually first (supply-chain leave-trace, no auto-pull; see ADR-018)")
+        } else {
+            $scanTemp = Join-Path $env:TEMP ("ctds-sast-" + (Get-Date -Format "yyyyMMdd-HHmmss"))
+            New-Item -ItemType Directory -Path $scanTemp -Force | Out-Null
+            $copied = @()
+            foreach ($root in @($sastStage.scanRoots)) {
+                # 组根（services/common）下枚举模块级源集 + 组根直属源集（std-adapter）两种形态都支持
+                $srcDirs = @()
+                $direct = Join-Path $RepoRoot ($root + "\src\main")
+                if (Test-Path $direct) { $srcDirs += $direct }
+                $mods = Get-ChildItem (Join-Path $RepoRoot $root) -Directory -ErrorAction SilentlyContinue
+                foreach ($mod in $mods) {
+                    $mpath = Join-Path $mod.FullName "src\main"
+                    if (Test-Path $mpath) { $srcDirs += $mpath }
+                }
+                foreach ($src in $srcDirs) {
+                    $rel = $src.Substring($RepoRoot.Length).TrimStart("\")
+                    $dst = Join-Path $scanTemp $rel
+                    New-Item -ItemType Directory -Path (Split-Path -Parent $dst) -Force | Out-Null
+                    Copy-Item $src $dst -Recurse -Force
+                    $copied += $rel
+                }
+            }
+            if ($copied.Count -eq 0) {
+                Add-Result "sast" "ERROR" "no Java main source sets found to scan (scanRoots misconfigured?)"
+            } else {
+                $dockerArgs = "/c docker run --rm -v `"" + $scanTemp + ":/src`" " + $image + " semgrep --config " + $ruleset + " --json --quiet /src"
+                $sastTimeout = 900; if ($sastStage.timeoutSeconds) { $sastTimeout = [int]$sastStage.timeoutSeconds }
+                $r = Invoke-MetricProcess "cmd.exe" $dockerArgs $RepoRoot $sastTimeout "sast"
+                if ($r.ExitCode -eq -1) {
+                    Add-Result "sast" "FAIL" $r.Output
+                } elseif ($r.ExitCode -ne 0) {
+                    $tail = (($r.Output -split "`r?`n") | Where-Object { $_.Trim() -ne "" } | Select-Object -Last 4) -join " | "
+                    Add-Result "sast" "ERROR" ("semgrep run failed (exit " + $r.ExitCode + "): " + $tail)
+                } else {
+                    try { $sj = ConvertFrom-Json ($r.Output -join " ") } catch { $sj = $null }
+                    if (-not $sj) {
+                        Add-Result "sast" "ERROR" "semgrep returned unparseable output (no JSON)"
+                    } else {
+                        $hits = @($sj.results)
+                        $scanErrs = @($sj.errors)
+                        if ($scanErrs.Count -gt 0) {
+                            # 部分文件扫描失败时 results 可能为空——errors 非空即 ERROR，防"扫不动=0 热点"假绿
+                            $e0 = ($scanErrs | Select-Object -First 1).message
+                            if ($e0) { $e0 = $e0.ToString() } 
+                            if ($e0 -and $e0.Length -gt 120) { $e0 = $e0.Substring(0, 120) }
+                            Add-Result "sast" "ERROR" ("semgrep reported " + $scanErrs.Count + " scan error(s) [" + $e0 + "] - results incomplete, not a clean 0-finding pass")
+                        } elseif ($hits.Count -eq 0) {
+                            Add-Result "sast" "PASS" ("semgrep " + $ruleset + ": 0 findings across " + ($copied -join ", ") + " main source sets")
+                        } else {
+                            $first = ($hits | Select-Object -First 3 | ForEach-Object { $_.check_id + "@" + $_.path }) -join "; "
+                            Add-Result "sast" "FAIL" ($hits.Count + " finding(s) [" + $first + "] - review before merge")
+                        }
+                    }
+                }
+            }
+            Remove-Item -Path $scanTemp -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
 # ---------- Pending stages (toolchain blocked by ADR-001 approval) ----------
 foreach ($prop in $cfg.stages.PSObject.Properties) {
     $s = $prop.Value
