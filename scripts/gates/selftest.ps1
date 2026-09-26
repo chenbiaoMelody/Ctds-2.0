@@ -17,6 +17,9 @@
 #   S9 Maven goals containing an illegal character -> that stage reports ERROR "NOT executed"
 #                                    (the R5 anchor, DB-17 N2: a command is never launched from an
 #                                    illegal config; regression of the allowlist order fails here)
+#   S10 frontendTypeCheck wiring (config V1.3, 清债卡4) -> stub typecheck exit 1 = FAIL/RED/exit 1,
+#                                    exit 0 = PASS/GREEN/exit 0 (red/green double probe: the npm-loop
+#                                    stage is genuinely executed and a type failure can never be green)
 # How: every scenario builds a hermetic fixture repo under %TEMP% (git init + git add, cheap stages
 # only), generates its config FROM THE REAL gates-config.json (so the real exclude list is what gets
 # exercised), runs scripts/gates/run-gates.ps1 against it and asserts on the report file / stdout /
