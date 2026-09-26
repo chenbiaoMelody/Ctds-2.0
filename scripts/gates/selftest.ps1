@@ -22,7 +22,11 @@
 #                                    stage is genuinely executed and a type failure can never be green)
 #   S11 metric stages fail-visible (config V1.4, 清债卡1/DB-06) -> coverage/mutationTest/sast in a
 #                                    bare fixture: FAIL/ERROR rows + verdict RED, NEVER a silent PASS;
+#                                    coverage threshold-polarity probe (10% < 70% must FAIL);
 #                                    reverse probe (stages off) -> GREEN (fail-visible, not fail-silent)
+#   S11b mvn nonzero-exit branch (清债卡1 复审尾巴) -> stub mvn exits 3 = coverage FAIL naming the
+#                                    exit code (the threshold probe's exit-0 stub no longer covers
+#                                    the "mvn exit != 0 -> FAIL" branch)
 # How: every scenario builds a hermetic fixture repo under %TEMP% (git init + git add, cheap stages
 # only), generates its config FROM THE REAL gates-config.json (so the real exclude list is what gets
 # exercised), runs scripts/gates/run-gates.ps1 against it and asserts on the report file / stdout /
@@ -357,18 +361,19 @@ Assert-Contains $repGreenText "-> GREEN" "S10 green probe verdict GREEN (so the 
 
 # ---------- S11: quality metric stages wiring (DB-06/清债卡1, config V1.4) - fail-visible + reverse probe ----------
 # The three metric stages (coverage / mutationTest / sast) must never pass silently in a fixture that
-# cannot support them: coverage runs real Maven (fails -> FAIL, never PASS), mutationTest cannot find
-# module classes (FAIL via badMods), sast finds no source sets (ERROR). Fixture enables all three:
-# fixture has no pom.xml -> Maven fails fast (~seconds); the KEY assertion is that no stage reports
-# PASS (a short-circuited "always PASS" implementation would turn this scenario green and fail S11).
+# cannot support them: a stub mvn.cmd on PATH (fixture dir prepended to PATH, restored in finally)
+# exits 0, so coverage reaches its parse/threshold branch and must FAIL on the hand-crafted
+# LOW-coverage jacoco.xml (100/1000 = 10% < 70%); mutationTest cannot find module classes (FAIL via
+# badMods); sast finds no source sets (ERROR). The KEY assertion is that no stage reports PASS (a
+# short-circuited "always PASS" implementation would turn this scenario green and fail S11).
+# Threshold-polarity probe (评审④裁决采纳，任务卡验收口径"阈值未达标必红"): without this probe the
+# "-lt threshold" polarity could invert with every table still green. mutationTest/sast threshold
+# branches are exempt (registered in ADR-018 影响范围行): a real PIT/semgrep fixture is not feasible
+# and their numeric paths are anchored by the real-repo reports.
+# S11b (复审尾巴修复): the exit-0 stub means S11's coverage FAIL comes from the threshold branch, so
+# the "mvn exit != 0 -> FAIL" branch lost its fixture coverage when the stub replaced the real Maven
+# failure (复审 P3-3). S11b re-anchors it with a second stub that exits 3.
 # Reverse probe: all three disabled -> GREEN/0 (so any red above is attributable to the stages).
-# Threshold-polarity probe (评审④裁决采纳，任务卡验收口径"阈值未达标必红"): a stub mvn.cmd on PATH
-# (fixture dir prepended to PATH, restored in finally) exits 0 and a hand-crafted LOW-coverage
-# jacoco.xml (100/1000 = 10% < 70%) is already in the fixture -> the runner must reach the parsing
-# and threshold branch and turn coverage FAIL. Without this probe the "-lt threshold" polarity could
-# invert with every table still green. mutationTest/sast threshold branches are exempt (registered in
-# ADR-018): a real PIT/semgrep fixture is not feasible and their numeric paths are anchored by the
-# real-repo reports.
 Write-Output ""
 Write-Output "S11 [metric stages fail-visible] expect: coverage FAIL + mutationTest FAIL/ERROR + sast ERROR, verdict RED, exit 1"
 $fix = New-Fixture "s11"
@@ -397,8 +402,7 @@ try {
 } finally { $env:PATH = $savedPath }
 Assert-True ($r.ExitCode -eq 1) ("S11 exit code 1 (got " + $r.ExitCode + ")")
 $repText = Read-Report $rep
-Assert-Contains $repText "| coverage | FAIL |" "S11 coverage cannot pass in a fixture (real Maven run failed)"
-Assert-Contains $repText "coverage | FAIL |" "S11 the FAIL names the real Maven exit"
+Assert-Contains $repText "| coverage | FAIL |" "S11 coverage FAIL row present (exit-0 stub lets the threshold branch drive it)"
 Assert-Contains $repText "overall line 10%" "S11 threshold probe: the low-coverage report reaches the numeric branch (10% parsed)"
 Assert-Contains $repText "< 70%" "S11 threshold probe: below-threshold coverage turns FAIL (polarity anchored)"
 Assert-True (-not ($repText -match "\| coverage \| PASS \|")) "S11 coverage must NEVER report PASS in a fixture without reports"
@@ -411,6 +415,29 @@ $repControl = Join-Path $script:workDir "s11-control-report.md"
 $rControl = Invoke-Runner $fix $cfgControl $repControl "selftest-s11-control-probe"
 Assert-True ($rControl.ExitCode -eq 0) ("S11 reverse probe exit code 0 (got " + $rControl.ExitCode + ")")
 Assert-Contains (Read-Report $repControl) "-> GREEN" "S11 reverse probe verdict GREEN (so the S11 red is attributable to the metric stages)"
+# ---------- S11b: mvn nonzero-exit branch probe (清债卡1 复审尾巴修复) ----------
+# The S11 stub exits 0, so its coverage FAIL comes from the threshold branch; the "mvn exit != 0 ->
+# FAIL" branch in the coverage stage lost its fixture coverage when the stub replaced the real Maven
+# failure (复审 P3-3). S11b re-anchors it: a second stub exits 3 -> coverage FAIL must name the exit.
+Write-Output ""
+Write-Output "S11b [mvn nonzero-exit branch] expect: coverage FAIL naming 'mvn coverage exit 3', verdict RED, exit 1"
+$stubFailDir = Join-Path $fix "stub-bin-fail"
+New-Item -ItemType Directory -Path $stubFailDir -Force | Out-Null
+[System.IO.File]::WriteAllText((Join-Path $stubFailDir "mvn.cmd"), "@echo off" + [Environment]::NewLine + "exit /b 3" + [Environment]::NewLine, $utf8NoBom)
+$cfgExit = New-FixtureConfig $fix "cfg-s11b.json" $false "" $null
+$cfgExitObj = ConvertFrom-Json -InputObject ([System.IO.File]::ReadAllText($cfgExit, [System.Text.Encoding]::UTF8))
+$cfgExitObj.stages.coverage.enabled = $true
+[System.IO.File]::WriteAllText($cfgExit, ($cfgExitObj | ConvertTo-Json -Depth 10), $utf8NoBom)
+$repExit = Join-Path $script:workDir "s11b-report.md"
+$savedPath2 = $env:PATH
+try {
+    $env:PATH = $stubFailDir + ";" + $env:PATH
+    $rExit = Invoke-Runner $fix $cfgExit $repExit "selftest-s11b-mvn-exit"
+} finally { $env:PATH = $savedPath2 }
+Assert-True ($rExit.ExitCode -eq 1) ("S11b exit code 1 (got " + $rExit.ExitCode + ")")
+$repExitText = Read-Report $repExit
+Assert-Contains $repExitText "| coverage | FAIL |" "S11b nonzero mvn exit turns coverage FAIL"
+Assert-Contains $repExitText "mvn coverage exit 3" "S11b the FAIL names the real Maven exit code"
 
 
 } catch {
