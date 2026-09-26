@@ -9,6 +9,9 @@ spring:
 
 server:
   port: 8082
+  # 防御性回环（清债卡3 / DB-24）：默认 profile 虽不可启动，仍显式绑定回环作配置级安全默认，
+  # 与 mysql profile 的演示期安全边界（ADR-016 §2.7）同口径；只增不减、无行为影响。
+  address: 127.0.0.1
 
 # 指标暴露（ADR-014 最小暴露面）：只开 health 探活
 management:
