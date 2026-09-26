@@ -247,6 +247,8 @@ class CertificationIntegrationTest {
         // WBS-3.1.6 T1（规格行为 3 第 3 条"次日自动恢复"的库级口径；剧本 S2 步骤 4 依赖）：
         // 昨日 5 条 FAIL(counted=1) 不占今日额度，第 6 次（今日第 1 次）正常发起并通过；
         // 对照锚：今日已 5 FAIL → 第 6 次仍拒 1004B0005（防止把窗口条件整体删错的同义反复）
+        // 偏移钟口径固化另见 TwoClocksOffsetIntegrationTest（DB-23：本用例与该类是同一行为的
+        // 同钟/偏移钟两态——造数若回退 SQL NOW()，本用例只在本地 0~8 点窗口红，该类类级必红）。
         final String yesterday = registerAndUploadAndConfirm("91330100MA27X8AB0B", "次日恢复演示公司");
         insertVerificationRows(yesterday, "FAIL", 1, -1, 5);
         verifyLegal(yesterday, LEGAL_PERSON_ID_OK, APPLICANT)
