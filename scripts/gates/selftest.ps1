@@ -17,6 +17,9 @@
 #   S9 Maven goals containing an illegal character -> that stage reports ERROR "NOT executed"
 #                                    (the R5 anchor, DB-17 N2: a command is never launched from an
 #                                    illegal config; regression of the allowlist order fails here)
+#   S10 frontendTypeCheck wiring (config V1.3, 清债卡4) -> stub typecheck exit 1 = FAIL/RED/exit 1,
+#                                    exit 0 = PASS/GREEN/exit 0 (red/green double probe: the npm-loop
+#                                    stage is genuinely executed and a type failure can never be green)
 # How: every scenario builds a hermetic fixture repo under %TEMP% (git init + git add, cheap stages
 # only), generates its config FROM THE REAL gates-config.json (so the real exclude list is what gets
 # exercised), runs scripts/gates/run-gates.ps1 against it and asserts on the report file / stdout /
@@ -86,7 +89,7 @@ function Set-StageEnabled($cfgObj, [string]$stageName, [bool]$enabled) {
 function New-FixtureConfig([string]$dir, [string]$fileName, [bool]$mavenStages, [string]$javaHome, [string[]]$extraExclude) {
     $cfgText = [System.IO.File]::ReadAllText($realConfig, [System.Text.Encoding]::UTF8)
     $cfgObj = ConvertFrom-Json -InputObject $cfgText
-    foreach ($n in @("compile", "lint", "unitTest", "frontendLint", "frontendTest", "frontendE2E")) { Set-StageEnabled $cfgObj $n $false }
+    foreach ($n in @("compile", "lint", "unitTest", "frontendTypeCheck", "frontendLint", "frontendTest", "frontendE2E")) { Set-StageEnabled $cfgObj $n $false }
     if ($mavenStages) {
         foreach ($n in @("compile", "lint", "unitTest")) { Set-StageEnabled $cfgObj $n $true }
         $cfgObj.toolchain.javaHome = $javaHome
@@ -309,6 +312,45 @@ Assert-Contains $repText "stages.compile.goals" "S9 the ERROR names the offendin
 } finally {
     if ($savedJavaHome) { $env:JAVA_HOME = $savedJavaHome }
 }
+
+# ---------- S10: frontendTypeCheck wiring (清债卡4, config V1.3) - red/green double probe ----------
+# The stage must be genuinely executed via the npm loop (config goals "run typecheck" -> fixture
+# package.json script). vue-tsc itself is not installed in fixtures, so the probe substitutes a
+# stub script whose exit code stands in for the type-check verdict:
+#   red probe   (exit 1) -> frontendTypeCheck FAIL, verdict RED, exit 1  (a type failure can NEVER be green)
+#   green probe (exit 0) -> frontendTypeCheck PASS, verdict GREEN, exit 0 (wiring works end to end)
+Write-Output ""
+Write-Output "S10 [frontendTypeCheck wiring] expect: stub typecheck exit 1 -> FAIL/RED/1; exit 0 -> PASS/GREEN/0"
+$fix = New-Fixture "s10"
+Initialize-FixtureGit $fix
+$fixFrontend = Join-Path $fix "frontend"
+New-Item -ItemType Directory -Path $fixFrontend -Force | Out-Null
+[System.IO.File]::WriteAllText((Join-Path $fixFrontend "exit1.js"), "process.exit(1)" + [Environment]::NewLine, $utf8NoBom)
+[System.IO.File]::WriteAllText((Join-Path $fixFrontend "exit0.js"), "process.exit(0)" + [Environment]::NewLine, $utf8NoBom)
+$pkgJson = Join-Path $fixFrontend "package.json"
+$cfg = New-FixtureConfig $fix "cfg-s10.json" $false "" $null
+# New-FixtureConfig turns every frontend stage off (S1-S9 fixtures have no frontend/package.json);
+# S10 is the one scenario that exercises this stage, so re-enable it on the derived config (S9 pattern).
+$cfgObj = ConvertFrom-Json -InputObject ([System.IO.File]::ReadAllText($cfg, [System.Text.Encoding]::UTF8))
+$cfgObj.stages.frontendTypeCheck.enabled = $true
+[System.IO.File]::WriteAllText($cfg, ($cfgObj | ConvertTo-Json -Depth 10), $utf8NoBom)
+$rep = Join-Path $script:workDir "s10-report.md"
+# red probe: the stub typecheck exits 1 -> the gate must turn RED (never silently green)
+[System.IO.File]::WriteAllText($pkgJson, ('{"name":"fixture-frontend","version":"0.0.0","private":true,"scripts":{"typecheck":"node exit1.js"}}' + [Environment]::NewLine), $utf8NoBom)
+$r = Invoke-Runner $fix $cfg $rep "selftest-s10-frontend-typecheck-red"
+Assert-True ($r.ExitCode -eq 1) ("S10 red probe exit code 1 (got " + $r.ExitCode + ")")
+$repText = Read-Report $rep
+Assert-Contains $repText "| frontendTypeCheck | FAIL |" "S10 red probe: the failing typecheck turns the stage FAIL"
+Assert-Contains $repText "npm run typecheck exit 1" "S10 red probe: the FAIL names the actual command and exit code"
+Assert-Contains $repText "-> RED" "S10 red probe verdict RED"
+# green probe: same fixture, stub exits 0 -> PASS and GREEN (so the red above is attributable to the stub)
+[System.IO.File]::WriteAllText($pkgJson, ('{"name":"fixture-frontend","version":"0.0.0","private":true,"scripts":{"typecheck":"node exit0.js"}}' + [Environment]::NewLine), $utf8NoBom)
+$repGreen = Join-Path $script:workDir "s10-green-report.md"
+$rGreen = Invoke-Runner $fix $cfg $repGreen "selftest-s10-frontend-typecheck-green"
+Assert-True ($rGreen.ExitCode -eq 0) ("S10 green probe exit code 0 (got " + $rGreen.ExitCode + ")")
+$repGreenText = Read-Report $repGreen
+Assert-Contains $repGreenText "| frontendTypeCheck | PASS |" "S10 green probe: the passing typecheck turns the stage PASS"
+Assert-Contains $repGreenText "-> GREEN" "S10 green probe verdict GREEN (so the S10 red is attributable to the injected type failure)"
 
 } catch {
     Write-Output ""
