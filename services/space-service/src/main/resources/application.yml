@@ -1,0 +1,16 @@
+spring:
+  application:
+    name: space-service
+  # 数据库迁移工具链（WBS 2.4.10 / ADR-009），沿 subject-service 同款模式：**默认 profile 不可启动**——
+  # classpath 上有 spring-boot-starter-jdbc 会激活 DataSourceAutoConfiguration 并要求配置数据源，
+  # 默认 profile 显式排除（本包虽无 Repository，但保持"默认不挂库"的安全默认，只增不减）；
+  # 演示与服务一律 mysql profile（application-mysql.yml）。
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+
+server:
+  port: 8083
+  # 防御性回环（清债卡3 / DB-24 同族口径）：默认 profile 亦显式绑定回环作配置级安全默认；
+  # 演示期安全边界 ADR-016 §2.7——服务仅本机可达，不得对外暴露。
+  address: 127.0.0.1

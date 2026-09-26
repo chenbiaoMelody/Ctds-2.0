@@ -1,0 +1,19 @@
+spring:
+  # 清空默认 profile 的 DataSourceAutoConfiguration 排除项（数据源 + Flyway 在本 profile 生效）
+  autoconfigure:
+    exclude: ""
+  datasource:
+    url: ${CTDS_DB_URL:jdbc:mysql://localhost:3306/ctds_space}
+    username: ${CTDS_DB_USER:root}
+    # 口令只经环境变量注入（密钥零入库，章程红线 7）；默认空 = 未配置不可用
+    password: ${CTDS_DB_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    out-of-order: false
+    baseline-on-migrate: false
+
+server:
+  # AUD-03 演示期安全边界 = 网络隔离：服务仅绑定回环地址，不得对外暴露端口（ADR-016 §2.7）
+  address: 127.0.0.1

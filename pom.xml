@@ -31,6 +31,7 @@
     <module>services/kms</module>
     <module>services/subject-service</module>
     <module>services/did</module>
+    <module>services/space-service</module>
   </modules>
 
   <properties>
