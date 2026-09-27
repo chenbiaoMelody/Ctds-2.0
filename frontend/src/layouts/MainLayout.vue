@@ -131,7 +131,7 @@ function onSaveIdentity() {
             v-model="subjectNo"
             size="small"
             class="identity-subject"
-            placeholder="演示主体编号"
+            placeholder="如 S20260925000001"
             aria-label="演示身份主体编号"
           />
           <el-select

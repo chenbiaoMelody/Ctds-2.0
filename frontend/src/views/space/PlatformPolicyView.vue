@@ -6,6 +6,7 @@
  * - 错误一律原样展示后端文案（如 `1006C0012` 键或值不合目录要求）。
  */
 import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ApiError } from '../../api/client'
 import {
@@ -22,7 +23,9 @@ import {
   policyDisplayName,
   policyValueLabel,
 } from '../../constants/space'
+import { guideToLoginIfAuthFailed } from './authGuide'
 
+const router = useRouter()
 const loading = ref(false)
 const items = ref<PolicyEntry[]>([])
 const total = ref(0)
@@ -46,6 +49,7 @@ async function load(): Promise<void> {
     items.value = page.list
     total.value = page.total
   } catch (error) {
+    if (guideToLoginIfAuthFailed(error, router)) return
     ElMessage.error(error instanceof ApiError ? error.message : '平台策略条目加载失败，请稍后重试')
   } finally {
     loading.value = false
@@ -81,6 +85,7 @@ async function submitCreate(): Promise<void> {
     createVisible.value = false
     await load()
   } catch (error) {
+    if (guideToLoginIfAuthFailed(error, router)) return
     ElMessage.error(error instanceof ApiError ? error.message : '新建失败，请稍后重试')
   }
 }
@@ -108,6 +113,7 @@ async function submitEdit(): Promise<void> {
     editVisible.value = false
     await load()
   } catch (error) {
+    if (guideToLoginIfAuthFailed(error, router)) return
     ElMessage.error(error instanceof ApiError ? error.message : '变更失败，请稍后重试')
   }
 }

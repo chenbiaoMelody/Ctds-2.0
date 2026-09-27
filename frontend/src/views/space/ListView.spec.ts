@@ -1,15 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import ElementPlus from 'element-plus'
-import { createRouter, createMemoryHistory } from 'vue-router'
+import { createRouter, createMemoryHistory, type Router } from 'vue-router'
 import ListView from './ListView.vue'
 import { createSpace, listSpaces, type SpaceSummary } from '../../api/space'
 import { ApiError } from '../../api/client'
-import { SPACE_LIST_EMPTY_TIP } from '../../constants/space'
+import { AUTH_FAILED_CODE, SPACE_LIST_EMPTY_TIP } from '../../constants/space'
+import { isDemoAuthed, signInDemo } from '../../stores/demoAuth'
 
 /**
- * 逻辑空间列表页测试（WBS-3.2.6 hifi §6.2 + §7 T5~T9）：
- * 字段渲染 / 空态 / 检索传参与重置 / 创建成功刷新 / 创建被拒文案原样展示。
+ * 逻辑空间列表页测试（WBS-3.2.6 hifi §6.2 + §7 T5~T9；评审 R3/R6 补齐）：
+ * 字段渲染 / 空态 / 分页传参与刷新 / 分页越界原样展示 / 检索传参与重置 /
+ * 创建成功刷新 / 创建被拒文案原样展示 / 认证失效引导回登录页。
  */
 vi.mock('../../api/space', () => ({
   listSpaces: vi.fn(),
@@ -38,6 +40,8 @@ function page(list: SpaceSummary[]) {
   return { list, total: list.length, pageNum: 1, pageSize: 10, totalPages: 1 }
 }
 
+let currentRouter: Router
+
 async function mountPage() {
   const router = createRouter({
     history: createMemoryHistory(),
@@ -45,8 +49,10 @@ async function mountPage() {
       { path: '/spaces', name: 'space-list', component: { template: '<div />' } },
       { path: '/spaces/:id', name: 'space-detail', component: { template: '<div />' } },
       { path: '/spaces/my-admissions', name: 'space-my-admissions', component: { template: '<div />' } },
+      { path: '/login', name: 'login', component: { template: '<div />' } },
     ],
   })
+  currentRouter = router
   await router.push('/spaces')
   await router.isReady()
   const wrapper = mount(ListView, {
@@ -93,11 +99,57 @@ describe('列表渲染（T5）', () => {
     expect(wrapper.text()).toContain(SPACE_LIST_EMPTY_TIP)
   })
 
-  it('加载失败时原样展示后端业务文案', async () => {
-    mockedList.mockRejectedValue(new ApiError('1000C0002', '认证失败或身份已失效'))
+  it('总页数 > 1 时显示分页控件，并按下发的总数 / 每页条数渲染（T5 分页）', async () => {
+    mockedList.mockResolvedValue({ list: [space()], total: 25, pageNum: 1, pageSize: 10, totalPages: 3 })
+    const wrapper = await mountPage()
+    expect(wrapper.find('.pager').exists()).toBe(true)
+    expect(wrapper.findAll('.pager .el-pager li').length).toBe(3)
+  })
+
+  it('翻页：按新页码与每页条数重新拉取并刷新列表（T5 分页刷新）', async () => {
+    mockedList.mockResolvedValue({ list: [space({ name: '第 1 页空间' })], total: 25, pageNum: 1, pageSize: 10, totalPages: 3 })
+    const wrapper = await mountPage()
+    expect(mockedList).toHaveBeenCalledWith(1, 10, undefined)
+
+    mockedList.mockResolvedValue({ list: [space({ id: 11, name: '第 2 页空间' })], total: 25, pageNum: 2, pageSize: 10, totalPages: 3 })
+    await wrapper.find('.pager .btn-next').trigger('click')
+    await flushPromises()
+
+    expect(mockedList).toHaveBeenLastCalledWith(2, 10, undefined)
+    expect(mockedList).toHaveBeenCalledTimes(2)
+    expect(wrapper.text()).toContain('第 2 页空间')
+  })
+
+  it('分页越界（1000C0001）：文案原样展示，且列表保持原数据（不乐观更新）（§8.7）', async () => {
+    mockedList.mockResolvedValue({ list: [space({ name: '第 1 页空间' })], total: 25, pageNum: 1, pageSize: 10, totalPages: 3 })
+    const wrapper = await mountPage()
+    mockedList.mockRejectedValue(new ApiError('1000C0001', '分页参数超出范围'))
+    await wrapper.find('.pager .btn-next').trigger('click')
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('分页参数超出范围')
+    expect(wrapper.text()).toContain('第 1 页空间')
+    expect(mockedList).toHaveBeenCalledTimes(2)
+  })
+
+  it('加载失败（非认证类）：原样展示后端业务文案且不跳转（§8.8）', async () => {
+    mockedList.mockRejectedValue(new ApiError('1006S0001', '主体服务暂不可用'))
     await mountPage()
     await flushPromises()
+    expect(document.body.textContent).toContain('主体服务暂不可用')
+    expect(currentRouter.currentRoute.value.path).toBe('/spaces')
+  })
+
+  it('认证失败或身份已失效（1000C0002）：原样提示 + 清演示登录态 + 引导回登录页（§8.9 / R3）', async () => {
+    signInDemo()
+    expect(isDemoAuthed()).toBe(true)
+    mockedList.mockRejectedValue(new ApiError(AUTH_FAILED_CODE, '认证失败或身份已失效'))
+    await mountPage()
+    await flushPromises()
+
     expect(document.body.textContent).toContain('认证失败或身份已失效')
+    expect(isDemoAuthed()).toBe(false)
+    expect(currentRouter.currentRoute.value.path).toBe('/login')
   })
 })
 

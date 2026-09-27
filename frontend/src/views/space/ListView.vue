@@ -19,7 +19,9 @@ import {
   SPACE_STATUS_LABELS,
   SPACE_STATUS_TYPES,
   VISIBILITY_LABELS,
+  labelOf,
 } from '../../constants/space'
+import { guideToLoginIfAuthFailed } from './authGuide'
 
 const router = useRouter()
 
@@ -51,6 +53,7 @@ async function load(): Promise<void> {
     items.value = page.list
     total.value = page.total
   } catch (error) {
+    if (guideToLoginIfAuthFailed(error, router)) return
     ElMessage.error(error instanceof ApiError ? error.message : '空间列表加载失败，请稍后重试')
   } finally {
     loading.value = false
@@ -113,6 +116,7 @@ async function submitCreate(): Promise<void> {
     pageNum.value = 1
     await load()
   } catch (error) {
+    if (guideToLoginIfAuthFailed(error, router)) return
     ElMessage.error(error instanceof ApiError ? error.message : '创建空间失败，请稍后重试')
   } finally {
     submitting.value = false
@@ -125,22 +129,6 @@ function openDetail(row: SpaceSummary): void {
 
 function openMyAdmissions(): void {
   void router.push('/spaces/my-admissions')
-}
-
-function sceneLabel(value: string): string {
-  return SCENE_TYPE_LABELS[value] ?? value
-}
-
-function accessLabel(value: string): string {
-  return ACCESS_MODE_LABELS[value] ?? value
-}
-
-function visibilityLabel(value: string): string {
-  return VISIBILITY_LABELS[value] ?? value
-}
-
-function statusLabel(value: string): string {
-  return SPACE_STATUS_LABELS[value] ?? value
 }
 
 function statusType(value: string): string {
@@ -177,17 +165,17 @@ onMounted(() => {
       <el-table :data="items" v-loading="loading" :empty-text="SPACE_LIST_EMPTY_TIP">
         <el-table-column prop="name" label="空间名称" min-width="180" />
         <el-table-column label="场景类型" width="120">
-          <template #default="scope">{{ sceneLabel(scope.row.sceneType) }}</template>
+          <template #default="scope">{{ labelOf(SCENE_TYPE_LABELS, scope.row.sceneType) }}</template>
         </el-table-column>
         <el-table-column label="参与方范围" width="120">
-          <template #default="scope">{{ accessLabel(scope.row.accessMode) }}</template>
+          <template #default="scope">{{ labelOf(ACCESS_MODE_LABELS, scope.row.accessMode) }}</template>
         </el-table-column>
         <el-table-column label="可见性" width="100">
-          <template #default="scope">{{ visibilityLabel(scope.row.visibility) }}</template>
+          <template #default="scope">{{ labelOf(VISIBILITY_LABELS, scope.row.visibility) }}</template>
         </el-table-column>
         <el-table-column label="状态" width="150">
           <template #default="scope">
-            <el-tag :type="statusType(scope.row.status)">{{ statusLabel(scope.row.status) }}</el-tag>
+            <el-tag :type="statusType(scope.row.status)">{{ labelOf(SPACE_STATUS_LABELS, scope.row.status) }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="生效期" width="200">

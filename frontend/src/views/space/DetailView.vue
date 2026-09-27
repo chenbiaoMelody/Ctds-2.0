@@ -39,6 +39,7 @@ import {
   type UpdateSpacePayload,
 } from '../../api/space'
 import {
+  ACCESS_MODE_LABELS,
   ACTION_LOGS_EMPTY_TIP,
   ACTION_RESULT_LABELS,
   ACTION_RESULT_TYPES,
@@ -57,15 +58,20 @@ import {
   POLICY_PROVENANCE_TYPES,
   REJECT_REASON_REQUIRED_TIP,
   REMOVAL_REASON_REQUIRED_TIP,
+  SCENE_TYPE_LABELS,
   SPACE_NOT_ACCESSIBLE_CODES,
   SPACE_NOT_ACCESSIBLE_TIP,
   SPACE_STATUS_LABELS,
   SPACE_STATUS_TYPES,
+  VISIBILITY_LABELS,
   actionLogLabel,
+  labelOf,
   policyValueLabel,
+  spaceActionBlockTip,
   spaceDissolveConfirmTip,
   spacePolicyBlockTip,
 } from '../../constants/space'
+import { guideToLoginIfAuthFailed } from './authGuide'
 
 const route = useRoute()
 const router = useRouter()
@@ -95,7 +101,7 @@ const policies = ref<EffectivePolicyItem[]>([])
 // ==== 派生（状态与身份只影响体验层显隐，服务端为准） ====
 
 const current = computed<SpaceSummary | null>(() => detail.value ?? summary.value)
-const statusLabel = computed(() => SPACE_STATUS_LABELS[current.value?.status ?? ''] ?? current.value?.status ?? '')
+const statusLabel = computed(() => labelOf(SPACE_STATUS_LABELS, current.value?.status))
 const statusType = computed(() => SPACE_STATUS_TYPES[current.value?.status ?? ''] ?? 'info')
 const canEnable = computed(() => current.value?.status === 'CREATED')
 const canFreeze = computed(() => current.value?.status === 'ACTIVE')
@@ -104,6 +110,15 @@ const canDissolve = computed(() => !!current.value && current.value.status !== '
 const isOwner = computed(() => !!detail.value && getDemoSubject() === detail.value.ownerSubjectNo)
 const policyBlocked = computed(() => !!current.value && current.value.status !== 'ACTIVE')
 const policyBlockTip = computed(() => spacePolicyBlockTip(current.value?.status ?? ''))
+
+/** 状态门槛（R1 / §8.6、§6.3 头部）：未启用 / 已冻结 / 已解散时邀请与申请按钮禁用并提示；服务端判定仍为准。 */
+const actionBlocked = computed(() => !!current.value && current.value.status !== 'ACTIVE')
+const actionBlockTip = computed(() => spaceActionBlockTip(current.value?.status ?? ''))
+
+/** 本人行判定（R2 / §6.7 I）：成员表格中角色变更按钮仅出现在他人行，防自我提权。 */
+function isSelfRow(row: MemberItem): boolean {
+  return getDemoSubject() === row.subjectNo
+}
 const overrideOptions = computed(() => POLICY_CATALOG.find((item) => item.entryKey === overrideForm.value.entryKey)?.options ?? [])
 const admissionStatusOptions = computed(() =>
   Object.entries(ADMISSION_STATUS_LABELS).map(([value, label]) => ({ value, label })),
@@ -124,6 +139,7 @@ async function loadDetail(): Promise<void> {
       notAccessible.value = true
     }
   } catch (error) {
+    if (guideToLoginIfAuthFailed(error, router)) return
     if (error instanceof ApiError && SPACE_NOT_ACCESSIBLE_CODES.includes(error.code)) {
       notAccessible.value = true
       return
@@ -138,6 +154,7 @@ async function loadLogs(): Promise<void> {
     logs.value = page.list
     logsTotal.value = page.total
   } catch (error) {
+    if (guideToLoginIfAuthFailed(error, router)) return
     if (error instanceof ApiError && SPACE_NOT_ACCESSIBLE_CODES.includes(error.code)) return
     ElMessage.error(error instanceof ApiError ? error.message : '操作留痕加载失败，请稍后重试')
   }
@@ -211,6 +228,7 @@ async function loadMembers(): Promise<void> {
     members.value = page.list
     membersTotal.value = page.total
   } catch (error) {
+    if (guideToLoginIfAuthFailed(error, router)) return
     if (error instanceof ApiError && SPACE_NOT_ACCESSIBLE_CODES.includes(error.code)) return
     ElMessage.error(error instanceof ApiError ? error.message : '成员列表加载失败，请稍后重试')
   }
@@ -222,6 +240,7 @@ async function loadAdmissions(): Promise<void> {
     admissions.value = page.list
     admissionsTotal.value = page.total
   } catch (error) {
+    if (guideToLoginIfAuthFailed(error, router)) return
     if (error instanceof ApiError && SPACE_NOT_ACCESSIBLE_CODES.includes(error.code)) return
     ElMessage.error(error instanceof ApiError ? error.message : '准入单加载失败，请稍后重试')
   }
@@ -387,6 +406,7 @@ async function loadPolicies(): Promise<void> {
   try {
     policies.value = await getEffectivePolicies(spaceId)
   } catch (error) {
+    if (guideToLoginIfAuthFailed(error, router)) return
     if (error instanceof ApiError && SPACE_NOT_ACCESSIBLE_CODES.includes(error.code)) return
     ElMessage.error(error instanceof ApiError ? error.message : '有效策略加载失败，请稍后重试')
   }
@@ -416,6 +436,7 @@ async function submitOverride(): Promise<void> {
 // ==== 公用 ====
 
 function showError(error: unknown, fallback: string): void {
+  if (guideToLoginIfAuthFailed(error, router)) return
   ElMessage.error(error instanceof ApiError ? error.message : fallback)
 }
 
@@ -483,9 +504,9 @@ onMounted(() => {
           <el-descriptions :column="2" border>
             <el-descriptions-item label="空间名称">{{ current?.name ?? '—' }}</el-descriptions-item>
             <el-descriptions-item label="状态">{{ statusLabel || '—' }}</el-descriptions-item>
-            <el-descriptions-item label="场景类型">{{ current?.sceneType ?? '—' }}</el-descriptions-item>
-            <el-descriptions-item label="参与方范围">{{ current?.accessMode ?? '—' }}</el-descriptions-item>
-            <el-descriptions-item label="可见性">{{ current?.visibility ?? '—' }}</el-descriptions-item>
+            <el-descriptions-item label="场景类型">{{ labelOf(SCENE_TYPE_LABELS, current?.sceneType) }}</el-descriptions-item>
+            <el-descriptions-item label="参与方范围">{{ labelOf(ACCESS_MODE_LABELS, current?.accessMode) }}</el-descriptions-item>
+            <el-descriptions-item label="可见性">{{ labelOf(VISIBILITY_LABELS, current?.visibility) }}</el-descriptions-item>
             <el-descriptions-item label="简介">{{ current?.intro ?? '—' }}</el-descriptions-item>
             <el-descriptions-item label="生效期起">{{ current?.effectiveFrom ?? '—' }}</el-descriptions-item>
             <el-descriptions-item label="生效期止">{{ current?.effectiveTo ?? '—' }}</el-descriptions-item>
@@ -515,7 +536,7 @@ onMounted(() => {
             <el-table-column label="结果" width="110">
               <template #default="scope">
                 <el-tag :type="ACTION_RESULT_TYPES[scope.row.result] ?? 'info'">
-                  {{ ACTION_RESULT_LABELS[scope.row.result] ?? scope.row.result }}
+                  {{ labelOf(ACTION_RESULT_LABELS, scope.row.result) }}
                 </el-tag>
               </template>
             </el-table-column>
@@ -541,20 +562,31 @@ onMounted(() => {
         <el-card shadow="never" class="members-card">
           <template #header>成员</template>
           <div class="members-actions">
-            <el-button v-if="current?.accessMode === 'INVITE'" class="invite-open" @click="openInvite">邀请成员</el-button>
-            <el-button v-if="current && current.accessMode !== 'INVITE'" class="apply-btn" @click="submitApplication">提交加入申请</el-button>
+            <el-button
+              v-if="current?.accessMode === 'INVITE'"
+              class="invite-open"
+              :disabled="actionBlocked"
+              @click="openInvite"
+            >邀请成员</el-button>
+            <el-button
+              v-if="current && current.accessMode !== 'INVITE'"
+              class="apply-btn"
+              :disabled="actionBlocked"
+              @click="submitApplication"
+            >提交加入申请</el-button>
             <el-button class="leave-btn" @click="leave">退出空间</el-button>
+            <span v-if="actionBlocked" class="action-block-tip">{{ actionBlockTip }}</span>
           </div>
           <el-table :data="members" class="members-table" :empty-text="MEMBERS_EMPTY_TIP">
             <el-table-column prop="id" label="成员 id" width="90" />
             <el-table-column prop="subjectNo" label="主体编号" min-width="170" />
             <el-table-column label="角色" width="100">
-              <template #default="scope">{{ MEMBER_ROLE_LABELS[scope.row.role] ?? scope.row.role }}</template>
+              <template #default="scope">{{ labelOf(MEMBER_ROLE_LABELS, scope.row.role) }}</template>
             </el-table-column>
             <el-table-column label="状态" width="100">
               <template #default="scope">
                 <el-tag :type="MEMBER_STATUS_TYPES[scope.row.status] ?? 'info'">
-                  {{ MEMBER_STATUS_LABELS[scope.row.status] ?? scope.row.status }}
+                  {{ labelOf(MEMBER_STATUS_LABELS, scope.row.status) }}
                 </el-tag>
               </template>
             </el-table-column>
@@ -562,12 +594,12 @@ onMounted(() => {
             <el-table-column label="操作" width="300">
               <template #default="scope">
                 <el-button
-                  v-if="scope.row.role === 'MEMBER'"
+                  v-if="scope.row.role === 'MEMBER' && !isSelfRow(scope.row)"
                   type="primary" link class="role-grant"
                   @click="changeRole(scope.row, 'ADMIN')"
                 >授予管理员</el-button>
                 <el-button
-                  v-if="scope.row.role === 'ADMIN'"
+                  v-if="scope.row.role === 'ADMIN' && !isSelfRow(scope.row)"
                   type="primary" link class="role-revoke"
                   @click="changeRole(scope.row, 'MEMBER')"
                 >收回管理员</el-button>
@@ -605,12 +637,12 @@ onMounted(() => {
             <el-table-column prop="id" label="准入单 id" width="100" />
             <el-table-column prop="subjectNo" label="主体编号" min-width="170" />
             <el-table-column label="形态" width="90">
-              <template #default="scope">{{ ADMISSION_TYPE_LABELS[scope.row.type] ?? scope.row.type }}</template>
+              <template #default="scope">{{ labelOf(ADMISSION_TYPE_LABELS, scope.row.type) }}</template>
             </el-table-column>
             <el-table-column label="状态" width="110">
               <template #default="scope">
                 <el-tag :type="ADMISSION_STATUS_TYPES[scope.row.status] ?? 'info'">
-                  {{ ADMISSION_STATUS_LABELS[scope.row.status] ?? scope.row.status }}
+                  {{ labelOf(ADMISSION_STATUS_LABELS, scope.row.status) }}
                 </el-tag>
               </template>
             </el-table-column>
@@ -653,7 +685,7 @@ onMounted(() => {
             <el-table-column label="来源" width="190">
               <template #default="scope">
                 <el-tag :type="POLICY_PROVENANCE_TYPES[scope.row.provenance] ?? 'info'" class="provenance-tag">
-                  {{ POLICY_PROVENANCE_LABELS[scope.row.provenance] ?? scope.row.provenance }}
+                  {{ labelOf(POLICY_PROVENANCE_LABELS, scope.row.provenance) }}
                 </el-tag>
               </template>
             </el-table-column>
@@ -801,7 +833,8 @@ onMounted(() => {
   justify-content: flex-end;
 }
 
-.policy-block-tip {
+.policy-block-tip,
+.action-block-tip {
   font-size: 13px;
   color: #b45309;
 }

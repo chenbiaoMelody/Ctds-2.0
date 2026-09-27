@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import ElementPlus, { ElMessageBox } from 'element-plus'
-import { createRouter, createMemoryHistory } from 'vue-router'
+import { createRouter, createMemoryHistory, type Router } from 'vue-router'
 import DetailView from './DetailView.vue'
 import {
   applyAdmission,
@@ -20,11 +20,18 @@ import {
 } from '../../api/space'
 import { setDemoSubject } from '../../api/client'
 import { ApiError } from '../../api/client'
+import { ADMISSIONS_EMPTY_TIP, AUTH_FAILED_CODE, MEMBERS_EMPTY_TIP, SPACE_STATUS_LABELS } from '../../constants/space'
+import { isDemoAuthed, signInDemo } from '../../stores/demoAuth'
 
 /**
- * 空间详情·成员与准入区测试（WBS-3.2.6 hifi §6.3 Tab 2 + §7 T14~T22）：
- * 成员表格 / 邀请 / 申请 / 审批（拒绝理由必填）/ 角色授予与收回 / 移除（理由必填）/
- * 退出（所有者保护文案如实展示）/ 所有权转移。
+ * 空间详情·成员与准入区测试（WBS-3.2.6 hifi §6.3 Tab 2 + §7 T14~T22；评审 R1/R2/R3/R6 补齐）：
+ * 成员表格 / 空态 / 分页传参与刷新 / 分页越界原样展示 /
+ * 状态门槛提示（未启用·已冻结·已解散：邀请与申请按钮禁用并提示，R1）/
+ * 本人行不得自我提权（R2）/ 邀请 / 申请 / 审批（拒绝理由必填）/ 角色授予与收回 /
+ * 移除（理由必填）/ 退出（所有者保护文案如实展示）/ 所有权转移 / 认证失效引导回登录页。
+ *
+ * 挂载容器说明（评审 S5 加注）：成员与准入区是详情页的 Tab 2，**无独立组件文件**，
+ * 本文件挂载 `DetailView.vue` 后聚焦该区行为（与 `DetailView.spec.ts` 的概览 / 策略面互补）。
  */
 vi.mock('../../api/space', () => ({
   getSpace: vi.fn(),
@@ -58,7 +65,9 @@ const mockedRemove = vi.mocked(removeMember)
 const mockedLeave = vi.mocked(leaveSpace)
 const mockedTransfer = vi.mocked(transferOwnership)
 
+const OTHER_SUBJECT = 'S20260925000002'
 const OWNER_SUBJECT = 'S20260925000001'
+let currentRouter: Router
 
 function detail(over: Partial<SpaceDetail> = {}): SpaceDetail {
   return {
@@ -117,8 +126,10 @@ async function mountPage() {
     routes: [
       { path: '/spaces', name: 'space-list', component: { template: '<div />' } },
       { path: '/spaces/:id', name: 'space-detail', component: { template: '<div />' } },
+      { path: '/login', name: 'login', component: { template: '<div />' } },
     ],
   })
+  currentRouter = router
   await router.push('/spaces/1')
   await router.isReady()
   const wrapper = mount(DetailView, {
@@ -162,6 +173,143 @@ describe('成员表格（T14）', () => {
     expect(wrapper.findAll('.member-remove').length).toBe(2)
     expect(wrapper.findAll('.role-revoke').length).toBe(1)
     expect(wrapper.findAll('.role-grant').length).toBe(1)
+  })
+})
+
+describe('状态门槛提示（R1 / §8.6、§6.3 C）', () => {
+  it('空间未启用 / 已冻结 / 已解散：邀请按钮禁用并给出状态门槛提示（T15 状态维度）', async () => {
+    const blocked = [
+      ['CREATED', SPACE_STATUS_LABELS.CREATED],
+      ['FROZEN', SPACE_STATUS_LABELS.FROZEN],
+      ['DISSOLVED', SPACE_STATUS_LABELS.DISSOLVED],
+    ] as const
+    for (const [status, label] of blocked) {
+      document.body.innerHTML = ''
+      mockedGetSpace.mockResolvedValue(detail({ accessMode: 'INVITE', status }))
+      const wrapper = await mountPage()
+      const invite = wrapper.find('.invite-open')
+      expect(invite.exists()).toBe(true)
+      expect(invite.attributes('disabled')).toBeDefined()
+      expect(wrapper.find('.action-block-tip').text()).toContain(label)
+      expect(wrapper.find('.action-block-tip').text()).toContain('无法执行该操作')
+      await invite.trigger('click')
+      await flushPromises()
+      expect(mockedInvite).not.toHaveBeenCalled()
+      wrapper.unmount()
+    }
+  })
+
+  it('审批制空间未启用：提交加入申请按钮禁用并给出状态门槛提示（T16 状态维度）', async () => {
+    mockedGetSpace.mockResolvedValue(detail({ accessMode: 'APPROVAL', status: 'CREATED' }))
+    const wrapper = await mountPage()
+    const apply = wrapper.find('.apply-btn')
+    expect(apply.attributes('disabled')).toBeDefined()
+    expect(wrapper.find('.action-block-tip').text()).toContain(SPACE_STATUS_LABELS.CREATED)
+    await apply.trigger('click')
+    await flushPromises()
+    expect(mockedApply).not.toHaveBeenCalled()
+  })
+
+  it('已启用空间：邀请按钮可用、无状态门槛提示，点击可打开邀请弹窗（双向）', async () => {
+    mockedGetSpace.mockResolvedValue(detail({ accessMode: 'INVITE', status: 'ACTIVE' }))
+    const wrapper = await mountPage()
+    expect(wrapper.find('.invite-open').attributes('disabled')).toBeUndefined()
+    expect(wrapper.find('.action-block-tip').exists()).toBe(false)
+
+    await wrapper.find('.invite-open').trigger('click')
+    await flushPromises()
+    expect(document.body.textContent).toContain('被邀主体编号')
+  })
+})
+
+describe('本人行不得自我提权（R2 / §6.7 I）', () => {
+  it('本人行（成员）无"授予管理员"入口，他人行保留', async () => {
+    mockedMembers.mockResolvedValue(page([
+      member({ id: 31, subjectNo: OWNER_SUBJECT, role: 'MEMBER' }),
+      member({ id: 32, subjectNo: OTHER_SUBJECT, role: 'MEMBER' }),
+    ]))
+    const wrapper = await mountPage()
+    expect(wrapper.findAll('.role-grant').length).toBe(1)
+    // 移除入口不受 R2 影响（仅角色变更面禁用）
+    expect(wrapper.findAll('.member-remove').length).toBe(2)
+  })
+
+  it('本人行（管理员）无"收回管理员"入口，他人行保留', async () => {
+    mockedMembers.mockResolvedValue(page([
+      member({ id: 31, subjectNo: OWNER_SUBJECT, role: 'ADMIN' }),
+      member({ id: 32, subjectNo: OTHER_SUBJECT, role: 'ADMIN' }),
+    ]))
+    const wrapper = await mountPage()
+    expect(wrapper.findAll('.role-revoke').length).toBe(1)
+  })
+})
+
+describe('空态与分页（R6 / §7 T5、§8.3、§8.7）', () => {
+  it('成员表为空时展示统一空态文案（不是报错）', async () => {
+    mockedMembers.mockResolvedValue(page([]))
+    const wrapper = await mountPage()
+    expect(wrapper.text()).toContain(MEMBERS_EMPTY_TIP)
+  })
+
+  it('准入单为空时展示统一空态文案（不是报错）', async () => {
+    const wrapper = await mountPage()
+    expect(wrapper.text()).toContain(ADMISSIONS_EMPTY_TIP)
+  })
+
+  it('成员分页：翻页按新页码与每页条数重新拉取（T14 分页）', async () => {
+    mockedMembers.mockResolvedValue({ list: [member()], total: 25, pageNum: 1, pageSize: 10, totalPages: 3 })
+    const wrapper = await mountPage()
+    expect(mockedMembers).toHaveBeenCalledWith(1, 1, 10)
+
+    mockedMembers.mockResolvedValue({ list: [member({ id: 39, subjectNo: 'S20260925000088' })], total: 25, pageNum: 2, pageSize: 10, totalPages: 3 })
+    await wrapper.find('.members-pager .btn-next').trigger('click')
+    await flushPromises()
+    expect(mockedMembers).toHaveBeenLastCalledWith(1, 2, 10)
+    expect(wrapper.text()).toContain('S20260925000088')
+  })
+
+  it('准入单分页：翻页按新页码与每页条数重新拉取（T17 分页）', async () => {
+    mockedAdmissions.mockResolvedValue({ list: [admission()], total: 25, pageNum: 1, pageSize: 10, totalPages: 3 })
+    const wrapper = await mountPage()
+
+    mockedAdmissions.mockResolvedValue({ list: [admission({ id: 42, operator: 'S20260925000077' })], total: 25, pageNum: 2, pageSize: 10, totalPages: 3 })
+    await wrapper.find('.admissions-pager .btn-next').trigger('click')
+    await flushPromises()
+    expect(mockedAdmissions).toHaveBeenLastCalledWith(1, 2, 10, undefined)
+    expect(wrapper.text()).toContain('S20260925000077')
+  })
+
+  it('成员分页越界（1000C0001）：文案原样展示且表格保持原数据（不乐观更新）（§8.7）', async () => {
+    mockedMembers.mockResolvedValue({ list: [member({ subjectNo: 'S20260925000066' })], total: 25, pageNum: 1, pageSize: 10, totalPages: 3 })
+    const wrapper = await mountPage()
+    mockedMembers.mockRejectedValue(new ApiError('1000C0001', '分页参数超出范围'))
+    await wrapper.find('.members-pager .btn-next').trigger('click')
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('分页参数超出范围')
+    expect(wrapper.text()).toContain('S20260925000066')
+  })
+
+  it('准入单分页越界（1000C0001）：文案原样展示且表格保持原数据（不乐观更新）（§8.7）', async () => {
+    mockedAdmissions.mockResolvedValue({ list: [admission({ operator: 'S20260925000055' })], total: 25, pageNum: 1, pageSize: 10, totalPages: 3 })
+    const wrapper = await mountPage()
+    mockedAdmissions.mockRejectedValue(new ApiError('1000C0001', '分页参数超出范围'))
+    await wrapper.find('.admissions-pager .btn-next').trigger('click')
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('分页参数超出范围')
+    expect(wrapper.text()).toContain('S20260925000055')
+  })
+
+  it('认证失败或身份已失效（1000C0002）：原样提示 + 清演示登录态 + 引导回登录页（R3）', async () => {
+    signInDemo()
+    mockedMembers.mockRejectedValue(new ApiError(AUTH_FAILED_CODE, '认证失败或身份已失效'))
+    await mountPage()
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('认证失败或身份已失效')
+    expect(isDemoAuthed()).toBe(false)
+    expect(currentRouter.currentRoute.value.path).toBe('/login')
   })
 })
 
@@ -252,8 +400,8 @@ describe('角色变更 / 移除 / 退出 / 转移（T19~T22）', () => {
     expect(mockedMembers).toHaveBeenCalledTimes(2)
   })
 
-  it('收回管理员：二次确认取消 → 零请求（T19）', async () => {
-    mockedMembers.mockResolvedValue(page([member({ id: 32, role: 'ADMIN' })]))
+  it('收回管理员：二次确认取消 → 零请求（T19；目标为他人行，本人行见 R2 用例）', async () => {
+    mockedMembers.mockResolvedValue(page([member({ id: 32, subjectNo: OTHER_SUBJECT, role: 'ADMIN' })]))
     vi.spyOn(ElMessageBox, 'confirm').mockRejectedValue(new Error('cancel'))
     const wrapper = await mountPage()
     await wrapper.find('.role-revoke').trigger('click')

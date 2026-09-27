@@ -196,6 +196,15 @@ export function actionLogLabel(action: string): string {
   return ACTION_LOG_ACTION_LABELS[action] ?? action
 }
 
+/**
+ * 标签回退助手（评审 S1 收口：与 `constants/did.ts` 的 `labelOf` 同形口径）：
+ * 未收录取值原样返回（界面不吞值、不臆造翻译）；取值缺失（null / undefined / 空串）显示占位符 "—"。
+ */
+export function labelOf(map: Record<string, string>, value: string | null | undefined): string {
+  if (value === null || value === undefined || value === '') return '—'
+  return map[value] ?? value
+}
+
 // ==== 统一提示常量（页面一律引用，禁止散写） ====
 
 /** 非成员同形口径：空间不存在（`1006C0004`）与无权访问（`1006C0007`）共用同一条文案与样式。 */
@@ -203,6 +212,9 @@ export const SPACE_NOT_ACCESSIBLE_TIP = '空间不存在或无权访问'
 
 /** 触发同形提示的后端错误码（详情不可读的两条分支共用同一提示）。 */
 export const SPACE_NOT_ACCESSIBLE_CODES: string[] = ['1006C0004', '1006C0007']
+
+/** 认证失败或身份已失效（hifi §8.9）：界面提示后端文案并引导回登录页。 */
+export const AUTH_FAILED_CODE = '1000C0002'
 
 /** 演示身份主体编号为空时的前端前置拦截提示（零请求）。 */
 export const DEMO_SUBJECT_REQUIRED_TIP = '请先填写演示身份主体编号'

@@ -124,10 +124,14 @@ describe('非成员同形提示守卫（T30）', () => {
   it('页面源集不得散写"不存在 / 无权"文案，一律引用共享常量', () => {
     const source = withoutComments(uiScanned())
     expect(hits(source, '空间不存在或无权访问')).toBe(0)
-    // 详情页必须引用共享常量（不存在分支与无权分支同一文案与样式）
-    expect(hits(source, 'SPACE_NOT_ACCESSIBLE_TIP')).toBeGreaterThan(0)
-    // 反向探针：散写样本必被同一口径命中
+    // 详情页必须引用共享常量（不存在分支与无权分支同一文案与样式）：样本必命中（S3 收口强断言）
+    const detailSource = withoutComments(viewSources['./DetailView.vue'])
+    expect(hits(detailSource, ':title="SPACE_NOT_ACCESSIBLE_TIP"')).toBe(1)
+    expect(hits(detailSource, 'SPACE_NOT_ACCESSIBLE_CODES')).toBeGreaterThan(0)
+    // 反向探针：散写样本必被同一口径命中；未引用常量的样本必不命中（证明该断言非空转）
     expect(hits(withoutComments("const tip = '空间不存在或无权访问'"), '空间不存在或无权访问')).toBe(1)
+    expect(hits(withoutComments('const tip = notAccessibleTip'), ':title="SPACE_NOT_ACCESSIBLE_TIP"')).toBe(0)
+    expect(hits(withoutComments('const codes = notAccessibleCodes'), 'SPACE_NOT_ACCESSIBLE_CODES')).toBe(0)
   })
 
   it('不得出现第二套"无权"文案（同形口径只有一条提示）', () => {

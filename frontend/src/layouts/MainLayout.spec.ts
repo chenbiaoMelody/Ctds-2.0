@@ -91,6 +91,11 @@ describe('顶栏"演示身份"控件（WBS-3.2.6 §6.1 / T27）', () => {
     expect(ACTOR_MODE_LABELS.operator).toBe('平台运营方')
   })
 
+  it('主体编号输入框占位提示与界面说明书一致（R5 / §6.1）', () => {
+    const wrapper = mountLayout()
+    expect(wrapper.find('.identity-subject input').attributes('placeholder')).toBe('如 S20260925000001')
+  })
+
   it('保存：主体编号写入既有存储，档位写入演示身份存储并提示', async () => {
     const wrapper = mountLayout()
     await wrapper.find('.identity-subject input').setValue('S20260925000001')

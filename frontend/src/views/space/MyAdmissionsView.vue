@@ -5,6 +5,7 @@
  * - 谢绝可填理由；成功后刷新列表并以响应为准，不做乐观更新。
  */
 import { onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ApiError } from '../../api/client'
 import { confirmAdmission, listMyAdmissions, type AdmissionItem } from '../../api/space'
@@ -13,8 +14,11 @@ import {
   ADMISSION_STATUS_TYPES,
   ADMISSION_TYPE_LABELS,
   MY_ADMISSIONS_EMPTY_TIP,
+  labelOf,
 } from '../../constants/space'
+import { guideToLoginIfAuthFailed } from './authGuide'
 
+const router = useRouter()
 const loading = ref(false)
 const items = ref<AdmissionItem[]>([])
 const total = ref(0)
@@ -32,6 +36,7 @@ async function load(): Promise<void> {
     items.value = page.list
     total.value = page.total
   } catch (error) {
+    if (guideToLoginIfAuthFailed(error, router)) return
     ElMessage.error(error instanceof ApiError ? error.message : '邀请与申请加载失败，请稍后重试')
   } finally {
     loading.value = false
@@ -45,6 +50,7 @@ async function accept(row: AdmissionItem): Promise<void> {
     ElMessage.success('已加入空间')
     await load()
   } catch (error) {
+    if (guideToLoginIfAuthFailed(error, router)) return
     ElMessage.error(error instanceof ApiError ? error.message : '接受失败，请稍后重试')
   }
 }
@@ -67,6 +73,7 @@ async function submitDecline(): Promise<void> {
     declineVisible.value = false
     await load()
   } catch (error) {
+    if (guideToLoginIfAuthFailed(error, router)) return
     ElMessage.error(error instanceof ApiError ? error.message : '谢绝失败，请稍后重试')
   }
 }
@@ -90,12 +97,12 @@ onMounted(() => {
       <el-table :data="items" v-loading="loading" class="my-admissions-table" :empty-text="MY_ADMISSIONS_EMPTY_TIP">
         <el-table-column prop="spaceId" label="空间 id" width="100" />
         <el-table-column label="形态" width="90">
-          <template #default="scope">{{ ADMISSION_TYPE_LABELS[scope.row.type] ?? scope.row.type }}</template>
+          <template #default="scope">{{ labelOf(ADMISSION_TYPE_LABELS, scope.row.type) }}</template>
         </el-table-column>
         <el-table-column label="状态" width="110">
           <template #default="scope">
             <el-tag :type="ADMISSION_STATUS_TYPES[scope.row.status] ?? 'info'">
-              {{ ADMISSION_STATUS_LABELS[scope.row.status] ?? scope.row.status }}
+              {{ labelOf(ADMISSION_STATUS_LABELS, scope.row.status) }}
             </el-tag>
           </template>
         </el-table-column>

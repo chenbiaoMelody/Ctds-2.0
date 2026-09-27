@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import ElementPlus, { ElMessageBox } from 'element-plus'
-import { createRouter, createMemoryHistory } from 'vue-router'
+import { createRouter, createMemoryHistory, type Router } from 'vue-router'
 import DetailView from './DetailView.vue'
 import {
   dissolveSpace,
@@ -18,12 +18,20 @@ import {
   type SpaceDetail,
 } from '../../api/space'
 import { ApiError } from '../../api/client'
-import { SPACE_NOT_ACCESSIBLE_TIP, SPACE_STATUS_LABELS } from '../../constants/space'
+import {
+  ACTION_LOGS_EMPTY_TIP,
+  AUTH_FAILED_CODE,
+  EFFECTIVE_POLICIES_EMPTY_TIP,
+  SPACE_NOT_ACCESSIBLE_TIP,
+  SPACE_STATUS_LABELS,
+} from '../../constants/space'
+import { isDemoAuthed, signInDemo } from '../../stores/demoAuth'
 
 /**
- * 空间详情页测试（WBS-3.2.6 hifi §6.3 + §7 T10~T13、T23~T25、T30b）：
- * 概览字段 / 生命周期按钮显隐与端点 / 解散两段式（取消 = 零请求）/ 配置变更白名单 /
- * 策略来源三态与红线 / 覆盖提交值域与刷新 / 放宽被拒原样展示且不乐观更新 / 同形提示。
+ * 空间详情页测试（WBS-3.2.6 hifi §6.3 + §7 T10~T13、T23~T25、T30b；评审 R3/R4/R6 补齐）：
+ * 概览字段与三要素中文标签 / 生命周期按钮显隐与端点 / 解散两段式（取消 = 零请求）/
+ * 配置变更白名单 / 策略来源三态与红线 / 覆盖提交值域与刷新 / 放宽被拒原样展示且不乐观更新 /
+ * 同形提示 / 空态（留痕·策略）/ 留痕分页 / 认证失效引导回登录页。
  */
 vi.mock('../../api/space', () => ({
   getSpace: vi.fn(),
@@ -94,14 +102,18 @@ function policyItem(over: Partial<EffectivePolicyItem> = {}): EffectivePolicyIte
   }
 }
 
+let currentRouter: Router
+
 async function mountPage() {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
       { path: '/spaces', name: 'space-list', component: { template: '<div />' } },
       { path: '/spaces/:id', name: 'space-detail', component: { template: '<div />' } },
+      { path: '/login', name: 'login', component: { template: '<div />' } },
     ],
   })
+  currentRouter = router
   await router.push('/spaces/1')
   await router.isReady()
   const wrapper = mount(DetailView, {
@@ -144,6 +156,98 @@ describe('概览（T10）', () => {
     // 留痕：动作标签 + 结果 + 值变化（fromValue → toValue）
     expect(text).toContain('冻结空间')
     expect(text).toContain('ACTIVE → FROZEN')
+  })
+
+  it('概览三要素（场景类型 / 参与方范围 / 可见性）显示中文标签，不出现裸枚举码（R4 / §6.6.1）', async () => {
+    mockedGetSpace.mockResolvedValue(detail({ sceneType: 'MEDICAL', accessMode: 'APPROVAL', visibility: 'PRIVATE' }))
+    const wrapper = await mountPage()
+    const text = wrapper.text()
+    expect(text).toContain('医疗验证')
+    expect(text).toContain('审批制')
+    expect(text).toContain('不公开')
+    expect(text).not.toContain('MEDICAL')
+    expect(text).not.toContain('APPROVAL')
+    expect(text).not.toContain('PRIVATE')
+  })
+})
+
+describe('空态与分页（R6 / §7 T5、§8.3、§8.7）', () => {
+  it('操作留痕为空时展示统一空态文案（不是报错）', async () => {
+    mockedLogs.mockResolvedValue(emptyPage)
+    const wrapper = await mountPage()
+    expect(wrapper.text()).toContain(ACTION_LOGS_EMPTY_TIP)
+  })
+
+  it('有效策略为空时展示统一空态文案（不是报错）', async () => {
+    mockedPolicies.mockResolvedValue([])
+    const wrapper = await mountPage()
+    expect(wrapper.text()).toContain(EFFECTIVE_POLICIES_EMPTY_TIP)
+  })
+
+  it('操作留痕分页：翻页按新页码与每页条数重新拉取（T10 分页）', async () => {
+    mockedLogs.mockResolvedValue({
+      list: [{
+        id: 1, action: 'FREEZE', operator: 'S20260925000001', result: 'SUCCESS', reason: null,
+        fromValue: 'ACTIVE', toValue: 'FROZEN', targetType: 'SPACE', targetId: '1',
+        createdAt: '2026-09-03T10:00:00',
+      }],
+      total: 25, pageNum: 1, pageSize: 10, totalPages: 3,
+    })
+    const wrapper = await mountPage()
+    expect(mockedLogs).toHaveBeenCalledWith(1, 1, 10)
+
+    mockedLogs.mockResolvedValue({
+      list: [{
+        id: 2, action: 'ENABLE', operator: 'S20260925000009', result: 'SUCCESS', reason: null,
+        fromValue: 'CREATED', toValue: 'ACTIVE', targetType: 'SPACE', targetId: '1',
+        createdAt: '2026-09-04T10:00:00',
+      }],
+      total: 25, pageNum: 2, pageSize: 10, totalPages: 3,
+    })
+    await wrapper.find('.logs-pager .btn-next').trigger('click')
+    await flushPromises()
+    expect(mockedLogs).toHaveBeenLastCalledWith(1, 2, 10)
+    expect(wrapper.text()).toContain('S20260925000009')
+  })
+
+  it('操作留痕分页越界（1000C0001）：文案原样展示且表格保持原数据（不乐观更新）（§8.7）', async () => {
+    mockedLogs.mockResolvedValue({
+      list: [{
+        id: 1, action: 'FREEZE', operator: 'S20260925000001', result: 'SUCCESS', reason: null,
+        fromValue: 'ACTIVE', toValue: 'FROZEN', targetType: 'SPACE', targetId: '1',
+        createdAt: '2026-09-03T10:00:00',
+      }],
+      total: 25, pageNum: 1, pageSize: 10, totalPages: 3,
+    })
+    const wrapper = await mountPage()
+    mockedLogs.mockRejectedValue(new ApiError('1000C0001', '分页参数超出范围'))
+    await wrapper.find('.logs-pager .btn-next').trigger('click')
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('分页参数超出范围')
+    expect(wrapper.text()).toContain('ACTIVE → FROZEN')
+  })
+
+  it('认证失败或身份已失效（1000C0002）：原样提示 + 清演示登录态 + 引导回登录页，且不落入同形提示（R3 / §8.9）', async () => {
+    signInDemo()
+    mockedGetSpace.mockRejectedValue(new ApiError(AUTH_FAILED_CODE, '认证失败或身份已失效'))
+    const wrapper = await mountPage()
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('认证失败或身份已失效')
+    expect(isDemoAuthed()).toBe(false)
+    expect(currentRouter.currentRoute.value.path).toBe('/login')
+    // 认证失效不是"不存在 / 无权"：不得渲染同形提示
+    expect(wrapper.find('.not-accessible-tip').exists()).toBe(false)
+  })
+
+  it('非认证类加载失败（1006S0001）：原样展示后端文案且不跳转（§8.8 反向面）', async () => {
+    mockedGetSpace.mockRejectedValue(new ApiError('1006S0001', '主体服务暂不可用'))
+    await mountPage()
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('主体服务暂不可用')
+    expect(currentRouter.currentRoute.value.path).toBe('/spaces/1')
   })
 })
 

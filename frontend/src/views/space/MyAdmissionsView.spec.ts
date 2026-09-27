@@ -1,14 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import ElementPlus from 'element-plus'
-import { createRouter, createMemoryHistory } from 'vue-router'
+import { createRouter, createMemoryHistory, type Router } from 'vue-router'
 import MyAdmissionsView from './MyAdmissionsView.vue'
 import { confirmAdmission, listMyAdmissions, type AdmissionItem } from '../../api/space'
-import { MY_ADMISSIONS_EMPTY_TIP } from '../../constants/space'
+import { ApiError } from '../../api/client'
+import { AUTH_FAILED_CODE, MY_ADMISSIONS_EMPTY_TIP } from '../../constants/space'
+import { isDemoAuthed, signInDemo } from '../../stores/demoAuth'
 
 /**
- * 我的邀请与申请页测试（WBS-3.2.6 hifi §6.4 + §7 T18）：
- * 列表渲染 / 接受（CONFIRM）/ 谢绝（DECLINE，理由可选）/ 非待确认行无操作。
+ * 我的邀请与申请页测试（WBS-3.2.6 hifi §6.4 + §7 T18；评审 R3/R6 补齐）：
+ * 列表渲染 / 空态 / 分页传参与刷新 / 分页越界原样展示 /
+ * 接受（CONFIRM）/ 谢绝（DECLINE，理由可选）/ 非待确认行无操作 / 认证失效引导回登录页。
  */
 vi.mock('../../api/space', () => ({
   listMyAdmissions: vi.fn(),
@@ -37,8 +40,17 @@ function page(list: AdmissionItem[]) {
   return { list, total: list.length, pageNum: 1, pageSize: 10, totalPages: 1 }
 }
 
+let currentRouter: Router
+
 async function mountPage() {
-  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { template: '<div />' } }] })
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/', component: { template: '<div />' } },
+      { path: '/login', name: 'login', component: { template: '<div />' } },
+    ],
+  })
+  currentRouter = router
   const wrapper = mount(MyAdmissionsView, {
     attachTo: document.body,
     global: { plugins: [ElementPlus, router] },
@@ -78,6 +90,52 @@ describe('我的邀请与申请（T18）', () => {
     mockedList.mockResolvedValue(page([]))
     const wrapper = await mountPage()
     expect(wrapper.text()).toContain(MY_ADMISSIONS_EMPTY_TIP)
+  })
+
+  it('翻页：按新页码与每页条数重新拉取并刷新（T18 分页）', async () => {
+    mockedList.mockResolvedValue({ list: [admission()], total: 25, pageNum: 1, pageSize: 10, totalPages: 3 })
+    const wrapper = await mountPage()
+    expect(mockedList).toHaveBeenCalledWith(1, 10)
+
+    mockedList.mockResolvedValue({ list: [admission({ id: 12, operator: 'S20260925000099' })], total: 25, pageNum: 2, pageSize: 10, totalPages: 3 })
+    await wrapper.find('.pager .btn-next').trigger('click')
+    await flushPromises()
+
+    expect(mockedList).toHaveBeenLastCalledWith(2, 10)
+    expect(mockedList).toHaveBeenCalledTimes(2)
+    expect(wrapper.text()).toContain('S20260925000099')
+  })
+
+  it('分页越界（1000C0001）：文案原样展示且列表保持原数据（不乐观更新）（§8.7）', async () => {
+    mockedList.mockResolvedValue({ list: [admission()], total: 25, pageNum: 1, pageSize: 10, totalPages: 3 })
+    const wrapper = await mountPage()
+    mockedList.mockRejectedValue(new ApiError('1000C0001', '分页参数超出范围'))
+    await wrapper.find('.pager .btn-next').trigger('click')
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('分页参数超出范围')
+    expect(wrapper.text()).toContain('业务协作')
+    expect(mockedList).toHaveBeenCalledTimes(2)
+  })
+
+  it('认证失败或身份已失效（1000C0002）：原样提示 + 清演示登录态 + 引导回登录页（§8.9 / R3）', async () => {
+    signInDemo()
+    mockedList.mockRejectedValue(new ApiError(AUTH_FAILED_CODE, '认证失败或身份已失效'))
+    await mountPage()
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('认证失败或身份已失效')
+    expect(isDemoAuthed()).toBe(false)
+    expect(currentRouter.currentRoute.value.path).toBe('/login')
+  })
+
+  it('非认证类加载失败（1006S0001）：原样展示后端文案且不跳转（§8.8 反向面）', async () => {
+    mockedList.mockRejectedValue(new ApiError('1006S0001', '主体服务暂不可用'))
+    await mountPage()
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('主体服务暂不可用')
+    expect(currentRouter.currentRoute.value.path).toBe('/')
   })
 
   it('接受邀请：以本人身份提交 CONFIRM 并刷新列表', async () => {
