@@ -323,7 +323,7 @@ public class SpaceJdbcRepository implements SpaceRepository {
             final AdmissionStatus fromStatus, final SpaceActionLog log) {
         try {
             // 单事务三步①：成员行 INSERT（uk_active_member 兜底并发重复准入窗口——INSERT 在 try 内，
-            // 冲突=并发方已建立活跃成员行，catch 回查既有行返回；本方准入单 UPDATE 随后 0 行 → 0010 回滚）
+            // 冲突=并发方已建立活跃成员行，catch 回查既有行返回；try 内 0010 门槛为独立并发子场景）
             jdbc.sql("INSERT INTO space_member (space_id, subject_no, role, status, joined_at) "
                             + "VALUES (?, ?, ?, ?, ?)")
                     .params(member.spaceId(), member.subjectNo(), member.role().name(), member.status().name(),
