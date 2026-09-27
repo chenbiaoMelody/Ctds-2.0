@@ -5,13 +5,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.ctds.space.support.SharedMySqlContainer;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.SQLIntegrityConstraintViolationException;
-import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -19,8 +19,6 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
-import org.testcontainers.containers.MySQLContainer;
-import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
@@ -28,17 +26,14 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  *
  * <p>真实 MySQL 8 容器实跑（不用 H2 兜底——生成列/IF 方言行为必须真库实证，沿 2.4.11 教训）；
  * 每个用例独立库名执行全新迁移（隔离语义等价方法级容器，沿 ADR-010 §3.6"独立 schema"口径）。
- * 三条唯一性硬约束的反向探针：规格规则不允许只有应用层判定，DB 兜底的失败路径必须有测试（任务卡 Q5/Q6-A）。</p>
+ * 容器经 {@link com.ctds.space.support.SharedMySqlContainer} 模块级共享（评审循环 1 收敛：
+ * 消除类级容器字段注解的第二容器，ADR-010 §8 形态 B + 守卫约束）。三条唯一性硬约束的反向探针：
+ * 规格规则不允许只有应用层判定，DB 兜底的失败路径必须有测试（任务卡 Q5/Q6-A）。</p>
  */
 @Testcontainers(disabledWithoutDocker = true)
 class SpaceMigrationIntegrationTest {
 
-    /** 显式镜像标签 mysql:8.0（ADR-010 §3.2 禁止 latest）；类级启动一次，用例间以独立库名隔离。 */
-    @Container
-    private static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:8.0")
-            .withDatabaseName("ctds_bootstrap");
-
-    /** 独立库名计数器（每用例一库，库由本类创建，命名受控无注入面）。 */
+    /** 独立库名计数器（每用例一库，库由 {@link com.ctds.space.support.SharedMySqlContainer} 建备，命名受控）。 */
     private static final AtomicInteger DB_SEQ = new AtomicInteger();
 
     /** hifi §1 逐表列清单（键 = 表名；值 = 按 ordinal_position 的列序）——"列齐"为建表正确性核心承诺。 */
@@ -92,7 +87,7 @@ class SpaceMigrationIntegrationTest {
         return comments;
     }
 
-    /** 探针 0：迁移冒烟——空库执行 V1 成功，六表齐备且逐表"列齐"（含顺序）、迁移历史成功。 */
+    /** 探针 0：迁移冒烟——空库执行迁移脚本成功，六表齐备且逐表"列齐"（含顺序）、迁移历史成功。 */
     @Test
     void migrationSmokeAllSixTablesCreated() throws SQLException {
         final String db = freshDatabaseWithMigration("smoke");
@@ -103,7 +98,11 @@ class SpaceMigrationIntegrationTest {
             assertEquals(expected.getValue(), columnNames(db, expected.getKey()),
                     "表列应齐备且顺序与 hifi §1 一致：" + expected.getKey());
         }
-        assertEquals(1, count(db, "SELECT COUNT(*) FROM flyway_schema_history WHERE success = 1"));
+        // 迁移历史：V1 建表（3.2.2）+ V2 留痕表动作码登记与值列放宽（3.2.3）——随迁移集演进（V3+ 只增不减）
+        assertTrue(count(db, "SELECT COUNT(*) FROM flyway_schema_history WHERE success = 1") >= 2,
+                "迁移历史应至少含 V1+V2 两次成功迁移");
+        assertEquals(1, count(db, "SELECT COUNT(*) FROM flyway_schema_history WHERE version = '2' AND success = 1"),
+                "V2 迁移应在位");
     }
 
     /** 探针 1：同一所有者活跃同名第二行被拒（规格行为 1 规则 3，uk_owner_norm_name）。 */
@@ -208,43 +207,23 @@ class SpaceMigrationIntegrationTest {
 
     // ---------- 助手：每用例独立库 + 迁移 + 纯 JDBC 断言 ----------
 
-    /** 建独立库并在其上执行全新 V1 迁移，返回库名（隔离语义等价方法级容器）。
-     * 建库与授权用容器 root（沿 SharedMySqlContainer 先例：应用用户对新库无 CREATE 权限，
-     * 授权后 Flyway/断言仍以应用用户接入）。 */
+    /** 建独立库并在其上执行全新 V1+V2 迁移，返回库名（隔离语义等价方法级容器）。
+     * 建库/授权由 {@link com.ctds.space.support.SharedMySqlContainer} 以容器 root 完成
+     * （应用用户对新库无 CREATE 权限，授权后 Flyway/断言仍以应用用户接入）。 */
     private String freshDatabaseWithMigration(final String label) {
         final String db = "ctds_probe_" + label + "_" + DB_SEQ.incrementAndGet();
-        if (!db.matches("[a-z0-9_]{1,64}")) {
-            throw new IllegalArgumentException("非法库名：" + db);
-        }
-        // 用户名白名单防御沿 SharedMySqlContainer 先例（GRANT 语句拼接前的纵深防御，评审②补齐）
-        final String appUser = MYSQL.getUsername();
-        if (!appUser.matches("[A-Za-z0-9_]{1,32}")) {
-            throw new IllegalArgumentException("非法数据库用户名：" + appUser);
-        }
-        execRoot("CREATE DATABASE IF NOT EXISTS `" + db + "`");
-        execRoot("GRANT ALL PRIVILEGES ON `" + db + "`.* TO '" + appUser + "'@'%'");
-        Flyway.configure().dataSource(urlFor(db), appUser, MYSQL.getPassword())
+        Flyway.configure()
+                .dataSource(SharedMySqlContainer.jdbcUrlFor(db), SharedMySqlContainer.container().getUsername(),
+                        SharedMySqlContainer.container().getPassword())
                 .locations("classpath:db/migration").load().migrate();
         return db;
     }
 
-    private String urlFor(final String db) {
-        return MYSQL.getJdbcUrl().replace("/" + MYSQL.getDatabaseName(), "/" + db);
-    }
-
-    private void execRoot(final String ddl) {
-        try (Connection c = DriverManager.getConnection(MYSQL.getJdbcUrl(), "root",
-                MYSQL.getPassword()); Statement s = c.createStatement()) {
-            s.execute(ddl);
-        } catch (final SQLException e) {
-            throw new IllegalStateException("容器 root 连接执行失败：" + ddl + "（" + e.getMessage() + "）", e);
-        }
-    }
-
     /** 探针 SQL 直接执行（异常原样上抛——约束冲突探针须断言到原始 SQLIntegrityConstraintViolationException）。 */
     private void exec(final String db, final String sql, final Object... args) throws SQLException {
-        try (Connection c = DriverManager.getConnection(urlFor(db), MYSQL.getUsername(),
-                MYSQL.getPassword()); PreparedStatement ps = c.prepareStatement(sql)) {
+        try (Connection c = DriverManager.getConnection(SharedMySqlContainer.jdbcUrlFor(db),
+                SharedMySqlContainer.container().getUsername(), SharedMySqlContainer.container().getPassword());
+                PreparedStatement ps = c.prepareStatement(sql)) {
             for (int i = 0; i < args.length; i++) {
                 ps.setObject(i + 1, args[i]);
             }
@@ -258,8 +237,9 @@ class SpaceMigrationIntegrationTest {
 
     /** 单值查询；无行返回空串（断言侧自行处理）。 */
     private String scalar(final String db, final String sql, final Object... args) throws SQLException {
-        try (Connection c = DriverManager.getConnection(urlFor(db), MYSQL.getUsername(),
-                MYSQL.getPassword()); PreparedStatement ps = c.prepareStatement(sql)) {
+        try (Connection c = DriverManager.getConnection(SharedMySqlContainer.jdbcUrlFor(db),
+                SharedMySqlContainer.container().getUsername(), SharedMySqlContainer.container().getPassword());
+                PreparedStatement ps = c.prepareStatement(sql)) {
             for (int i = 0; i < args.length; i++) {
                 ps.setObject(i + 1, args[i]);
             }
@@ -271,8 +251,9 @@ class SpaceMigrationIntegrationTest {
 
     /** 按 ordinal_position 返回表列名序列（information_schema 实查，探针 0"列齐"断言用）。 */
     private List<String> columnNames(final String db, final String table) throws SQLException {
-        try (Connection c = DriverManager.getConnection(urlFor(db), MYSQL.getUsername(),
-                MYSQL.getPassword()); PreparedStatement ps = c.prepareStatement(
+        try (Connection c = DriverManager.getConnection(SharedMySqlContainer.jdbcUrlFor(db),
+                SharedMySqlContainer.container().getUsername(), SharedMySqlContainer.container().getPassword());
+                PreparedStatement ps = c.prepareStatement(
                 "SELECT column_name FROM information_schema.columns"
                         + " WHERE table_schema = ? AND table_name = ? ORDER BY ordinal_position")) {
             ps.setString(1, db);

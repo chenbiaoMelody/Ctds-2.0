@@ -3,8 +3,8 @@ spring:
     name: space-service
   # 数据库迁移工具链（WBS 2.4.10 / ADR-009），沿 subject-service 同款模式：**默认 profile 不可启动**——
   # classpath 上有 spring-boot-starter-jdbc 会激活 DataSourceAutoConfiguration 并要求配置数据源，
-  # 默认 profile 显式排除（本包虽无 Repository，但保持"默认不挂库"的安全默认，只增不减）；
-  # 演示与服务一律 mysql profile（application-mysql.yml）。
+  # 且 3.2.3 起 SpaceJdbcRepository 构造器硬依赖 JdbcClient，默认 profile 无该 Bean（DB-24 同族口径，
+  # 只增不减的安全默认）；演示与服务一律 mysql profile（application-mysql.yml）。
   autoconfigure:
     exclude:
       - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
@@ -12,5 +12,35 @@ spring:
 server:
   port: 8083
   # 防御性回环（清债卡3 / DB-24 同族口径）：默认 profile 亦显式绑定回环作配置级安全默认；
-  # 演示期安全边界 ADR-016 §2.7——服务仅本机可达，不得对外暴露。
+  # 演示期安全边界 ADR-016 §2.7——服务仅本机可达，不得对外暴露；k8s 部署经清单环境变量放宽。
   address: 127.0.0.1
+
+logging:
+  file:
+    name: logs/app.log
+  structured:
+    format:
+      console: logstash
+      file: logstash
+
+ctds:
+  # RBAC（WBS 2.4.5 模式 A 配置映射）：平台运营方治理档（WBS-3.2.3 hifi §5 双轨①，演示期经角色头传入）。
+  # 本条为演示期角色映射登记位（subject/kms/did 同款机制）；空间动作的逐判定为动态双轨
+  # （空间内角色查 space_member 表，见 SpaceAccessGuard），不经注解静态门；
+  # 权限点命名随 3.2.4 收敛定稿（规格行为 4 规则 4），届时同步本登记。
+  auth:
+    permissions:
+      platform.operator: space.manage
+  # 空间服务参数（WBS-3.2.3 hifi §4~§5）
+  space:
+    # 双轨①平台运营方角色档名（应用服务经 AuthContext.roles() 判定，配置可调）
+    operator-role: platform.operator
+    # 主体服务衔接（Q1-A 资格判定只读通道）：未配置 = 资格判定不可用（1006S0001，不冒充"未入驻"防枚举）
+    subject:
+      base-url: ${CTDS_SPACE_SUBJECT_BASEURL:}
+  # 创建防重复提交（ADR-007 模式 B）：内存模式 = 零中间件依赖，演示/单测可执行；
+  # 多实例生产部署须 mode=redis 并经 redisson-spring-boot-starter 提供 Redis 连接（WBS-2.4.7 hifi B8 边界）
+  idempotency:
+    mode: memory
+  lock:
+    mode: memory

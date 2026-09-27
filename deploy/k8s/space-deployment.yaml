@@ -1,0 +1,77 @@
+# C-TDS space-service Deployment (WBS-3.2.3, spec: docs/designs/WBS-3.2.3-hifi.md §6;
+# template follows backend-deployment.yaml per ADR-013, WBS-2.5.2 label conventions).
+# IMAGE_PLACEHOLDER is injected by the 2.5.2 deployment toolchain convention (ADR-012).
+# ACTIVATION NOTE: this manifest is enlisted by WBS-3.2.3 but NOT yet runnable in the demo
+# cluster - activation prerequisites (registered in the delivery note): (1) space image
+# added to the nightly build / ModuleMap wiring (2.5.x), (2) a reachable MySQL for
+# ctds_space. Until then the pod stays ImagePullBackOff if applied; this is expected.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ctds-space-service
+  labels:
+    app.kubernetes.io/part-of: ctds
+    app.kubernetes.io/name: ctds-space-service
+    app.kubernetes.io/component: backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ctds-space-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: ctds
+        app.kubernetes.io/name: ctds-space-service
+        app.kubernetes.io/component: backend
+    spec:
+      containers:
+        - name: ctds-space-service
+          # Image reference is injected by the 2.5.2 toolchain convention (ADR-012).
+          # Only the `image:` field below is replaced - inject by line, not
+          # by string search.
+          image: IMAGE_PLACEHOLDER
+          securityContext:
+            # Image USER is numeric uid 1001 (appuser); non-root is verified
+            # at run. Numeric uid: the kubelet runAsNonRoot check cannot
+            # verify a user name (2.5.2 drill finding).
+            runAsNonRoot: true
+          ports:
+            - containerPort: 8083
+          readinessProbe:
+            tcpSocket:
+              port: 8083
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 8083
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          env:
+            # Service requires the mysql profile (repositories bind JdbcClient;
+            # default profile is fail-fast non-startable by design, ADR-009/DB-24).
+            - name: SPRING_PROFILES_ACTIVE
+              value: "mysql"
+            # In-cluster relaxation of the host-demo loopback binding
+            # (ADR-016 §2.7): ClusterIP keeps the service non-exposed.
+            - name: SPRING_SERVER_ADDRESS
+              value: "0.0.0.0"
+            # Subject-service base URL for admission checks (WBS-3.2.3 hifi §4).
+            - name: CTDS_SPACE_SUBJECT_BASEURL
+              value: "http://ctds-subject-service:8080"
+            # DB credentials are injected via secret/env at activation (2.5.x);
+            # keys only, no real credentials in the repo (charter red line 7).
+            - name: CTDS_DB_URL
+              value: "jdbc:mysql://ctds-mysql:3306/ctds_space"
+            - name: CTDS_DB_USER
+              value: "ctds"
+            - name: CTDS_DB_PASSWORD
+              value: ""

@@ -42,7 +42,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\deploy\deploy.ps1
 | 平台前端页面 | 浏览器打开 `http://localhost:30081` | 平台首页正常显示 |
 | 深链接不 404 | 浏览器打开 `http://localhost:30081/login` 后刷新 | 页面正常（SPA fallback） |
 | 后端在应答 | 浏览器/curl 打开 `http://localhost:30080/` | 404 属正常（服务活着，业务端点有鉴权） |
-| 集群里的资源 | `kubectl get pods` | `ctds-backend` / `ctds-frontend` 两个 Running |
+| 集群里的资源 | `kubectl get pods` | `ctds-backend` / `ctds-frontend` 两个业务 Pod Running；`ctds-space-service` 未激活（见下行），一键部署出现其 ImagePullBackOff 属预期非故障 |
+| 空间服务清单（WBS-3.2.3 入列） | `deploy/k8s` 下 `space-deployment.yaml` / `space-service.yaml` | 清单已入列但**未激活**（激活前提：镜像构建入列 + MySQL 就绪 + subject 服务集群可达 + 部署脚本 ModuleMap 登记 + 监控三注解/actuator 随批次补，随 2.5.x 部署包）——激活前若见 `ctds-space-service` Pod 处 ImagePullBackOff 属预期 |
 | 部署报告 | `build-output/deploy/<时间戳>/deploy-report.md` | 各步骤全 PASS |
 
 > 访问原理（业务可读）：本机集群（Docker Desktop 新版内置 Kubernetes）不会把 NodePort 端口直接开放给浏览器，部署脚本会悄悄拉起两条"转发专线"（kubectl port-forward）并让它们在脚本退出后继续工作——您只管开浏览器；`-Teardown` 会把专线一并收回。
