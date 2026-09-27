@@ -10,6 +10,10 @@ import java.util.Optional;
  * 空间域仓储接口（WBS-3.2.3 hifi §9 四层契约；实现 = infrastructure.SpaceJdbcRepository）。
  * 一切状态变更同事务落留痕（subject appendTransition 先例）；状态门槛 = UPDATE 带 from_status
  * 前置条件的乐观并发控制（0 行即拒，不先查后改——TOCTOU 防护，3.1.3 教训）。
+ *
+ * <p><b>留痕 from/to 单一表达（WBS-3.2.4 移交④收敛）</b>：一切带留痕的仓储方法，留痕行的
+ * from_value/to_value 一律由实现以方法参数统一回填——调用方构造的留痕对象该两字段被忽略/覆盖，
+ * 防"参数与留痕载体"双表达漂移（一致性锚 T20）。</p>
  */
 public interface SpaceRepository {
 
@@ -17,6 +21,9 @@ public interface SpaceRepository {
 
     /** 按技术主键取空间。 */
     Optional<Space> findById(long id);
+
+    /** 按技术主键取准入单（准入单操作目标定位）。 */
+    Optional<SpaceAdmission> findAdmissionById(long admissionId);
 
     /** 名称是否已被历史解散空间锁定（space_name_lock 全平台口径，行为 2 规则 4）。 */
     boolean existsInNameLock(String normalizedName);
@@ -67,4 +74,74 @@ public interface SpaceRepository {
     /** 配置变更载荷（null = 该项不变更）。 */
     record SpaceUpdate(String intro, LocalDateTime effectiveFrom, LocalDateTime effectiveTo) {
     }
+
+    // ==== 成员与准入（WBS-3.2.4）====
+
+    /**
+     * 该空间该主体是否已有活跃成员行（重复准入幂等前置门槛，行为 3 规则 4；DB 兜底 uk_active_member）。
+     */
+    boolean existsActiveMembership(long spaceId, String subjectNo);
+
+    /** 同空间同主体同型待处理单（PENDING_APPROVAL/PENDING_CONFIRMATION）——重复提交返回既有（Q3-A）。 */
+    Optional<SpaceAdmission> findPendingAdmission(long spaceId, String subjectNo, AdmissionType type);
+
+    /** 按成员行 id 取成员（操作目标定位，Q5-A 行级精确——同主体多历史行时行 id 无歧义）。 */
+    Optional<SpaceMember> findMemberById(long memberId);
+
+    /**
+     * 插入准入单（申请/邀请创建）+ 创建留痕（ADMIT_REQUEST/ADMIT_INVITE）同事务落库
+     * （沿 create 单事务先例——拒绝留痕例外见评审循环 1 修复批），返回技术主键。
+     */
+    long insertAdmission(SpaceAdmission admission, SpaceActionLog log);
+
+    /**
+     * 成员生效事务（确认 CONFIRM / 审批 APPROVE 共用，hifi §3 单事务三步）：
+     * ① space_member INSERT（role=MEMBER, status=ACTIVE，uk_active_member 兜底并发窗口）；
+     * ② 准入单乐观门槛更新（WHERE id AND space_id AND status=from，0 行 → 1006C0010）+ 回填 member_id；
+     * ③ 留痕同事务（from/to 由参数回填——移交④）。任一失败整体回滚。返回新成员行主键。
+     */
+    long activateMembership(SpaceMember member, long admissionId, long spaceId,
+            AdmissionStatus fromStatus, SpaceActionLog log);
+
+    /**
+     * 准入单状态流转（谢绝 DECLINED / 拒绝 REJECTED；乐观门槛 WHERE id AND space_id AND status=from，
+     * 0 行 → 1006C0010）；留痕同事务，from/to 由参数回填（移交④）。
+     */
+    void appendAdmissionTransition(long admissionId, long spaceId, AdmissionStatus fromStatus,
+            AdmissionStatus toStatus, SpaceActionLog log);
+
+    /** 准入单分页（空间视角，owner/admin 待办发现面；status null = 全部，按 id 升序）。 */
+    PageResult<SpaceAdmission> searchAdmissions(long spaceId, AdmissionStatus status, PageQuery page);
+
+    /** 我的准入单分页（个人视角：发出的申请 + 收到的邀请，subject_no 命中；按 id 降序——最新在前）。 */
+    PageResult<SpaceAdmission> searchAdmissionsBySubject(String subjectNo, PageQuery page);
+
+    /** 活跃成员分页（成员列表读面；按 id 升序）。 */
+    PageResult<SpaceMember> searchActiveMembers(long spaceId, PageQuery page);
+
+    /**
+     * 成员关系终态化（退出 LEFT / 移除 REMOVED；乐观门槛 WHERE id AND space_id AND status=ACTIVE，
+     * 0 行 → 1006C0008）；留痕（LEAVE/REMOVE）同事务，from_value=原角色、to_value=终态由参数回填。
+     */
+    void terminateMembership(long memberId, long spaceId, MemberRole fromRole, MemberStatus terminalStatus,
+            SpaceActionLog log);
+
+    /**
+     * 角色变更（乐观门槛 WHERE id AND space_id AND status=ACTIVE AND role=fromRole，0 行 → 1006C0008）；
+     * 留痕（ROLE_GRANT/ROLE_REVOKE）同事务，from/to 由参数回填（移交④）。
+     */
+    void changeRole(long memberId, long spaceId, MemberRole fromRole, MemberRole toRole, SpaceActionLog log);
+
+    /**
+     * 所有权转移单事务四写（移交②双处同步，hifi §4；顺序先降后升避 uk_active_owner 冲突）：
+     * ① 原 owner 成员行降级（UPDATE role=formerOwnerNewRole WHERE space_id AND subject_no=当前owner
+     * AND status=ACTIVE AND role=OWNER，0 行 → 1006C0008）；② 目标成员行升 OWNER（WHERE id AND space_id
+     * AND status=ACTIVE AND role<>OWNER，0 行 → 1006C0008）；③ space.owner_subject_no 列乐观门槛同步
+     * （WHERE id AND owner_subject_no=当前owner，0 行 → 1006C0008）；④ 留痕两行（grantLog + revokeLog，
+     * from/to 为业务构造值——发起时点观察值，不适用状态机参数回填口径）。
+     * 任一失败整体回滚；并发窗口由 uk_active_owner 唯一索引兜底（DuplicateKeyException → 1006C0009）。
+     */
+    void transferOwnership(long spaceId, String currentOwnerSubjectNo, String targetSubjectNo,
+            long targetMemberId, MemberRole formerOwnerNewRole, SpaceActionLog grantLog,
+            SpaceActionLog revokeLog);
 }

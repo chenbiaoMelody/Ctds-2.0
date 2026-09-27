@@ -2,13 +2,18 @@ package com.ctds.space.application;
 
 import com.ctds.common.pagination.PageQuery;
 import com.ctds.common.pagination.PageResult;
+import com.ctds.space.domain.ActionResult;
 import com.ctds.space.domain.Space;
+import com.ctds.space.domain.SpaceActionLog;
 import com.ctds.space.domain.SpaceBizException;
 import com.ctds.space.domain.SpaceErrorCodes;
 import com.ctds.space.domain.SpaceMember;
 import com.ctds.space.domain.SpaceNameNormalizer;
 import com.ctds.space.domain.SpaceRepository;
+import com.ctds.space.domain.TargetType;
 import com.ctds.space.domain.Visibility;
+import java.time.Clock;
+import java.time.LocalDateTime;
 import java.util.List;
 import org.springframework.stereotype.Service;
 
@@ -23,10 +28,12 @@ public class SpaceQueryService {
 
     private final SpaceRepository repository;
     private final SpaceAccessGuard guard;
+    private final Clock clock;
 
-    public SpaceQueryService(final SpaceRepository repository, final SpaceAccessGuard guard) {
+    public SpaceQueryService(final SpaceRepository repository, final SpaceAccessGuard guard, final Clock clock) {
         this.repository = repository;
         this.guard = guard;
+        this.clock = clock;
     }
 
     /**
@@ -65,6 +72,11 @@ public class SpaceQueryService {
         if (space.visibility() == Visibility.PUBLIC) {
             return new SpaceView(space, List.of(), false);
         }
+        // 非成员访问不公开空间：对外保持 404 同形（防存在性探测，3.2.3 口径不变），
+        // 对内落 ACCESS_DENIED 拒绝留痕（行为 6 规则 5 / WBS-3.2.4 移交③——对外形态不变、对内可审计）
+        repository.insertLog(new SpaceActionLog(null, spaceId, TargetType.SPACE, spaceId,
+                "ACCESS_DENIED", subject, null, null, ActionResult.DENIED,
+                SpaceErrorCodes.ACCESS_DENIED_LOG_REASON, LocalDateTime.now(clock)));
         throw notFound();
     }
 

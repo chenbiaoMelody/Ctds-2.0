@@ -21,9 +21,10 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 public class SpaceExceptionHandler {
 
     /** 允许精确映射的 1006 段码值（SpaceErrorCodes 定稿集；新码须同步登记——一致性由
-     * interfaces 包测试锚定，评审循环 1 补：码表↔处理器集合不得漂移）。 */
+     * interfaces 包测试锚定，评审循环 1 补：码表↔处理器集合不得漂移；WBS-3.2.4 追加 0008~0011）。 */
     static final Set<String> MAPPED_CODES = Set.of("1006C0001", "1006C0002", "1006C0003", "1006C0004",
-            "1006C0005", "1006C0006", "1006C0007", "1006S0001");
+            "1006C0005", "1006C0006", "1006C0007", "1006C0008", "1006C0009", "1006C0010", "1006C0011",
+            "1006S0001");
 
     @ExceptionHandler(SpaceBizException.class)
     public ResponseEntity<ApiResult<Void>> onSpaceBizException(final SpaceBizException ex) {
@@ -39,8 +40,8 @@ public class SpaceExceptionHandler {
     private static HttpStatus statusOf(final String code) {
         return switch (code) {
             case "1006C0001", "1006C0007" -> HttpStatus.FORBIDDEN;
-            case "1006C0002", "1006C0003" -> HttpStatus.CONFLICT;
-            case "1006C0004" -> HttpStatus.NOT_FOUND;
+            case "1006C0002", "1006C0003", "1006C0009", "1006C0010", "1006C0011" -> HttpStatus.CONFLICT;
+            case "1006C0004", "1006C0008" -> HttpStatus.NOT_FOUND;
             case "1006C0005", "1006C0006" -> HttpStatus.BAD_REQUEST;
             default -> HttpStatus.SERVICE_UNAVAILABLE;   // 1006S0001
         };
