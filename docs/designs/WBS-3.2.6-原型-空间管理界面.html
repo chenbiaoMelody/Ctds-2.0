@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>WBS-3.2.6 线框原型 · 空间管理界面（低保真）</title>
+<style>
+  /* 低保真线框：只表达信息架构与操作流，不做视觉定稿（高保真阶段定稿） */
+  body { font-family: sans-serif; margin: 0; background: #f5f5f5; }
+  .frame { border: 2px dashed #999; margin: 16px; padding: 12px; }
+  .frame h2 { margin-top: 0; }
+  .layout { display: flex; gap: 12px; }
+  .side { width: 190px; border: 1px dashed #999; padding: 8px; min-height: 300px; }
+  .main { flex: 1; border: 1px dashed #999; padding: 8px; }
+  table { border-collapse: collapse; width: 100%; background: #fff; }
+  th, td { border: 1px solid #bbb; padding: 6px 8px; font-size: 13px; text-align: left; }
+  th { background: #eee; }
+  .btn { display: inline-block; border: 1px solid #666; padding: 3px 10px; margin: 2px; font-size: 13px; background: #fff; text-decoration: none; color: #000; }
+  .btn-danger { border-color: #a00; color: #a00; }
+  .note { color: #888; font-size: 12px; }
+  .field { margin: 4px 0; font-size: 13px; }
+  .label { display: inline-block; width: 130px; color: #555; }
+  .section { border: 1px dashed #aaa; padding: 6px; margin: 6px 0; background: #fff; }
+  .placeholder { color: #aaa; font-style: italic; }
+  .modal { border: 2px solid #666; background: #fff; padding: 10px; margin: 8px 0; width: 620px; }
+  .modal h3 { margin: 0 0 6px 0; font-size: 15px; }
+  .warn { color: #a00; font-weight: bold; }
+  .tabs span { display: inline-block; border: 1px solid #666; border-bottom: none; padding: 4px 12px; margin-right: 4px; font-size: 13px; background: #fff; }
+  .tabs span.on { background: #eee; font-weight: bold; }
+  .topbar { border: 1px solid #666; background: #fff; padding: 6px 10px; font-size: 13px; margin-bottom: 10px; }
+  .tag { border: 1px solid #888; border-radius: 8px; padding: 1px 8px; font-size: 12px; }
+  .tag-warn { border-color: #a00; color: #a00; }
+</style>
+</head>
+<body>
+
+<div class="frame">
+  <h2>画面 0：全局布局（侧边菜单 + 顶栏"演示身份"控件）</h2>
+  <div class="topbar">
+    <b>顶栏</b>：折叠按钮 ｜ 面包屑：逻辑空间 / 普惠金融空间 ｜ 右侧：<b>[ 演示身份 ]</b>
+    主体编号 <span class="placeholder">[ S20260914000001 ]</span>
+    档位 <span class="placeholder">[ 普通主体 ▾ ｜ 平台运营方 ]</span> <a class="btn" href="#">保存</a>
+    ｜ 演示模式标识 ｜ 角色切换（user/admin） ｜ 退出
+    <div class="note">演示期专用：主体编号写入浏览器本地（ctds-demo-subject）；档位写入 ctds-demo-actor-mode。普通档角色头 = applicant；运营档 = applicant,platform.operator（<b>普通档不得带平台角色</b>，否则"越权被拒"类剧本步骤会被放行）。主体编号必填（为空 = 未认证）。</div>
+  </div>
+  <div class="layout">
+    <div class="side">
+      <div class="field"><b>侧边菜单</b>（按权限显隐）</div>
+      <div class="field">工作台</div>
+      <div class="field">标准能力</div>
+      <div class="field">数据目录</div>
+      <div class="field">仅管理员可见</div>
+      <div class="field">主体入驻</div>
+      <div class="field">主体审核</div>
+      <div class="field">入驻进度查询</div>
+      <div class="field">DID 管理</div>
+      <div class="field"><b>逻辑空间</b> ◀（menuOrder 9；权限点 space.member）</div>
+      <div class="field"><b>平台策略治理</b> ◀（menuOrder 10；权限点 platform.policy）</div>
+      <div class="note">菜单计数：admin 8 → 10；普通角色仍 5</div>
+    </div>
+    <div class="main">
+      <div class="note">本区为页面承载区（画面 1~8 分别为各路由内容）。</div>
+    </div>
+  </div>
+</div>
+
+<div class="frame" id="list">
+  <h2>画面 1：逻辑空间 · 列表（/spaces）</h2>
+  <div class="layout">
+    <div class="side">
+      <div class="field"><b>逻辑空间</b> ◀ 当前</div>
+      <div class="field">平台策略治理</div>
+    </div>
+    <div class="main">
+      <div class="section"><b>操作条</b>
+        <a class="btn" href="#create">创建空间</a>
+        <a class="btn" href="#mine">我的邀请与申请</a>
+      </div>
+      <div class="section"><b>检索</b>
+        <div class="field"><span class="label">空间名称（关键字）</span> [ 普惠 ]　<a class="btn" href="#">查询</a><a class="btn" href="#">重置</a></div>
+        <div class="note">按名称前缀检索（keyword）；空值 = 不过滤。列表内容由服务端按"可见性 + 我的成员关系"过滤：普通主体只见公开空间与自己参与的空间；平台运营方档见全量。</div>
+      </div>
+      <div class="field"><b>空间列表</b>（分页）</div>
+      <table>
+        <tr><th>空间名称</th><th>场景类型</th><th>参与方范围</th><th>可见性</th><th>状态</th><th>生效期</th><th>操作</th></tr>
+        <tr><td>普惠金融空间</td><td>普惠金融</td><td>邀请制</td><td>不公开</td><td><span class="tag">已启用</span></td><td>2026-09-27 ~ 2027-09-27</td><td><a class="btn" href="#detail">进入详情</a></td></tr>
+        <tr><td>公开测试空间</td><td>其他</td><td>公开</td><td>公开</td><td><span class="tag">已启用</span></td><td><span class="placeholder">（未设置）</span></td><td><a class="btn" href="#detail">进入详情</a></td></tr>
+        <tr><td>医疗数据空间</td><td>医疗验证</td><td>审批制</td><td>不公开</td><td><span class="tag tag-warn">已解散</span></td><td>2026-09-27 ~ 2027-09-27</td><td><a class="btn" href="#detail">进入详情</a></td></tr>
+      </table>
+      <div class="field note">分页控件：上一页 / 下一页 / 页码（对齐 common-pagination 的 pageNum/pageSize/total/totalPages）</div>
+      <div class="field note">空态（非报错）：暂无可查看的空间（公开空间或你参与的空间）</div>
+      <div class="field note">非成员直接打开非公开空间地址 → 后端按"不存在"口径同形返回（1006C0004）→ 界面统一提示"空间不存在或无权访问"（<b>与无权分支同一条文案，不区分</b>）</div>
+    </div>
+  </div>
+</div>
+
+<div class="frame" id="create">
+  <h2>画面 2：创建空间弹窗（规格行为 1）</h2>
+  <div class="modal">
+    <h3>创建空间</h3>
+    <div class="field"><span class="label">空间名称 *</span> <span class="placeholder">[ 如：普惠金融空间 ]</span> <span class="note">≤128；首尾空白与控制字符归一化后判重</span></div>
+    <div class="field"><span class="label">场景类型 *</span> <span class="placeholder">[ 普惠金融 ▾ ｜ 医疗验证 ｜ 其他 ]</span></div>
+    <div class="field"><span class="label">参与方范围 *</span> <span class="placeholder">[ 公开 ▾ ｜ 邀请制 ｜ 审批制 ]</span></div>
+    <div class="field"><span class="label">可见性 *</span> <span class="placeholder">[ 公开 ▾ ｜ 不公开 ]</span></div>
+    <div class="field"><span class="label">空间简介</span> <span class="placeholder">[ 选填，≤512 ]</span></div>
+    <div class="field"><span class="label">生效期</span> <span class="placeholder">[ 起始日期 ]</span> ~ <span class="placeholder">[ 结束日期 ]</span>（选填）</div>
+    <div class="field"><a class="btn" href="#list">提交</a><a class="btn" href="#list">取消</a></div>
+    <div class="field note">成功：新空间出现在列表，状态"已创建（未启用）"，当前主体为所有者</div>
+    <div class="field note">被拒（原样展示后端文案）：1006C0001 主体未入驻或不存在，无法执行该操作（<b>不区分"不存在"与"未入驻"</b>）｜ 1006C0003 同一所有者已存在同名空间 / 空间名称已被锁定，不可复用 ｜ 1006C0005 要素缺失或超长（逐字段提示）</div>
+  </div>
+</div>
+
+<div class="frame" id="detail">
+  <h2>画面 3：空间详情 · 概览（/spaces/:id，Tab 1）</h2>
+  <div class="main">
+    <div class="field"><b>头部</b>：普惠金融空间 <span class="tag">已启用</span>　<a class="btn" href="#list">返回列表</a></div>
+    <div class="tabs"><span class="on">概览</span><span>成员与准入</span><span>策略</span></div>
+
+    <div class="section"><b>空间要素</b>
+      <div class="field"><span class="label">名称</span> 普惠金融空间　<span class="label">场景类型</span> 普惠金融　<span class="label">参与方范围</span> 邀请制　<span class="label">可见性</span> 不公开</div>
+      <div class="field"><span class="label">所有者主体编号</span> S20260914000001　<span class="label">创建时间</span> 2026-09-27 10:12　<span class="label">更新时间</span> 2026-09-27 10:31</div>
+      <div class="field"><span class="label">简介</span> 面向普惠金融场景的数据协作空间　<span class="label">生效期</span> 2026-09-27 ~ 2027-09-27</div>
+      <div class="field note">非成员看到的公开摘要仅含公开要素 + 统一提示"空间不存在或无权访问"（与 1006C0004 同一条文案与样式）</div>
+    </div>
+
+    <div class="section"><b>生命周期动作</b>（按状态给出；<b>仅体验层显隐，判定在服务端</b>）
+      <div class="field">
+        <span class="placeholder">[已创建]</span> <a class="btn" href="#">启用</a> <a class="btn btn-danger" href="#dissolve">解散</a>
+        <span class="placeholder">[已启用]</span> <a class="btn" href="#">冻结</a> <a class="btn btn-danger" href="#dissolve">解散</a>
+        <span class="placeholder">[已冻结]</span> <a class="btn" href="#">恢复</a> <a class="btn btn-danger" href="#dissolve">解散</a>
+        <span class="placeholder">[已解散]</span> <span class="note">终态：无可用动作（启用 / 冻结 / 邀请一律被拒）</span>
+      </div>
+      <div class="field"><a class="btn" href="#update">修改配置</a><span class="note">（仅"简介 / 生效期"可改，其余字段只读展示且不提交）</span></div>
+      <div class="field note">被拒原样展示：1006C0002 空间当前状态不允许该操作 ｜ 1006C0007 无权限执行该空间操作（含"成员尝试解散""管理员尝试解散"）｜ 1006C0004 空间不存在</div>
+    </div>
+
+    <div class="section"><b>操作留痕</b>（Q6-A 新增只读端点；四要素：谁 / 何时 / 哪个空间 / 做了什么）
+      <table>
+        <tr><th>动作</th><th>操作者</th><th>时间</th><th>结果</th><th>理由</th><th>从何值 → 到何值</th></tr>
+        <tr><td>创建空间（CREATE）</td><td>S20260914000001</td><td>2026-09-27 10:12</td><td><span class="tag">成功</span></td><td><span class="placeholder">（无）</span></td><td><span class="placeholder">（无）</span> → 已创建</td></tr>
+        <tr><td>启用（ENABLE）</td><td>S20260914000001</td><td>2026-09-27 10:15</td><td><span class="tag">成功</span></td><td><span class="placeholder">（无）</span></td><td>已创建 → 已启用</td></tr>
+        <tr><td>配置变更（UPDATE）</td><td>S20260914000001</td><td>2026-09-27 10:31</td><td><span class="tag">成功</span></td><td><span class="placeholder">（无）</span></td><td>简介（原值）→ 简介（新值）</td></tr>
+        <tr><td>越权拒绝（ACCESS_DENIED）</td><td>S20260922000001</td><td>2026-09-27 10:40</td><td><span class="tag tag-warn">已拒绝</span></td><td>操作者不具备该动作所需权限</td><td><span class="placeholder">（无）</span></td></tr>
+      </table>
+      <div class="field note">留痕<b>不含任何敏感原文</b>；只插不改（无删除/编辑入口）。Q6-B 时本区不实施（该步骤由技术侧配合，剧本同步修订）。</div>
+    </div>
+  </div>
+</div>
+
+<div class="frame" id="dissolve">
+  <h2>画面 4：解散二次确认弹窗（规格行为 2 规则 4；剧本 C-2.1 S3-4）</h2>
+  <div class="modal">
+    <h3>解散空间二次确认</h3>
+    <div class="field">即将解散空间：<b>普惠金融空间</b></div>
+    <div class="field warn">解散后不可恢复：空间不再接纳成员、策略归档不可变、名称将被锁定且全平台不可复用。</div>
+    <div class="field"><span class="label">解散理由</span> <span class="placeholder">[ 选填 ]</span></div>
+    <div class="field"><a class="btn btn-danger" href="#detail">确认解散</a><a class="btn" href="#detail">取消</a></div>
+    <div class="field note">选"取消"：<b>不发起任何请求</b>（状态不变、无留痕）；选"确认"：请求体显式携带 <b>confirmDissolve: true</b>（后端 1006C0006 兜底）</div>
+    <div class="field note">"仅所有者可执行"：管理员（admin）与成员执行时被后端拒绝（1006C0007 / 文案表意"仅空间所有者可执行"），界面原样展示</div>
+  </div>
+</div>
+
+<div class="frame" id="update">
+  <h2>画面 5：修改配置弹窗（仅白名单字段；剧本 C-2.1 S2-4）</h2>
+  <div class="modal">
+    <h3>修改空间配置</h3>
+    <div class="field"><span class="label">简介</span> <span class="placeholder">[ 可改，≤512 ]</span></div>
+    <div class="field"><span class="label">生效期</span> <span class="placeholder">[ 起始 ]</span> ~ <span class="placeholder">[ 结束 ]</span></div>
+    <div class="field"><span class="label">名称</span> 普惠金融空间 <span class="note">（不可变更，只读展示，不提交）</span></div>
+    <div class="field"><span class="label">参与方范围 / 可见性</span> 邀请制 / 不公开 <span class="note">（不可变更，只读展示，不提交）</span></div>
+    <div class="field"><a class="btn" href="#detail">保存</a><a class="btn" href="#detail">取消</a></div>
+    <div class="field note">请求体只含白名单字段（intro / effectiveFrom / effectiveTo）；变更留痕记录"从何值 → 到何值"（见概览·操作留痕）</div>
+  </div>
+</div>
+
+<div class="frame" id="members">
+  <h2>画面 6：空间详情 · 成员与准入（Tab 2）</h2>
+  <div class="main">
+    <div class="tabs"><span>概览</span><span class="on">成员与准入</span><span>策略</span></div>
+
+    <div class="section"><b>本区动作</b>
+      <a class="btn" href="#invite">邀请成员</a><span class="note">（仅邀请制空间）</span>
+      <a class="btn" href="#apply">提交加入申请</a><span class="note">（仅公开 / 审批制空间）</span>
+      <a class="btn" href="#">退出空间</a>
+      <div class="note">状态门槛（体验层提示，判定在后端）：未启用 → "空间未启用"；已冻结 → "空间已冻结"；已解散 → "空间已解散"</div>
+    </div>
+
+    <div class="section"><b>成员列表</b>（分页；行级 memberId 供角色/移除/转移定位）
+      <table>
+        <tr><th>id</th><th>主体编号</th><th>角色</th><th>状态</th><th>加入时间</th><th>操作</th></tr>
+        <tr><td>11</td><td>S20260914000001</td><td><span class="tag">所有者</span></td><td>生效中</td><td>2026-09-27 10:12</td><td><span class="note">（所有者不可退出 / 移除；唯一所有者保护）</span></td></tr>
+        <tr><td>12</td><td>S20260925000002</td><td><span class="tag">管理员</span></td><td>生效中</td><td>2026-09-27 10:22</td><td><a class="btn" href="#">收回管理员</a><a class="btn" href="#remove">移除</a><a class="btn" href="#transfer">转移所有权</a></td></tr>
+        <tr><td>13</td><td>S20260925000001</td><td><span class="tag">成员</span></td><td>生效中</td><td>2026-09-27 10:24</td><td><a class="btn" href="#">授予管理员</a><a class="btn" href="#remove">移除</a><a class="btn" href="#transfer">转移所有权</a></td></tr>
+        <tr><td>14</td><td>S20260922000001</td><td><span class="tag">成员</span></td><td>已移除</td><td>2026-09-27 10:28</td><td><span class="note">（终态行回显，不可再操作）</span></td></tr>
+      </table>
+      <div class="field note">"不得自我提权"：目标行 = 本人时，"授予 / 收回管理员"体验层禁用 + 服务端兜底拒绝；"转移所有权"仅所有者本人可见</div>
+    </div>
+
+    <div class="section"><b>准入单列表</b>（分页 + 状态筛选）
+      <div class="field"><span class="label">状态筛选</span> <span class="placeholder">[ 全部 ▾ ｜ 待审批 ｜ 待确认 ｜ 已通过 ｜ 已拒绝 ｜ 已谢绝 ｜ 已取消 ]</span></div>
+      <table>
+        <tr><th>id</th><th>主体编号</th><th>形态</th><th>状态</th><th>操作者</th><th>时间</th><th>理由</th><th>操作</th></tr>
+        <tr><td>31</td><td>S20260925000002</td><td>邀请</td><td><span class="tag">已通过</span></td><td>S20260914000001</td><td>2026-09-27 10:20</td><td><span class="placeholder">（无）</span></td><td><span class="note">（已终态）</span></td></tr>
+        <tr><td>32</td><td>S20260922000001</td><td>申请</td><td><span class="tag tag-warn">待审批</span></td><td>S20260922000001</td><td>2026-09-27 10:36</td><td><span class="placeholder">（无）</span></td><td><a class="btn" href="#approve">审批</a></td></tr>
+        <tr><td>33</td><td>S20260925000001</td><td>邀请</td><td><span class="tag">待确认</span></td><td>S20260914000001</td><td>2026-09-27 10:38</td><td>邀请参与普惠金融场景协作</td><td><span class="note">（由被邀方在"我的邀请与申请"处理）</span></td></tr>
+      </table>
+      <div class="field note">被拒原样展示：1006C0001 主体未入驻或不存在 ｜ 1006C0010 准入单当前状态不允许该操作 ｜ 1006C0011 该空间的参与方范围不支持此准入方式 ｜ 1006C0002 空间当前状态不允许该操作</div>
+    </div>
+  </div>
+</div>
+
+<div class="frame" id="invite">
+  <h2>画面 7：邀请 / 申请 / 审批 / 移除 / 转移 弹窗组</h2>
+  <div class="modal" id="apply">
+    <h3>提交加入申请</h3>
+    <div class="field">以当前演示身份（主体编号）向"公开测试空间"提交加入申请？</div>
+    <div class="field"><a class="btn" href="#members">提交</a><a class="btn" href="#members">取消</a></div>
+    <div class="field note">结果：进入"待审批"（<b>不直接成为成员</b>）；已是成员时返回既有成员关系（不新增成员行）</div>
+  </div>
+  <div class="modal">
+    <h3>邀请成员</h3>
+    <div class="field"><span class="label">被邀主体编号 *</span> <span class="placeholder">[ 如 S20260925000002 ]</span> <span class="note">（≤128，必填，为空前置拦截、零请求）</span></div>
+    <div class="field"><span class="label">邀请理由</span> <span class="placeholder">[ 选填，≤256 ]</span></div>
+    <div class="field"><a class="btn" href="#members">发出邀请</a><a class="btn" href="#members">取消</a></div>
+    <div class="field note">结果：邀请"已发出"但<b>尚未成为成员</b>——成员列表不含该主体，准入单为"待确认"</div>
+  </div>
+  <div class="modal" id="approve">
+    <h3>审批准入单</h3>
+    <div class="field"><span class="label">决定 *</span> <span class="placeholder">[ 通过 ▾ ｜ 拒绝 ]</span></div>
+    <div class="field"><span class="label">理由</span> <span class="placeholder">[ 拒绝时必填，≤256 ]</span></div>
+    <div class="field"><a class="btn" href="#members">提交</a><a class="btn" href="#members">取消</a></div>
+    <div class="field note">拒绝时理由留空 → 前置拦截（<b>零请求</b>）；后端兜底为请求体校验失败（400）。拒绝结果：该主体不是成员，理由进入留痕</div>
+  </div>
+  <div class="modal" id="remove">
+    <h3>移除成员</h3>
+    <div class="field"><span class="label">目标成员</span> S20260925000001（成员）</div>
+    <div class="field"><span class="label">移除理由 *</span> <span class="placeholder">[ 必填，≤256 ]</span></div>
+    <div class="field"><a class="btn btn-danger" href="#members">确认移除</a><a class="btn" href="#members">取消</a></div>
+    <div class="field note">理由留空 → 前置拦截（零请求）；目标为所有者行 → 1006C0009 空间所有者受唯一所有者保护，不可执行该操作（原样展示）</div>
+  </div>
+  <div class="modal" id="transfer">
+    <h3>转移所有权</h3>
+    <div class="field">把"普惠金融空间"的所有者转移给成员 <span class="placeholder">[ 选择某位成员 ]</span>？</div>
+    <div class="field warn">转移后你将降级为管理员，且<b>仅原所有者本人可发起</b>（平台运营方亦不可代发）。</div>
+    <div class="field"><a class="btn" href="#members">确认转移</a><a class="btn" href="#members">取消</a></div>
+  </div>
+</div>
+
+<div class="frame" id="mine">
+  <h2>画面 8：我的邀请与申请（/spaces/my-admissions，不占菜单项）</h2>
+  <div class="main">
+    <div class="field"><a class="btn" href="#list">返回空间列表</a><span class="note">入口 = 列表页"我的邀请与申请"按钮</span></div>
+    <table>
+      <tr><th>空间 id</th><th>形态</th><th>状态</th><th>操作者</th><th>时间</th><th>理由</th><th>操作</th></tr>
+      <tr><td>1</td><td>邀请</td><td><span class="tag">待确认</span></td><td>S20260914000001</td><td>2026-09-27 10:38</td><td>邀请参与普惠金融场景协作</td><td><a class="btn" href="#members">接受</a><a class="btn" href="#mine">谢绝</a></td></tr>
+      <tr><td>2</td><td>申请</td><td><span class="tag tag-warn">已拒绝</span></td><td>S20260914000001</td><td>2026-09-27 10:36</td><td>当前阶段暂不接纳该主体</td><td><span class="note">（终态）</span></td></tr>
+    </table>
+    <div class="field note">为什么独立成页：被邀方在确认前<b>还不是任何空间的成员</b>，进不去空间详情（非成员只能看到公开摘要）</div>
+    <div class="field note">谢绝可填理由；接受后该空间成员数 +1，且空态/无结果如实展示</div>
+  </div>
+</div>
+
+<div class="frame" id="policy">
+  <h2>画面 9：空间详情 · 策略（Tab 3；规格行为 7）</h2>
+  <div class="main">
+    <div class="tabs"><span>概览</span><span>成员与准入</span><span class="on">策略</span></div>
+
+    <div class="section"><b>有效策略</b>（含来源标注；一行 = 一个目录条目）
+      <table>
+        <tr><th>条目</th><th>生效值</th><th>来源标注</th><th>平台值</th><th>空间值</th><th>说明</th><th>红线</th></tr>
+        <tr><td>数据可见范围</td><td>仅空间成员</td><td><span class="tag">继承自平台</span></td><td>仅空间成员</td><td><span class="placeholder">（未配置）</span></td><td>继承自平台（INHERITED）</td><td><span class="tag tag-warn">红线</span></td></tr>
+        <tr><td>数据留存期限</td><td>90 天</td><td><span class="tag">空间级生效</span></td><td>180 天</td><td>90 天</td><td>空间覆盖生效（SPACE_EFFECTIVE）</td><td><span class="tag tag-warn">红线</span></td></tr>
+        <tr><td>成员数据导出</td><td>需审批</td><td><span class="tag">空间覆盖未生效（取严）</span></td><td>需审批</td><td>允许导出</td><td>空间覆盖未生效（取严）（SPACE_NOT_EFFECTIVE_TAKE_STRICTER）</td><td><span class="placeholder">（非红线）</span></td></tr>
+      </table>
+      <div class="field note">来源标注三态与"为什么取这一侧"（note）由服务端给出；前端<b>不复算严度</b>（策略目录与取严规则是后端权威）</div>
+    </div>
+
+    <div class="section"><b>提交覆盖</b>
+      <div class="field"><span class="label">条目 *</span> <span class="placeholder">[ 数据可见范围 ▾ ｜ 数据留存期限 ｜ 成员数据导出 ]</span></div>
+      <div class="field"><span class="label">取值 *</span> <span class="placeholder">[ 该条目的封闭值域 ▾ ]</span> <span class="note">（下拉选项随条目变化，取自后端目录定义）</span></div>
+      <div class="field"><a class="btn" href="#policy">提交覆盖</a></div>
+      <div class="field note">被拒原样展示：1006C0013 该条目为平台级限制项，不可放宽（<b>表格不变，不做乐观更新</b>）｜ 1006C0002 空间当前状态不允许该操作（冻结期）｜ 1006C0014 策略条目不存在或已失效 ｜ 1006C0012 策略条目键或值不符合平台目录要求</div>
+      <div class="field note">已解散空间：策略<b>归档可查不可改</b>（提交按钮给出体验层提示，判定在后端）；覆盖请求<b>不得携带 redline 等白名单外字段</b>（后端 1006C0012）</div>
+    </div>
+  </div>
+</div>
+
+<div class="frame" id="platform">
+  <h2>画面 10：平台策略治理（/platform-policies；仅平台运营方档）</h2>
+  <div class="layout">
+    <div class="side">
+      <div class="field">逻辑空间</div>
+      <div class="field"><b>平台策略治理</b> ◀ 当前</div>
+    </div>
+    <div class="main">
+      <div class="section"><b>操作条</b> <a class="btn" href="#newentry">新建条目</a>
+        <span class="note">（键限目录三键；值为该键封闭值域；可勾选"红线"标记）</span></div>
+      <table>
+        <tr><th>条目键</th><th>显示名</th><th>值</th><th>红线</th><th>状态</th><th>创建时间</th><th>更新时间</th><th>操作</th></tr>
+        <tr><td>data.visibility</td><td>数据可见范围</td><td>SPACE_MEMBER</td><td><span class="tag tag-warn">是</span></td><td>生效</td><td>2026-09-27 09:10</td><td>2026-09-27 09:10</td><td><a class="btn" href="#editentry">变更</a></td></tr>
+        <tr><td>data.retention</td><td>数据留存期限</td><td>D180</td><td><span class="tag tag-warn">是</span></td><td>生效</td><td>2026-09-27 09:10</td><td>2026-09-27 09:10</td><td><a class="btn" href="#editentry">变更</a></td></tr>
+        <tr><td>member.data_export</td><td>成员数据导出</td><td>APPROVAL_REQUIRED</td><td><span class="placeholder">否</span></td><td>生效</td><td>2026-09-27 09:10</td><td>2026-09-27 09:10</td><td><a class="btn" href="#editentry">变更</a></td></tr>
+      </table>
+      <div class="modal" id="newentry">
+        <h3>新建平台条目</h3>
+        <div class="field"><span class="label">条目键 *</span> <span class="placeholder">[ data.visibility ▾ ｜ data.retention ｜ member.data_export ]</span></div>
+        <div class="field"><span class="label">取值 *</span> <span class="placeholder">[ 该键封闭值域 ▾ ]</span></div>
+        <div class="field"><span class="label">红线标记</span> <span class="placeholder">[ 勾选 = 空间侧不得放宽 ]</span></div>
+        <div class="field"><a class="btn" href="#platform">创建</a><a class="btn" href="#platform">取消</a></div>
+        <div class="field note">错误原样展示：1006C0012 策略条目键或值不符合平台目录要求（同键重复创建）；无 platform.policy 权限 → 1000C0005</div>
+      </div>
+      <div class="modal" id="editentry">
+        <h3>变更平台条目</h3>
+        <div class="field"><span class="label">条目键</span> data.retention <span class="note">（不可变更，只读）</span></div>
+        <div class="field"><span class="label">取值 *</span> <span class="placeholder">[ D180 ]</span></div>
+        <div class="field"><span class="label">红线标记</span> <span class="placeholder">[ 是 / 否 ]</span></div>
+        <div class="field"><a class="btn" href="#platform">保存</a><a class="btn" href="#platform">取消</a></div>
+        <div class="field note">"值与红线至少一项变更"（同值同标记 → 后端 1000C0001 请求体格式不合法，原样展示）</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="frame">
+  <h2>附：本原型对应的剧本界面入口（交付后核对修订用）</h2>
+  <table>
+    <tr><th>剧本步骤</th><th>本包界面入口</th></tr>
+    <tr><td>C-2.1 S1-1/S1-2/S1-4/S1-5/S1-6</td><td>菜单「逻辑空间」→ 「创建空间」弹窗（画面 2）</td></tr>
+    <tr><td>C-2.1 S1-3</td><td>菜单「逻辑空间」→ 详情 → 概览·操作留痕（画面 3）</td></tr>
+    <tr><td>C-2.1 S2-2/S2-3/S3-1/S3-3/S3-7</td><td>详情 → 概览·生命周期动作（画面 3）</td></tr>
+    <tr><td>C-2.1 S2-4</td><td>详情 → 概览·修改配置（画面 5）</td></tr>
+    <tr><td>C-2.1 S3-4/S3-5/S3-6</td><td>详情 → 概览·解散（二次确认，画面 4）→ 列表页重新创建</td></tr>
+    <tr><td>C-2.2 S1-1/S1-3~S1-9/S1-11</td><td>详情 → 成员与准入（画面 6、7）</td></tr>
+    <tr><td>C-2.2 S1-2</td><td>「我的邀请与申请」→ 接受（画面 8）</td></tr>
+    <tr><td>C-2.2 S2-x / S3-x</td><td>详情 → 成员与准入（角色 / 移除 / 退出 / 转移；画面 6、7）</td></tr>
+    <tr><td>C-2.3 S1-1/S1-4</td><td>「逻辑空间」列表（画面 1）</td></tr>
+    <tr><td>C-2.3 S1-5/S3-6</td><td>顶栏切"平台运营方"档 → 打开对应空间详情（画面 3）</td></tr>
+    <tr><td>C-2.3 S2-1~S2-6 / S3-1/S3-2/S3-4</td><td>详情 → 策略（画面 9）+ 概览·操作留痕（画面 3）</td></tr>
+    <tr><td>C-2.3 演示前"红线条目就绪"</td><td>「平台策略治理」（画面 10）</td></tr>
+    <tr><td>C-2.1 S1-7 / C-2.2 S2-5（绕过界面） / C-2.3 S1-2/S1-3/S1-6/S2-5/S2-6/S3-5</td><td><b>技术侧配合</b>（剧本已注明；界面侧辅以操作留痕区）</td></tr>
+  </table>
+  <div class="note">说明：本原型为低保真线框，只表达信息架构与操作流；标签文案以 `docs/designs/WBS-3.2.6-hifi.md` §6 界面说明书与 `constants/space.ts` 为准。</div>
+</div>
+
+</body>
+</html>
