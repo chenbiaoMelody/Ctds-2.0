@@ -32,9 +32,10 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
- * 空间策略继承与覆盖全链集成测试（规格 C-2.1~2.3 行为 7 验收标准 + WBS-3.2.5 hifi §8 T1~T13，
- * Testcontainers 实跑）：继承默认/红线放宽拒（§6.5 代码强制 + 拒绝留痕）/收紧成/冲突取严可解释/
- * 目录值域校验/条目定位防探测/同值幂等/冻结与解散生命周期联动/平台面治理与权限矩阵/载体契约探针。
+ * 空间策略继承与覆盖全链集成测试（规格 C-2.1~2.3 行为 7 验收标准 + WBS-3.2.5 hifi §8
+ * T1~T13 及 T18/T19 评审修复批补充，Testcontainers 实跑）：继承默认/红线放宽拒（§6.5 代码强制 +
+ * 拒绝留痕）/收紧成/冲突取严可解释/目录值域校验（含覆盖请求携带 redline 结构错配）/条目定位防探测/
+ * 同值幂等/冻结与解散生命周期联动/平台面治理（端点 2 契约门、端点 3 列表分页）与权限矩阵/载体契约探针。
  * 平台基线种子由 V3 迁移就绪（三键：两红线一非红线）；主体资格端口 @MockitoBean（沿成员域先例）。
  * 本机 Docker 未运行时整类跳过（门禁不红）。
  */
@@ -230,6 +231,13 @@ class SpacePolicyIntegrationTest {
                                 + "\"redline\":false}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("1006C0012"));
+        // 覆盖请求携带 redline（结构错配——红线仅平台面可写，白名单外字段不静默忽略；hifi §8 T6/§9）
+        mockMvc.perform(auth(post(BASE + "/" + id + "/policies/overrides"), "owner-t6", "user")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"entryKey\":\"data.visibility\",\"entryValue\":\"ALL_PLATFORM\","
+                                + "\"redline\":true}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("1006C0012"));
     }
 
     // ==== T7 条目定位防探测（Q5；覆盖目标缺失/平台变更端点定位失败统一 0014）====
@@ -292,12 +300,13 @@ class SpacePolicyIntegrationTest {
                         .content("{\"entryKey\":\"member.data_export\",\"entryValue\":\"FORBIDDEN\"}"))
                 .andExpect(status().isOk());
         freeze(id, "owner-t9");
-        // 冻结期覆盖写拒（空间状态门槛 1006C0002）
+        // 冻结期覆盖写拒（空间状态门槛 1006C0002——文案为 3.2.3 共用常量，hifi §2 勘误 E3）
         mockMvc.perform(auth(post(BASE + "/" + id + "/policies/overrides"), "owner-t9", "user")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"entryKey\":\"member.data_export\",\"entryValue\":\"ALLOWED\"}"))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("1006C0002"));
+                .andExpect(jsonPath("$.code").value("1006C0002"))
+                .andExpect(jsonPath("$.message").value("空间当前状态不允许该操作"));
         // 冻结期已配置覆盖保留（成员视图可读）
         final long memberId = activeMemberId(id, "member-t9");
         assertThat(memberId).isPositive();
@@ -324,12 +333,13 @@ class SpacePolicyIntegrationTest {
         final long memberId = activeMemberId(id, "member-t10");
         assertThat(memberId).isPositive();
         dissolve(id, "owner-t10");
-        // 解散后策略写一律拒（归档不可变——3.2.3 解散三写已置 ARCHIVED + 本包写门）
+        // 解散后策略写一律拒（归档不可变——3.2.3 解散三写已置 ARCHIVED + 本包写门；文案共用常量，勘误 E3）
         mockMvc.perform(auth(post(BASE + "/" + id + "/policies/overrides"), "owner-t10", "user")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"entryKey\":\"member.data_export\",\"entryValue\":\"ALLOWED\"}"))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("1006C0002"));
+                .andExpect(jsonPath("$.code").value("1006C0002"))
+                .andExpect(jsonPath("$.message").value("空间当前状态不允许该操作"));
         // 归档可查：owner 视图含归档值与 spaceStatus（规则 5 保留可查）
         mockMvc.perform(auth(get(BASE + "/" + id + "/policies/effective"), "owner-t10", "user"))
                 .andExpect(status().isOk())
@@ -420,10 +430,9 @@ class SpacePolicyIntegrationTest {
         mockMvc.perform(auth(get(BASE + "/" + id + "/policies/effective"), "stranger-t12", "user"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("1006C0007"));
-        final Integer accessDeniedLog = jdbc.queryForObject(
-                "SELECT COUNT(*) FROM space_action_log WHERE space_id = ? AND action = 'ACCESS_DENIED' "
-                        + "AND result = 'DENIED' AND operator = 'stranger-t12' "
-                        + "AND reason = '非成员访问空间策略视图'",
+        final Integer accessDeniedLog = jdbc.queryForObject("SELECT COUNT(*) FROM space_action_log "
+                + "WHERE space_id = ? AND action = 'ACCESS_DENIED' AND result = 'DENIED' "
+                + "AND operator = 'stranger-t12' AND reason = '无权访问空间策略视图'",
                 Integer.class, id);
         assertThat(accessDeniedLog).isEqualTo(1);
     }
@@ -449,6 +458,67 @@ class SpacePolicyIntegrationTest {
                         + "is_redline, status) VALUES ('SPACE', ?, ?, 'member.data_export', 'ALLOWED', 0, 'ACTIVE')",
                 id, platformEntryId("member.data_export")))
                 .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    // ==== T18 平台端点 2 契约门（4 视角评审修复批；hifi §1/§4/§7：至少一项变更/同值幂等/
+    // 红线标记变更同记 0/1）====
+
+    @Test
+    void platformEntryUpdateRejectsEmptyChangeIsIdempotentAndLogsRedlineFlip() throws Exception {
+        final long entryId = platformEntryId("member.data_export");
+        // 至少一项变更（entryValue/redline 均缺省）→ common PARAM_INVALID（hifi §1 端点 2 契约）
+        mockMvc.perform(auth(put(PLATFORM_BASE + "/" + entryId), "operator-t18", OPERATOR)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("1000C0001"));
+        // 同值幂等（§7 双向的平台侧）：重复提交现值 → 200 无操作无留痕
+        final long beforeLogs = defineLogCount(entryId);
+        mockMvc.perform(auth(put(PLATFORM_BASE + "/" + entryId), "operator-t18", OPERATOR)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"entryValue\":\"ALLOWED\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.entryValue").value("ALLOWED"));
+        assertThat(defineLogCount(entryId)).isEqualTo(beforeLogs);
+        // 红线标记变更（0→1）落库 + 留痕 reasonNote 同记 0/1（hifi §4）
+        mockMvc.perform(auth(put(PLATFORM_BASE + "/" + entryId), "operator-t18", OPERATOR)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"redline\":true}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.redline").value(true));
+        final Integer flipLog = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM space_action_log WHERE space_id IS NULL AND action = 'POLICY_DEFINE' "
+                        + "AND result = 'SUCCESS' AND from_value = 'ALLOWED' AND to_value = 'ALLOWED' "
+                        + "AND reason = '红线标记由 0 变更为 1' AND target_id = ?",
+                Integer.class, entryId);
+        assertThat(flipLog).isEqualTo(1);
+    }
+
+    // ==== T19 平台条目列表（4 视角评审修复批；hifi §1 端点 3 治理面只读：分页基线 + 权限门；
+    // 剧本 S1-5；交付物①）====
+
+    @Test
+    void platformEntryListReturnsPagedGovernanceViewAndGatesNonOperators() throws Exception {
+        mockMvc.perform(auth(get(PLATFORM_BASE), "operator-t19", OPERATOR))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(3))
+                .andExpect(jsonPath("$.data.list.length()").value(3))
+                .andExpect(jsonPath("$.data.list[0].entryKey").value("data.visibility"))
+                .andExpect(jsonPath("$.data.list[0].entryValue").value("SPACE_MEMBER"))
+                .andExpect(jsonPath("$.data.list[0].displayName").value("数据可见范围"))
+                .andExpect(jsonPath("$.data.list[0].redline").value(true))
+                .andExpect(jsonPath("$.data.list[0].status").value("ACTIVE"));
+        // 分页（common-pagination）：pageSize=2 → 2 行 / total=3 / totalPages=2
+        mockMvc.perform(auth(get(PLATFORM_BASE).param("pageNum", "1").param("pageSize", "2"),
+                        "operator-t19", OPERATOR))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.list.length()").value(2))
+                .andExpect(jsonPath("$.data.total").value(3))
+                .andExpect(jsonPath("$.data.totalPages").value(2));
+        // 权限门：无 platform.policy 来源主体（角色头 user）拒——治理面只读不对外（0007 + DENIED 留痕）
+        mockMvc.perform(auth(get(PLATFORM_BASE), "owner-t19", "user"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("1006C0007"));
     }
 
     // ==== 场景 helper（唯一主体编号避撞唯一键，沿 SpaceMembershipIntegrationTest 先例）====
@@ -477,6 +547,11 @@ class SpacePolicyIntegrationTest {
     private long platformEntryId(final String entryKey) {
         return jdbc.queryForObject("SELECT id FROM space_policy WHERE scope = 'PLATFORM' "
                 + "AND entry_key = ? AND status = 'ACTIVE'", Long.class, entryKey);
+    }
+
+    private long defineLogCount(final long entryId) {
+        return jdbc.queryForObject("SELECT COUNT(*) FROM space_action_log WHERE space_id IS NULL "
+                + "AND action = 'POLICY_DEFINE' AND target_id = ?", Long.class, entryId);
     }
 
     private long activeMemberId(final long spaceId, final String subjectNo) {

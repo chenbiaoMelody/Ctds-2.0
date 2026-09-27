@@ -63,13 +63,14 @@
 | 承接项③ 权限面复用 | 覆盖=space.admin / 视图=space.member / 平台面=platform.policy（yml 追加） | T11/T12 |
 | 承接项④ 幂等键长候选 | 本域业务幂等（同值无操作），无 @Idempotent 键——沉淀候选保留登记 | T8（设计登记） |
 | 剧本 S2 六步 | 端点 4/5 + 平台面端点 1~3 组合构造 | T1~T5/T11 |
+| 剧本 S1-5 治理查看 | 平台条目列表端点 3（治理面只读分页 + platform.policy 门） | T19（评审修复批补充） |
 | 剧本 S3-2/S3-4/S3-6 | 写门 0002 + 归档视图 | T9/T10 |
 
 ## 四、执行记录
 
 | 项 | 内容 |
 | --- | --- |
-| 状态 | ✅ **实现交付完成，待 4 视角评审**（两级设计已确认 2026-09-27 16:3x"都按建议"；实现批 `dd5e7ed`，立卡批 `8412ac2`、确认批 `6a5a940` 已推送 origin） |
+| 状态 | ✅ **4 视角评审（循环 1）+ 修复批完成，待独立复审 → 编排师验收**（两级设计已确认 2026-09-27 16:3x"都按建议"；实现批 `dd5e7ed`，修复批随本卡 §五；评审明细见 §五；"验收通过"≠合并授权） |
 | 验证结果 | `mvn -B -ntp -pl services/space-service -am test`（Testcontainers mysql:8.0 实跑）：**Tests run: 132, Failures: 0, Errors: 0**——SpacePolicyIntegrationTest 13（T1~T13 集成面）/ PolicyCatalogTest 7（T15 目录封闭性）/ EffectivePolicyResolverTest 8（T16 解析器）/ SpaceErrorCodesFormatTest 16（T14 含新增 3 码 + 15 码封闭性）/ SpaceExceptionHandlerCodeConsistencyTest 1（码表↔处理器 15 码锚）/ SpaceMigrationIntegrationTest 8（T17 V3 种子与动作码登记）/ SpaceMembershipIntegrationTest 24 + SpaceLifecycleIntegrationTest 16（3.2.4/3.2.3 回归零语义漂移）/ 其余单测族；`checkstyle:check` **0 违规** |
 | 编码期修复批（测试实证后即修） | ① **平台创建留痕 target_id 建前未知**——首版落 NULL 与"按条目归组审计"契约不符，改为键生成后以主键回填 target_id（T11 实证）；② **集成测试平台基线跨用例污染**——平台级条目是共享库全局状态，T5 的平台收紧泄漏使 T1/T13 失效（T13 的 FORBIDDEN 覆盖撞同值幂等变无操作），加 @BeforeEach 平台基线复位（空间级数据唯一主体编号隔离不需复位）；③ JDK 17 兼容（List.getFirst → get）；④ mapPolicy 判空紧跟 getLong（3.2.4 wasNull 教训预落实） |
 | 剧本是否需要更新 | **C-2.3 剧本无需更新**（业务判定一字不改）：S2 六步端点承载齐备（S2-1 视图端点 5 / S2-2 覆盖端点 4 拒宽 / S2-3 收紧 / S2-4 非红线覆盖 / S2-5 平台面端点 2 + 覆盖组合构造取严 / S2-6 留痕核对），S3-2/S3-4 由写门 0002 承载、S3-6 由归档视图承载，S1-5 治理查看由平台面承载；剧本附录 A"红线条目清单"随 V3 种子定稿（data.visibility=SPACE_MEMBER 与 data.retention=D90 两红线 + member.data_export=ALLOWED 非红线，演示前技术侧核对）；界面入口占位不变（待 3.2.6 交付后核对修订） |
@@ -77,11 +78,17 @@
 | 体量登记（实测） | 预估 ~1400~1800 行；**实测增量 1715 行**（主代码 13 文件 ~953 + 测试 6 文件 ~762）——在预估带内，主代码含目录注册表与解析引擎 ~300、端点与服务 ~500；测试 762 行 = hifi §8 T1~T17 逐项落地 |
 | 立卡前素材盘点（只读） | ① WBS 行 255 + 规格 V1.0 行为 7 全文（6 规则 + 4 验收标准 + §6.5 硬约束）；② 3.2.2 hifi §1.5 载体契约（scope/platform_entry_id/is_redline/scope_uniq）；③ 3.2.3 解散三写已置策略 ARCHIVED（生命周期联动半成品就位）；④ 3.2.4 统一权限面 hasPermission 空成员表退化角色头判定（平台面门零改动复用）+ 同值幂等 E7 先例 + 留痕回填契约；⑤ V2 迁移已放宽留痕值列 1024（覆盖留痕同受益）；⑥ space_action_log 动作码预留 POLICY_OVERRIDE/POLICY_OVERRIDE_REJECTED、TargetType.POLICY 既有 |
 | 规格外实现声明 | 无（端点/规则全部由规格行为 7 + 承接项四条派生；Q1 目录三键为规则 6"随 3.2.5 定稿"授权范围内定稿；Q2 判定语义为规则 2+3 合读解释并经缺口声明裁决；Q3/Q4/Q5/Q6 为实现形态决策；平台可放宽自身条目为诚实语义登记——hifi §4） |
-| 复用声明 | 复用 3.2.2 六表载体与策略枚举、3.2.3 留痕/门槛/归档联动、3.2.4 统一权限面与幂等先例、common auth/pagination/errorcode；**未新增第三方依赖；V3 迁移仅注释登记 + 种子（无新表无列变更）** |
-| 体量登记 | 预估 ~1400~1800 行（见 D1）；实测 1715 行 |
-| 剧本是否需要更新 | **C-2.3 剧本预期无需更新**（业务判定一字不改）：S2 六步均有端点承载（S2-1 视图端点 / S2-2~S2-4 覆盖端点 / S2-5 平台面变更+覆盖组合构造 / S2-6 留痕核对），S3-2/S3-4 由写门承载，S1-5 治理查看由平台面承载；剧本附录 A"红线条目清单"随 Q6-A 种子定稿（visibility/retention 两红线 + export 非红线，演示前技术侧核对）；界面入口占位不变（待 3.2.6 交付后核对修订） |
-| 复用声明 | 复用 3.2.2 `space_policy` 载体与 PolicyScope/PolicyStatus/SpacePolicy/TargetType.POLICY、`space_action_log` 预留动作码（POLICY_OVERRIDE/REJECTED，POLICY_DEFINE 走 V3 注释登记）、3.2.3 留痕模式/乐观门槛先例/解散三写归档、3.2.4 统一权限面（hasPermission 空成员表退化角色头判定）/同值幂等先例（E7）/留痕 from/to 统一回填契约、V2 值列放宽、common auth/pagination/errorcode；**未新增第三方依赖** |
-| 体量登记 | 预估 ~1400~1800 行（见 D1）；实测待编码后回填 |
+
+---
+
+## 五、4 视角评审与修复批（2026-09-27 评审会话）
+
+| 项 | 内容 |
+| --- | --- |
+| 4 视角评审（循环 1） | 单发串行独立评审，各视角独立复跑门禁（实测均与声称一致：test 132/132 + checkstyle 0）：**①规格与设计符合性 = 不通过**（1×P1：hifi §8 T6 承诺"覆盖请求携带 redline → 1006C0012 结构错配"未实现未测试——Jackson 默认忽略未知字段致请求静默 200；4×P2）/ **②安全与供应链 = 通过**（2×P2 防御纵深）/ **③一致性与重复 = 通过**（3×P2：台账变更记录行拼接缺换行、本卡 §四三组旧稿重复行、端点 2"至少一项变更"缺测试锚）/ **④测试质量 = 不通过**（3×P1：端点 3 列表零测试覆盖、T6 携 redline 设计-实现-测试三重断裂、端点 2"至少一项变更→400"契约缺锚；3×P2）；**无 P0** |
+| 修复批（同日收口） | **P1×3 全闭**：① 覆盖请求改 `@JsonAnySetter` 白名单捕获（沿 3.2.3 UpdateSpaceRequest 先例）+ 控制器结构错配门 → 0012 + T6 补第 4 子用例；② 新增 T19 端点 3 平台条目列表集成测试（分页基线 + 治理面权限门 0007）；③ 新增 T18 端点 2 契约门（至少一项变更 → 1000C0001、平台侧同值幂等无留痕——hifi §7 双向收口、红线标记翻转 0/1 + reasonNote 留痕——hifi §4 收口）。**P2 择小同批收口**：strictnessOf 越域 → 0012 兜底（防库内漂移 NPE——评审②/④各 1 项）+ T15 直测探针；拒绝留痕 reason 勘正"无权访问空间策略视图"（①P2：解散场景被拒者可为成员）；本卡 §四 重复行清理（③P2）；台账变更记录行拼接修复（③P2）；hifi 勘误 4 处（API 形态 requireDefinition 下沉/SPACE_EFFECTIVE 平级同值补位/0002 文案共用常量/长度门槛由封闭值域前置兜住——hifi 勘误记录节）。**余 1 项 P2**：框架层请求体大小上限 → 债务登记簿 **DB-27** 跟踪（common 沉淀候选） |
+| 修复批门禁实测 | `mvn -B -ntp -pl services/space-service -am test`：**Tests run: 135, Failures: 0, Errors: 0**（132 + T18/T19/T15 探针 3 用例；T6 为原方法补子用例不加数）；`checkstyle:check`：**0 违规** |
+| 复审与验收 | 待独立复审 → 编排师验收（"验收通过" ≠ 合并授权） |
 
 ---
 

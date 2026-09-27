@@ -60,9 +60,17 @@ public final class PolicyCatalog {
         return Collections.unmodifiableSet(ENTRIES.keySet());
     }
 
-    /** 取值严格度（值须在该键值域内，越域由调用方转 1006C0012——本类不做业务异常）。 */
+    /**
+     * 取值严格度（值须在该键值域内——越域抛 1006C0012 兜底，不做 NPE：写路径已先行值域校验，
+     * 此门槛防"库内数据与目录漂移"的防御纵深，4 视角评审②/④跟踪项收口）。
+     */
     public static int strictnessOf(final EntryDefinition definition, final String value) {
-        return definition.strictness().get(value);
+        final Integer strictness = definition.strictness().get(value);
+        if (strictness == null) {
+            throw new SpaceBizException(SpaceErrorCodes.POLICY_ENTRY_INVALID,
+                    SpaceErrorCodes.POLICY_ENTRY_INVALID_MESSAGE);
+        }
+        return strictness;
     }
 
     /**

@@ -3,6 +3,8 @@ package com.ctds.space.interfaces;
 import com.ctds.common.api.ApiResult;
 import com.ctds.space.application.SpacePolicyService;
 import com.ctds.space.domain.EffectivePolicyResolver.EffectivePolicyRow;
+import com.ctds.space.domain.SpaceBizException;
+import com.ctds.space.domain.SpaceErrorCodes;
 import com.ctds.space.interfaces.dto.EffectivePolicyItemView;
 import com.ctds.space.interfaces.dto.PolicyOverrideView;
 import com.ctds.space.interfaces.dto.PolicyRequests.PolicyOverrideRequest;
@@ -30,12 +32,16 @@ public class SpacePolicyController {
         this.policyService = policyService;
     }
 
-    /** 端点 4 空间覆盖提交（owner/admin；空间须 ACTIVE；响应回显生效结果与来源标注）。 */
+    /** 端点 4 空间覆盖提交（owner/admin；空间须 ACTIVE；白名单外字段=结构错配 0012——hifi §9）。 */
     @PostMapping(path = "/{id}/policies/overrides", produces = MediaType.APPLICATION_JSON_VALUE)
     public ApiResult<PolicyOverrideView> submitOverride(@PathVariable final long id,
             @RequestBody final PolicyOverrideRequest request) {
-        final EffectivePolicyRow row = policyService.submitOverride(id, request.entryKey(),
-                request.entryValue());
+        if (!request.withinWhitelist()) {
+            throw new SpaceBizException(SpaceErrorCodes.POLICY_ENTRY_INVALID,
+                    SpaceErrorCodes.POLICY_ENTRY_INVALID_MESSAGE);
+        }
+        final EffectivePolicyRow row = policyService.submitOverride(id, request.getEntryKey(),
+                request.getEntryValue());
         return ApiResult.ok(PolicyOverrideView.from(row));
     }
 

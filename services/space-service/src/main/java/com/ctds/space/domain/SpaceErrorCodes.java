@@ -49,8 +49,9 @@ public final class SpaceErrorCodes {
     public static final String ADMISSION_MODE_MISMATCH_MESSAGE = "该空间的参与方范围不支持此准入方式";
     /** 读面拒绝留痕理由（非成员访问空间成员列表，服务端常量——对外同形不变，对内可审计）。 */
     public static final String MEMBER_LIST_DENIED_LOG_REASON = "非成员访问空间成员列表";
-    /** 读面拒绝留痕理由（非成员访问空间策略视图，服务端常量——WBS-3.2.5）。 */
-    public static final String POLICY_VIEW_DENIED_LOG_REASON = "非成员访问空间策略视图";
+    /** 读面拒绝留痕理由（无权访问空间策略视图——ACTIVE 场景为非成员、解散场景可能为非 owner 成员，
+     * 不以"非成员"限定，服务端常量——对外同形不变，对内可审计；4 视角评审①勘误）。 */
+    public static final String POLICY_VIEW_DENIED_LOG_REASON = "无权访问空间策略视图";
     /** 策略条目不满足目录与值域校验（键未注册/值越域/平台同键重复创建——WBS-3.2.5 hifi §2）。→ 400 */
     public static final ErrorCode POLICY_ENTRY_INVALID = ErrorCode.of("1006C0012");
     public static final String POLICY_ENTRY_INVALID_MESSAGE = "策略条目键或值不符合平台目录要求";

@@ -1,6 +1,7 @@
 package com.ctds.space.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.HashSet;
 import java.util.Set;
@@ -9,7 +10,7 @@ import org.junit.jupiter.api.Test;
 /**
  * 策略目录封闭性单测（WBS-3.2.5 hifi §8 T15，规格行为 7 规则 6"键命名与可配置项集合随 3.2.5 定稿"）：
  * 键集合恰为定稿 3 键且按声明序、每键值域封闭、严格度单射（同键无并列严格度——同严格度即同值）、
- * 放宽判定方向正确。增删键/值即红灯（目录 = 空间域策略语言权威定义点，扩目录须登记）。
+ * 越域值兜底 0012、放宽判定方向正确。增删键/值即红灯（目录 = 空间域策略语言权威定义点，扩目录须登记）。
  */
 class PolicyCatalogTest {
 
@@ -62,6 +63,17 @@ class PolicyCatalogTest {
         assertThat(PolicyCatalog.isDefined("bogus.key")).isFalse();
         assertThat(PolicyCatalog.find("bogus.key")).isEmpty();
         assertThat(PolicyCatalog.find("DATA.VISIBILITY")).as("键大小写敏感").isEmpty();
+    }
+
+    @Test
+    void outOfDomainValueOnStrictnessLookupIsRejectedWithPolicyEntryInvalid() {
+        // 越域值直查 → 0012 兜底而非 NPE（hifi §8 T15"越域查询异常"；4 视角评审②/④跟踪项收口：
+        // 防"库内数据与目录漂移"的防御纵深，写路径另有先行值域校验）
+        final PolicyCatalog.EntryDefinition definition = PolicyCatalog.find("data.visibility")
+                .orElseThrow();
+        assertThatThrownBy(() -> PolicyCatalog.strictnessOf(definition, "NOT_IN_DOMAIN"))
+                .isInstanceOfSatisfying(SpaceBizException.class, e ->
+                        assertThat(e.getErrorCode().value()).isEqualTo("1006C0012"));
     }
 
     @Test
