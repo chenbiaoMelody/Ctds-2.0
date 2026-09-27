@@ -3,6 +3,7 @@ package com.ctds.space.infrastructure;
 import com.ctds.common.pagination.PageQuery;
 import com.ctds.common.pagination.PageResult;
 import com.ctds.space.domain.AccessMode;
+import com.ctds.space.domain.ActionResult;
 import com.ctds.space.domain.AdmissionStatus;
 import com.ctds.space.domain.AdmissionType;
 import com.ctds.space.domain.MemberRole;
@@ -54,6 +55,9 @@ public class SpaceJdbcRepository implements SpaceRepository {
             + "member_id, created_at, updated_at";
     private static final String POLICY_COLUMNS = "id, scope, space_id, platform_entry_id, entry_key, "
             + "entry_value, is_redline, status, created_at, updated_at";
+    /** 留痕读面列白名单（WBS-3.2.6 端点 25；表本身不含敏感原文，逐列显式声明防未来加列被动外泄）。 */
+    private static final String ACTION_LOG_COLUMNS = "id, space_id, target_type, target_id, action, operator, "
+            + "from_value, to_value, result, reason, created_at";
 
     private final JdbcClient jdbc;
     private final JdbcTemplate jdbcTemplate;
@@ -414,6 +418,21 @@ public class SpaceJdbcRepository implements SpaceRepository {
     }
 
     @Override
+    public PageResult<SpaceActionLog> searchActionLogs(final long spaceId, final PageQuery page) {
+        final long total = jdbc.sql("SELECT COUNT(*) FROM space_action_log WHERE space_id = ?")
+                .param(spaceId)
+                .query(Long.class)
+                .single();
+        // created_at 精度到秒（V1 列口径），同秒并列由 id DESC 兜底保证次序稳定
+        final List<SpaceActionLog> list = jdbc.sql("SELECT " + ACTION_LOG_COLUMNS + " FROM space_action_log "
+                        + "WHERE space_id = ? ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?")
+                .params(spaceId, page.pageSize(), page.offset())
+                .query((rs, rowNum) -> mapActionLog(rs))
+                .list();
+        return PageResult.of(list, total, page);
+    }
+
+    @Override
     @Transactional
     public void terminateMembership(final long memberId, final long spaceId, final MemberRole fromRole,
             final MemberStatus terminalStatus, final SpaceActionLog log) {
@@ -655,6 +674,17 @@ public class SpaceJdbcRepository implements SpaceRepository {
                         log.fromValue(), log.toValue(), log.result().name(), log.reason(),
                         timestamp(log.createdAt()))
                 .update();
+    }
+
+    private SpaceActionLog mapActionLog(final ResultSet rs) throws SQLException {
+        // 判空必须紧跟对应 getLong（rs.wasNull 只看最近一列，3.2.4 修复批教训）；space_id 由 WHERE 保证非空
+        final long targetId = rs.getLong("target_id");
+        final boolean targetMissing = rs.wasNull();
+        return new SpaceActionLog(rs.getLong("id"), rs.getLong("space_id"),
+                TargetType.valueOf(rs.getString("target_type")), targetMissing ? null : targetId,
+                rs.getString("action"), rs.getString("operator"), rs.getString("from_value"),
+                rs.getString("to_value"), ActionResult.valueOf(rs.getString("result")), rs.getString("reason"),
+                toLocalDateTime(rs.getTimestamp("created_at")));
     }
 
     private Space mapSpace(final ResultSet rs) throws SQLException {

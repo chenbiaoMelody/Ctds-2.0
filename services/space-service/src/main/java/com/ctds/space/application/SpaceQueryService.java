@@ -10,6 +10,7 @@ import com.ctds.space.domain.SpaceErrorCodes;
 import com.ctds.space.domain.SpaceMember;
 import com.ctds.space.domain.SpaceNameNormalizer;
 import com.ctds.space.domain.SpaceRepository;
+import com.ctds.space.domain.SpaceStatus;
 import com.ctds.space.domain.TargetType;
 import com.ctds.space.domain.Visibility;
 import java.time.Clock;
@@ -83,6 +84,31 @@ public class SpaceQueryService {
     /** 空间不存在/不可见（统一 1006C0004，读面防枚举）。 */
     private static SpaceBizException notFound() {
         return new SpaceBizException(SpaceErrorCodes.SPACE_NOT_FOUND, SpaceErrorCodes.SPACE_NOT_FOUND_MESSAGE);
+    }
+
+    /**
+     * 空间操作留痕分页（WBS-3.2.6 端点 25，只读）：ACTIVE/FROZEN = space.member 或 platform.operator；
+     * DISSOLVED = 仅 owner 或 platform.operator（与端点 24 同口径）。无权 → 1006C0007 + ACCESS_DENIED
+     * 拒绝留痕（对外拒绝形态不变、对内可审计）；空间不存在 → 1006C0004（先于权限判定）。
+     */
+    public PageResult<SpaceActionLog> actionLogs(final long spaceId, final PageQuery page) {
+        final String subject = guard.requireSubject();
+        final Space space = repository.findById(spaceId).orElseThrow(SpaceQueryService::notFound);
+        final boolean allowed;
+        if (space.status() == SpaceStatus.DISSOLVED) {
+            allowed = guard.isOwner(space) || guard.isPlatformOperator();
+        } else {
+            allowed = guard.canActAsMember(space, repository.findActiveMembers(spaceId))
+                    || guard.isPlatformOperator();
+        }
+        if (!allowed) {
+            repository.insertLog(new SpaceActionLog(null, space.id(), TargetType.SPACE, space.id(),
+                    "ACCESS_DENIED", subject, null, null, ActionResult.DENIED,
+                    SpaceErrorCodes.ACTION_LOG_VIEW_DENIED_LOG_REASON, LocalDateTime.now(clock)));
+            throw new SpaceBizException(SpaceErrorCodes.SPACE_ACCESS_DENIED,
+                    SpaceErrorCodes.SPACE_ACCESS_DENIED_MESSAGE);
+        }
+        return repository.searchActionLogs(spaceId, page);
     }
 
     /** 读面视图：fullDetail=true 全量（含成员构成）；false = 非成员公开摘要（不含成员构成）。 */

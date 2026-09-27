@@ -70,15 +70,15 @@
 
 | 锚点（hifi §7） | 测试落点（文件 · 用例数） |
 | --- | --- |
-| T1~T4（Q6-A 后端留痕读端点） | `services/space-service/src/test/java/com/ctds/space/...`（编码会话回填） |
+| T1~T4（Q6-A 后端留痕读端点） | `services/space-service/src/test/java/com/ctds/space/SpaceActionLogIntegrationTest.java`（**6 用例，全绿**：T1 权限矩阵含拒绝留痕 1 行 + 解散态矩阵 / T2 分页排序与越界 + 字段白名单 / T3 不存在 1006C0004 + 非成员同形 / T4 留痕三类内容含 `from→to`） |
 | T5~T9、T13（列表 / 创建 / 配置变更） | `frontend/src/views/space/ListView.spec.ts`（编码会话回填） |
 | T10~T12、T23~T25（概览 / 生命周期 / 策略） | `frontend/src/views/space/DetailView.spec.ts`（编码会话回填） |
 | T14~T22（成员与准入） | `frontend/src/views/space/MembersSection.spec.ts`（编码会话回填） |
 | T18（我的邀请） | `frontend/src/views/space/MyAdmissionsView.spec.ts`（编码会话回填） |
 | T26（平台治理） | `frontend/src/views/space/PlatformPolicyView.spec.ts`（编码会话回填） |
-| T27（演示身份与角色头） | `frontend/src/stores/demoIdentity.spec.ts` + `frontend/src/api/space.spec.ts`（编码会话回填） |
+| T27（演示身份与角色头） | `frontend/src/stores/demoIdentity.spec.ts`（**6 用例已落并真红**：默认普通档 / 档位持久化与非法值回落 / **普通档不含 `platform.operator`** / 运营档双角色 / 开关双向 / 主体复用 `ctds-demo-subject`）+ `frontend/src/api/space.spec.ts`（**待编码会话**：页面级角色头覆盖全局 `demoRolesHeader()`、空主体零请求） |
 | T28（路由与菜单计数） | `frontend/src/router/router.spec.ts` / `frontend/src/layouts/MainLayout.spec.ts`（既有断言同步 + 新增） |
-| T29、T30（源集守卫 / 同形提示反向探针） | `frontend/src/views/space/SpaceSourceGuard.spec.ts`（编码会话回填） |
+| T29、T30（源集守卫 / 同形提示反向探针） | `frontend/src/views/space/SpaceSourceGuard.spec.ts`（**7 用例已落并真红**：扫描目标非空 / 无 `fetch(` 直连 / 裸状态·角色·来源中文字面量 / `platform.operator` 仅限 `api/space.ts` 与 `stores/demoIdentity.ts` / 提示常量值断言 / 页面不得散写同形文案，均带反向探针）；**T30 行为半（两分支渲染同一条文案）落 `views/space/DetailView.spec.ts`（T30b，编码会话）——见 hifi §12 勘误 E1** |
 
 ## 四、执行记录
 
@@ -88,7 +88,7 @@
 | 冷启动锚点 | 台账「下一包」行（3.2.6）+ 日志 `docs/logs/Ctds-项目开发日志-26-09-27-2008.md`（续点四要素）；WBS 行 256；规格行为 1~7；三剧本；3.2.3/3.2.4/3.2.5 三份 hifi §1 |
 | 立卡会话 | 2026-09-27（日志 `docs/logs/Ctds-项目开发日志-26-09-27-2017.md`）——本卡 + lofi + hifi + 原型 HTML 四文档落盘；分支 `feat/WBS-3.2.6-空间管理界面`（自 `main` `56e02fd`） |
 | 设计确认会话 | **2026-09-27 20:2x（同窗口续段，日志 `docs/logs/Ctds-项目开发日志-26-09-27-2021.md`）**——编排师会话回复"**都按建议**"→ Q1~Q8 均采建议口径 + **D1 体量不拆分**；三处留痕签署（本卡 §一 表头"设计文件"行与 §二 确认留痕块、§四 状态行与本行；lofi/hifi「确认记录」）；**零代码变更** |
-| 编码会话 | **2026-09-27 20:30 起（新会话，日志 `docs/logs/Ctds-项目开发日志-26-09-27-2030.md`）** —— 第一动作（前置检查七项）已完成并留痕（见下行）；**未开始写码**（本会话按上下文纪律在留痕后停机，测试先行 RED 归续接会话） |
+| 编码会话 | **段 1 = 2026-09-27 20:30 起（新会话，日志 `docs/logs/Ctds-项目开发日志-26-09-27-2030.md`）** —— 第一动作（前置检查七项）已完成并留痕（见下行）；**未开始写码**（该会话按上下文纪律在留痕后停机）→ **段 2 = 2026-09-27 20:4x（日志 `docs/logs/Ctds-项目开发日志-26-09-27-2041.md`）：① 后端 Q6-A 留痕端点测试先行 RED（T1~T4，首跑 6/6 失败 = 真红）→ 实现 GREEN（6/6 绿）+ 模块回归 **141 用例全绿** + checkstyle **0 违规**；② 前端 RED 首批就位（`demoIdentity.spec.ts` T27 = 6 用例、`SpaceSourceGuard.spec.ts` T29·T30 = 7 用例，实测两文件真红）**；**前端实现 GREEN 归续接会话**（本段按上下文纪律在大改动前停机） |
 | 前置检查（hifi §11 / lofi §6 七项） | ✅ **七项逐项实测完毕（2026-09-27 20:2x~20:30，命令级证据见下行与日志 `-2030`）**；**发现 1 项环境阻塞**（② 项，见"环境阻塞与请求"行） |
 | ① 冷启动读序 | ✅ `AGENTS.md` → 日志 `-2021` → 本卡 → lofi/hifi「确认记录」→ 台账「进行中/下一包/待编排师」→ 三份上游 hifi §1（汇总核对 **8+11+3+2 = 24 端点，零偏差**）→ 规格 `C-2.1-2.3`（V1.0，219 行，行为 1~7 全清单）→ 三剧本（**60 步**；"界面入口占位（待 3.2.6 交付后核对修订）"句 3 份各 2 处，**均落在前置表格与维护说明、不落任一 S 步骤**） |
 | ② 环境核验 | ⚠️ **部分通过**：三容器在线（`sc-mysql` / `sc-minio` / `sc-redis`，Up 11h）；subject `8080` 健康（`/actuator/health` → 200）；space `8083` 在监听、回环 `127.0.0.1` 生效、未认证 → `1000C0002`；**did `8082` 未监听**（本包链路不依赖 did，判定**不影响**本卡，仅走查前需知）；**阻塞项**：运行实例**未配置 `CTDS_SPACE_SUBJECT_BASEURL`** |
@@ -119,7 +119,7 @@
 | 项 | 数值 |
 | --- | --- |
 | 预估（立卡阶段） | 后端（Q6-A）≈ **200~300 行**（1 只读端点 + 1 视图 DTO + 查询服务方法 + 仓储分页方法 + 测试）；前端 ≈ **1800~2400 行**（4 视图 + API 模块 + 常量模块 + 演示身份 store + 顶栏控件 + 路由 + 测试）；合计 **约 2000~2700 行有效变更** |
-| 实测（编码会话回填） | 待 |
+| 实测（编码会话回填，段 2 部分） | **后端已完成**：改动 4 文件 **+65 行**（`SpaceErrorCodes` +3 / `SpaceRepository` +6 / `SpaceJdbcRepository` +30 / `SpaceQueryService` +26）+ 新增 `SpaceActionLogController` **41 行** + `dto/SpaceActionLogView` **27 行** + 新增测试 `SpaceActionLogIntegrationTest` **290 行** = **后端小计约 423 行**；**前端 RED 已落**：`demoIdentity.spec.ts` **52 行** + `SpaceSourceGuard.spec.ts` **138 行** = **190 行**；**本段合计约 613 行**（其中测试 480 行）；**剩余（前端实现 GREEN）按原预估 1800~2400 行** |
 | 超预估说明 | 待 |
 | 超 400 行指引说明 | **裁决（D1，待编排师）**：建议 **不拆分**（lofi §5 选项 A）——四面共享同一套 API/常量/详情页与身份切换；三份剧本为同一业务域三幕，拆分将使 C-2.3 策略面走查与空间面跨卡停滞 |
 | 拆分母卡（如裁决拆分） | 空间+成员+身份 | 策略配置+平台治理（需新立 WBS 行，编排师批） |
