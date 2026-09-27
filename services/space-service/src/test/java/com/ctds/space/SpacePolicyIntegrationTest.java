@@ -515,7 +515,8 @@ class SpacePolicyIntegrationTest {
                 .andExpect(jsonPath("$.data.list.length()").value(2))
                 .andExpect(jsonPath("$.data.total").value(3))
                 .andExpect(jsonPath("$.data.totalPages").value(2));
-        // 权限门：无 platform.policy 来源主体（角色头 user）拒——治理面只读不对外（0007 + DENIED 留痕）
+        // 权限门：无 platform.policy 来源主体（角色头 user）拒——治理面只读不对外（0007；
+        // 拒绝 DENIED 留痕行为由 T11 平台面权限门断言承载）
         mockMvc.perform(auth(get(PLATFORM_BASE), "owner-t19", "user"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("1006C0007"));
