@@ -68,9 +68,9 @@ public class SpaceAdmissionService {
         }
         final long id = repository.insertAdmission(new SpaceAdmission(null, spaceId, subject,
                 AdmissionType.APPLICATION, AdmissionStatus.PENDING_APPROVAL, subject, null, null,
-                LocalDateTime.now(clock), LocalDateTime.now(clock)));
-        repository.insertLog(admissionLog(spaceId, id, "ADMIT_REQUEST", subject, null,
-                AdmissionStatus.PENDING_APPROVAL.name(), ActionResult.SUCCESS, null));
+                LocalDateTime.now(clock), LocalDateTime.now(clock)),
+                admissionLog(spaceId, null, "ADMIT_REQUEST", subject, null,
+                        AdmissionStatus.PENDING_APPROVAL.name(), ActionResult.SUCCESS, null));
         return AdmissionOutcome.pending(loadAdmission(id));
     }
 
@@ -94,9 +94,9 @@ public class SpaceAdmissionService {
         }
         final long id = repository.insertAdmission(new SpaceAdmission(null, spaceId, inviteeSubjectNo,
                 AdmissionType.INVITATION, AdmissionStatus.PENDING_CONFIRMATION, subject, reason, null,
-                LocalDateTime.now(clock), LocalDateTime.now(clock)));
-        repository.insertLog(admissionLog(spaceId, id, "ADMIT_INVITE", subject, null,
-                AdmissionStatus.PENDING_CONFIRMATION.name(), ActionResult.SUCCESS, null));
+                LocalDateTime.now(clock), LocalDateTime.now(clock)),
+                admissionLog(spaceId, null, "ADMIT_INVITE", subject, null,
+                        AdmissionStatus.PENDING_CONFIRMATION.name(), ActionResult.SUCCESS, null));
         return AdmissionOutcome.pending(loadAdmission(id));
     }
 
@@ -158,8 +158,8 @@ public class SpaceAdmissionService {
         }
         if (!approve) {
             if (reason == null || reason.isBlank()) {
-                throw new SpaceBizException(SpaceErrorCodes.ADMISSION_STATE_GATE,
-                        "拒绝申请须填写理由（业务文案）");
+                // 拒绝理由必填属参数校验（400 通道），与移除理由同一口径——非准入单状态门槛（0010）
+                throw new BizException(ErrorCodes.PARAM_INVALID, "拒绝申请须填写理由");
             }
             checkReason(reason);
             repository.appendAdmissionTransition(admissionId, spaceId, AdmissionStatus.PENDING_APPROVAL,
@@ -174,15 +174,23 @@ public class SpaceAdmissionService {
 
     // ==== 端点 5/6：准入单列表 ====
 
-    /** 空间准入单列表（owner/admin 待办发现面；status 筛选可选）。 */
-    public PageResult<SpaceAdmission> listBySpace(final long spaceId, final AdmissionStatus status,
+    /** 空间准入单列表（owner/admin 待办发现面；status 筛选可选，非法值 = 参数不合法 400）。 */
+    public PageResult<SpaceAdmission> listBySpace(final long spaceId, final String status,
             final PageQuery page) {
         final String subject = guard.requireSubject();
         final Space space = load(spaceId);
         if (!guard.canManage(space, repository.findActiveMembers(spaceId))) {
             denyAdmission(space, subject, "ACCESS_DENIED", null);
         }
-        return repository.searchAdmissions(spaceId, status, page);
+        AdmissionStatus statusFilter = null;
+        if (status != null && !status.isBlank()) {
+            try {
+                statusFilter = AdmissionStatus.valueOf(status);
+            } catch (final IllegalArgumentException e) {
+                throw new BizException(ErrorCodes.PARAM_INVALID, "准入单状态筛选取值非法");
+            }
+        }
+        return repository.searchAdmissions(spaceId, statusFilter, page);
     }
 
     /** 我的准入单（个人视角：发出的申请 + 收到的邀请——剧本"我的邀请等价入口"）。 */

@@ -88,8 +88,11 @@ public interface SpaceRepository {
     /** 按成员行 id 取成员（操作目标定位，Q5-A 行级精确——同主体多历史行时行 id 无歧义）。 */
     Optional<SpaceMember> findMemberById(long memberId);
 
-    /** 插入准入单（申请/邀请创建），返回技术主键。 */
-    long insertAdmission(SpaceAdmission admission);
+    /**
+     * 插入准入单（申请/邀请创建）+ 创建留痕（ADMIT_REQUEST/ADMIT_INVITE）同事务落库
+     * （沿 create 单事务先例——拒绝留痕例外见评审循环 1 修复批），返回技术主键。
+     */
+    long insertAdmission(SpaceAdmission admission, SpaceActionLog log);
 
     /**
      * 成员生效事务（确认 CONFIRM / 审批 APPROVE 共用，hifi §3 单事务三步）：

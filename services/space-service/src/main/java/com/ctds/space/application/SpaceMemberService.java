@@ -83,9 +83,13 @@ public class SpaceMemberService {
                     SpaceErrorCodes.SPACE_STATUS_GATE_MESSAGE);
         }
         final SpaceMember target = locateOperableMember(memberId, spaceId);
+        if (target.role() == MemberRole.OWNER) {
+            // 唯一所有者保护（行为 5 规则 2/3）：owner 行不可角色变更——拒绝留痕与退出路径同口径
+            denyOwnerProtected(space, subject, "ROLE_GRANT", target.id());
+        }
         if (subject.equals(target.subjectNo())) {
             // 不得自我提权（行为 4 规则 5；member 给自己授 admin / admin 改自己角色均拒）
-            deny(space, subject, "ROLE_GRANT", memberId, null);
+            deny(space, subject, "ROLE_GRANT", target.id(), null);
         }
         if (target.role() == targetRole) {
             return target;
@@ -111,10 +115,14 @@ public class SpaceMemberService {
             deny(space, subject, "REMOVE", memberId, null);
         }
         if (reason == null || reason.isBlank()) {
-            throw new BizException(ErrorCodes.PARAM_INVALID, "移除成员须填写理由（业务文案）");
+            throw new BizException(ErrorCodes.PARAM_INVALID, "移除成员须填写理由");
         }
         checkReason(reason);
         final SpaceMember target = locateOperableMember(memberId, spaceId);
+        if (target.role() == MemberRole.OWNER) {
+            // 唯一所有者保护（行为 5 规则 2/3）：owner 行不可移除——拒绝留痕与退出路径同口径
+            denyOwnerProtected(space, subject, "REMOVE", target.id());
+        }
         repository.terminateMembership(memberId, spaceId, target.role(), MemberStatus.REMOVED,
                 memberLog(spaceId, memberId, "REMOVE", subject, target.role().name(),
                         MemberStatus.REMOVED.name(), ActionResult.SUCCESS, reason));
@@ -164,9 +172,9 @@ public class SpaceMemberService {
         final SpaceMember target = repository.findMemberById(targetMemberId)
                 .filter(member -> member.spaceId() == spaceId)
                 .orElseThrow(() -> memberRelationMissing());
-        if (target.status() != MemberStatus.ACTIVE || target.role() == MemberRole.OWNER
-                || subject.equals(target.subjectNo())) {
-            throw new BizException(ErrorCodes.PARAM_INVALID, "所有权转移目标须为本空间其他活跃成员");
+        if (target.status() != MemberStatus.ACTIVE || target.role() == MemberRole.OWNER) {
+            // 目标不可用（不存在/不活跃/OWNER 行=转移给自己）统一 1006C0008 文案——防成员存在性探测（hifi §9）
+            throw memberRelationMissing();
         }
         final LocalDateTime now = LocalDateTime.now(clock);
         final SpaceActionLog grantLog = memberLog(spaceId, targetMemberId, "ROLE_GRANT", subject,
@@ -203,8 +211,8 @@ public class SpaceMemberService {
     }
 
     /**
-     * 操作目标定位（Q5-A 行级）：成员行须属于该空间且活跃（否则 1006C0008 统一文案防成员存在性探测）；
-     * OWNER 行不可操作（唯一所有者保护 → 1006C0009，行为 5 规则 2/3）。
+     * 操作目标定位（Q5-A 行级）：成员行须属于该空间且活跃（否则 1006C0008 统一文案防成员存在性探测）。
+     * OWNER 行判定由调用方统一走 denyOwnerProtected（拒绝留痕同口径——评审循环 1 修复批对齐）。
      */
     private SpaceMember locateOperableMember(final long memberId, final long spaceId) {
         final SpaceMember target = repository.findMemberById(memberId)
@@ -212,10 +220,6 @@ public class SpaceMemberService {
                 .orElseThrow(() -> memberRelationMissing());
         if (target.status() != MemberStatus.ACTIVE) {
             throw memberRelationMissing();
-        }
-        if (target.role() == MemberRole.OWNER) {
-            throw new SpaceBizException(SpaceErrorCodes.OWNER_PROTECTED,
-                    SpaceErrorCodes.OWNER_PROTECTED_MESSAGE);
         }
         return target;
     }

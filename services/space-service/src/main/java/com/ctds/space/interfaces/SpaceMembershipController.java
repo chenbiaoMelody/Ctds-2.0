@@ -6,7 +6,6 @@ import com.ctds.common.pagination.PageResult;
 import com.ctds.space.application.SpaceAdmissionService;
 import com.ctds.space.application.SpaceAdmissionService.AdmissionOutcome;
 import com.ctds.space.application.SpaceMemberService;
-import com.ctds.space.domain.AdmissionStatus;
 import com.ctds.space.domain.SpaceAdmission;
 import com.ctds.space.domain.SpaceMember;
 import com.ctds.space.interfaces.dto.AdmissionOperationView;
@@ -80,12 +79,12 @@ public class SpaceMembershipController {
                 request.reason())));
     }
 
-    /** 端点 5 空间准入单列表（owner/admin 待办发现面；status 筛选可选）。 */
+    /** 端点 5 空间准入单列表（owner/admin 待办发现面；status 筛选可选，非法值=参数不合法 400）。 */
     @GetMapping(path = "/{id}/admissions", produces = MediaType.APPLICATION_JSON_VALUE)
     public ApiResult<PageResult<AdmissionView>> listAdmissions(@PathVariable final long id,
             @RequestParam(required = false) final Integer pageNum,
             @RequestParam(required = false) final Integer pageSize,
-            @RequestParam(required = false) final AdmissionStatus status) {
+            @RequestParam(required = false) final String status) {
         return ApiResult.ok(admissionViewPage(admissionService.listBySpace(id, status,
                 PageQuery.of(pageNum, pageSize, null))));
     }

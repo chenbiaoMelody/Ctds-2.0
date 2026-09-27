@@ -149,6 +149,29 @@ class SpaceMembershipIntegrationTest {
                 "SELECT COUNT(*) FROM space_admission WHERE space_id = ? AND subject_no = 'pending-t2'",
                 Integer.class, id);
         assertThat(pendingRows).isEqualTo(1);
+        // 第三态（Q3-A）：终态单（谢绝）后重新邀请 → 允许新单（规格只约束成员唯一，不设永久禁入）
+        final long declinedId = invite(id, "owner-t2", "declined-t2", null);
+        mockMvc.perform(auth(post(BASE + "/" + id + "/admissions/" + declinedId + "/confirmation"),
+                        "declined-t2", "user")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"decision\":\"DECLINE\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("DECLINED"));
+        final MvcResult reinvited = mockMvc.perform(
+                        auth(post(BASE + "/" + id + "/admissions/invitations"), "owner-t2", "user")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"subjectNo\":\"declined-t2\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.alreadyMember").value(false))
+                .andExpect(jsonPath("$.data.admission.status").value("PENDING_CONFIRMATION"))
+                .andReturn();
+        final long newAdmissionId = MAPPER.readTree(reinvited.getResponse().getContentAsString())
+                .path("data").path("admission").path("id").asLong();
+        assertThat(newAdmissionId).isNotEqualTo(declinedId);
+        final Integer declinedRows = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM space_admission WHERE space_id = ? AND subject_no = 'declined-t2'",
+                Integer.class, id);
+        assertThat(declinedRows).isEqualTo(2);
     }
 
     // ==== T3 资格门槛防枚举（行为 3 规则 1；剧本 S1-4）====
@@ -157,7 +180,9 @@ class SpaceMembershipIntegrationTest {
     void notAdmittedInviteeAndApplicantGetUnifiedMessage() throws Exception {
         final long id = enabledSpace("owner-t3", "邀请制空间T3", "INVITE", "PRIVATE");
         final long openId = enabledSpace("owner-t3b", "公开空间T3", "OPEN", "PUBLIC");
-        given(admissionPort.check(any())).willReturn(SubjectAdmission.NOT_ADMITTED);
+        // 按参数匹配：ghost-t3 未入驻、其余主体（含操作者）正常——验证资格判定查的是被邀/申请主体本身
+        given(admissionPort.check(any())).willAnswer(inv ->
+                "ghost-t3".equals(inv.getArgument(0)) ? SubjectAdmission.NOT_ADMITTED : SubjectAdmission.ADMITTED);
         mockMvc.perform(auth(post(BASE + "/" + id + "/admissions/invitations"), "owner-t3", "user")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"subjectNo\":\"ghost-t3\"}"))
@@ -171,6 +196,11 @@ class SpaceMembershipIntegrationTest {
                 "SELECT COUNT(*) FROM space_admission WHERE space_id = ? OR space_id = ?",
                 Integer.class, id, openId);
         assertThat(admissionRows).isZero();
+        // 对照：已入驻主体资格判定通过（操作者=被邀方同主体场景不误伤）
+        mockMvc.perform(auth(post(BASE + "/" + id + "/admissions/invitations"), "owner-t3", "user")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"subjectNo\":\"owner-t3b\"}"))
+                .andExpect(status().isOk());
     }
 
     // ==== T4 申请+审批（行为 3 规则 2/5；剧本 S1-6~9）====
@@ -239,6 +269,21 @@ class SpaceMembershipIntegrationTest {
         unfreeze(id, "owner-t5");
         mockMvc.perform(auth(post(BASE + "/" + id + "/admissions/applications"), "applicant-t5", "user"))
                 .andExpect(status().isOk());
+        // 解散态（终态）：准入动作全拒（规格行为 3 规则 3"已解散一律拒绝"）
+        final long memberId = activeMemberId(id, "member-t5");
+        dissolve(id, "owner-t5");
+        mockMvc.perform(auth(post(BASE + "/" + id + "/admissions/applications"), "applicant-t5b", "user"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("1006C0002"));
+        mockMvc.perform(auth(post(BASE + "/" + id + "/admissions/invitations"), "owner-t5", "user")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"subjectNo\":\"outsider-t5\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("1006C0002"));
+        // 解散后退出仍允许（行为 5 规则 4"终止成员关系不受阻"终态分支）
+        mockMvc.perform(auth(post(BASE + "/" + id + "/leaving"), "member-t5", "user"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("LEFT"));
     }
 
     // ==== T6 角色授予正向 + 留痕 + 被授予者能力生效（行为 4 规则 2/6；剧本 S2-1）====
@@ -277,6 +322,12 @@ class SpaceMembershipIntegrationTest {
                         + "AND result = 'SUCCESS' AND from_value = 'ADMIN' AND to_value = 'MEMBER'",
                 Integer.class, id);
         assertThat(revokeLog).isEqualTo(1);
+        // 同角色重复设定 = 幂等无操作（200 返回现状态、无新增留痕——登记口径固化）
+        grant(id, "owner-t6", memberId, "MEMBER");
+        final Integer revokeLogAfterReplay = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM space_action_log WHERE space_id = ? AND action = 'ROLE_REVOKE' "
+                        + "AND result = 'SUCCESS'", Integer.class, id);
+        assertThat(revokeLogAfterReplay).isEqualTo(1);
     }
 
     // ==== T7 member 逐动作全拒 + DENIED 留痕逐动作齐备（行为 4 规则 3；剧本 S2-2）====
@@ -305,19 +356,23 @@ class SpaceMembershipIntegrationTest {
                         "member-t7", "user")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"role\":\"ADMIN\"}"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("1006C0007"));
         mockMvc.perform(auth(post(BASE + "/" + id + "/members/" + memberId + "/removal"),
                         "member-t7", "user")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"reason\":\"测试\"}"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("1006C0007"));
         // member 尝试冻结 / 解散（生命周期管理动作同权限点）
         mockMvc.perform(auth(post(BASE + "/" + id + "/freezing"), "member-t7", "user"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("1006C0007"));
         mockMvc.perform(auth(post(BASE + "/" + id + "/dissolution"), "member-t7", "user")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"confirmDissolve\":true}"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("1006C0007"));
         for (final String action : actions) {
             final Integer denied = jdbc.queryForObject(
                     "SELECT COUNT(*) FROM space_action_log WHERE space_id = ? AND action = ? "
@@ -578,12 +633,13 @@ class SpaceMembershipIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"targetMemberId\":" + nextSuccessor + "}"))
                 .andExpect(status().isForbidden());
-        // 目标非本人/非活跃成员：转移给本人被拒（参数不合法）
+        // 目标=本人（OWNER 行）→ 与"不存在/不活跃"统一 1006C0008 文案（防成员存在性探测）
         final long selfMemberId = activeMemberId(id, "third-t16");
         mockMvc.perform(auth(post(BASE + "/" + id + "/ownership-transfer"), "third-t16", "user")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"targetMemberId\":" + selfMemberId + "}"))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("1006C0008"));
     }
 
     // ==== T17 权限面收敛回归（移交①；3.2.3 T10 语义不回归）====
@@ -648,7 +704,7 @@ class SpaceMembershipIntegrationTest {
                 "SELECT COUNT(*) FROM space_member WHERE space_id = ? AND subject_no = 'decliner-t19'",
                 Integer.class, id);
         assertThat(memberRows).isZero();
-        // 终态单再确认 → 1006C0010（乐观门槛 0 行）
+        // 终态单再确认 → 1006C0010（显式前置门槛 + 乐观门槛双层）
         mockMvc.perform(auth(post(BASE + "/" + id + "/admissions/" + admissionId + "/confirmation"),
                         "decliner-t19", "user")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -661,6 +717,15 @@ class SpaceMembershipIntegrationTest {
                 .andExpect(jsonPath("$.code").value("1006C0011"));
         // 形态错配：向公开空间发邀请 → 1006C0011
         final long openId = enabledSpace("owner-t19b", "公开空间T19", "OPEN", "PUBLIC");
+        // 重复审批：公开空间申请→批准后（APPROVED 终态）再发审批 → 1006C0010（approve 终态门槛触达）
+        final long approvedId = apply(openId, "approver-t19");
+        approve(openId, approvedId, "owner-t19b");
+        mockMvc.perform(auth(post(BASE + "/" + openId + "/admissions/" + approvedId + "/approval"),
+                        "owner-t19b", "user")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"decision\":\"REJECT\",\"reason\":\"重复处理\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("1006C0010"));
         mockMvc.perform(auth(post(BASE + "/" + openId + "/admissions/invitations"), "owner-t19b", "user")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"subjectNo\":\"invitee-t19\"}"))
@@ -694,6 +759,108 @@ class SpaceMembershipIntegrationTest {
                         + "AND from_value = 'MEMBER' AND to_value = 'ADMIN'",
                 Integer.class, memberId);
         assertThat(roleLog).isEqualTo(1);
+    }
+
+    // ==== T9b admin 目标=本人（自我提权显式门槛触达——删门槛此测试必红）====
+
+    @Test
+    void adminCannotPromoteSelf() throws Exception {
+        final long id = enabledSpace("owner-t9b", "邀请制空间T9b", "INVITE", "PRIVATE");
+        final long adminId = activeMemberId(id, "admin-t9b");
+        grant(id, "owner-t9b", adminId, "ADMIN");
+        // admin（有权者）对自己行角色变更 → 1006C0007（自我提权门槛在 canManage 之后仍须拦截）
+        mockMvc.perform(auth(post(BASE + "/" + id + "/members/" + adminId + "/role-assignment"),
+                        "admin-t9b", "user")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"role\":\"ADMIN\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("1006C0007"));
+        final String role = jdbc.queryForObject(
+                "SELECT role FROM space_member WHERE id = ?", String.class, adminId);
+        assertThat(role).isEqualTo("ADMIN");
+        final Integer deniedLogs = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM space_action_log WHERE space_id = ? AND action = 'ROLE_GRANT' "
+                        + "AND result = 'DENIED' AND operator = 'admin-t9b'",
+                Integer.class, id);
+        assertThat(deniedLogs).isEqualTo(1);
+    }
+
+    // ==== 端点 6 我的准入单（全链——URL 拼写与双方向过滤）====
+
+    @Test
+    void myAdmissionsListsBothDirectionsAcrossSpaces() throws Exception {
+        final long inviteSpace = enabledSpace("owner-t6b", "邀请制空间T6b", "INVITE", "PRIVATE");
+        final long openSpace = enabledSpace("owner-t6c", "公开空间T6c", "OPEN", "PUBLIC");
+        // 收到的邀请（被邀方视角）
+        final long invitationId = invite(inviteSpace, "owner-t6b", "me-t6d", null);
+        // 发出的申请（申请人视角）
+        final long applicationId = apply(openSpace, "me-t6d");
+        mockMvc.perform(auth(get(BASE + "/admissions/mine"), "me-t6d", "user"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(2))
+                .andExpect(jsonPath("$.data.list[?(@.id == " + invitationId
+                        + " && @.type == 'INVITATION' && @.status == 'PENDING_CONFIRMATION')]").isNotEmpty())
+                .andExpect(jsonPath("$.data.list[?(@.id == " + applicationId
+                        + " && @.type == 'APPLICATION' && @.status == 'PENDING_APPROVAL')]").isNotEmpty());
+        // 只含本人单据（他人单据不出现）
+        mockMvc.perform(auth(get(BASE + "/admissions/mine"), "owner-t6b", "user"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.list[?(@.subjectNo == 'me-t6d')]").isEmpty());
+    }
+
+    // ==== 1006C0008 行为触发路径（目标定位失败三形态统一防探测文案）====
+
+    @Test
+    void memberRelationFailuresUseUnifiedNotFoundMessage() throws Exception {
+        final long id = enabledSpace("owner-t8b", "邀请制空间T8b", "INVITE", "PRIVATE");
+        // 角色变更目标行不存在 → 404 + 0008（不区分"不存在/已失效"）
+        mockMvc.perform(auth(post(BASE + "/" + id + "/members/99999/role-assignment"), "owner-t8b", "user")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"role\":\"ADMIN\"}"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("1006C0008"))
+                .andExpect(jsonPath("$.message").value("成员关系不存在或已失效"));
+        // 无活跃行主体退出 → 404 + 0008
+        mockMvc.perform(auth(post(BASE + "/" + id + "/leaving"), "stranger-t8b", "user"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("1006C0008"));
+        // 转移目标 = 已退出（LEFT）成员行 → 404 + 0008（不活跃目标不暴露"曾存在"差异）
+        final long memberToLeave = activeMemberId(id, "goner-t8b");
+        mockMvc.perform(auth(post(BASE + "/" + id + "/leaving"), "goner-t8b", "user"))
+                .andExpect(status().isOk());
+        mockMvc.perform(auth(post(BASE + "/" + id + "/ownership-transfer"), "owner-t8b", "user")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"targetMemberId\":" + memberToLeave + "}"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("1006C0008"));
+    }
+
+    // ==== 端点 5 分页与 status 筛选（非法值 400——评审③S2-3）====
+
+    @Test
+    void admissionListSupportsStatusFilterAndPagination() throws Exception {
+        final long id = enabledSpace("owner-t5b", "公开空间T5b", "OPEN", "PUBLIC");
+        apply(id, "filter-t5b-a");
+        apply(id, "filter-t5b-b");
+        mockMvc.perform(auth(get(BASE + "/" + id + "/admissions"), "owner-t5b", "user"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(2));
+        // status 筛选命中
+        mockMvc.perform(auth(get(BASE + "/" + id + "/admissions"), "owner-t5b", "user")
+                        .param("status", "PENDING_APPROVAL"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(2))
+                .andExpect(jsonPath("$.data.list[?(@.status == 'PENDING_APPROVAL')]").isNotEmpty());
+        // 分页参数生效
+        mockMvc.perform(auth(get(BASE + "/" + id + "/admissions"), "owner-t5b", "user")
+                        .param("pageSize", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.pageSize").value(1))
+                .andExpect(jsonPath("$.data.totalPages").value(2));
+        // 非法 status → 400（通用参数通道，非 500）
+        mockMvc.perform(auth(get(BASE + "/" + id + "/admissions"), "owner-t5b", "user")
+                        .param("status", "BOGUS"))
+                .andExpect(status().isBadRequest());
     }
 
     // ==== 场景 helper（唯一主体编号避撞唯一键，沿 SpaceLifecycleIntegrationTest 先例）====
@@ -761,6 +928,21 @@ class SpaceMembershipIntegrationTest {
                         operator, "user")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"role\":\"" + role + "\"}"))
+                .andExpect(status().isOk());
+    }
+
+    private void approve(final long spaceId, final long admissionId, final String operator) throws Exception {
+        mockMvc.perform(auth(post(BASE + "/" + spaceId + "/admissions/" + admissionId + "/approval"),
+                        operator, "user")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"decision\":\"APPROVE\"}"))
+                .andExpect(status().isOk());
+    }
+
+    private void dissolve(final long spaceId, final String operator) throws Exception {
+        mockMvc.perform(auth(post(BASE + "/" + spaceId + "/dissolution"), operator, "user")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"confirmDissolve\":true}"))
                 .andExpect(status().isOk());
     }
 

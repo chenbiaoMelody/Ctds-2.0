@@ -22,7 +22,10 @@ import org.springframework.stereotype.Component;
  * platform.operator → space.admin,space.member——替换 3.2.3 零消费的 space.manage 登记）。
  * owner 专属动作（解散/所有权转移）走属主判定（space.owner_subject_no 列口径，与权限点正交）。
  * 逐动作判定失败由调用方落 DENIED 留痕后抛 1006C0007（判定在应用服务，非注解静态门——
- * 判定输入含成员表数据）。既有方法签名与判定结果语义不变（3.2.3 T10 双轨测试不回归）。
+* 判定输入含成员表数据）。既有方法签名与判定结果语义不变（3.2.3 T10 双轨测试不回归）；fail-closed 说明：
+ * 矩阵仅认活跃 OWNER/ADMIN 成员行与角色头映射，旧实现的 isOwner 列短路不再参与管理动作判定
+ * （owner 的管理能力经其 OWNER 成员行保留；列与行一致性由 uk_active_owner 与转移四写同步保障，
+ * 极端漂移态 fail-closed 收紧、无放大面）。
  */
 @Component
 public class SpaceAccessGuard {

@@ -288,8 +288,9 @@ public class SpaceJdbcRepository implements SpaceRepository {
     }
 
     @Override
-    public long insertAdmission(final SpaceAdmission admission) {
-        // 准入单无唯一键可回查——GeneratedKeyHolder 取自增主键（沿 MySQL 先例）
+    @Transactional
+    public long insertAdmission(final SpaceAdmission admission, final SpaceActionLog log) {
+        // 准入单无唯一键可回查——GeneratedKeyHolder 取自增主键（沿 MySQL 先例）；创建留痕同事务（审计无缺口）
         final KeyHolder keyHolder = new GeneratedKeyHolder();
         jdbcTemplate.update(con -> {
             final PreparedStatement ps = con.prepareStatement(
@@ -307,20 +308,23 @@ public class SpaceJdbcRepository implements SpaceRepository {
             ps.setTimestamp(9, timestamp(admission.updatedAt()));
             return ps;
         }, keyHolder);
-        return keyHolder.getKey().longValue();
+        final long id = keyHolder.getKey().longValue();
+        insertLogWithinTransaction(admission.spaceId(), withFromTo(log, null, admission.status().name()));
+        return id;
     }
 
     @Override
     @Transactional
     public long activateMembership(final SpaceMember member, final long admissionId, final long spaceId,
             final AdmissionStatus fromStatus, final SpaceActionLog log) {
-        // 单事务三步①：成员行 INSERT（uk_active_member 兜底并发重复准入窗口）
-        jdbc.sql("INSERT INTO space_member (space_id, subject_no, role, status, joined_at) "
-                        + "VALUES (?, ?, ?, ?, ?)")
-                .params(member.spaceId(), member.subjectNo(), member.role().name(), member.status().name(),
-                        timestamp(member.joinedAt()))
-                .update();
         try {
+            // 单事务三步①：成员行 INSERT（uk_active_member 兜底并发重复准入窗口——INSERT 在 try 内，
+            // 冲突=并发方已建立活跃成员行，catch 回查既有行返回；本方准入单 UPDATE 随后 0 行 → 0010 回滚）
+            jdbc.sql("INSERT INTO space_member (space_id, subject_no, role, status, joined_at) "
+                            + "VALUES (?, ?, ?, ?, ?)")
+                    .params(member.spaceId(), member.subjectNo(), member.role().name(), member.status().name(),
+                            timestamp(member.joinedAt()))
+                    .update();
             final long memberId = jdbc.sql("SELECT id FROM space_member "
                             + "WHERE space_id = ? AND subject_no = ? AND status = ?")
                     .params(spaceId, member.subjectNo(), MemberStatus.ACTIVE.name())
@@ -341,9 +345,13 @@ public class SpaceJdbcRepository implements SpaceRepository {
                     AdmissionStatus.APPROVED.name()));
             return memberId;
         } catch (final DuplicateKeyException e) {
-            // uk_active_member 兜底并发重复准入（与领域服务幂等前置构成双保险，沿 create 先例）
-            throw new SpaceBizException(SpaceErrorCodes.MEMBER_RELATION_REQUIRED,
-                    SpaceErrorCodes.MEMBER_RELATION_REQUIRED_MESSAGE);
+            // uk_active_member 冲突 = 并发方已建立同一活跃成员行（Q3-A 语义：返回既有关系）——
+            // 回查既有行 id；本方准入单 UPDATE 因状态已被并发方推进而 0 行 → 0010 整体回滚，不产生双成员
+            return jdbc.sql("SELECT id FROM space_member WHERE space_id = ? AND subject_no = ? "
+                            + "AND status = ?")
+                    .params(spaceId, member.subjectNo(), MemberStatus.ACTIVE.name())
+                    .query(Long.class)
+                    .single();
         }
     }
 
