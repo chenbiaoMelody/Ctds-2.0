@@ -24,13 +24,12 @@ logging:
       file: logstash
 
 ctds:
-  # RBAC（WBS 2.4.5 模式 A 配置映射）：平台运营方治理档（WBS-3.2.3 hifi §5 双轨①，演示期经角色头传入）。
-  # 本条为演示期角色映射登记位（subject/kms/did 同款机制）；空间动作的逐判定为动态双轨
-  # （空间内角色查 space_member 表，见 SpaceAccessGuard），不经注解静态门；
-  # 权限点命名随 3.2.4 收敛定稿（规格行为 4 规则 4），届时同步本登记。
+  # RBAC（WBS 2.4.5 模式 A 配置映射）：平台运营方治理档（演示期经角色头传入）。
+  # 权限点命名已于 WBS-3.2.4 定稿（规格行为 4 规则 4）：space.admin=管理动作、space.member=成员动作；
+  # 经 common RolePermissionMapper 折算进统一权限面（SpaceAccessGuard，空间内角色映射为矩阵另一来源）。
   auth:
     permissions:
-      platform.operator: space.manage
+      platform.operator: space.admin,space.member
   # 空间服务参数（WBS-3.2.3 hifi §4~§5）
   space:
     # 双轨①平台运营方角色档名（应用服务经 AuthContext.roles() 判定，配置可调）

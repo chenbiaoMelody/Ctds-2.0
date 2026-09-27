@@ -75,7 +75,12 @@
 
 | 项 | 内容 |
 | --- | --- |
-| 状态 | ✅ **两级设计已确认（2026-09-27 12:1x"都按建议"：Q1~Q7 均采建议 A + D1 不拆分）——进入编码** |
+| 状态 | ✅ **编码交付完成（2026-09-27 12:5x），待 4 视角评审**——本地门禁全绿（compile ✅ / test **96/96** ✅（新增 26 + 3.2.3 回归 16/16 + 迁移 7 + 单测族）/ checkstyle **0 违规** ✅）；space-service 模块整体 96 测试全绿，common 依赖模块 63/63 同批回归通过 |
+| 验证结果 | `mvn -B -ntp -pl services/space-service -am test`（Testcontainers mysql:8.0 实跑）：**Tests run: 96, Failures: 0, Errors: 0**——SpaceMembershipIntegrationTest 20（T1~T20 集成面）/ SpaceAccessGuardPermissionMatrixTest 6（T17 矩阵）/ SpaceErrorCodesFormatTest 13（T21 含新增 4 码断言+12 码封闭性）/ SpaceExceptionHandlerCodeConsistencyTest 1（码表↔处理器 12 码锚）/ **SpaceLifecycleIntegrationTest 16（3.2.3 回归，Guard 重构零语义漂移实证）** / SpaceMigrationIntegrationTest 7 / SpaceNameNormalizerTest 9 / SubjectAdmissionClientTest 11 / 枚举 12 / 守卫 1；`checkstyle:check` **0 违规** |
+| 实现修复批（编码期两处真缺陷，测试实证后即修） | ① **mapAdmission `rs.wasNull()` 判空错位**——member_id 判空必须紧跟 getLong（中间穿插 getString 后 wasNull 看的是末列，reason 为 NULL 的准入单 member_id 被误判为空 → 回填值丢失）；② **确认/审批终态自环**——已 APPROVED 单重复确认被"同值 WHERE 乐观门槛"放行（3.2.3 终态自环同款教训复刻：显式前置门槛拦截 + 乐观门槛保留 TOCTOU 并发兜底），测试 T19 断言重复确认 409 |
+| 剧本是否需要更新 | **C-2.2 剧本无需更新**——三幕步骤与实现逐一兼容：S1 准入 12 步（邀请/确认/幂等/未入驻统一文案/申请审批/冻结门槛与恢复复位）全部有端点承载；S2 权限 6 步（授予/逐动作拒绝/仅所有者/自我提权/非成员绕过/admin 正向邀请）逐一被 T6~T11 覆盖；S3 退出移除 5 步（退出/移除理由/唯一所有者保护/冻结期边界/恢复）逐一被 T12~T15 覆盖；"我的邀请（或等价入口）"= 端点 6 我的准入单；界面入口占位不变（Q8-A，3.2.6 交付后核对修订） |
+| 复用声明（实现回填） | 复用 3.2.2 六表载体与 12 枚举（**零迁移**）、3.2.3 SubjectAdmissionGate/留痕模式/乐观门槛模式、common auth（**RolePermissionMapper 注入**——yml 权限点映射自此被真实消费，移交①"零消费"状态消除）/pagination/errorcode；**未新增第三方依赖**（GeneratedKeyHolder 为 spring-jdbc 既有） |
+| 体量登记（实测） | 预估 ~1400~1800 行；**实测增量 2221 行**（主代码 15 文件 ~1330 + 测试 ~890）——超出预估主因集成测试 799 行（T1~T21 全场景+helper），主代码在预估带内；超出部分全在设计契约内（hifi §8 测试计划 21 项逐项落地） |
 | 立卡前素材盘点（只读） | ① WBS 行 254 + 规格 V1.0 行为 3/4/5/6-5 全文；② 3.2.3 代码实测：`SpaceAccessGuard`（isPlatformOperator/isOwner/canManage/canDissolve/requireSubject 六方法）、`SpaceRepository.findActiveMembers`（成员判定源已有）、`SubjectAdmissionGate`（资格通道已有）、`SpaceErrorCodes`（0001~0007+S0001）、`space_action_log` 动作码预留值域覆盖本域全部动作；③ `common/auth` 机制：`AuthProperties.permissions` = 角色→逗号分隔权限清单（模式 A），space yml 现登记 `platform.operator: space.manage`（零消费）；④ 移交五项原文（3.2.3 hifi §10 E8/E9/E11 + 台账下一包行）；⑤ C-2.2 剧本三幕步骤与本包端点逐一对照成立（S1 准入 12 步 / S2 权限 6 步 / S3 退出移除 5 步——"我的邀请等价入口"= 端点 6 我的准入单） |
 | 规格外实现声明 | 无（端点/规则全部由规格行为 3/4/5 + 行为 6 规则 5 + 移交五项派生；Q2/Q3/Q4/Q5/Q6 为规格授权范围内实现形态决策——行为 4 规则 5"随 3.2.4 设计"与规格 §尾注"接口签名归 3.2.4"授权；Q3/Q6 两处规格未定义路径已在 lofi 缺口声明登记待裁决） |
 | 复用声明 | 复用 3.2.2 六表载体与 12 枚举、3.2.3 SpaceAccessGuard/SubjectAdmissionGate/留痕模式/乐观门槛模式/SpaceRepository、common auth/pagination/errorcode；**未新增第三方依赖、零迁移** |

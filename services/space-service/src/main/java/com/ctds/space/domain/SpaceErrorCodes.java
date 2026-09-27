@@ -34,6 +34,21 @@ public final class SpaceErrorCodes {
     public static final String SPACE_ACCESS_DENIED_MESSAGE = "无权限执行该空间操作";
     /** 拒绝留痕理由（space_action_log.reason，服务端常量）。 */
     public static final String ACCESS_DENIED_LOG_REASON = "操作者不具备该动作所需权限";
+    /** 成员关系不存在或不活跃（目标成员行定位失败/操作者无活跃成员行——统一文案防成员存在性探测）。→ 404 */
+    public static final ErrorCode MEMBER_RELATION_REQUIRED = ErrorCode.of("1006C0008");
+    public static final String MEMBER_RELATION_REQUIRED_MESSAGE = "成员关系不存在或已失效";
+    /** 唯一所有者保护：owner 行不可退出/移除/角色变更（行为 5 规则 1/2/3，应用层显式门槛——
+     * uk_active_owner 只兜"两个 OWNER"并存，拦不住"OWNER 被降级"，须显式前置判断）。→ 409 */
+    public static final ErrorCode OWNER_PROTECTED = ErrorCode.of("1006C0009");
+    public static final String OWNER_PROTECTED_MESSAGE = "空间所有者受唯一所有者保护，不可执行该操作";
+    /** 准入单状态不允许该动作（已处理单再确认/再审批——乐观门槛 0 行）。→ 409 */
+    public static final ErrorCode ADMISSION_STATE_GATE = ErrorCode.of("1006C0010");
+    public static final String ADMISSION_STATE_GATE_MESSAGE = "准入单当前状态不允许该操作";
+    /** 准入形态与空间参与方范围不匹配（向邀请制空间提交申请/向公开·审批制空间发邀请）。→ 409 */
+    public static final ErrorCode ADMISSION_MODE_MISMATCH = ErrorCode.of("1006C0011");
+    public static final String ADMISSION_MODE_MISMATCH_MESSAGE = "该空间的参与方范围不支持此准入方式";
+    /** 读面拒绝留痕理由（非成员访问空间成员列表，服务端常量——对外同形不变，对内可审计）。 */
+    public static final String MEMBER_LIST_DENIED_LOG_REASON = "非成员访问空间成员列表";
     /** 主体服务不可达/失败（UNAVAILABLE 统一文案，不冒充 1006C0001——WBS-3.2.3 hifi §4）。→ 503 */
     public static final ErrorCode SUBJECT_SERVICE_UNAVAILABLE = ErrorCode.of("1006S0001");
     public static final String SUBJECT_SERVICE_UNAVAILABLE_MESSAGE = "主体服务暂不可用，请稍后重试";

@@ -48,13 +48,33 @@ class SpaceErrorCodesFormatTest {
     }
 
     @Test
+    void memberRelationRequiredIsClientTypeInSpaceSegment() {
+        assertCode("1006C0008", SpaceErrorCodes.MEMBER_RELATION_REQUIRED, 'C');
+    }
+
+    @Test
+    void ownerProtectedIsClientTypeInSpaceSegment() {
+        assertCode("1006C0009", SpaceErrorCodes.OWNER_PROTECTED, 'C');
+    }
+
+    @Test
+    void admissionStateGateIsClientTypeInSpaceSegment() {
+        assertCode("1006C0010", SpaceErrorCodes.ADMISSION_STATE_GATE, 'C');
+    }
+
+    @Test
+    void admissionModeMismatchIsClientTypeInSpaceSegment() {
+        assertCode("1006C0011", SpaceErrorCodes.ADMISSION_MODE_MISMATCH, 'C');
+    }
+
+    @Test
     void subjectServiceUnavailableIsSystemTypeInSpaceSegment() {
         assertCode("1006S0001", SpaceErrorCodes.SUBJECT_SERVICE_UNAVAILABLE, 'S');
     }
 
     @Test
-    void codeTableIsExactlyTheEightFinalizedValues() {
-        // 码表封闭性：1006 段定稿 8 码（hifi §2），增删须同步设计变更
+    void codeTableIsExactlyTheTwelveFinalizedValues() {
+        // 码表封闭性：1006 段定稿 12 码（3.2.3 hifi §2 8 码 + WBS-3.2.4 hifi §2 顺延 4 码），增删须同步设计变更
         assertThat(new String[] {
                 SpaceErrorCodes.ADMISSION_REQUIRED.value(),
                 SpaceErrorCodes.SPACE_STATUS_GATE.value(),
@@ -63,9 +83,14 @@ class SpaceErrorCodesFormatTest {
                 SpaceErrorCodes.SPACE_ELEMENT_MISSING.value(),
                 SpaceErrorCodes.DISSOLVE_CONFIRM_REQUIRED.value(),
                 SpaceErrorCodes.SPACE_ACCESS_DENIED.value(),
+                SpaceErrorCodes.MEMBER_RELATION_REQUIRED.value(),
+                SpaceErrorCodes.OWNER_PROTECTED.value(),
+                SpaceErrorCodes.ADMISSION_STATE_GATE.value(),
+                SpaceErrorCodes.ADMISSION_MODE_MISMATCH.value(),
                 SpaceErrorCodes.SUBJECT_SERVICE_UNAVAILABLE.value()})
                 .containsExactly("1006C0001", "1006C0002", "1006C0003", "1006C0004",
-                        "1006C0005", "1006C0006", "1006C0007", "1006S0001");
+                        "1006C0005", "1006C0006", "1006C0007", "1006C0008",
+                        "1006C0009", "1006C0010", "1006C0011", "1006S0001");
     }
 
     private void assertCode(final String expected, final ErrorCode actual, final char type) {
