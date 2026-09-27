@@ -6,7 +6,7 @@
 | 级别与性质 | L1-3 平台功能**实施包**（WBS 行 253 预算 **1 会话**）——**非界面类**：交付 = 空间创建/配置/冻结/解散的完整服务（接口层+应用服务+领域+基础设施）；**走两级设计门禁**（lofi/hifi 一并落盘、一次确认——章程 2.6.3），设计文件 `docs/designs/WBS-3.2.3-lofi.md` / `-hifi.md` |
 | 需求锚点核对 | 规格 `docs/specs/C-2.1-2.3-逻辑空间管理.md` V1.0：**行为 1**（空间创建与要素设定：资格门槛/要素/命名唯一与归一化/留痕/幂等/初始态）+ **行为 2**（生命周期：状态机/启用前提/冻结/解散含二次确认与名称锁定/超权限拒绝/留痕）+ 行为 6 的"可见性=可否被检索"读面承载；WBS 行 253（本卡 = "创建/配置/冻结/解散服务"）；PRD 行 109（C-2.1 P0） |
 | 上游能力边界 | **3.2.2 交付**（`ctds_space` 六表+约束+动作码值域+domain 5 实体 12 枚举+模块骨架 8083；解散三写事务契约 = hifi-3.2.2 §2）；**3.2.2 移交三项**（①归一化新建实现·空白集显式定义含 Unicode 空白；②判重前提 `utf8mb4_0900_ai_ci`；③ActionResult 与 common AuditOutcome 分工）；**subject 内部端点**（`/api/v1/subject/internal/subjects/{no}/admission`，ADR-016 §6 衔接契约先例，did 同款复用）；`common` 幂等（@Idempotent，ADR-007）/auth（AuthContext+角色头）/pagination/errorcode；subject 状态机乐观门槛先例（3.1.3）；ADR-005 资源命名 `/api/v1/data-spaces`；**错误码 1006 段启用**（规格 Q7 预留，码值本卡定稿） |
-| 交付物 | ① space-service 四层补全：接口层 7 端点（创建/启用/冻结/恢复/解散/配置变更/最小读面）+ 应用服务（SpaceCommandService 状态机+资格门槛+幂等+留痕）+ domain（SpaceRepository 接口+状态机规则）+ infrastructure（JdbcRepository+SubjectAdmissionClient）；② `SpaceErrorCodes` **1006 段码值定稿**；③ subject-service **唯一改动 = application.yml 角色映射加 1 行**（`space-internal: subject.internal.read`）+ ADR-016 §6 衔接契约补记；④ 部署清单 space-service 入列（deploy/k8s 追加 deployment/service/kustomization）；⑤ 集成测试（Testcontainers 实跑，含状态机全边/资格防枚举/归一化含 U+3000/幂等/解散三写/同名先后解散边界）；⑥ 本任务卡+lofi/hifi+台账+日志 |
+| 交付物 | ① space-service 四层补全：接口层 **8 端点（写面 6 + 读面 2**，原"7 端点"计法见评审补正说明①：创建/启用/冻结/恢复/解散/配置变更/列表/详情）+ 应用服务（SpaceCommandService 状态机+资格门槛+幂等+留痕）+ domain（SpaceRepository 接口+状态机规则）+ infrastructure（JdbcRepository+SubjectAdmissionClient）；② `SpaceErrorCodes` **1006 段码值定稿**；③ subject-service **唯一改动 = application.yml 角色映射加 1 行**（`space-internal: subject.internal.read`）+ ADR-016 §6 衔接契约补记；④ 部署清单 space-service 入列（deploy/k8s 追加 deployment/service/kustomization）；⑤ 集成测试（Testcontainers 实跑，含状态机全边/资格防枚举/归一化含 U+3000/幂等/解散三写/同名先后解散边界）；⑥ 本任务卡+lofi/hifi+台账+日志 |
 | 关闭条件 | ① 两级设计经编排师**一次确认**（实现与设计逐条一致）；② 本地门禁全绿（compile/test/checkstyle）+ 集成测试全过；③ 规格行为 → 端点/测试映射表齐备（本卡 §三）；④ 4 视角评审通过+修复批复审；⑤ 编排师验收通过 |
 | 分支 | `feat/WBS-3.2.3-空间生命周期服务`（自 `main` = `90d98c4`，沿"每包独立分支"惯例） |
 | 纪律声明 | **只做空间本体的创建/配置/生命周期**——成员准入/角色/退出移除与隔离判定归 3.2.4、策略继承引擎归 3.2.5、界面归 3.2.6、测试达标（覆盖率/变异）归 3.2.7；既有服务仅 subject-service yml 加 1 行授权（本卡声明的最小必要改动，设计留痕）；不动门禁配置、不引新依赖（client 用 JDK HttpClient 零依赖）；错误码码值以 `SpaceErrorCodes` 常量类定稿；发现规格缺口一律走变更流程（红线 2/章程 2.6） |
@@ -20,7 +20,7 @@
 
 **设计要点摘要（供快速表决）**
 
-1. **7 端点最小完整面**：写面 6（创建/启用/冻结/恢复/解散/配置变更）+ 读面 2 最小集（列表=公开可检索+运营方全量、详情=公开摘要或成员全量）——可见性消费语义（Q6 裁决）归空间本体，为 3.2.6 界面供数；
+1. **8 端点最小完整面**（评审补正说明①口径）：写面 6（创建/启用/冻结/恢复/解散/配置变更）+ 读面 2（列表=公开可检索+运营方全量、详情=公开摘要或成员全量）——可见性消费语义（Q6 裁决）归空间本体，为 3.2.6 界面供数；
 2. **资格判定走 subject 内部端点**（沿 did→subject 同款 client 先例，零新增依赖）；subject 侧唯一改动 = 角色映射加 1 行 `space-internal: subject.internal.read`；不可达/失败 = UNAVAILABLE 统一文案，不冒充"未入驻"（防枚举同形，行为 1 规则 1）；
 3. **双轨权限判定**：平台角色（`platform.operator` 治理档，角色头）+ 空间内角色（owner/admin，查 `space_member` 表）——3.2.4 收敛统一权限面（规格行为 4 规则 4"权限点命名随 3.2.4 定稿"）；
 4. **状态机乐观门槛沿 subject 先例**（同事务 `UPDATE ... WHERE status=from_status`，0 行 → 状态门槛码）；解散 = **同事务三写**（status=DISSOLVED + `space_name_lock` 写入 + 该空间策略条目全部 ARCHIVED，3.2.2 hifi §2 契约兑现）+ 请求体必填 `confirmDissolve=true`（二次确认的 API 层强表达）；
@@ -57,7 +57,7 @@
 | 行为 2 规则 2 启用前提 | 要素完整+所有者仍 ADMITTED | 缺要素/资格失效拒绝 |
 | 行为 2 规则 3 冻结 | freezing/unfreezing | 冻结恢复双向+留痕 |
 | 行为 2 规则 4 解散 | dissolution：confirmDissolve 必填+三写事务+名称锁定 | 二次确认缺失拒绝；三写落库断言；同名先后解散边界 |
-| 行为 2 规则 5 超权限拒绝 | owner/admin（成员表）+platform.operator（角色头）判定 | member/非成员/无角色逐动作拒绝+DENIED 留痕 |
+| 行为 2 规则 5 超权限拒绝 | owner/admin（成员表）+platform.operator（角色头）判定 | member/非成员逐动作拒绝（双轨：成员表角色 + 平台角色头，见评审补正说明②）+DENIED 留痕逐动作齐备 |
 | 行为 2 规则 6 留痕 | from_value→to_value+操作者 | 状态变更留痕断言 |
 | 行为 6（可见性读面） | 列表/详情可见性过滤 | 公开可检索；不公开不出现；可见性≠可访问性注记 |
 
@@ -65,7 +65,8 @@
 
 | 项 | 内容 |
 | --- | --- |
-| 状态 | ✅ **实现交付（2026-09-26 编码会话）**：实现提交 `600f0e7`（四层代码 + subject yml 1 行 + ADR-016 §6 补记 + V2 迁移 + deploy/k8s 入列）；本地门禁全绿（**Tests run: 58, Failures: 0**【T1~T12 集成 12 Testcontainers 实跑 / 迁移冒烟 7 / 归一化 T13 9 / 错误码 T14 9 / client 三态 9 / 枚举封闭 12（3.2.2 既有）】+ checkstyle **0 违规**）+ **subject 回归 144/144**（yml 改动）+ kustomize 结构校验 6 资源正常——待 4 视角评审与编排师验收 |
+| 状态 | ✅ **实现交付 + 评审循环 1 修复完成（2026-09-27 评审会话），待修复批复审与编排师验收**：实现提交 `600f0e7`（四层代码 + subject yml 1 行 + ADR-016 §6 补记 + V2 迁移 + deploy/k8s 入列）→ **4 视角评审（单发串行）**：①规格与设计符合性=不通过（**S1×1 终态自环** + S2×4）/②安全供应链=通过（S2×2 + S3×4 登记）/③一致性重复=不通过（S2×4 + S3×13）/④测试质量=不通过（**S1×2** + S2×5）→ **修复批**（S1 全闭 + S2 全闭 + S3 择要）：解散入口显式终态门槛（DISSOLVED 无出边）、CREATE 留痕 target_id 回填、client 请求构造失败兜底 UNAVAILABLE（畸形身份不再出站 500）、资格三态判定收敛单一协作件、理由超长改走 common 处理器（越集分支不可达性缺陷顺带闭环）、ADR-010 §8 形态 B 守卫落地 + 迁移测试收敛共享容器、T15~T19 补测（逐动作矩阵/终态自环/名称锁定/边界值/keyword 转义/读超时/码表一致性锚）+ hifi §10 勘误 12 项 + 3.2.2-hifi Q6-A 补正注记 → **Tests run: 66, Failures: 0, Errors: 0**（集成 16 / 迁移 7 / 归一化 9 / 错误码 9 / client 11 / 枚举 12 / 守卫 1 / 一致性锚 1，Testcontainers 实跑）+ checkstyle **0 违规** + kustomize 6 资源正常 + **subject 回归 144/144**（评审①独立复跑核验；修复批未触碰 subject） |
+| 评审补正说明（2026-09-27） | ① **端点计数口径**：本卡原文"7 端点"为把读面 2 端点计作 1 的口径差，实况 = **8 端点（写面 6 + 读面 2）**，以 hifi §1 表（8 行）为准，台账/日志同批更正；② 任务卡 §三"无角色逐动作拒绝"措辞失真——实现权限面 = 成员表角色（OWNER/ADMIN/MEMBER）+ 平台角色头双轨，无"无角色"独立判定面；③ subject yml 改动口径 = **1 行映射 + 1 行注释**（此前"1 行"仅指映射行）；④ **剧本是否需要更新：无需更新**——`C-2.1-逻辑空间创建准入-验收剧本.md` 三幕步骤与实现逐条兼容（S1 幂等/S2 逐字段留痕与非成员拒绝留痕/S3 二次确认与名称锁定均实测覆盖；界面入口占位随 3.2.6，Q8-A 口径不变）；C-2.2/C-2.3 剧本随 3.2.4/3.2.5 交付核验 |
 | 立卡前素材盘点（只读） | ① WBS 行 253 + 规格 V1.0 行为 1/2/6 全文；② **资格通道实测**：subject `InternalAdmissionController`（`@RequirePermission("subject.internal.read")`）+ 授权映射在 subject `application.yml:49`（`did-internal: subject.internal.read`）→ space 复用 = 加 1 行；did `SubjectStatusHttpClient`（93 行，JDK HttpClient，UNAVAILABLE 语义）为 client 先例；③ **幂等先例**：`@Idempotent(key = "#orderNo")` SpEL（example/subject）；④ **状态机先例**：`SubjectStatusService.appendTransition` 同事务乐观门槛（3.1.3 教训固化）；⑤ **身份**：`AuthContext.subject()` + 角色头经 `AuthProperties`；⑥ **盘点发现**：跨 owner 同名空间先后解散撞 `name_lock` PK = 规格未定义真实路径（Q6 处置）；⑦ 部署清单现仅 example+frontend（`deploy/k8s/`），space 入列随本包 |
 | 规格外实现声明 | 无（端点/规则全部由规格行为 1/2/6 派生；读面边界 Q2、二次确认形态 Q3、运营方表达 Q4 均为规格授权范围内的实现形态决策）。**实现期两处工程性登记**（非需求扩展）：① `space_action_log` from_value/to_value VARCHAR(64)→1024（V2 迁移，只放宽不收窄）——配置变更留痕"从何值→到何值"须容纳简介全文（≤512），T11 契约所需；② 配置变更状态门槛采"ACTIVE/FROZEN 可改、CREATED/DISSOLVED 拒"（hifi §2 1006C0002"未启用不可变更"+终态口径推得，冻结语义不含配置限制） |
 | 复用声明 | 复用 subject 内部端点（ADR-016 §6 衔接契约）、did client 先例形态、subject 状态机乐观门槛模式、common 幂等/鉴权/分页/错误码、3.2.2 六表与 domain 模型；**未新增第三方依赖**（client = JDK HttpClient；web/validation 为 Boot 官方 starter 既有登记） |

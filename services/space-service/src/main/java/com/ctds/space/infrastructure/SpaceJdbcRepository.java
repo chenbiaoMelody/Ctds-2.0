@@ -5,6 +5,7 @@ import com.ctds.common.pagination.PageResult;
 import com.ctds.space.domain.AccessMode;
 import com.ctds.space.domain.MemberRole;
 import com.ctds.space.domain.MemberStatus;
+import com.ctds.space.domain.PolicyStatus;
 import com.ctds.space.domain.SceneType;
 import com.ctds.space.domain.Space;
 import com.ctds.space.domain.SpaceActionLog;
@@ -13,6 +14,7 @@ import com.ctds.space.domain.SpaceMember;
 import com.ctds.space.domain.SpaceRepository;
 import com.ctds.space.domain.SpaceStatus;
 import com.ctds.space.domain.SpaceBizException;
+import com.ctds.space.domain.TargetType;
 import com.ctds.space.domain.Visibility;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -75,14 +77,16 @@ public class SpaceJdbcRepository implements SpaceRepository {
     public PageResult<Space> search(final boolean operatorView, final String normalizedNamePrefix,
             final PageQuery page) {
         // 终态（DISSOLVED）不出现在可检索面（hifi §8）；operatorView = platform.operator 全量可见性
-        final StringBuilder where = new StringBuilder("status <> 'DISSOLVED'");
+        final StringBuilder where = new StringBuilder("status <> ?");
         final List<Object> params = new ArrayList<>();
+        params.add(SpaceStatus.DISSOLVED.name());
         if (normalizedNamePrefix != null) {
             where.append(" AND normalized_name LIKE ? ESCAPE '\\\\'");
             params.add(escapeLikePrefix(normalizedNamePrefix) + "%");
         }
         if (!operatorView) {
-            where.append(" AND visibility = 'PUBLIC'");
+            where.append(" AND visibility = ?");
+            params.add(Visibility.PUBLIC.name());
         }
         final String whereSql = where.toString();
         final long total = jdbc.sql("SELECT COUNT(*) FROM space WHERE " + whereSql)
@@ -103,8 +107,8 @@ public class SpaceJdbcRepository implements SpaceRepository {
     @Override
     public List<SpaceMember> findActiveMembers(final long spaceId) {
         return jdbc.sql("SELECT " + MEMBER_COLUMNS + " FROM space_member "
-                        + "WHERE space_id = ? AND status = 'ACTIVE' ORDER BY id")
-                .param(spaceId)
+                        + "WHERE space_id = ? AND status = ? ORDER BY id")
+                .params(spaceId, MemberStatus.ACTIVE.name())
                 .query((rs, rowNum) -> mapMember(rs))
                 .list();
     }
@@ -158,10 +162,11 @@ public class SpaceJdbcRepository implements SpaceRepository {
     @Transactional
     public void dissolve(final long spaceId, final SpaceStatus fromStatus, final String normalizedName,
             final SpaceActionLog log) {
-        // 三写①：状态乐观门槛更新（fromStatus 精确匹配；0 行 = 状态门槛拒绝 1006C0002）
-        final int updatedRows = jdbc.sql("UPDATE space SET status = 'DISSOLVED', updated_at = ? "
+        // 三写①：状态乐观门槛更新（fromStatus 精确匹配；0 行 = 状态门槛拒绝 1006C0002；
+        // 终态自环由应用服务前置门槛拦截——同值 WHERE 拦不住 DISSOLVED→DISSOLVED）
+        final int updatedRows = jdbc.sql("UPDATE space SET status = ?, updated_at = ? "
                         + "WHERE id = ? AND status = ?")
-                .params(timestamp(log.createdAt()), spaceId, fromStatus.name())
+                .params(SpaceStatus.DISSOLVED.name(), timestamp(log.createdAt()), spaceId, fromStatus.name())
                 .update();
         if (updatedRows == 0) {
             throw new SpaceBizException(SpaceErrorCodes.SPACE_STATUS_GATE,
@@ -179,9 +184,10 @@ public class SpaceJdbcRepository implements SpaceRepository {
             // skip: 锁定目标已达成（Q6-A），不阻断治理兜底动作
         }
         // 三写③：该空间策略条目全部归档（行为 7 规则 5"归档不可变、保留可查"）
-        jdbc.sql("UPDATE space_policy SET status = 'ARCHIVED', updated_at = ? "
-                        + "WHERE space_id = ? AND status = 'ACTIVE'")
-                .params(timestamp(log.createdAt()), spaceId)
+        jdbc.sql("UPDATE space_policy SET status = ?, updated_at = ? "
+                        + "WHERE space_id = ? AND status = ?")
+                .params(PolicyStatus.ARCHIVED.name(), timestamp(log.createdAt()), spaceId,
+                        PolicyStatus.ACTIVE.name())
                 .update();
         insertLogWithinTransaction(spaceId, log);
     }
@@ -206,12 +212,13 @@ public class SpaceJdbcRepository implements SpaceRepository {
         if (sets.isEmpty()) {
             return;
         }
-        // status <> 'DISSOLVED' 守卫：服务层门槛判定与写入之间的窗口内被并发解散时拒改（0 行 → 1006C0002）
+        // status <> DISSOLVED 守卫：服务层门槛判定与写入之间的窗口内被并发解散时拒改（0 行 → 1006C0002）
         final List<Object> updateParams = new ArrayList<>(params);
         updateParams.add(timestamp(logs.get(0).createdAt()));
         updateParams.add(spaceId);
+        updateParams.add(SpaceStatus.DISSOLVED.name());
         final int updatedRows = jdbc.sql("UPDATE space SET " + String.join(", ", sets)
-                        + ", updated_at = ? WHERE id = ? AND status <> 'DISSOLVED'")
+                        + ", updated_at = ? WHERE id = ? AND status <> ?")
                 .params(updateParams)
                 .update();
         if (updatedRows == 0) {
@@ -225,18 +232,20 @@ public class SpaceJdbcRepository implements SpaceRepository {
 
     @Override
     public void insertLog(final SpaceActionLog log) {
-        jdbc.sql("INSERT INTO space_action_log (space_id, target_type, target_id, action, operator, "
-                        + "from_value, to_value, result, reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-                .params(log.spaceId(), log.targetType().name(), log.targetId(), log.action(), log.operator(),
-                        log.fromValue(), log.toValue(), log.result().name(), log.reason(),
-                        timestamp(log.createdAt()))
-                .update();
+        insertLogWithinTransaction(log.spaceId(), log);
     }
 
+    /**
+     * 事务内留痕写入（同事务契约的落库点）。target_id 兜底：目标类型为空间而调用方未指实体时
+     * 以 space_id 回填（V1 契约"探测被拒且无实体可指才允许 NULL"——CREATE 后实体已存在，
+     * 按 target_id 检索留痕不可漏行，评审循环 1 补）。
+     */
     private void insertLogWithinTransaction(final long spaceId, final SpaceActionLog log) {
+        final Long targetId = log.targetId() != null ? log.targetId()
+                : (log.targetType() == TargetType.SPACE ? spaceId : null);
         jdbc.sql("INSERT INTO space_action_log (space_id, target_type, target_id, action, operator, "
                         + "from_value, to_value, result, reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-                .params(spaceId, log.targetType().name(), log.targetId(), log.action(), log.operator(),
+                .params(spaceId, log.targetType().name(), targetId, log.action(), log.operator(),
                         log.fromValue(), log.toValue(), log.result().name(), log.reason(),
                         timestamp(log.createdAt()))
                 .update();

@@ -20,8 +20,9 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @RestControllerAdvice
 public class SpaceExceptionHandler {
 
-    /** 允许精确映射的 1006 段码值（SpaceErrorCodes 定稿集；新码须同步登记）。 */
-    private static final Set<String> MAPPED_CODES = Set.of("1006C0001", "1006C0002", "1006C0003", "1006C0004",
+    /** 允许精确映射的 1006 段码值（SpaceErrorCodes 定稿集；新码须同步登记——一致性由
+     * interfaces 包测试锚定，评审循环 1 补：码表↔处理器集合不得漂移）。 */
+    static final Set<String> MAPPED_CODES = Set.of("1006C0001", "1006C0002", "1006C0003", "1006C0004",
             "1006C0005", "1006C0006", "1006C0007", "1006S0001");
 
     @ExceptionHandler(SpaceBizException.class)

@@ -1,5 +1,6 @@
 package com.ctds.space.application;
 
+import com.ctds.common.errorcode.BizException;
 import com.ctds.common.errorcode.ErrorCodes;
 import com.ctds.space.domain.ActionResult;
 import com.ctds.space.domain.Space;
@@ -9,8 +10,6 @@ import com.ctds.space.domain.SpaceErrorCodes;
 import com.ctds.space.domain.SpaceNameNormalizer;
 import com.ctds.space.domain.SpaceRepository;
 import com.ctds.space.domain.SpaceStatus;
-import com.ctds.space.domain.SubjectAdmission;
-import com.ctds.space.domain.SubjectAdmissionPort;
 import com.ctds.space.domain.TargetType;
 import java.time.Clock;
 import java.time.LocalDateTime;
@@ -40,15 +39,15 @@ public class SpaceCommandService {
     private final SpaceRepository repository;
     private final SpaceCreationService creationService;
     private final SpaceAccessGuard guard;
-    private final SubjectAdmissionPort admissionPort;
+    private final SubjectAdmissionGate admissionGate;
     private final Clock clock;
 
     public SpaceCommandService(final SpaceRepository repository, final SpaceCreationService creationService,
-            final SpaceAccessGuard guard, final SubjectAdmissionPort admissionPort, final Clock clock) {
+            final SpaceAccessGuard guard, final SubjectAdmissionGate admissionGate, final Clock clock) {
         this.repository = repository;
         this.creationService = creationService;
         this.guard = guard;
-        this.admissionPort = admissionPort;
+        this.admissionGate = admissionGate;
         this.clock = clock;
     }
 
@@ -105,7 +104,7 @@ public class SpaceCommandService {
         final String subject = guard.requireSubject();
         final Space space = load(spaceId);
         requireManagePermission(space, subject, "ENABLE");
-        requireAdmitted(space.ownerSubjectNo());
+        admissionGate.requireAdmitted(space.ownerSubjectNo());
         append(space, SpaceStatus.CREATED, SpaceStatus.ACTIVE, "ENABLE", subject);
         return load(spaceId);
     }
@@ -130,6 +129,7 @@ public class SpaceCommandService {
 
     /**
      * 解散（任一非终态→DISSOLVED，不可逆）：仅所有者或 platform.operator（admin 不可解散）；
+     * 终态再解散拒绝（DISSOLVED 无出边，hifi §3——乐观门槛 WHERE status=同值 不拦自环，须显式前置门槛）；
      * 二次确认必填（confirmDissolve 显式 true，缺省/null/false 一律 1006C0006，hifi §8）；
      * 同事务三写（状态 DISSOLVED + 名称锁定已锁即跳过 + 策略归档），理由留痕（行为 2 规则 4/6）。
      */
@@ -139,12 +139,17 @@ public class SpaceCommandService {
         if (!guard.canDissolve(space)) {
             deny(space, subject, "DISSOLVE");
         }
+        if (space.status() == SpaceStatus.DISSOLVED) {
+            throw new SpaceBizException(SpaceErrorCodes.SPACE_STATUS_GATE,
+                    SpaceErrorCodes.SPACE_STATUS_GATE_MESSAGE);
+        }
         if (!Boolean.TRUE.equals(confirmDissolve)) {
             throw new SpaceBizException(SpaceErrorCodes.DISSOLVE_CONFIRM_REQUIRED,
                     SpaceErrorCodes.DISSOLVE_CONFIRM_REQUIRED_MESSAGE);
         }
         if (reason != null && reason.length() > REASON_MAX_LENGTH) {
-            throw new SpaceBizException(ErrorCodes.PARAM_INVALID, "解散理由超长（≤" + REASON_MAX_LENGTH + " 字符）");
+            // 平台段参数校验码（1000C0001）走 common 全局处理器出站——1006 处理器映射集不含跨段码
+            throw new BizException(ErrorCodes.PARAM_INVALID, "解散理由超长（≤" + REASON_MAX_LENGTH + " 字符）");
         }
         final SpaceActionLog log = new SpaceActionLog(null, space.id(), TargetType.SPACE, space.id(),
                 "DISSOLVE", subject, space.status().name(), SpaceStatus.DISSOLVED.name(), ActionResult.SUCCESS,
@@ -202,19 +207,6 @@ public class SpaceCommandService {
     }
 
     // ==== 内部 ====
-
-    /** 资格复查（启用前提，行为 2 规则 2）：三态严格分离，与创建同口径（防枚举/不可用不互相冒充）。 */
-    private void requireAdmitted(final String subjectNo) {
-        final SubjectAdmission admission = admissionPort.check(subjectNo);
-        if (admission == SubjectAdmission.NOT_ADMITTED) {
-            throw new SpaceBizException(SpaceErrorCodes.ADMISSION_REQUIRED,
-                    SpaceErrorCodes.ADMISSION_REQUIRED_MESSAGE);
-        }
-        if (admission == SubjectAdmission.UNAVAILABLE) {
-            throw new SpaceBizException(SpaceErrorCodes.SUBJECT_SERVICE_UNAVAILABLE,
-                    SpaceErrorCodes.SUBJECT_SERVICE_UNAVAILABLE_MESSAGE);
-        }
-    }
 
     private Space load(final long spaceId) {
         return repository.findById(spaceId)

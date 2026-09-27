@@ -20,10 +20,10 @@
 | 4 | `POST /{id}/unfreezing` | 同上 | 空 → `SpaceDetail` | 行为 2 规则 1/3/5 |
 | 5 | `POST /{id}/dissolution` | owner 或 platform.operator（**admin 不可解散**，行为 4 规则 3"仅所有者动作"） | `{confirmDissolve: true（必填）， reason?}` → `SpaceDetail` | 行为 2 规则 4/5 |
 | 6 | `PUT /{id}` | owner/admin 或 platform.operator | `{intro?, effectiveFrom?, effectiveTo?}` → `SpaceDetail` | 行为 2 规则 5 + 剧本 S2 配置留痕 |
-| 7 | `GET /api/v1/data-spaces` | 公开：全部登录主体（仅 PUBLIC）；platform.operator：全量 | `?pageNum&pageNumSize&keyword?` → `PageResult<SpaceSummary>` | 行为 6 规则 3（可见性=可检索） |
+| 7 | `GET /api/v1/data-spaces` | 公开：全部登录主体（仅 PUBLIC）；platform.operator：全量 | `?pageNum&pageSize&keyword?` → `PageResult<SpaceSummary>` | 行为 6 规则 3（可见性=可检索） |
 | 8 | `GET /{id}` | 成员/owner/admin 或 platform.operator：全量；非成员：仅 PUBLIC 返回摘要（intro/状态，**不含成员构成**） | → `SpaceDetail` 或 `SpaceSummary` | 行为 6 规则 3/规则 1 |
 
-通用约定：路径参数 `{id}` 为技术 id（3.2.2 Q7-A）；状态门槛失败 = `1006C0002`；空间不存在 = `1006C0004`（**与门槛同形不区分**仅限治理动作出站？——否：管理动作对"自己的空间"可区分不存在，沿 subject 出站口径仅资格类防枚举）；请求方身份与角色经 `common/auth`（`AuthContext.subject()` / 角色头），`X-Ctds-Subject` 头为演示期身份（沿 subject 演示口径）。
+通用约定：路径参数 `{id}` 为技术 id（3.2.2 Q7-A）；状态门槛失败 = `1006C0002`；空间不存在 = `1006C0004`，读面对"不公开空间"按不存在口径**同形**返回（防存在性探测）；治理类动作对"自己的空间"可区分不存在（E2 勘误）；请求方身份与角色经 `common/auth`（`AuthContext.subject()` / 角色头），`X-Ctds-Subject` 头为演示期身份（沿 subject 演示口径）。
 
 ## 2. 错误码表（`SpaceErrorCodes`，1006 段定稿；9 位 = 段 4 位 + 类型 1 位 + 序号 4 位，沿 ADR-005 体系）
 
@@ -66,7 +66,7 @@
 
 | # | 测试 | 断言要点 | 映射 |
 | --- | --- | --- | --- |
-| T1 | 创建正向 | 201 语义（ApiResult success）/CREATED 初始态/owner 成员行落库/留痕四要素 | 行为 1 规则 1/4/6 |
+| T1 | 创建正向 | 200 + ApiResult success（E4 勘误：全仓先例口径）/CREATED 初始态/owner 成员行落库/留痕四要素（含 target_id） | 行为 1 规则 1/4/6 |
 | T2 | 资格门槛防枚举 | 未入驻与不存在同文案 `1006C0001`；服务停 → `1006S0001` 不冒充 | 行为 1 规则 1 |
 | T3 | 归一化判重 | 同 owner"全角空格名"被拒（U+3000 绕过失败）；跨 owner 同名允许 | 行为 1 规则 3 |
 | T4 | 幂等 | 同键重复提交返回首次结果、空间数不变 | 行为 1 规则 5 |
@@ -78,7 +78,7 @@
 | T10 | 权限双轨 | member 冻结被拒 `1006C0007`+DENIED 留痕；非成员启用被拒；platform.operator 全动作放行；admin 解散被拒 | 行为 2 规则 5 |
 | T11 | 配置变更 | intro 生效期可改+留痕从何值→到何值；改名称/可见性被拒（不可变更字段拒绝语义=仅接受白名单字段，多余字段 400） | Q5-A |
 | T12 | 读面可见性 | 公开空间出现在列表；PRIVATE 不出现（运营方全量）；非成员取详情得摘要不含成员构成 | 行为 6 规则 3 |
-| T13 | 归一化单测 | `SpaceNameNormalizer` 纯单测：控制字符/全角空格/连续空白折叠/长度 | 移交① |
+| T13 | 归一化单测 | `SpaceNameNormalizer` 纯单测：控制字符/全角空格/连续空白折叠；长度断言落应用服务校验（E5 勘误，探针随 T17） | 移交① |
 | T14 | 枚举封闭性单测 | 12 枚举 + `SpaceErrorCodes` 码值格式（9 位/段位 1006） | 值域必填格（-2138 教训） |
 
 **本地门禁**：`mvn -B -ntp -pl services/space-service -am test` + `checkstyle:check` + subject 模块回归（yml 改动）+ 前端/其他模块不触碰不重跑。
@@ -92,4 +92,21 @@
 
 ## 9. 交付物核对清单
 
-1. 四层代码（interfaces 3 控制器合 1 / application / domain / infrastructure + client）；2. `SpaceErrorCodes`；3. subject yml 1 行 + ADR-016 §6 补记；4. deploy/k8s 三文件 + runbook 1 行；5. 测试 T1~T14 全绿；6. 本卡与 lofi/hifi 签署回填；7. 台账与日志。
+1. 四层代码（interfaces 1 控制器 / application / domain / infrastructure + client）；2. `SpaceErrorCodes`；3. subject yml 1 行授权（1 行映射 + 1 行注释）+ ADR-016 §6 补记；4. deploy/k8s 三文件 + runbook 1 行；5. **V2 迁移**（`space_action_log` 动作码登记 UPDATE + from_value/to_value 64→1024，只放宽不收窄——迁移历史断言随迁移集演进）；6. 测试 T1~T19 全绿；7. 本卡与 lofi/hifi 签署回填；8. 台账与日志。
+
+## 10. 评审循环 1 勘误与补测登记（2026-09-27，4 视角评审对账结论；均为澄清与补严，非需求变更）
+
+| # | 条目 | 勘误内容 |
+| --- | --- | --- |
+| E1 | §1 端点 7 参数 | `?pageNum&pageNumSize&keyword?` → **`?pageNum&pageSize&keyword?`**（沿 ADR-005 §3.2 / common-pagination 与 subject/did 先例；hifi 笔误） |
+| E2 | §1 通用约定 | 草稿式自问自答改陈述句：状态门槛失败 = 1006C0002；空间不存在 = 1006C0004；**读面对"不公开空间"按不存在口径同形返回**（防存在性探测）；治理类动作对"自己的空间"可区分不存在 |
+| E3 | §2 码表 | 补登记同码不同文案：`1006C0003` 另有锁定文案 **SPACE_NAME_LOCKED_MESSAGE"空间名称已被锁定，不可复用"**（名称锁定拒绝路径，实现已落） |
+| E4 | §7 T1 | "201 语义" → **200 + ApiResult success**（全仓先例口径，实现/测试/先例三方一致） |
+| E5 | §7 T13 | "长度"断言落点 = 应用服务校验（`SpaceCommandService`，归一化器本身无长度逻辑）；名称**原始输入同限 128**（name 列 VARCHAR(128) 存原始输入，防御性前置校验）一并登记 |
+| E6 | §3/§7 T6 | 终态自环修复登记：解散入口增加显式终态前置门槛（DISSOLVED 无出边；同值 WHERE 乐观门槛拦不住 DISSOLVED→DISSOLVED 自环）+ T6 补边（CREATED→DISSOLVED、FROZEN→DISSOLVED）+ 二次解散 409 且无新增留痕断言 |
+| E7 | §7 测试计划 | 补测登记：**T15** 逐动作权限矩阵（非成员冻结/解散、成员解散 + DENIED 留痕逐动作齐备）与终态自环；**T16** 解散后名称全平台锁定拒绝（跨主体）；**T17** 边界值（名称 129 / 简介 513 / 理由 257 / 纯空白名）与 T8 confirmDissolve null 形态；**T18** keyword 通配符转义（% 字面前缀）；**T19** client 读超时（挂起桩 >3s → UNAVAILABLE）与畸形主体编号（URI 非法 → UNAVAILABLE 不出站 500）+ 码表↔处理器映射一致性锚 |
+| E8 | §5 权限 | isOwner = `space.owner_subject_no` 列口径（与成员表活跃 OWNER 行的一致性由 `uk_active_owner` 兜底；所有权转移须同步两处——登记给 3.2.4）；yml `platform.operator: space.manage` 映射当前**零消费**（双轨①走 `AuthContext.roles()`，权限点命名随 3.2.4 收敛，登记防误读） |
+| E9 | 行为 6 规则 5 | 读面拒绝留痕（非成员访问不公开空间的拒绝留痕）归 **3.2.4/3.2.7**（本卡读面按 hifi §1 端点 8 摘要/404 同形口径，无留痕） |
+| E10 | §6 部署 | 激活前提补登记：**prometheus 三注解 + actuator/micrometer 依赖随激活批次补**（ADR-014）；ModuleMap/镜像构建入列；subject 服务集群可达；扩容前幂等/锁切 redis（ADR-007，当前 memory + 单副本一致）；网关/真实令牌就位前角色头信任边界沿 ADR-016 §2.7（仅本机/演示） |
+| E11 | §5 幂等 | 键卫生登记：键长上限 256（common）与业务极值 257（128+1+128）存在边缘冲突 → 3.2.4/沉淀候选（长度前缀或摘要编码）；`:` 分隔符理论碰撞（演示期身份受控，实务不可达） |
+| E12 | 沉淀建议 | ① `SubjectAdmissionClient` 与 did `SubjectStatusHttpClient` 逐字同构（第 2 份副本）→ 跨服务客户端沉淀候选；② common `GlobalExceptionHandler` 补 `MethodArgumentTypeMismatchException`→400（畸形数值入参当前 500）；③ 迁移测试独立库名/建库 GRANT 支撑逻辑第 4 份变体 → ADR-010 §10 已达触发条件（4 模块），立小卡待编排师 |

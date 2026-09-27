@@ -6,13 +6,11 @@ import com.ctds.space.domain.MemberRole;
 import com.ctds.space.domain.MemberStatus;
 import com.ctds.space.domain.Space;
 import com.ctds.space.domain.SpaceActionLog;
+import com.ctds.space.domain.SpaceBizException;
 import com.ctds.space.domain.SpaceErrorCodes;
 import com.ctds.space.domain.SpaceMember;
 import com.ctds.space.domain.SpaceRepository;
 import com.ctds.space.domain.SpaceStatus;
-import com.ctds.space.domain.SpaceBizException;
-import com.ctds.space.domain.SubjectAdmission;
-import com.ctds.space.domain.SubjectAdmissionPort;
 import com.ctds.space.domain.TargetType;
 import java.time.Clock;
 import java.time.LocalDateTime;
@@ -28,13 +26,13 @@ import org.springframework.stereotype.Service;
 public class SpaceCreationService {
 
     private final SpaceRepository repository;
-    private final SubjectAdmissionPort admissionPort;
+    private final SubjectAdmissionGate admissionGate;
     private final Clock clock;
 
-    public SpaceCreationService(final SpaceRepository repository, final SubjectAdmissionPort admissionPort,
+    public SpaceCreationService(final SpaceRepository repository, final SubjectAdmissionGate admissionGate,
             final Clock clock) {
         this.repository = repository;
-        this.admissionPort = admissionPort;
+        this.admissionGate = admissionGate;
         this.clock = clock;
     }
 
@@ -44,7 +42,7 @@ public class SpaceCreationService {
      */
     @Idempotent(key = "#cmd.ownerSubjectNo + ':' + #cmd.normalizedName")
     public Space create(final CreateSpaceCommand cmd) {
-        requireAdmitted(cmd.ownerSubjectNo());
+        admissionGate.requireAdmitted(cmd.ownerSubjectNo());
         if (repository.existsInNameLock(cmd.normalizedName())) {
             throw new SpaceBizException(SpaceErrorCodes.SPACE_NAME_TAKEN,
                     SpaceErrorCodes.SPACE_NAME_LOCKED_MESSAGE);
@@ -64,18 +62,5 @@ public class SpaceCreationService {
                 cmd.ownerSubjectNo(), null, SpaceStatus.CREATED.name(), ActionResult.SUCCESS, null, now);
         final long id = repository.create(space, owner, log);
         return repository.findById(id).orElseThrow();
-    }
-
-    /** 资格门槛（行为 1 规则 1；启用前提复查同款）：三态严格分离，防枚举与不可用不互相冒充。 */
-    private void requireAdmitted(final String subjectNo) {
-        final SubjectAdmission admission = admissionPort.check(subjectNo);
-        if (admission == SubjectAdmission.NOT_ADMITTED) {
-            throw new SpaceBizException(SpaceErrorCodes.ADMISSION_REQUIRED,
-                    SpaceErrorCodes.ADMISSION_REQUIRED_MESSAGE);
-        }
-        if (admission == SubjectAdmission.UNAVAILABLE) {
-            throw new SpaceBizException(SpaceErrorCodes.SUBJECT_SERVICE_UNAVAILABLE,
-                    SpaceErrorCodes.SUBJECT_SERVICE_UNAVAILABLE_MESSAGE);
-        }
     }
 }

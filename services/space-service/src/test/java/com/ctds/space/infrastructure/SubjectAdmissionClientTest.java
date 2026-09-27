@@ -19,7 +19,8 @@ import org.junit.jupiter.api.Test;
 /**
  * 资格客户端三态映射单测（WBS-3.2.3 hifi §4 / T2 客户端侧；JDK HttpServer 桩，沿 did
  * SubjectStatusHttpClientTest 先例）：ADMITTED 放行；未入驻与主体不存在同归 NOT_ADMITTED
- * （统一文案防枚举在应用服务落）；不可达/非 200/非 0 码/解析失败/未配置 = UNAVAILABLE 不冒充资格拒绝。
+ * （统一文案防枚举在应用服务落）；不可达/读超时/非 200/非 0 码/解析失败/请求构造失败（畸形主体
+ * 编号）/未配置 = UNAVAILABLE 不冒充资格拒绝。
  */
 class SubjectAdmissionClientTest {
 
@@ -31,6 +32,8 @@ class SubjectAdmissionClientTest {
     private final AtomicReference<Integer> responseStatus = new AtomicReference<>(200);
     private final AtomicReference<List<String>> subjectHeaders = new AtomicReference<>(List.of());
     private final AtomicReference<List<String>> roleHeaders = new AtomicReference<>(List.of());
+    /** 桩响应延迟（毫秒）——读超时用例把响应挂起超过客户端 3s 读超时。 */
+    private final AtomicReference<Long> delayMillis = new AtomicReference<>(0L);
 
     @BeforeEach
     void startStub() throws IOException {
@@ -50,6 +53,14 @@ class SubjectAdmissionClientTest {
     }
 
     private void respond(final HttpExchange exchange) throws IOException {
+        final long delay = delayMillis.get();
+        if (delay > 0) {
+            try {
+                Thread.sleep(delay);
+            } catch (final InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
         final byte[] body = responseBody.get().getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "application/json");
         exchange.sendResponseHeaders(responseStatus.get(), body.length);
@@ -103,6 +114,23 @@ class SubjectAdmissionClientTest {
     void unreachableServiceMapsToUnavailable() {
         // 未监听端口：不可达 → UNAVAILABLE（不冒充"未入驻"）
         assertThat(client("http://127.0.0.1:1").check("S1")).isEqualTo(SubjectAdmission.UNAVAILABLE);
+    }
+
+    @Test
+    void readTimeoutMapsToUnavailable() {
+        // 读超时（hifi §4 超时 3s 口径；评审循环 1 补锚——此前 READ_TIMEOUT 常量失守不会有任何红灯）
+        delayMillis.set(4000L);
+        final long startNanos = System.nanoTime();
+        assertThat(client(baseUrl).check("S1")).isEqualTo(SubjectAdmission.UNAVAILABLE);
+        final long elapsedMillis = (System.nanoTime() - startNanos) / 1_000_000L;
+        assertThat(elapsedMillis).as("应经读超时（约 3s）而非立即失败").isBetween(2500L, 8000L);
+    }
+
+    @Test
+    void malformedSubjectNoMapsToUnavailable() {
+        // 主体标识含 URI 非法字符：请求构造失败同归 UNAVAILABLE（评审循环 1 安全补——曾出站 500）
+        assertThat(client(baseUrl).check("a b")).isEqualTo(SubjectAdmission.UNAVAILABLE);
+        assertThat(client(baseUrl).check("100%")).isEqualTo(SubjectAdmission.UNAVAILABLE);
     }
 
     @Test

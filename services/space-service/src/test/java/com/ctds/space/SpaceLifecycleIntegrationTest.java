@@ -16,6 +16,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Stream;
@@ -205,6 +206,10 @@ class SpaceLifecycleIntegrationTest {
         lifecycle("owner-t6a", id, "freezing", "FROZEN");
         lifecycle("owner-t6a", id, "unfreezing", "ACTIVE");
         dissolve("owner-t6a", id, "自然结项", "DISSOLVED");
+        // 状态变更留痕"从何状态→到何状态"逐动作断言（行为 2 规则 6；评审循环 1 补 FREEZE/UNFREEZE 侧）
+        assertThat(actionLogCount(id, "FREEZE", "ACTIVE", "FROZEN", "SUCCESS")).isEqualTo(1);
+        assertThat(actionLogCount(id, "UNFREEZE", "FROZEN", "ACTIVE", "SUCCESS")).isEqualTo(1);
+        assertThat(actionLogCount(id, "DISSOLVE", "ACTIVE", "DISSOLVED", "SUCCESS")).isEqualTo(1);
         // 非法边：CREATED→FROZEN 拒绝
         final long created = createSpace("owner-t6b", "非法边空间");
         mockMvc.perform(auth(post(BASE + "/" + created + "/freezing"), "owner-t6b", "user"))
@@ -220,6 +225,30 @@ class SpaceLifecycleIntegrationTest {
         mockMvc.perform(auth(post(BASE + "/" + twice + "/enablement"), "owner-t6c", "user"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("1006C0002"));
+        // 合法边补全（hifi §3 六边全量）：CREATED→DISSOLVED（未启用可解散）与 FROZEN→DISSOLVED
+        final long fromCreated = createSpace("owner-t6d", "未启用解散空间");
+        dissolve("owner-t6d", fromCreated, "未启用直接解散", "DISSOLVED");
+        final long fromFrozen = createSpace("owner-t6e", "冻结解散空间");
+        lifecycle("owner-t6e", fromFrozen, "enablement", "ACTIVE");
+        lifecycle("owner-t6e", fromFrozen, "freezing", "FROZEN");
+        dissolve("owner-t6e", fromFrozen, "冻结态解散", "DISSOLVED");
+    }
+
+    // ==== T6 补充：终态自环（评审循环 1 S1——二次解散曾被同值 WHERE 门槛放过）====
+
+    @Test
+    void dissolveRepeatOnTerminalSpaceRejectedWithoutExtraLog() throws Exception {
+        final long id = createSpace("owner-t6f", "终态自环空间");
+        dissolve("owner-t6f", id, "首次解散", "DISSOLVED");
+        final Integer successLogsBefore = actionLogCount(id, "DISSOLVE", "DISSOLVED", "DISSOLVED",
+                "SUCCESS");
+        mockMvc.perform(auth(post(BASE + "/" + id + "/dissolution"), "owner-t6f", "user")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"confirmDissolve\":true}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("1006C0002"));
+        // 终态再解散不得产生 from=DISSOLVED→to=DISSOLVED 的成功留痕（留痕语义"从何→到何"不失真）
+        assertThat(actionLogCount(id, "DISSOLVE", "DISSOLVED", "DISSOLVED", "SUCCESS"))
+                .isEqualTo(successLogsBefore);
     }
 
     // ==== T7 启用前提（行为 2 规则 2）====
@@ -249,6 +278,11 @@ class SpaceLifecycleIntegrationTest {
                 .andExpect(jsonPath("$.code").value("1006C0006"));
         mockMvc.perform(auth(post(BASE + "/" + id + "/dissolution"), "owner-t8", "user")
                         .contentType(MediaType.APPLICATION_JSON).content("{\"confirmDissolve\":false}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("1006C0006"));
+        // 显式 null 同拒（hifi §8"缺省/null/false 一律"三形态齐备；评审循环 1 补 null 锚）
+        mockMvc.perform(auth(post(BASE + "/" + id + "/dissolution"), "owner-t8", "user")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"confirmDissolve\":null}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("1006C0006"));
         // 显式 true：三写同事务
@@ -309,6 +343,25 @@ class SpaceLifecycleIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON).content("{\"confirmDissolve\":true}"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("1006C0007"));
+        // 逐动作矩阵补测（评审循环 1）：非成员冻结/解散、成员解散一律拒绝
+        mockMvc.perform(auth(post(BASE + "/" + id + "/freezing"), "outsider-t10", "user"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("1006C0007"));
+        mockMvc.perform(auth(post(BASE + "/" + id + "/dissolution"), "outsider-t10", "user")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"confirmDissolve\":true}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("1006C0007"));
+        mockMvc.perform(auth(post(BASE + "/" + id + "/dissolution"), "member-t10", "user")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"confirmDissolve\":true}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("1006C0007"));
+        // DENIED 留痕逐动作齐备（行为 6 规则 5"拒绝留痕"）
+        assertThat(deniedLogCount(id, "FREEZE", "member-t10")).isEqualTo(1);
+        assertThat(deniedLogCount(id, "FREEZE", "outsider-t10")).isEqualTo(1);
+        assertThat(deniedLogCount(id, "ENABLE", "outsider-t10")).isEqualTo(1);
+        assertThat(deniedLogCount(id, "DISSOLVE", "outsider-t10")).isEqualTo(1);
+        assertThat(deniedLogCount(id, "DISSOLVE", "member-t10")).isEqualTo(1);
+        assertThat(deniedLogCount(id, "DISSOLVE", "admin-t10")).isEqualTo(1);
         // platform.operator（角色头档）全动作放行
         final long other = createSpace("owner-t10op", "运营方接管空间");
         lifecycle("platform-operator", "platform.operator", other, "enablement", "ACTIVE");
@@ -328,16 +381,21 @@ class SpaceLifecycleIntegrationTest {
                         .content("{\"intro\":\"新简介\",\"effectiveFrom\":\"2026-01-01T00:00:00\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.intro").value("新简介"));
-        // 逐字段留痕"从何值→到何值"
-        final Integer updateLogs = jdbc.queryForObject(
-                "SELECT COUNT(*) FROM space_action_log WHERE space_id = ? AND action = 'UPDATE' "
-                        + "AND result = 'SUCCESS' AND (from_value = 'intro:（未设置）' "
-                        + "OR from_value = 'effectiveFrom:（未设置）')",
-                Integer.class, id);
-        assertThat(updateLogs).isEqualTo(2);
+        // 逐字段留痕"从何值→到何值"成对精确断言（评审循环 1 补 to_value 侧）
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM space_action_log WHERE space_id = ? "
+                + "AND action = 'UPDATE' AND result = 'SUCCESS' AND from_value = 'intro:（未设置）' "
+                + "AND to_value = 'intro:新简介'", Integer.class, id)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM space_action_log WHERE space_id = ? "
+                + "AND action = 'UPDATE' AND result = 'SUCCESS' AND from_value = 'effectiveFrom:（未设置）' "
+                + "AND to_value = 'effectiveFrom:2026-01-01 00:00:00'", Integer.class, id)).isEqualTo(1);
         // 白名单外字段 400（不可变更字段拒绝语义）
         mockMvc.perform(auth(put(BASE + "/" + id), "owner-t11", "user")
                         .contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"改名尝试\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("1000C0001"));
+        // 可见性同为白名单外（评审循环 1 补 T11"改可见性被拒"锚）
+        mockMvc.perform(auth(put(BASE + "/" + id), "owner-t11", "user")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"visibility\":\"PUBLIC\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("1000C0001"));
         // 未启用空间不可变更
@@ -383,6 +441,76 @@ class SpaceLifecycleIntegrationTest {
         mockMvc.perform(get(BASE))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("1000C0002"));
+    }
+
+    // ==== T16 解散后名称全平台锁定拒绝路径（行为 2 规则 4"不可再被创建"；评审循环 1 补测）====
+
+    @Test
+    void dissolvedNameCreationRejectedAcrossOwners() throws Exception {
+        final long id = createSpace("owner-t16a", "锁定名称空间");
+        dissolve("owner-t16a", id, "锁定演示", "DISSOLVED");
+        // 跨所有者以锁定名创建 → 409 + 1006C0003 + 锁定文案（与活跃同主同名判重同码不同文案）
+        mockMvc.perform(auth(post(BASE), "owner-t16b", "user")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"锁定名称空间\",\"sceneType\":\"OTHER\",\"accessMode\":\"OPEN\","
+                                + "\"visibility\":\"PUBLIC\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("1006C0003"))
+                .andExpect(jsonPath("$.message").value("空间名称已被锁定，不可复用"));
+    }
+
+    // ==== T17 边界值（hifi §8 三条上限 + 归一化后为空；评审循环 1 补测）====
+
+    @Test
+    void boundaryLimitsRejectedFieldByField() throws Exception {
+        // 名称原始输入 >128（原始同限登记口径：name 列 VARCHAR(128) 存原始输入）
+        final String longName = "长".repeat(129);
+        mockMvc.perform(auth(post(BASE), "owner-t17", "user")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"" + longName + "\",\"sceneType\":\"OTHER\",\"accessMode\":\"OPEN\","
+                                + "\"visibility\":\"PUBLIC\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("1006C0005"))
+                .andExpect(jsonPath("$.message").value("名称超长（≤128 字符）"));
+        // 简介超长 513
+        final String longIntro = "简".repeat(513);
+        mockMvc.perform(auth(post(BASE), "owner-t17", "user")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"边界值空间\",\"sceneType\":\"OTHER\",\"accessMode\":\"OPEN\","
+                                + "\"visibility\":\"PUBLIC\",\"intro\":\"" + longIntro + "\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("1006C0005"))
+                .andExpect(jsonPath("$.message").value("空间简介超长（≤512 字符）"));
+        // 纯空白名 → 归一化后为空
+        mockMvc.perform(auth(post(BASE), "owner-t17", "user")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"   \",\"sceneType\":\"OTHER\",\"accessMode\":\"OPEN\","
+                                + "\"visibility\":\"PUBLIC\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("1006C0005"))
+                .andExpect(jsonPath("$.message").value("名称不能为空"));
+        // 解散理由超长 257 → 400，空间状态不变
+        final long id = createSpace("owner-t17", "边界值解散空间");
+        lifecycle("owner-t17", id, "enablement", "ACTIVE");
+        final String longReason = "由".repeat(257);
+        mockMvc.perform(auth(post(BASE + "/" + id + "/dissolution"), "owner-t17", "user")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"confirmDissolve\":true,\"reason\":\"" + longReason + "\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("1000C0001"))
+                .andExpect(jsonPath("$.message").value("解散理由超长（≤256 字符）"));
+        assertThat(statusOf(id)).isEqualTo("ACTIVE");
+    }
+
+    // ==== T18 keyword 通配符转义（% 不放大检索语义；评审循环 1 补测）====
+
+    @Test
+    void keywordWildcardEscapedLiteralPrefixSearch() throws Exception {
+        createSpace("owner-t18a", "对账50%空间");
+        createSpace("owner-t18b", "对账50X空间");
+        // keyword "对账50%" 按字面前缀匹配：只命中 % 空间，不放大为"对账50"通配
+        assertThat(listNames("reader-t18", "user", "对账50%")).containsExactly("对账50%空间");
+        assertThat(listNames("reader-t18", "user", "对账50")).hasSize(2);
     }
 
     // ==== 造数与断言助手 ====
@@ -479,5 +607,31 @@ class SpaceLifecycleIntegrationTest {
         return jdbc.queryForObject(
                 "SELECT status FROM space_policy WHERE space_id = ? AND entry_key = 'test.entry'",
                 String.class, spaceId);
+    }
+
+    /** 按"动作+从值+到值+结果"精确计数留痕行（toValue 传 null 断言 to_value IS NULL）。 */
+    private int actionLogCount(final long spaceId, final String action, final String fromValue,
+            final String toValue, final String result) {
+        final List<Object> params = new ArrayList<>(List.of(spaceId, action, fromValue));
+        final StringBuilder sql = new StringBuilder("SELECT COUNT(*) FROM space_action_log "
+                + "WHERE space_id = ? AND action = ? AND from_value = ? ");
+        if (toValue == null) {
+            sql.append("AND to_value IS NULL ");
+        } else {
+            sql.append("AND to_value = ? ");
+            params.add(toValue);
+        }
+        sql.append("AND result = ?");
+        params.add(result);
+        final Integer count = jdbc.queryForObject(sql.toString(), Integer.class, params.toArray());
+        return count == null ? 0 : count;
+    }
+
+    /** 按"动作+操作者"计数 DENIED 留痕行（逐动作矩阵断言用）。 */
+    private int deniedLogCount(final long spaceId, final String action, final String operator) {
+        final Integer count = jdbc.queryForObject("SELECT COUNT(*) FROM space_action_log "
+                + "WHERE space_id = ? AND action = ? AND operator = ? AND result = 'DENIED'",
+                Integer.class, spaceId, action, operator);
+        return count == null ? 0 : count;
     }
 }

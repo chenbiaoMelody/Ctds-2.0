@@ -20,8 +20,8 @@ import org.springframework.stereotype.Component;
  * 空间 → 主体服务 资格只读客户端（WBS-3.2.3 hifi §4 Q1-A；JDK HttpClient 零新增依赖，
  * 沿 did SubjectStatusHttpClient 93 行先例）。单一事实源在主体服务（ADR-016 §6 衔接契约）：
  * 本客户端只读不缓存；服务身份头 space-service / space-internal（只读角色，subject yml 1 行授权）。
- * 未配置 base-url = 资格判定不可用（服务可独立启动）；任何失败（不可达/超时/非 200/解析失败）→
- * UNAVAILABLE（1006S0001），不冒充"未入驻"（防枚举口径，hifi §4）。
+ * 未配置 base-url = 资格判定不可用（服务可独立启动）；任何失败（不可达/超时/非 200/解析失败/
+ * 请求构造失败）→ UNAVAILABLE（1006S0001），不冒充"未入驻"（防枚举口径，hifi §4）。
  */
 @Component
 public class SubjectAdmissionClient implements SubjectAdmissionPort {
@@ -68,6 +68,11 @@ public class SubjectAdmissionClient implements SubjectAdmissionPort {
         } catch (final InterruptedException e) {
             Thread.currentThread().interrupt();
             log.warn("主体服务调用被中断，资格判定不可用: subjectNo={}", subjectNo);
+            return SubjectAdmission.UNAVAILABLE;
+        } catch (final RuntimeException e) {
+            // 请求构造失败（畸形主体编号致 URI 非法等）同归 UNAVAILABLE：fail-closed 且不冒充资格拒绝，
+            // 不上抛 500（hifi §4"解析失败→UNAVAILABLE"的广义兜底，评审循环 1 安全补）
+            log.warn("主体服务请求构造失败，资格判定不可用: subjectNo={}", subjectNo, e);
             return SubjectAdmission.UNAVAILABLE;
         }
         final JsonNode body;
