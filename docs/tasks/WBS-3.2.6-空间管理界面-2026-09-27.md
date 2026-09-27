@@ -71,24 +71,24 @@
 | 锚点（hifi §7） | 测试落点（文件 · 用例数） |
 | --- | --- |
 | T1~T4（Q6-A 后端留痕读端点） | `services/space-service/src/test/java/com/ctds/space/SpaceActionLogIntegrationTest.java`（**6 用例，全绿**：T1 权限矩阵含拒绝留痕 1 行 + 解散态矩阵 / T2 分页排序与越界 + 字段白名单 / T3 不存在 1006C0004 + 非成员同形 / T4 留痕三类内容含 `from→to`） |
-| T5~T9、T13（列表 / 创建 / 配置变更） | `frontend/src/views/space/ListView.spec.ts`（编码会话回填） |
-| T10~T12、T23~T25（概览 / 生命周期 / 策略） | `frontend/src/views/space/DetailView.spec.ts`（编码会话回填） |
-| T14~T22（成员与准入） | `frontend/src/views/space/MembersSection.spec.ts`（编码会话回填） |
-| T18（我的邀请） | `frontend/src/views/space/MyAdmissionsView.spec.ts`（编码会话回填） |
-| T26（平台治理） | `frontend/src/views/space/PlatformPolicyView.spec.ts`（编码会话回填） |
-| T27（演示身份与角色头） | `frontend/src/stores/demoIdentity.spec.ts`（**6 用例已落并真红**：默认普通档 / 档位持久化与非法值回落 / **普通档不含 `platform.operator`** / 运营档双角色 / 开关双向 / 主体复用 `ctds-demo-subject`）+ `frontend/src/api/space.spec.ts`（**待编码会话**：页面级角色头覆盖全局 `demoRolesHeader()`、空主体零请求） |
-| T28（路由与菜单计数） | `frontend/src/router/router.spec.ts` / `frontend/src/layouts/MainLayout.spec.ts`（既有断言同步 + 新增） |
-| T29、T30（源集守卫 / 同形提示反向探针） | `frontend/src/views/space/SpaceSourceGuard.spec.ts`（**7 用例已落并真红**：扫描目标非空 / 无 `fetch(` 直连 / 裸状态·角色·来源中文字面量 / `platform.operator` 仅限 `api/space.ts` 与 `stores/demoIdentity.ts` / 提示常量值断言 / 页面不得散写同形文案，均带反向探针）；**T30 行为半（两分支渲染同一条文案）落 `views/space/DetailView.spec.ts`（T30b，编码会话）——见 hifi §12 勘误 E1** |
+| T5~T9（列表 / 检索 / 创建） | `frontend/src/views/space/ListView.spec.ts`（**8 用例，全绿**：列渲染与标签映射 / 空态 / 检索传参与重置 / 创建提交契约字段并刷新 / 名称留空零请求 / 未入驻 `1006C0001` 文案 / 重名 `1006C0003` 文案） |
+| T10~T13、T23~T25、T30b（概览 / 生命周期 / 配置变更 / 策略 / 同形提示） | `frontend/src/views/space/DetailView.spec.ts`（**12 用例，全绿**：概览含留痕四要素 / 生命周期按钮显隐与端点 / 解散取消零请求 + 确认调用 / 白名单请求体两路 / 三态来源与红线 tag / 覆盖值域随键落目录常量 + 刷新 / 放宽被拒原样且不乐观更新 / `1006C0004` 与 `1006C0007` 同一条提示 + 公开摘要同提示） |
+| T14~T22（成员与准入） | `frontend/src/views/space/MembersSection.spec.ts`（**12 用例，全绿**：成员表角色/状态/动作面 / 邀请待确认且未成行 / 被邀主体留空零请求 / 申请进入待审批 / 审批拒绝理由留空零请求 + 填写提交 + 通过 / 授予与收回（取消零请求）/ 移除理由留空零请求 + 填写提交 / 退出 `1006C0009` 原文展示 / 转移以行级 id 且仅所有者可见） |
+| T18（我的邀请） | `frontend/src/views/space/MyAdmissionsView.spec.ts`（**5 用例，全绿**：列表与仅待确认给操作 / 空态 / 接受 CONFIRM + 刷新 / 谢绝带理由 / 谢绝理由可选） |
+| T26（平台治理） | `frontend/src/views/space/PlatformPolicyView.spec.ts`（**7 用例，全绿**：列表渲染 / 空态 / 加载失败文案 / 新建取目录常量 + 刷新 / `1006C0012` 文案 / 键只读 + 变更提交 / 双未变更零请求） |
+| T27（演示身份与角色头） | `frontend/src/stores/demoIdentity.spec.ts`（**6 用例全绿**：默认普通档 / 档位持久化与非法值回落 / **普通档不含 `platform.operator`** / 运营档双角色 / 开关双向 / 主体复用 `ctds-demo-subject`）+ `frontend/src/api/space.spec.ts`（**7 用例全绿**：25 函数面 / 路径与请求体抽样 / 页面级角色头覆盖全局 `demoRolesHeader()`（含"不得残留 reviewer"）/ 运营档双角色 / 主体头复用既有存储 / 空主体与空白字符零请求）+ `frontend/src/layouts/MainLayout.spec.ts`（**3 用例**：控件渲染 / 保存写入存储并提示 / 空主体零写入） |
+| T28（路由与菜单计数） | `frontend/src/router/router.spec.ts`（**24 用例**：既有断言同步——权限路由名单扩入 `space-list`/`platform-policy`、全站 menuOrder 最大值 8→10；新增——空间域四路由结构（含 `my-admissions` 声明序在 `:id` 之前）+ 普通用户四条路由逐条拦截 + admin 正向放行）/ `frontend/src/layouts/MainLayout.spec.ts`（**11 用例**：菜单计数 user 5 / admin **10**） |
+| T29、T30（源集守卫 / 同形提示反向探针） | `frontend/src/views/space/SpaceSourceGuard.spec.ts`（**7 用例全绿**：扫描目标非空 / 无 `fetch(` 直连 / 裸状态·角色·来源中文字面量 / `platform.operator` 仅限 `api/space.ts` 与 `stores/demoIdentity.ts` / 提示常量值断言 / 页面不得散写同形文案，均带反向探针）；**T30 行为半（两分支渲染同一条文案）落 `views/space/DetailView.spec.ts`（T30b，编码会话）——见 hifi §12 勘误 E1** |
 
 ## 四、执行记录
 
 | 项 | 内容 |
 | --- | --- |
-| 状态 | 🟢 **设计已确认（编码契约生效，2026-09-27 20:2x："都按建议"）→ 待编码（另会话）**——四文档已落盘（本卡 + lofi + hifi + 线框原型），三处确认留痕已签署；**未编码、未动代码、未动门禁配置、未立其它卡** |
+| 状态 | 🟢 **编码已完成（前后端实现全绿，2026-09-27 21:0x）→ 待 §五 自检收口 + 4 视角评审 + 三剧本界面入口核对修订（W12）**——设计契约 2026-09-27 20:2x 生效；**段 2 = 后端 Q6-A 留痕端点**（T1~T4 先红后绿 + 模块 141 用例全绿 + checkstyle 0）、**段 3 = 前端实现 GREEN**（四视图 + API/常量/store + 路由菜单 8→10 + 顶栏控件；**22 文件 / 188 用例全绿** + `typecheck` 0 错 + `lint` 0 违规）；**零新增依赖、零门禁配置改动、未合并 main** |
 | 冷启动锚点 | 台账「下一包」行（3.2.6）+ 日志 `docs/logs/Ctds-项目开发日志-26-09-27-2008.md`（续点四要素）；WBS 行 256；规格行为 1~7；三剧本；3.2.3/3.2.4/3.2.5 三份 hifi §1 |
 | 立卡会话 | 2026-09-27（日志 `docs/logs/Ctds-项目开发日志-26-09-27-2017.md`）——本卡 + lofi + hifi + 原型 HTML 四文档落盘；分支 `feat/WBS-3.2.6-空间管理界面`（自 `main` `56e02fd`） |
 | 设计确认会话 | **2026-09-27 20:2x（同窗口续段，日志 `docs/logs/Ctds-项目开发日志-26-09-27-2021.md`）**——编排师会话回复"**都按建议**"→ Q1~Q8 均采建议口径 + **D1 体量不拆分**；三处留痕签署（本卡 §一 表头"设计文件"行与 §二 确认留痕块、§四 状态行与本行；lofi/hifi「确认记录」）；**零代码变更** |
-| 编码会话 | **段 1 = 2026-09-27 20:30 起（新会话，日志 `docs/logs/Ctds-项目开发日志-26-09-27-2030.md`）** —— 第一动作（前置检查七项）已完成并留痕（见下行）；**未开始写码**（该会话按上下文纪律在留痕后停机）→ **段 2 = 2026-09-27 20:4x（日志 `docs/logs/Ctds-项目开发日志-26-09-27-2041.md`）：① 后端 Q6-A 留痕端点测试先行 RED（T1~T4，首跑 6/6 失败 = 真红）→ 实现 GREEN（6/6 绿）+ 模块回归 **141 用例全绿** + checkstyle **0 违规**；② 前端 RED 首批就位（`demoIdentity.spec.ts` T27 = 6 用例、`SpaceSourceGuard.spec.ts` T29·T30 = 7 用例，实测两文件真红）**；**前端实现 GREEN 归续接会话**（本段按上下文纪律在大改动前停机） |
+| 编码会话 | **段 1 = 2026-09-27 20:30 起（新会话，日志 `docs/logs/Ctds-项目开发日志-26-09-27-2030.md`）** —— 第一动作（前置检查七项）已完成并留痕（见下行）；**未开始写码**（该会话按上下文纪律在留痕后停机）→ **段 2 = 2026-09-27 20:4x（日志 `docs/logs/Ctds-项目开发日志-26-09-27-2041.md`）：① 后端 Q6-A 留痕端点测试先行 RED（T1~T4，首跑 6/6 失败 = 真红）→ 实现 GREEN（6/6 绿）+ 模块回归 **141 用例全绿** + checkstyle **0 违规**；② 前端 RED 首批就位（`demoIdentity.spec.ts` T27 = 6 用例、`SpaceSourceGuard.spec.ts` T29·T30 = 7 用例，实测两文件真红）**；**前端实现 GREEN 归续接会话**（该段按上下文纪律在大改动前停机）→ **段 3 = 2026-09-27 21:0x（日志 `docs/logs/Ctds-项目开发日志-26-09-27-2107.md`）：前端实现 GREEN 全量落地**——新增四视图（`ListView` / `DetailView` 三区含操作留痕 / `MyAdmissionsView` / `PlatformPolicyView`）+ `api/space.ts`（25 端点 + **页面级角色头**）+ `constants/space.ts`（标签与提示收口）+ `stores/demoIdentity.ts`；改 `router/index.ts`（4 路由 / 菜单 8→10）、`MainLayout.vue`（顶栏"演示身份"控件）、`stores/demoRole.ts`（演示角色标签收口）、`vite.config.ts`（开发期代理两条前缀）；**T5~T30 前端锚点全部转绿**（前端全量 **22 文件 / 188 用例绿** + `typecheck` 0 错 + `lint` 0 违规）；**收口段（自检 ⑥⑦ + 4 视角评审 + 剧本核对修订 W12 + 交付态门禁）归续接会话** |
 | 前置检查（hifi §11 / lofi §6 七项） | ✅ **七项逐项实测完毕（2026-09-27 20:2x~20:30，命令级证据见下行与日志 `-2030`）**；**发现 1 项环境阻塞**（② 项，见"环境阻塞与请求"行） |
 | ① 冷启动读序 | ✅ `AGENTS.md` → 日志 `-2021` → 本卡 → lofi/hifi「确认记录」→ 台账「进行中/下一包/待编排师」→ 三份上游 hifi §1（汇总核对 **8+11+3+2 = 24 端点，零偏差**）→ 规格 `C-2.1-2.3`（V1.0，219 行，行为 1~7 全清单）→ 三剧本（**60 步**；"界面入口占位（待 3.2.6 交付后核对修订）"句 3 份各 2 处，**均落在前置表格与维护说明、不落任一 S 步骤**） |
 | ② 环境核验 | ⚠️ **部分通过**：三容器在线（`sc-mysql` / `sc-minio` / `sc-redis`，Up 11h）；subject `8080` 健康（`/actuator/health` → 200）；space `8083` 在监听、回环 `127.0.0.1` 生效、未认证 → `1000C0002`；**did `8082` 未监听**（本包链路不依赖 did，判定**不影响**本卡，仅走查前需知）；**阻塞项**：运行实例**未配置 `CTDS_SPACE_SUBJECT_BASEURL`** |
@@ -98,8 +98,8 @@
 | ⑥ 分页契约 | ✅ `PageQuery`（`pageNum` 默认 1 / `pageSize` 默认 10，1~100）与 `PageResult<T>`（`list/total/pageNum/pageSize/totalPages`）↔ 前端 `PageData<T>` **5 字段逐一对齐**；端点 7/13/15 实测响应字段与之一致 |
 | ⑦ 演示身份链路 | ✅ 空 `X-Ctds-Subject` → `AuthContextFilter`（`MAX_SUBJECT_LENGTH=128` / roles ≤512 / 段 ≤32）整头作废按未认证（实测 → `1000C0002`）；`ctds.auth.permissions.platform.operator: space.admin,space.member,platform.policy` 在 `space-service` yml 生效（实测：该档可读平台策略，普通档 → `1006C0007`）；`client.ts` 全局 `demoRolesHeader()` = `applicant` / `applicant,reviewer`（**本包不动**） |
 | 环境阻塞与请求 | **走查/演示前须重启 space 服务并注入 `CTDS_SPACE_SUBJECT_BASEURL=http://localhost:8080`（连同 `CTDS_DB_PASSWORD`）**：实测零副作用探针（不存在主体 `ZZZ-PROBE-NOT-EXIST-2026` 创建空间）→ `1006S0001`「主体服务暂不可用」，且空间总数仍 2（**未写入任何数据**）→ 判定运行实例 base-url 为空，资格判定不可用，`C-2.1 S1-1/S1-2` 类界面步骤会失败。口令在本机 **用户级/机器级环境变量与仓库脚本中均未找到** → **不由 AI 承接**（红线 7：口令不进仓库/日志/提示词），请人侧在其终端设置后启动；资格判定端点 = `GET /api/v1/subject/internal/subjects/{subjectNo}/admission`（服务身份权限点 `subject.internal.read`） |
-| 设计偏离登记 | 待（编码/评审期按 `P1…` 顺延登记于 hifi §12） |
-| 规格外实现声明 | 待（应为空） |
+| 设计偏离登记 | ✅ **无设计偏离**；实施期口径澄清登记于 `docs/designs/WBS-3.2.6-hifi.md` §12（E1 T3 权限行为以 §5 为准 / E2 T30 拆源集半与行为半 / **E3 空主体前置拦截落点 + 演示身份标签收口**）——均为**澄清**而非改需求 |
+| 规格外实现声明 | ✅ **空**（实现逐条来自 hifi §1~§11 与规格 V1.0 行为 1~7；E3 仅为落点澄清） |
 | 评审与验收 | 待 |
 
 ## 五、提交前自检单（章程附录 B1，编码会话填写）
@@ -107,10 +107,10 @@
 | B1 项 | 内容 |
 | --- | --- |
 | ① 两级设计门禁 | 待（lofi/hifi 确认记录签署后本行回填） |
-| ② 映射表 | 待（§三 回填） |
-| ③ 复用声明（含检索过程） | 待（预期：先查 `common/`（`pagination`/`auth`/`errorcode`）→ 命中 `common-pagination`、`common-auth` → 复用；前端复用 `apiJson`/`ElMessageBox`/`el-table`/`el-pagination`；错误码与枚举全复用；零新增依赖） |
-| ④ 本地检查命令与结果 | 待 |
-| ⑤ 高风险点自查 | 待（重点：越权步骤的角色头口径 / 非成员同形口径 / 危险动作零请求 / 前端不复算策略严度） |
+| ② 映射表 | ✅ 已回填（§三 两张表：规格验收标准 → 承载测试锚点 → 剧本步骤；测试落点逐锚点文件与用例数，T1~T30 全绿） |
+| ③ 复用声明（含检索过程） | ✅ 后端段 2：先查 `common/` → 命中 `common-pagination`（`PageQuery`/`PageResult`）、`common-auth`（`X-Ctds-Subject`/`X-Ctds-Roles`/`AuthContextFilter`）、`common-errorcode`（九位码）→ 全复用，**零新增依赖、零新增错误码/枚举/表/迁移**；前端段 3：先查既有前端资产 → 复用 `api/client.ts` 的 `apiJson`/`ApiError`/`getDemoSubject`/`setDemoSubject`、`api/types.ts` 的 `PageData<T>`、`ElMessage`/`ElMessageBox`/`el-table`/`el-pagination`/`el-dialog`/`el-tabs`、`stores/demoRole.ts` 的权限点判断、`views/review/DetailView.vue` 的二次确认范式 → **`package.json` 零改动（零新增依赖）**；规格外实现声明 = **空**（E3 仅为落点澄清，非新需求） |
+| ④ 本地检查命令与结果 | ✅ 前端：`npm test` = **22 文件 / 188 用例全绿**（Failures 0，23.31s）；`npm run typecheck`（`vue-tsc -b`）= **0 错**；`npm run lint` = **0 违规**。后端（段 2，本段零后端改动）：`mvn -B -ntp test`（`services/space-service`）= **141 用例全绿**；`mvn -B -ntp -pl services/space-service checkstyle:check`（**仓库根**）= **0 违规**。门禁配置零改动 |
+| ⑤ 高风险点自查 | ✅ ① **越权步骤的角色头口径**：`spaceRolesHeader()` 普通档恒为 `applicant`（**断言不含 `platform.operator`**，且不接受全局 `demoRolesHeader()` 的 `reviewer` 污染）——T27 双向用例 + `api/space.spec.ts` 页面级头覆盖用例；② **非成员同形口径**：`1006C0004`（不存在）与 `1006C0007`（无权）+ 公开摘要态三条路径共用 `SPACE_NOT_ACCESSIBLE_TIP` 一条常量与样式，源集守卫 + T30b 行为用例双向钉死；③ **危险动作零请求**：解散取消、移除理由留空、审批拒绝理由留空、被邀主体留空、主体编号留空均"零请求"断言（`not.toHaveBeenCalled` + 表单前置拦截）；④ **前端不复算策略严度**：覆盖提交只透传目录三键值域取值（值域取自 `constants/space.ts`），放宽判定完全由后端裁决，被拒后**不乐观更新**（断言未再次拉取且表格为原值）；⑤ 无并发/事务/加解密改动（纯界面 + 1 个只读端点） |
 | ⑥ 剧本更新建议 | 待（预期：C-2.1~C-2.3 三份剧本界面入口核对修订 + C-2.3 S2-3 小修一处，业务判定不变，提示 PO 审批） |
 | ⑦ 业务可读交付说明 | 待（随编码会话日志） |
 
@@ -120,7 +120,8 @@
 | --- | --- |
 | 预估（立卡阶段） | 后端（Q6-A）≈ **200~300 行**（1 只读端点 + 1 视图 DTO + 查询服务方法 + 仓储分页方法 + 测试）；前端 ≈ **1800~2400 行**（4 视图 + API 模块 + 常量模块 + 演示身份 store + 顶栏控件 + 路由 + 测试）；合计 **约 2000~2700 行有效变更** |
 | 实测（编码会话回填，段 2 部分） | **后端已完成**：改动 4 文件 **+65 行**（`SpaceErrorCodes` +3 / `SpaceRepository` +6 / `SpaceJdbcRepository` +30 / `SpaceQueryService` +26）+ 新增 `SpaceActionLogController` **41 行** + `dto/SpaceActionLogView` **27 行** + 新增测试 `SpaceActionLogIntegrationTest` **290 行** = **后端小计约 423 行**；**前端 RED 已落**：`demoIdentity.spec.ts` **52 行** + `SpaceSourceGuard.spec.ts` **138 行** = **190 行**；**本段合计约 613 行**（其中测试 480 行）；**剩余（前端实现 GREEN）按原预估 1800~2400 行** |
-| 超预估说明 | 待 |
+| 实测（编码会话回填，段 3 前端实现 GREEN 收口） | **前端新增 13 文件 / 3233 行**（其中实现 2076 行：`api/space.ts` 320 + `constants/space.ts` 240 + `stores/demoIdentity.ts` 35 + 四视图 1481；测试 1157 行：`space.spec.ts` 120 + `ListView.spec.ts` 174 + `DetailView.spec.ts` 301 + `MembersSection.spec.ts` 308 + `MyAdmissionsView.spec.ts` 112 + `PlatformPolicyView.spec.ts` 142）**+ 既有文件改 7 个 +202/−17 行**（`MainLayout.vue` +51 / `MainLayout.spec.ts` +45 / `router/index.ts` +26 / `router.spec.ts` +72/−17 / `stores/demoRole.ts` +6 / `vite.config.ts` +9 / 本卡 +10/−6）；**本段合计约 3435 行**；**本卡三段累计** = 后端 ≈ 423 行 + 前端 RED 190 行 + 前端实现 3435 行 ≈ **4048 行** |
+| 超预估说明 | **实现行数落在立卡预估区间内**（预估前端 1800~2400 行实现 → 实测 2076 行）；超出部分来自测试用例（1157 行，原预估未单列）与三段会话的 RED/GREEN 分离 |
 | 超 400 行指引说明 | **裁决（D1，待编排师）**：建议 **不拆分**（lofi §5 选项 A）——四面共享同一套 API/常量/详情页与身份切换；三份剧本为同一业务域三幕，拆分将使 C-2.3 策略面走查与空间面跨卡停滞 |
 | 拆分母卡（如裁决拆分） | 空间+成员+身份 | 策略配置+平台治理（需新立 WBS 行，编排师批） |
 | 文档 | 任务卡（本卡）/ lofi / hifi / 原型 HTML / 三剧本核对修订 / 台账 / 会话日志 |

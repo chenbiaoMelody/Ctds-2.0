@@ -113,6 +113,32 @@ const routes = [
         component: () => import('../views/did/DemoView.vue'),
         meta: { title: 'DID 演示与验证', permission: 'did.admin' },
       },
+      // WBS-3.2.6 空间管理界面（hifi §3）：逻辑空间 / 我的邀请与申请 / 空间详情 / 平台策略治理
+      {
+        path: 'spaces',
+        name: 'space-list',
+        component: () => import('../views/space/ListView.vue'),
+        meta: { title: '逻辑空间', menu: true, menuOrder: 9, icon: 'Grid', permission: 'space.member' },
+      },
+      // 须声明在 spaces/:id 之前（"我的邀请与申请"不占菜单项）
+      {
+        path: 'spaces/my-admissions',
+        name: 'space-my-admissions',
+        component: () => import('../views/space/MyAdmissionsView.vue'),
+        meta: { title: '我的邀请与申请', permission: 'space.member' },
+      },
+      {
+        path: 'spaces/:id',
+        name: 'space-detail',
+        component: () => import('../views/space/DetailView.vue'),
+        meta: { title: '空间详情', permission: 'space.member' },
+      },
+      {
+        path: 'platform-policies',
+        name: 'platform-policy',
+        component: () => import('../views/space/PlatformPolicyView.vue'),
+        meta: { title: '平台策略治理', menu: true, menuOrder: 10, icon: 'Setting', permission: 'platform.policy' },
+      },
       {
         path: ':pathMatch(.*)*',
         name: 'not-found',
