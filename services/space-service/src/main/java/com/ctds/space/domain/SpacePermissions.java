@@ -6,7 +6,8 @@ package com.ctds.space.domain;
  * space.member = 空间内读取与使用/退出/成员列表。
  *
  * <p>映射矩阵单一来源 = application.SpaceAccessGuard（空间内角色折算 + 角色头经 common
- * RolePermissionMapper 读 ctds.auth.permissions，space yml 定稿 platform.operator → 两点）。
+ * RolePermissionMapper 读 ctds.auth.permissions，space yml 定稿 platform.operator → 三点：
+ * space.admin/space.member/platform.policy——平台面点为 WBS-3.2.5 追加）。
  * owner 专属动作（解散/所有权转移）走属主判定（space.owner_subject_no 列口径），与权限点正交——
  * owner 是"该空间的归属事实"，不是可授予的能力（全平台唯一、不可授予他人）。</p>
  */
@@ -16,6 +17,8 @@ public final class SpacePermissions {
     public static final String SPACE_ADMIN = "space.admin";
     /** 成员动作权限点。 */
     public static final String SPACE_MEMBER = "space.member";
+    /** 平台策略治理权限点（WBS-3.2.5：平台级条目创建/变更/列表；仅角色头映射来源——平台面无空间上下文）。 */
+    public static final String PLATFORM_POLICY = "platform.policy";
 
     private SpacePermissions() {
     }

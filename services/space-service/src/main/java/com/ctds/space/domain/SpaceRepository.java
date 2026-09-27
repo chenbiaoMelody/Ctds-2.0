@@ -144,4 +144,52 @@ public interface SpaceRepository {
     void transferOwnership(long spaceId, String currentOwnerSubjectNo, String targetSubjectNo,
             long targetMemberId, MemberRole formerOwnerNewRole, SpaceActionLog grantLog,
             SpaceActionLog revokeLog);
+
+    // ==== 策略继承与覆盖（WBS-3.2.5）====
+
+    /** 平台级 ACTIVE 条目（scope=PLATFORM；覆盖目标定位与有效策略解析数据源）。 */
+    Optional<SpacePolicy> findPlatformEntryByKey(String entryKey);
+
+    /** 按技术主键取策略条目（平台条目变更端点定位；调用方校验 scope=PLATFORM 且 ACTIVE）。 */
+    Optional<SpacePolicy> findPolicyById(long entryId);
+
+    /** 平台级 ACTIVE 条目全集（有效策略解析数据源；按 id 升序）。 */
+    List<SpacePolicy> findPlatformEntries();
+
+    /** 平台级 ACTIVE 条目分页（治理面列表端点；按 id 升序）。 */
+    PageResult<SpacePolicy> searchPlatformEntries(PageQuery page);
+
+    /** 该空间该键的覆盖行（scope=SPACE 且 status=ACTIVE——首覆盖 INSERT / 再覆盖 UPDATE 的定位）。 */
+    Optional<SpacePolicy> findSpaceEntry(long spaceId, String entryKey);
+
+    /** 该空间条目全集（含 ARCHIVED——解散归档"保留可查"，有效策略解析数据源；按 id 升序）。 */
+    List<SpacePolicy> findSpaceEntries(long spaceId);
+
+    /**
+     * 平台条目创建 + POLICY_DEFINE 留痕同事务（from=NULL → to=值）；同键已存在 ACTIVE 平台条目时
+     * uk_scope_key（scope_uniq=0）兜底并发窗口（DuplicateKeyException → 1006C0012）。
+     *
+     * @return 新条目技术主键
+     */
+    long insertPlatformEntry(SpacePolicy entry, SpaceActionLog log);
+
+    /**
+     * 平台条目变更（值/红线标记，键不可变更；乐观门槛 WHERE id AND scope='PLATFORM' AND status=ACTIVE，
+     * 0 行 → 1006C0014）+ POLICY_DEFINE 留痕同事务（from=旧值 → to=新值；红线标记变更记入 reason）。
+     */
+    void updatePlatformEntry(long entryId, String toValue, boolean toRedline, SpaceActionLog log);
+
+    /**
+     * 空间覆盖行落库（首覆盖 INSERT：scope=SPACE + platform_entry_id 显式指向 + POLICY_OVERRIDE 留痕
+     * 同事务；并发首覆盖窗口由 uk_scope_key 兜底——DuplicateKeyException → 1006C0012）。
+     *
+     * @return 新覆盖行技术主键
+     */
+    long insertSpaceOverride(SpacePolicy entry, SpaceActionLog log);
+
+    /**
+     * 空间覆盖行值更新（再覆盖；乐观门槛 WHERE id AND space_id AND status=ACTIVE，0 行 → 1006C0002
+     * 并发归档门槛）+ POLICY_OVERRIDE 留痕同事务（from/to 由参数回填——移交④口径）。
+     */
+    void updateSpaceOverrideValue(long entryId, long spaceId, String toValue, SpaceActionLog log);
 }

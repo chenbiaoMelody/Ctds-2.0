@@ -47,6 +47,15 @@ public class SpaceAccessGuard {
         return AuthContext.roles().contains(operatorRole);
     }
 
+    /**
+     * 平台面权限点判定（WBS-3.2.5：platform.policy——平台级策略条目治理）：平台面无空间上下文，
+     * 复用统一权限点判定（空间内角色折算空转、仅角色头映射来源命中）——Guard 既有方法零改动，
+     * 本方法为纯新增薄封装（3.2.4 T17 矩阵不回归）。
+     */
+    public boolean hasPlatformPermission(final String permissionPoint) {
+        return hasPermission(null, List.of(), permissionPoint);
+    }
+
     /** 当前请求方是否空间所有者（space.owner_subject_no 列口径，与成员表活跃 OWNER 行一致性由 uk_active_owner 兜底）。 */
     public boolean isOwner(final Space space) {
         return space.ownerSubjectNo().equals(AuthContext.subject());

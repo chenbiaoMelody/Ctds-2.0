@@ -29,7 +29,8 @@ ctds:
   # 经 common RolePermissionMapper 折算进统一权限面（SpaceAccessGuard，空间内角色映射为矩阵另一来源）。
   auth:
     permissions:
-      platform.operator: space.admin,space.member
+      # WBS-3.2.5 追加 platform.policy（平台级策略条目治理端点 1~3）
+      platform.operator: space.admin,space.member,platform.policy
   # 空间服务参数（WBS-3.2.3 hifi §4~§5）
   space:
     # 双轨①平台运营方角色档名（应用服务经 AuthContext.roles() 判定，配置可调）
