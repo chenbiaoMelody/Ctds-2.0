@@ -309,7 +309,11 @@ public class SpaceJdbcRepository implements SpaceRepository {
             return ps;
         }, keyHolder);
         final long id = keyHolder.getKey().longValue();
-        insertLogWithinTransaction(admission.spaceId(), withFromTo(log, null, admission.status().name()));
+        // 留痕 target_id 回填准入单生成主键（V1 契约"按 target_id 检索留痕不可漏行"——评审修复批回归点）；
+        // from/to 由本方法以参数回填（创建动作无前值 → from=NULL，to=初始状态——移交④单一表达）
+        insertLogWithinTransaction(admission.spaceId(), new SpaceActionLog(log.id(), log.spaceId(),
+                log.targetType(), id, log.action(), log.operator(), null, admission.status().name(),
+                log.result(), log.reason(), log.createdAt()));
         return id;
     }
 
@@ -346,7 +350,9 @@ public class SpaceJdbcRepository implements SpaceRepository {
             return memberId;
         } catch (final DuplicateKeyException e) {
             // uk_active_member 冲突 = 并发方已建立同一活跃成员行（Q3-A 语义：返回既有关系）——
-            // 回查既有行 id；本方准入单 UPDATE 因状态已被并发方推进而 0 行 → 0010 整体回滚，不产生双成员
+            // 回查既有行 id 直接返回（本方不再触碰准入单；并发方事务将推进其状态并回填 member_id，
+            // 本方响应经 loadAdmission 读到并发终态。极端窗口内并发方未提交时回查为空 → 全局异常兜底，
+            // 演示期单副本可接受——登记口径，见 hifi §11 E7③）
             return jdbc.sql("SELECT id FROM space_member WHERE space_id = ? AND subject_no = ? "
                             + "AND status = ?")
                     .params(spaceId, member.subjectNo(), MemberStatus.ACTIVE.name())

@@ -112,8 +112,9 @@ class SpaceMembershipIntegrationTest {
         assertThat(memberCount).isEqualTo(2);
         final Integer inviteLog = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM space_action_log WHERE space_id = ? AND action = 'ADMIT_INVITE' "
-                        + "AND result = 'SUCCESS' AND operator = 'owner-t1' AND target_type = 'ADMISSION'",
-                Integer.class, id);
+                        + "AND result = 'SUCCESS' AND operator = 'owner-t1' AND target_type = 'ADMISSION' "
+                        + "AND target_id = ?",
+                Integer.class, id, admissionId);
         assertThat(inviteLog).isEqualTo(1);
         final Integer confirmLog = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM space_action_log WHERE space_id = ? AND action = 'ADMIT_CONFIRM' "
@@ -249,6 +250,19 @@ class SpaceMembershipIntegrationTest {
                 "SELECT COUNT(*) FROM space_member WHERE space_id = ? AND subject_no = 'rejected-t4'",
                 Integer.class, id);
         assertThat(rejectedMemberRows).isZero();
+        // 申请留痕 target_id = 准入单主键（留痕"对象"四要素不降级——修复批回归断言）
+        final Integer requestLog = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM space_action_log WHERE space_id = ? AND action = 'ADMIT_REQUEST' "
+                        + "AND result = 'SUCCESS' AND target_type = 'ADMISSION' AND target_id = ?",
+                Integer.class, id, admissionId);
+        assertThat(requestLog).isEqualTo(1);
+        // 审批拒绝缺理由 = 参数校验 400（与移除理由同通道，非准入单状态门槛 0010）
+        final long noReasonAdmission = apply(id, "noreason-t4");
+        mockMvc.perform(auth(post(BASE + "/" + id + "/admissions/" + noReasonAdmission + "/approval"),
+                        "owner-t4", "user")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"decision\":\"REJECT\"}"))
+                .andExpect(status().isBadRequest());
     }
 
     // ==== T5 空间状态门槛（行为 3 规则 3；剧本 S1-10~12）====
@@ -548,6 +562,22 @@ class SpaceMembershipIntegrationTest {
             conflict = e;
         }
         assertThat(conflict).as("uk_active_owner 兜底：第二活跃 OWNER 行必须被拒绝").isNotNull();
+        // owner 三路拒绝统一落 DENIED 留痕（退出/移除/角色变更各 1 条——评审修复批口径对齐断言）
+        final Integer leaveDenied = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM space_action_log WHERE space_id = ? AND action = 'LEAVE' "
+                        + "AND result = 'DENIED' AND target_type = 'MEMBER' AND target_id = ?",
+                Integer.class, id, ownerMemberId);
+        assertThat(leaveDenied).isEqualTo(1);
+        final Integer removeDenied = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM space_action_log WHERE space_id = ? AND action = 'REMOVE' "
+                        + "AND result = 'DENIED' AND target_type = 'MEMBER' AND target_id = ?",
+                Integer.class, id, ownerMemberId);
+        assertThat(removeDenied).isEqualTo(1);
+        final Integer roleDenied = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM space_action_log WHERE space_id = ? AND action = 'ROLE_GRANT' "
+                        + "AND result = 'DENIED' AND target_type = 'MEMBER' AND target_id = ?",
+                Integer.class, id, ownerMemberId);
+        assertThat(roleDenied).isEqualTo(1);
     }
 
     // ==== T15 冻结期边界（行为 5 规则 4 + Q6-A；剧本 S3-4/5）====
