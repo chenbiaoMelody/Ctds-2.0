@@ -25,8 +25,8 @@ class SpaceExceptionHandlerCodeConsistencyTest {
                 defined.add(((ErrorCode) field.get(null)).value());
             }
         }
-        assertThat(defined).as("1006 段码值应恰为 12 个（3.2.3 hifi §2 定稿 8 码 + WBS-3.2.4 hifi §2 顺延 4 码）")
-                .hasSize(12);
+        assertThat(defined).as("1006 段码值应恰为 15 个（3.2.3 定稿 8 码 + WBS-3.2.4 顺延 4 码 + WBS-3.2.5 顺延 3 码）")
+                .hasSize(15);
         assertThat(SpaceExceptionHandler.MAPPED_CODES).containsExactlyInAnyOrderElementsOf(defined);
     }
 }

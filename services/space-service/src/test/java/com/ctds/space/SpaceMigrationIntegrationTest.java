@@ -205,9 +205,30 @@ class SpaceMigrationIntegrationTest {
                 .toUpperCase().contains("PLATFORM"), "scope_uniq 生成表达式应含 PLATFORM 分支");
     }
 
+    /** WBS-3.2.5 T17：V3 迁移——平台级基线种子 3 条（两红线一非红线）+ POLICY_DEFINE 动作码注释登记。 */
+    @Test
+    void v3SeedsPlatformBaselineAndRegistersPolicyDefineAction() throws SQLException {
+        final String db = freshDatabaseWithMigration("policy_seed");
+        // 种子齐备：目录三键各恰一条平台级 ACTIVE 条目（红色标记 1/1/0——C-2.3 剧本 S2 演示载体）
+        assertEquals(3, count(db, "SELECT COUNT(*) FROM space_policy WHERE scope = 'PLATFORM' "
+                + "AND status = 'ACTIVE'"), "平台级 ACTIVE 条目应恰为种子 3 条");
+        assertEquals(1, count(db, "SELECT COUNT(*) FROM space_policy WHERE scope = 'PLATFORM' "
+                + "AND entry_key = 'data.visibility' AND entry_value = 'SPACE_MEMBER' AND is_redline = 1"));
+        assertEquals(1, count(db, "SELECT COUNT(*) FROM space_policy WHERE scope = 'PLATFORM' "
+                + "AND entry_key = 'data.retention' AND entry_value = 'D90' AND is_redline = 1"));
+        assertEquals(1, count(db, "SELECT COUNT(*) FROM space_policy WHERE scope = 'PLATFORM' "
+                + "AND entry_key = 'member.data_export' AND entry_value = 'ALLOWED' AND is_redline = 0"));
+        assertEquals(0, count(db, "SELECT COUNT(*) FROM space_policy WHERE space_id IS NOT NULL"),
+            "V3 只种平台级条目，不得产生空间级行");
+        // 动作码登记：space_action_log.action 注释含 POLICY_DEFINE（沿 V2 登记口径）
+        assertTrue(scalar(db, "SELECT column_comment FROM information_schema.columns"
+                + " WHERE table_schema = ? AND table_name = 'space_action_log' AND column_name = 'action'", db)
+                .contains("POLICY_DEFINE"), "action 注释应登记 POLICY_DEFINE 动作码");
+    }
+
     // ---------- 助手：每用例独立库 + 迁移 + 纯 JDBC 断言 ----------
 
-    /** 建独立库并在其上执行全新 V1+V2 迁移，返回库名（隔离语义等价方法级容器）。
+    /** 建独立库并在其上执行全新 V1~V3 迁移，返回库名（隔离语义等价方法级容器）。
      * 建库/授权由 {@link com.ctds.space.support.SharedMySqlContainer} 以容器 root 完成
      * （应用用户对新库无 CREATE 权限，授权后 Flyway/断言仍以应用用户接入）。 */
     private String freshDatabaseWithMigration(final String label) {

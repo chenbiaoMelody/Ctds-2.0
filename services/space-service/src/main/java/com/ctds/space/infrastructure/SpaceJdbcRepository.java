@@ -7,6 +7,7 @@ import com.ctds.space.domain.AdmissionStatus;
 import com.ctds.space.domain.AdmissionType;
 import com.ctds.space.domain.MemberRole;
 import com.ctds.space.domain.MemberStatus;
+import com.ctds.space.domain.PolicyScope;
 import com.ctds.space.domain.PolicyStatus;
 import com.ctds.space.domain.SceneType;
 import com.ctds.space.domain.Space;
@@ -14,6 +15,7 @@ import com.ctds.space.domain.SpaceActionLog;
 import com.ctds.space.domain.SpaceAdmission;
 import com.ctds.space.domain.SpaceErrorCodes;
 import com.ctds.space.domain.SpaceMember;
+import com.ctds.space.domain.SpacePolicy;
 import com.ctds.space.domain.SpaceRepository;
 import com.ctds.space.domain.SpaceStatus;
 import com.ctds.space.domain.SpaceBizException;
@@ -50,6 +52,8 @@ public class SpaceJdbcRepository implements SpaceRepository {
             + "created_at, updated_at";
     private static final String ADMISSION_COLUMNS = "id, space_id, subject_no, type, status, operator, reason, "
             + "member_id, created_at, updated_at";
+    private static final String POLICY_COLUMNS = "id, scope, space_id, platform_entry_id, entry_key, "
+            + "entry_value, is_redline, status, created_at, updated_at";
 
     private final JdbcClient jdbc;
     private final JdbcTemplate jdbcTemplate;
@@ -485,12 +489,164 @@ public class SpaceJdbcRepository implements SpaceRepository {
         insertLogWithinTransaction(spaceId, revokeLog);
     }
 
+    // ==== 策略继承与覆盖（WBS-3.2.5）====
+
+    @Override
+    public Optional<SpacePolicy> findPlatformEntryByKey(final String entryKey) {
+        return jdbc.sql("SELECT " + POLICY_COLUMNS + " FROM space_policy "
+                        + "WHERE entry_key = ? AND scope = ? AND status = ?")
+                .params(entryKey, PolicyScope.PLATFORM.name(), PolicyStatus.ACTIVE.name())
+                .query((rs, rowNum) -> mapPolicy(rs))
+                .optional();
+    }
+
+    @Override
+    public Optional<SpacePolicy> findPolicyById(final long entryId) {
+        return jdbc.sql("SELECT " + POLICY_COLUMNS + " FROM space_policy WHERE id = ?")
+                .param(entryId)
+                .query((rs, rowNum) -> mapPolicy(rs))
+                .optional();
+    }
+
+    @Override
+    public List<SpacePolicy> findPlatformEntries() {
+        return jdbc.sql("SELECT " + POLICY_COLUMNS + " FROM space_policy "
+                        + "WHERE scope = ? AND status = ? ORDER BY id")
+                .params(PolicyScope.PLATFORM.name(), PolicyStatus.ACTIVE.name())
+                .query((rs, rowNum) -> mapPolicy(rs))
+                .list();
+    }
+
+    @Override
+    public PageResult<SpacePolicy> searchPlatformEntries(final PageQuery page) {
+        final String where = "scope = ? AND status = ?";
+        final long total = jdbc.sql("SELECT COUNT(*) FROM space_policy WHERE " + where)
+                .params(PolicyScope.PLATFORM.name(), PolicyStatus.ACTIVE.name())
+                .query(Long.class)
+                .single();
+        final List<SpacePolicy> list = jdbc.sql("SELECT " + POLICY_COLUMNS + " FROM space_policy WHERE "
+                        + where + " ORDER BY id LIMIT ? OFFSET ?")
+                .params(PolicyScope.PLATFORM.name(), PolicyStatus.ACTIVE.name(),
+                        page.pageSize(), page.offset())
+                .query((rs, rowNum) -> mapPolicy(rs))
+                .list();
+        return PageResult.of(list, total, page);
+    }
+
+    @Override
+    public Optional<SpacePolicy> findSpaceEntry(final long spaceId, final String entryKey) {
+        return jdbc.sql("SELECT " + POLICY_COLUMNS + " FROM space_policy "
+                        + "WHERE space_id = ? AND entry_key = ? AND scope = ? AND status = ?")
+                .params(spaceId, entryKey, PolicyScope.SPACE.name(), PolicyStatus.ACTIVE.name())
+                .query((rs, rowNum) -> mapPolicy(rs))
+                .optional();
+    }
+
+    @Override
+    public List<SpacePolicy> findSpaceEntries(final long spaceId) {
+        return jdbc.sql("SELECT " + POLICY_COLUMNS + " FROM space_policy "
+                        + "WHERE space_id = ? ORDER BY id")
+                .param(spaceId)
+                .query((rs, rowNum) -> mapPolicy(rs))
+                .list();
+    }
+
+    @Override
+    @Transactional
+    public long insertPlatformEntry(final SpacePolicy entry, final SpaceActionLog log) {
+        final KeyHolder keyHolder = new GeneratedKeyHolder();
+        try {
+            jdbc.sql("INSERT INTO space_policy (scope, space_id, platform_entry_id, entry_key, entry_value, "
+                            + "is_redline, status) VALUES (?, NULL, NULL, ?, ?, ?, ?)")
+                    .param(entry.scope().name())
+                    .param(entry.entryKey())
+                    .param(entry.entryValue())
+                    .param(entry.redline() ? 1 : 0)
+                    .param(entry.status().name())
+                    .update(keyHolder);
+        } catch (final DuplicateKeyException e) {
+            // 同键 ACTIVE 平台条目并发创建窗口（uk_scope_key scope_uniq=0 兜底）
+            throw new SpaceBizException(SpaceErrorCodes.POLICY_ENTRY_INVALID,
+                    SpaceErrorCodes.POLICY_ENTRY_INVALID_MESSAGE);
+        }
+        final long entryId = keyHolder.getKey().longValue();
+        // 创建留痕 target 指向新条目（键生成后方可知 id——按条目归组审计）
+        insertPlatformLog(null, new SpaceActionLog(log.id(), null, log.targetType(), entryId,
+                log.action(), log.operator(), log.fromValue(), log.toValue(), log.result(),
+                log.reason(), log.createdAt()));
+        return entryId;
+    }
+
+    @Override
+    @Transactional
+    public void updatePlatformEntry(final long entryId, final String toValue, final boolean toRedline,
+            final SpaceActionLog log) {
+        final int updatedRows = jdbc.sql("UPDATE space_policy SET entry_value = ?, is_redline = ?, "
+                        + "updated_at = ? WHERE id = ? AND scope = ? AND status = ?")
+                .params(toValue, toRedline ? 1 : 0, timestamp(log.createdAt()), entryId,
+                        PolicyScope.PLATFORM.name(), PolicyStatus.ACTIVE.name())
+                .update();
+        if (updatedRows == 0) {
+            throw new SpaceBizException(SpaceErrorCodes.POLICY_ENTRY_REQUIRED,
+                    SpaceErrorCodes.POLICY_ENTRY_REQUIRED_MESSAGE);
+        }
+        insertPlatformLog(log.reason(), withFromTo(log, log.fromValue(), toValue));
+    }
+
+    @Override
+    @Transactional
+    public long insertSpaceOverride(final SpacePolicy entry, final SpaceActionLog log) {
+        final KeyHolder keyHolder = new GeneratedKeyHolder();
+        try {
+            jdbc.sql("INSERT INTO space_policy (scope, space_id, platform_entry_id, entry_key, entry_value, "
+                            + "is_redline, status) VALUES (?, ?, ?, ?, ?, 0, ?)")
+                    .param(entry.scope().name())
+                    .param(entry.spaceId())
+                    .param(entry.platformEntryId())
+                    .param(entry.entryKey())
+                    .param(entry.entryValue())
+                    .param(entry.status().name())
+                    .update(keyHolder);
+        } catch (final DuplicateKeyException e) {
+            // 同空间同键 ACTIVE 覆盖行并发首覆盖窗口（uk_scope_key 生成列兜底）
+            throw new SpaceBizException(SpaceErrorCodes.POLICY_ENTRY_INVALID,
+                    SpaceErrorCodes.POLICY_ENTRY_INVALID_MESSAGE);
+        }
+        insertLogWithinTransaction(entry.spaceId(), log);
+        return keyHolder.getKey().longValue();
+    }
+
+    @Override
+    @Transactional
+    public void updateSpaceOverrideValue(final long entryId, final long spaceId, final String toValue,
+            final SpaceActionLog log) {
+        final int updatedRows = jdbc.sql("UPDATE space_policy SET entry_value = ?, updated_at = ? "
+                        + "WHERE id = ? AND space_id = ? AND scope = ? AND status = ?")
+                .params(toValue, timestamp(log.createdAt()), entryId, spaceId,
+                        PolicyScope.SPACE.name(), PolicyStatus.ACTIVE.name())
+                .update();
+        if (updatedRows == 0) {
+            // 并发归档窗口（解散三写已置 ARCHIVED）→ 空间状态门槛同码
+            throw new SpaceBizException(SpaceErrorCodes.SPACE_STATUS_GATE,
+                    SpaceErrorCodes.SPACE_STATUS_GATE_MESSAGE);
+        }
+        insertLogWithinTransaction(spaceId, withFromTo(log, log.fromValue(), toValue));
+    }
+
+    /** 平台面留痕（space_id=NULL 仅限平台级策略动作——V1 列注释口径；operator=登录主体编号）。 */
+    private void insertPlatformLog(final String reasonNote, final SpaceActionLog log) {
+        insertLogWithinTransaction(null, new SpaceActionLog(log.id(), null, log.targetType(),
+                log.targetId(), log.action(), log.operator(), log.fromValue(), log.toValue(),
+                log.result(), reasonNote, log.createdAt()));
+    }
+
     /**
      * 事务内留痕写入（同事务契约的落库点）。target_id 兜底：目标类型为空间而调用方未指实体时
      * 以 space_id 回填（V1 契约"探测被拒且无实体可指才允许 NULL"——CREATE 后实体已存在，
-     * 按 target_id 检索留痕不可漏行，评审循环 1 补）。
+     * 按 target_id 检索留痕不可漏行，评审循环 1 补）。space_id 可空：NULL 仅限平台级策略动作
+     * 等少数场景（WBS-3.2.5 平台面留痕）。
      */
-    private void insertLogWithinTransaction(final long spaceId, final SpaceActionLog log) {
+    private void insertLogWithinTransaction(final Long spaceId, final SpaceActionLog log) {
         final Long targetId = log.targetId() != null ? log.targetId()
                 : (log.targetType() == TargetType.SPACE ? spaceId : null);
         jdbc.sql("INSERT INTO space_action_log (space_id, target_type, target_id, action, operator, "
@@ -525,6 +681,19 @@ public class SpaceJdbcRepository implements SpaceRepository {
         return new SpaceAdmission(rs.getLong("id"), rs.getLong("space_id"), rs.getString("subject_no"),
                 AdmissionType.valueOf(rs.getString("type")), AdmissionStatus.valueOf(rs.getString("status")),
                 rs.getString("operator"), rs.getString("reason"), memberMissing ? null : memberId,
+                toLocalDateTime(rs.getTimestamp("created_at")), toLocalDateTime(rs.getTimestamp("updated_at")));
+    }
+
+    private SpacePolicy mapPolicy(final ResultSet rs) throws SQLException {
+        // 判空必须紧跟对应 getLong（rs.wasNull 只看最近一列，3.2.4 修复批教训）
+        final long spaceId = rs.getLong("space_id");
+        final boolean spaceMissing = rs.wasNull();
+        final long platformEntryId = rs.getLong("platform_entry_id");
+        final boolean platformEntryMissing = rs.wasNull();
+        return new SpacePolicy(rs.getLong("id"), PolicyScope.valueOf(rs.getString("scope")),
+                spaceMissing ? null : spaceId, platformEntryMissing ? null : platformEntryId,
+                rs.getString("entry_key"), rs.getString("entry_value"), rs.getInt("is_redline") == 1,
+                PolicyStatus.valueOf(rs.getString("status")),
                 toLocalDateTime(rs.getTimestamp("created_at")), toLocalDateTime(rs.getTimestamp("updated_at")));
     }
 

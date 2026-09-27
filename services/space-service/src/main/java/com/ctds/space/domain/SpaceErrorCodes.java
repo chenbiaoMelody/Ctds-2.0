@@ -49,6 +49,17 @@ public final class SpaceErrorCodes {
     public static final String ADMISSION_MODE_MISMATCH_MESSAGE = "该空间的参与方范围不支持此准入方式";
     /** 读面拒绝留痕理由（非成员访问空间成员列表，服务端常量——对外同形不变，对内可审计）。 */
     public static final String MEMBER_LIST_DENIED_LOG_REASON = "非成员访问空间成员列表";
+    /** 读面拒绝留痕理由（非成员访问空间策略视图，服务端常量——WBS-3.2.5）。 */
+    public static final String POLICY_VIEW_DENIED_LOG_REASON = "非成员访问空间策略视图";
+    /** 策略条目不满足目录与值域校验（键未注册/值越域/平台同键重复创建——WBS-3.2.5 hifi §2）。→ 400 */
+    public static final ErrorCode POLICY_ENTRY_INVALID = ErrorCode.of("1006C0012");
+    public static final String POLICY_ENTRY_INVALID_MESSAGE = "策略条目键或值不符合平台目录要求";
+    /** 红线条目放宽方向覆盖拒绝（行为 7 规则 2 + 规格边界声明 5 代码强制；拒绝同样留痕）。→ 409 */
+    public static final ErrorCode REDLINE_LOOSENING_REJECTED = ErrorCode.of("1006C0013");
+    public static final String REDLINE_LOOSENING_REJECTED_MESSAGE = "该条目为平台级限制项，不可放宽";
+    /** 策略条目定位失败（覆盖目标平台条目不存在/不活跃——统一文案防探测；WBS-3.2.5 hifi §2）。→ 404 */
+    public static final ErrorCode POLICY_ENTRY_REQUIRED = ErrorCode.of("1006C0014");
+    public static final String POLICY_ENTRY_REQUIRED_MESSAGE = "策略条目不存在或已失效";
     /** 主体服务不可达/失败（UNAVAILABLE 统一文案，不冒充 1006C0001——WBS-3.2.3 hifi §4）。→ 503 */
     public static final ErrorCode SUBJECT_SERVICE_UNAVAILABLE = ErrorCode.of("1006S0001");
     public static final String SUBJECT_SERVICE_UNAVAILABLE_MESSAGE = "主体服务暂不可用，请稍后重试";
