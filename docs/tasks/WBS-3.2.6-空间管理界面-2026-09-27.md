@@ -88,7 +88,16 @@
 | 冷启动锚点 | 台账「下一包」行（3.2.6）+ 日志 `docs/logs/Ctds-项目开发日志-26-09-27-2008.md`（续点四要素）；WBS 行 256；规格行为 1~7；三剧本；3.2.3/3.2.4/3.2.5 三份 hifi §1 |
 | 立卡会话 | 2026-09-27（日志 `docs/logs/Ctds-项目开发日志-26-09-27-2017.md`）——本卡 + lofi + hifi + 原型 HTML 四文档落盘；分支 `feat/WBS-3.2.6-空间管理界面`（自 `main` `56e02fd`） |
 | 设计确认会话 | **2026-09-27 20:2x（同窗口续段，日志 `docs/logs/Ctds-项目开发日志-26-09-27-2021.md`）**——编排师会话回复"**都按建议**"→ Q1~Q8 均采建议口径 + **D1 体量不拆分**；三处留痕签署（本卡 §一 表头"设计文件"行与 §二 确认留痕块、§四 状态行与本行；lofi/hifi「确认记录」）；**零代码变更** |
-| 编码会话 | 待（另会话；第一步 = hifi §11 / lofi §6 前置检查项七项逐项实测留痕 → 测试先行 RED） |
+| 编码会话 | **2026-09-27 20:30 起（新会话，日志 `docs/logs/Ctds-项目开发日志-26-09-27-2030.md`）** —— 第一动作（前置检查七项）已完成并留痕（见下行）；**未开始写码**（本会话按上下文纪律在留痕后停机，测试先行 RED 归续接会话） |
+| 前置检查（hifi §11 / lofi §6 七项） | ✅ **七项逐项实测完毕（2026-09-27 20:2x~20:30，命令级证据见下行与日志 `-2030`）**；**发现 1 项环境阻塞**（② 项，见"环境阻塞与请求"行） |
+| ① 冷启动读序 | ✅ `AGENTS.md` → 日志 `-2021` → 本卡 → lofi/hifi「确认记录」→ 台账「进行中/下一包/待编排师」→ 三份上游 hifi §1（汇总核对 **8+11+3+2 = 24 端点，零偏差**）→ 规格 `C-2.1-2.3`（V1.0，219 行，行为 1~7 全清单）→ 三剧本（**60 步**；"界面入口占位（待 3.2.6 交付后核对修订）"句 3 份各 2 处，**均落在前置表格与维护说明、不落任一 S 步骤**） |
+| ② 环境核验 | ⚠️ **部分通过**：三容器在线（`sc-mysql` / `sc-minio` / `sc-redis`，Up 11h）；subject `8080` 健康（`/actuator/health` → 200）；space `8083` 在监听、回环 `127.0.0.1` 生效、未认证 → `1000C0002`；**did `8082` 未监听**（本包链路不依赖 did，判定**不影响**本卡，仅走查前需知）；**阻塞项**：运行实例**未配置 `CTDS_SPACE_SUBJECT_BASEURL`** |
+| ③ 24 端点基线 | ✅ 抽样实测 7 个只读端点 + 权限矩阵：端点 7（operator 档 2 空间 / 普通档仅 1 个 PUBLIC）、端点 8（id=1 全量含 `ownerSubjectNo`+`members`；**非成员 PRIVATE → `1006C0004` 与不存在 id → 同码同文案**）、端点 15（`MemberView` 含行级 `id`；普通档 → `1006C0007`）、端点 13（`AdmissionView` 含 `memberId`）、端点 14（空 `list` 正常返 `code="0"`）、端点 22（平台 3 条）、端点 24（`source`/`provenance`/`redline` 字段齐备）；未认证 → `1000C0002` |
+| ④ 迁移与种子 | ✅ `V1__create_space_tables.sql` / `V2__space_action_log_update_code_and_value_width.sql` / `V3__policy_define_action_and_platform_seed.sql` 三文件在位；V3 三条平台基线种子实测在线（端点 22 返回 `data.visibility`=`SPACE_MEMBER`(redline) / `data.retention`=`D90`(redline) / `member.data_export`=`ALLOWED`(非 redline)）；`space_action_log` 实体四要素（`operator`/`createdAt`/`action`/`targetType+targetId+spaceId`）已存在，**留痕表零新增** |
+| ⑤ 前端基线 | ✅ `npm test` = **14 文件 / 118 用例全绿**（82.0s）；菜单计数断言在位：`MainLayout.spec.ts:56`（user **5**）/ `:67`（admin **8**）→ 本包须同步 8→10 |
+| ⑥ 分页契约 | ✅ `PageQuery`（`pageNum` 默认 1 / `pageSize` 默认 10，1~100）与 `PageResult<T>`（`list/total/pageNum/pageSize/totalPages`）↔ 前端 `PageData<T>` **5 字段逐一对齐**；端点 7/13/15 实测响应字段与之一致 |
+| ⑦ 演示身份链路 | ✅ 空 `X-Ctds-Subject` → `AuthContextFilter`（`MAX_SUBJECT_LENGTH=128` / roles ≤512 / 段 ≤32）整头作废按未认证（实测 → `1000C0002`）；`ctds.auth.permissions.platform.operator: space.admin,space.member,platform.policy` 在 `space-service` yml 生效（实测：该档可读平台策略，普通档 → `1006C0007`）；`client.ts` 全局 `demoRolesHeader()` = `applicant` / `applicant,reviewer`（**本包不动**） |
+| 环境阻塞与请求 | **走查/演示前须重启 space 服务并注入 `CTDS_SPACE_SUBJECT_BASEURL=http://localhost:8080`（连同 `CTDS_DB_PASSWORD`）**：实测零副作用探针（不存在主体 `ZZZ-PROBE-NOT-EXIST-2026` 创建空间）→ `1006S0001`「主体服务暂不可用」，且空间总数仍 2（**未写入任何数据**）→ 判定运行实例 base-url 为空，资格判定不可用，`C-2.1 S1-1/S1-2` 类界面步骤会失败。口令在本机 **用户级/机器级环境变量与仓库脚本中均未找到** → **不由 AI 承接**（红线 7：口令不进仓库/日志/提示词），请人侧在其终端设置后启动；资格判定端点 = `GET /api/v1/subject/internal/subjects/{subjectNo}/admission`（服务身份权限点 `subject.internal.read`） |
 | 设计偏离登记 | 待（编码/评审期按 `P1…` 顺延登记于 hifi §12） |
 | 规格外实现声明 | 待（应为空） |
 | 评审与验收 | 待 |
