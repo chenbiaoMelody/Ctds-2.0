@@ -69,7 +69,16 @@
 
 | 项 | 内容 |
 | --- | --- |
-| 状态 | 🔄 **两级设计已确认（2026-09-27 16:3x"都按建议"：Q1~Q6 均采 A + D1 不拆分）——进入编码（测试先行 RED→GREEN）**；立卡批 `8412ac2`（三件套）已推送 origin |
+| 状态 | ✅ **实现交付完成，待 4 视角评审**（两级设计已确认 2026-09-27 16:3x"都按建议"；实现批 `dd5e7ed`，立卡批 `8412ac2`、确认批 `6a5a940` 已推送 origin） |
+| 验证结果 | `mvn -B -ntp -pl services/space-service -am test`（Testcontainers mysql:8.0 实跑）：**Tests run: 132, Failures: 0, Errors: 0**——SpacePolicyIntegrationTest 13（T1~T13 集成面）/ PolicyCatalogTest 7（T15 目录封闭性）/ EffectivePolicyResolverTest 8（T16 解析器）/ SpaceErrorCodesFormatTest 16（T14 含新增 3 码 + 15 码封闭性）/ SpaceExceptionHandlerCodeConsistencyTest 1（码表↔处理器 15 码锚）/ SpaceMigrationIntegrationTest 8（T17 V3 种子与动作码登记）/ SpaceMembershipIntegrationTest 24 + SpaceLifecycleIntegrationTest 16（3.2.4/3.2.3 回归零语义漂移）/ 其余单测族；`checkstyle:check` **0 违规** |
+| 编码期修复批（测试实证后即修） | ① **平台创建留痕 target_id 建前未知**——首版落 NULL 与"按条目归组审计"契约不符，改为键生成后以主键回填 target_id（T11 实证）；② **集成测试平台基线跨用例污染**——平台级条目是共享库全局状态，T5 的平台收紧泄漏使 T1/T13 失效（T13 的 FORBIDDEN 覆盖撞同值幂等变无操作），加 @BeforeEach 平台基线复位（空间级数据唯一主体编号隔离不需复位）；③ JDK 17 兼容（List.getFirst → get）；④ mapPolicy 判空紧跟 getLong（3.2.4 wasNull 教训预落实） |
+| 剧本是否需要更新 | **C-2.3 剧本无需更新**（业务判定一字不改）：S2 六步端点承载齐备（S2-1 视图端点 5 / S2-2 覆盖端点 4 拒宽 / S2-3 收紧 / S2-4 非红线覆盖 / S2-5 平台面端点 2 + 覆盖组合构造取严 / S2-6 留痕核对），S3-2/S3-4 由写门 0002 承载、S3-6 由归档视图承载，S1-5 治理查看由平台面承载；剧本附录 A"红线条目清单"随 V3 种子定稿（data.visibility=SPACE_MEMBER 与 data.retention=D90 两红线 + member.data_export=ALLOWED 非红线，演示前技术侧核对）；界面入口占位不变（待 3.2.6 交付后核对修订） |
+| 复用声明（实现回填） | 复用 3.2.2 `space_policy` 载体与 PolicyScope/PolicyStatus/SpacePolicy/TargetType.POLICY（**零新表零列变更**，V3 仅注释登记+种子）、`space_action_log` 预留动作码 POLICY_OVERRIDE/POLICY_OVERRIDE_REJECTED（POLICY_DEFINE 走 V3 登记）、3.2.3 留痕模式/乐观门槛先例/解散三写归档联动、3.2.4 统一权限面（hasPermission 空成员表退化角色头判定，Guard 既有方法零改动）/同值幂等先例 E7/留痕回填契约、V2 值列放宽、common auth/pagination/errorcode；**未新增第三方依赖** |
+| 体量登记（实测） | 预估 ~1400~1800 行；**实测增量 1715 行**（主代码 13 文件 ~953 + 测试 6 文件 ~762）——在预估带内，主代码含目录注册表与解析引擎 ~300、端点与服务 ~500；测试 762 行 = hifi §8 T1~T17 逐项落地 |
+| 立卡前素材盘点（只读） | ① WBS 行 255 + 规格 V1.0 行为 7 全文（6 规则 + 4 验收标准 + §6.5 硬约束）；② 3.2.2 hifi §1.5 载体契约（scope/platform_entry_id/is_redline/scope_uniq）；③ 3.2.3 解散三写已置策略 ARCHIVED（生命周期联动半成品就位）；④ 3.2.4 统一权限面 hasPermission 空成员表退化角色头判定（平台面门零改动复用）+ 同值幂等 E7 先例 + 留痕回填契约；⑤ V2 迁移已放宽留痕值列 1024（覆盖留痕同受益）；⑥ space_action_log 动作码预留 POLICY_OVERRIDE/POLICY_OVERRIDE_REJECTED、TargetType.POLICY 既有 |
+| 规格外实现声明 | 无（端点/规则全部由规格行为 7 + 承接项四条派生；Q1 目录三键为规则 6"随 3.2.5 定稿"授权范围内定稿；Q2 判定语义为规则 2+3 合读解释并经缺口声明裁决；Q3/Q4/Q5/Q6 为实现形态决策；平台可放宽自身条目为诚实语义登记——hifi §4） |
+| 复用声明 | 复用 3.2.2 六表载体与策略枚举、3.2.3 留痕/门槛/归档联动、3.2.4 统一权限面与幂等先例、common auth/pagination/errorcode；**未新增第三方依赖；V3 迁移仅注释登记 + 种子（无新表无列变更）** |
+| 体量登记 | 预估 ~1400~1800 行（见 D1）；实测 1715 行 |
 | 剧本是否需要更新 | **C-2.3 剧本预期无需更新**（业务判定一字不改）：S2 六步均有端点承载（S2-1 视图端点 / S2-2~S2-4 覆盖端点 / S2-5 平台面变更+覆盖组合构造 / S2-6 留痕核对），S3-2/S3-4 由写门承载，S1-5 治理查看由平台面承载；剧本附录 A"红线条目清单"随 Q6-A 种子定稿（visibility/retention 两红线 + export 非红线，演示前技术侧核对）；界面入口占位不变（待 3.2.6 交付后核对修订） |
 | 复用声明 | 复用 3.2.2 `space_policy` 载体与 PolicyScope/PolicyStatus/SpacePolicy/TargetType.POLICY、`space_action_log` 预留动作码（POLICY_OVERRIDE/REJECTED，POLICY_DEFINE 走 V3 注释登记）、3.2.3 留痕模式/乐观门槛先例/解散三写归档、3.2.4 统一权限面（hasPermission 空成员表退化角色头判定）/同值幂等先例（E7）/留痕 from/to 统一回填契约、V2 值列放宽、common auth/pagination/errorcode；**未新增第三方依赖** |
 | 体量登记 | 预估 ~1400~1800 行（见 D1）；实测待编码后回填 |
