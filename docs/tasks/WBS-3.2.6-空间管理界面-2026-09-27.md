@@ -84,7 +84,7 @@
 
 | 项 | 内容 |
 | --- | --- |
-| 状态 | 🟢 **编码已完成（前后端实现全绿，2026-09-27 21:0x）→ 待 §五 自检收口 + 4 视角评审 + 三剧本界面入口核对修订（W12）**——设计契约 2026-09-27 20:2x 生效；**段 2 = 后端 Q6-A 留痕端点**（T1~T4 先红后绿 + 模块 141 用例全绿 + checkstyle 0）、**段 3 = 前端实现 GREEN**（四视图 + API/常量/store + 路由菜单 8→10 + 顶栏控件；**22 文件 / 188 用例全绿** + `typecheck` 0 错 + `lint` 0 违规）；**零新增依赖、零门禁配置改动、未合并 main** |
+| 状态 | 🔴 **4 视角评审循环 1（2026-09-27 21:1x）未通过：①规格与设计符合性 / ④测试质量 FAIL，②安全与供应链 / ③一致性与重复 PASS，无 P0/S0** → **待打回修复批 R1~R6（P1×2 + P2×4）+ 重审 ①④（循环 2/3）+ 三剧本界面入口核对修订（W12）+ 交付态门禁**（编码本身已完成：前后端实现全绿，2026-09-27 21:0x）——设计契约 2026-09-27 20:2x 生效；**段 2 = 后端 Q6-A 留痕端点**（T1~T4 先红后绿 + 模块 141 用例全绿 + checkstyle 0）、**段 3 = 前端实现 GREEN**（四视图 + API/常量/store + 路由菜单 8→10 + 顶栏控件；**22 文件 / 188 用例全绿** + `typecheck` 0 错 + `lint` 0 违规）；**零新增依赖、零门禁配置改动、未合并 main** |
 | 冷启动锚点 | 台账「下一包」行（3.2.6）+ 日志 `docs/logs/Ctds-项目开发日志-26-09-27-2008.md`（续点四要素）；WBS 行 256；规格行为 1~7；三剧本；3.2.3/3.2.4/3.2.5 三份 hifi §1 |
 | 立卡会话 | 2026-09-27（日志 `docs/logs/Ctds-项目开发日志-26-09-27-2017.md`）——本卡 + lofi + hifi + 原型 HTML 四文档落盘；分支 `feat/WBS-3.2.6-空间管理界面`（自 `main` `56e02fd`） |
 | 设计确认会话 | **2026-09-27 20:2x（同窗口续段，日志 `docs/logs/Ctds-项目开发日志-26-09-27-2021.md`）**——编排师会话回复"**都按建议**"→ Q1~Q8 均采建议口径 + **D1 体量不拆分**；三处留痕签署（本卡 §一 表头"设计文件"行与 §二 确认留痕块、§四 状态行与本行；lofi/hifi「确认记录」）；**零代码变更** |
@@ -106,7 +106,7 @@
 
 | B1 项 | 内容 |
 | --- | --- |
-| ① 两级设计门禁 | 待（lofi/hifi 确认记录签署后本行回填） |
+| ① 两级设计门禁 | ✅ 已回填——lofi（Q1~Q8 + D1）与 hifi 两处「确认记录」已于 2026-09-27 20:2x 签署（`docs/designs/WBS-3.2.6-{lofi,hifi}.md`，hifi §1~§11 = 编码契约生效）；实现与设计逐条对照结论 = 见 §七 循环 1 评审（存在 R1~R6 未落地/偏离项）→ **本包当前未过设计符合性门禁**，修复批后随重审关闭 |
 | ② 映射表 | ✅ 已回填（§三 两张表：规格验收标准 → 承载测试锚点 → 剧本步骤；测试落点逐锚点文件与用例数，T1~T30 全绿） |
 | ③ 复用声明（含检索过程） | ✅ 后端段 2：先查 `common/` → 命中 `common-pagination`（`PageQuery`/`PageResult`）、`common-auth`（`X-Ctds-Subject`/`X-Ctds-Roles`/`AuthContextFilter`）、`common-errorcode`（九位码）→ 全复用，**零新增依赖、零新增错误码/枚举/表/迁移**；前端段 3：先查既有前端资产 → 复用 `api/client.ts` 的 `apiJson`/`ApiError`/`getDemoSubject`/`setDemoSubject`、`api/types.ts` 的 `PageData<T>`、`ElMessage`/`ElMessageBox`/`el-table`/`el-pagination`/`el-dialog`/`el-tabs`、`stores/demoRole.ts` 的权限点判断、`views/review/DetailView.vue` 的二次确认范式 → **`package.json` 零改动（零新增依赖）**；规格外实现声明 = **空**（E3 仅为落点澄清，非新需求） |
 | ④ 本地检查命令与结果 | ✅ 前端：`npm test` = **22 文件 / 188 用例全绿**（Failures 0，23.31s）；`npm run typecheck`（`vue-tsc -b`）= **0 错**；`npm run lint` = **0 违规**。后端（段 2，本段零后端改动）：`mvn -B -ntp test`（`services/space-service`）= **141 用例全绿**；`mvn -B -ntp -pl services/space-service checkstyle:check`（**仓库根**）= **0 违规**。门禁配置零改动 |
@@ -128,9 +128,57 @@
 
 ---
 
-## 七、4 视角评审记录（循环 x/3 · 待评审会话回填）
+## 七、4 视角评审记录（循环 1/3 · 2026-09-27 21:1x · 收口段会话）
 
-**（待评审会话按 `docs/manuals/ai-review/cards/01~04` 逐条核对后回填：结论总览 / 必修项 / 建议项 / 已核关键证据）**
+**评审输入包**：分支 `feat/WBS-3.2.6-空间管理界面`（HEAD `0c9c971` = 编码段 3 提交；工作树另有 `frontend/vite.config.ts` +9 行未提交 = 段 3 漏提交的开发期转发）；变更面 `git diff --name-status main...HEAD` = **37 文件 +5438 / −16**（前端新增 13 / 改 6；后端新增 2 / 改 4；文档新增 8 / 改 1；基线 `main` `56e02fd`）；规格 `docs/specs/C-2.1-2.3-逻辑空间管理.md`（V1.0，行为 1~7）；已确认设计 `docs/designs/WBS-3.2.6-{lofi,hifi}.md`（hifi §1~§12）；`ADR-005` / `ADR-007` / `ADR-016 §2.7` / `ADR-001`；三份验收剧本。
+
+**评审方式**：按 `docs/manuals/ai-review/cards/01~04` 逐条清单核对；证据采集由 **4 个只读子智能体**（①规格与设计符合性 / ②安全与供应链 / ③一致性与重复 / ④测试质量）分别采回**带行号证据**；主评审人对**敏感面、端点面、死代码、测试承载**做源码级复验（5 组实测：`spaceActionBlockTip` 全仓引用检索、`DetailView.vue:486-488` ↔ `ListView.vue:180-186` 标签口径对照、`DetailView.vue:564-583` 本人禁用缺失、`ListView.spec.ts` 分页用例检索、401 引导路径检索）。
+
+### 7.1 结论总览
+
+| 视角（卡片） | verdict | 必修 | 建议/跟踪 |
+| --- | --- | --- | --- |
+| ① 规格与设计符合性（`cards/01`） | **FAIL** | **R1、R2（P1）+ R3、R4、R5（P2）** | — |
+| ② 安全与供应链（`cards/02`） | **PASS** | 无 | （P2×2 均判定设计允许面，见 7.5） |
+| ③ 一致性与重复（`cards/03`） | **PASS** | 无 | S1、S2 |
+| ④ 测试质量（`cards/04`） | **FAIL** | **R6（P2）** | S3、S4、S5 |
+
+**总判定**：**循环 1/3 未通过**（①④ FAIL；②③ PASS；**无 P0 / S0**）→ 打回修复 **R1~R6** 后**重审视角 ①④**（循环 2/3）；②③ 的 PASS 结论保持。修复若触及前端源集与 spec，修复会话须按视角 ③（文案与标签收口）、视角 ④（断言有效性）复核受影响文件。
+
+### 7.2 必修项（R1~R6）
+
+| 编号 | 级别 | 问题（业务可读） | 证据 | 修复要求（可直接开工） |
+| --- | --- | --- | --- | --- |
+| **R1** | P1 | **"空间还没启用 / 已冻结 / 已解散"时，邀请与申请按钮没有任何提示，点下去只能吃一次后端报错；而且已经写好的提示函数一次也没被用到（死代码）** | 死代码：`frontend/src/constants/space.ts:224`（`spaceActionBlockTip` 全仓检索仅定义处，零引用）；按钮面：`frontend/src/views/space/DetailView.vue:544-546`（邀请 / 申请仅按 `accessMode` 显隐，无状态判定与提示） | 邀请（端点 9）/申请（端点 10）按钮在 `CREATED` / `FROZEN` / `DISSOLVED` 下给出 `spaceActionBlockTip(status)` 体验层提示（沿同文件 `policyBlockTip` :106 既有范式；**服务端判定仍为准**）；spec 增状态维度用例（T15/T16 扩一档）；依据 hifi **§8.6** + §6.3 头部 + AGENTS.md §4（禁止死代码） |
+| **R2** | P1 | **成员表里"自己那一行"仍能点"授予管理员 / 收回管理员"**（契约要求体验层禁用；服务端会拒，但界面应先挡住） | `frontend/src/views/space/DetailView.vue:564-573`（`v-if` 只看角色，无 `scope.row.subjectNo !== getDemoSubject()`；同文件 `:104` 的 `isOwner` 已有主体比对范式） | 本人行隐藏/禁用"授予管理员""收回管理员"两按钮 + spec **双向用例**（本人行无按钮 / 他人行有按钮）；依据 hifi **§6.7 I** + 规格行为 4 验收标准 4（不得自我提权） |
+| **R3** | P2 | **"没身份"时界面只弹一句错，没有按契约引导回登录页** | `frontend/src/views/space/DetailView.vue:131`、`frontend/src/views/space/ListView.vue:54`（仅 `ElMessage.error`，无跳转） | **二选一并留痕，不得静默偏离**：① 实现 `1000C0002`（认证失败或身份已失效）→ 提示 + 跳 `/login`；② 登记 hifi §12 勘误（演示期未登录态由登录守卫前置承担，见 `frontend/src/router/index.ts:158`，业务页不重复引导，仅在演示身份前置拦截处给提示）。依据 hifi **§8.9** |
+| **R4** | P2 | **同一个空间，列表页显示中文（如"邀请制"），详情页却显示英文枚举码（如 `INVITE`）**，同一份信息两种口径 | `frontend/src/views/space/DetailView.vue:486-488`（`sceneType` / `accessMode` / `visibility` 原样渲染）↔ `frontend/src/views/space/ListView.vue:180-186`（标签映射） | 概览三要素改用 `frontend/src/constants/space.ts` **既有**标签（常量已存在，**非新增需求**）；可一并收口标签回退助手（见 S1）；依据 hifi **§6.6.1** + §6.3 A |
+| **R5** | P2 | **顶栏"演示身份"输入框的提示文字与界面说明书不一致** | `frontend/src/layouts/MainLayout.vue:134`（`placeholder="演示主体编号"`）vs hifi **§6.1**（要求"如 S20260925000001"） | 文案对齐说明书（或登记勘误并说明理由） |
+| **R6** | P2 | **契约写明要验的"分页"与"空态"没有测试承载**：翻页没有用例，成员 / 准入 / 策略 / 留痕四处空态也没有用例 | `frontend/src/views/space/ListView.spec.ts`（检索 `pagination` / `current-change` / `pageNum` 仅命中 mock 工厂 `:38`）；空态断言现仅 3 处（`ListView.spec.ts:90`、`MyAdmissionsView.spec.ts:77`、`PlatformPolicyView.spec.ts:78`） | 补四个列表页面"翻页传参 + 分页刷新"与"越界 `1000C0001` **原样展示**"用例；补成员 / 准入 / 策略 / 留痕四处空态文案断言；依据 hifi **§7 T5**（"列表渲染 + 分页 + 空态文案"）、**§8.3**、§8.7 |
+
+### 7.3 建议项（S1~S5，不阻塞本轮）
+
+| 编号 | 内容 | 证据 | 建议 |
+| --- | --- | --- | --- |
+| S1 | 标签回退写法内联重复（`LABELS[v] ?? v`），与既有 `labelOf` 范式不统一 | `frontend/src/views/space/ListView.vue:130-148`、`DetailView.vue:552/557/608/…`、`MyAdmissionsView.vue:93-98` vs `frontend/src/constants/did.ts:72` | 在 `constants/space.ts` 收口 `labelOf(map, value)` 并四视图统一引用（与 R4 同源，宜同批） |
+| S2 | 分页参数构造两处实现且返回类型不一致 | `frontend/src/api/space.ts:166`（返回 string）vs `frontend/src/api/did.ts:126`（返回 `URLSearchParams`） | 统一为一处口径（如落 `api/client.ts`），降低漂移 |
+| S3 | 弱断言（`toBeGreaterThan(0)`），同文件其余条款均有"样本必命中"反向探针 | `frontend/src/views/space/SpaceSourceGuard.spec.ts:128` vs 同文件 `:95/:114/:130` | 补"样本必命中断言"，证明该守卫口径非空转 |
+| S4 | 重复提交 / 幂等无前端用例（hifi §7/§8 未明列；幂等由后端 ADR-007 承载） | `MyAdmissionsView.spec.ts:83-101`（接受 / 谢绝无二次点击去重断言）、`DetailView.spec.ts`（覆盖提交无重复点击断言） | 建议补"进行中禁用 / 仅一次请求"用例（可与 R6 同批） |
+| S5 | 测试命名与容器豁免口径两处：成员区 spec 实挂 `DetailView.vue`（全仓无 `MembersSection.vue`）；后端集成测试声明 `disabledWithoutDocker = true`，无 Docker 时整类静默跳过 | `frontend/src/views/space/MembersSection.spec.ts:5`；`services/space-service/src/test/java/com/ctds/space/SpaceActionLogIntegrationTest.java:45` | 前者更名或加注"DetailView 成员区"；后者沿 3.2.3~3.2.5 先例在卡内留痕"CI 声明 Docker 必需"的豁免口径 |
+
+### 7.4 已核关键证据（PASS 依据）
+
+- **① 一致面（除 R1~R5 外）**：hifi §1 的 **25 端点逐条命中**（路径 / 方法 / 请求体抽样一致；新增端点 25 后端路径与 §5 一致）；§3 的 4 路由、菜单计数 **8→10**、权限点 `space.member` / `platform.policy`、"我的邀请"声明序在 `:id` 之前；E1~E3 三处勘误与实现一致；
+- **② 安全与供应链（P0×0 / P1×0）**：密钥 / 口令 / 个人信息零命中（仅环境变量名引用，红线 7 口径正确）；变更面零密码学代码；`frontend/package.json` / `package-lock.json` / `pom.xml` / `docs/dependencies.md` 零改动（零新增依赖，无幻觉包名）；查询参数一律经 `URLSearchParams` 编码（无注入 / 路径穿越）；`views/space` 零 `fetch(` 直连、零外发与遥测；**普通档请求头不含 `platform.operator`**（`stores/demoIdentity.ts:33-35` + 反向断言 `api/space.spec.ts:85-88`），localStorage 只存档位与主体编号、不存角色头；`platform.operator` 字面量仅现于 `api/space.ts` 与 `stores/demoIdentity.ts`（守卫含反向探针）；
+- **③ 一致性与重复（P1×0）**：后端复用 `common-pagination`（`PageQuery` / `PageResult`）与既有 `SpaceAccessGuard` 判定；`SpaceActionLogController` 只依赖 `SpaceQueryService`（**Controller 不直连数据层**）；`SpaceErrorCodes` 新增 3 行经复验为**留痕理由常量**（非错误码，与既有 `MEMBER_LIST_DENIED_LOG_REASON` 同形）→ **不违反"零新增错误码"声明**；前端复用 `apiJson` / `ApiError` / `getDemoSubject` / `PageData<T>` 与既有二次确认范式；`demoRole.ts` 新增 6 行为**文案收口常量**（UI 文案零变化）；`vite.config.ts` 两条转发与既有 8082 写法一致；
+- **④ 测试质量（除 R6 外）**：T1~T30 均有真实承载，**11 个文件的实测用例数与 §三 落点表逐一对账一致**（7/6/8/12/12/5/7/7/11/24 + 后端 6）；四处关键双向 / 反向用例齐备——① 普通档不含平台角色（含"不得残留 reviewer"反向）、② 放宽被拒**不乐观更新**（表格原值 + 未再次拉取）、③ 解散二次确认取消 = **零请求**、④ 非成员同形三路同一条文案（`1006C0004` / `1006C0007` / 公开摘要）；六处"必填前置零请求"断言有效；后端 T1~T4 断言实质（拒绝留痕恰 1 行、字段白名单 `Set.isEqualTo`、`from→to` 三类内容）；测试卫生零命中（无 `console.` / `debugger` / `.only` / 未登记 TODO / 真实个人信息 / 时间竞态）。
+
+### 7.5 已登记偏离与裁决（判定可接受，不改码）
+
+- hifi §12 **E1 / E2 / E3** 三处勘误与实现一致 → **可接受**（澄清，非改需求）；
+- **§6.6.4 与 §6.7 D 的口径张力**（"移除成员"是否还需 `ElMessageBox.confirm`）：弹窗 D 已含"理由必填 + 取消零请求"，满足二次确认语义 → **可接受**，建议随修复批登记 §12 **E4** 澄清口径；
+- 视角 ② 报出的两条 P2（`platform.operator` 亦出现于 3 个 spec 文件；顶栏可切换运营档）→ 属**设计允许面**（spec 不在源集守卫扫描面；演示档位为 ADR-016 §2.7 演示口径，安全边界 = 回环监听 + 待交付网关/令牌）→ **记档不阻塞**；
+- 视角 ① 报出的"移除成员未走 `ElMessageBox.confirm`"与上述口径张力同源，按**可接受**处理；§6.1 占位提示与 §8.9 引导登录两项不登记勘误，按 R5 / R3 修复或补登记（由修复会话二选一并留痕）。
 
 ---
 

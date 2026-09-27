@@ -17,6 +17,15 @@ export default defineConfig({
         target: 'http://localhost:8082',
         changeOrigin: true,
       },
+      // WBS-3.2.6 空间域（8083）：界面走查经 5173 访问空间服务（开发期转发，不改服务契约与门禁配置）。
+      '/api/v1/data-spaces': {
+        target: 'http://localhost:8083',
+        changeOrigin: true,
+      },
+      '/api/v1/platform-policies': {
+        target: 'http://localhost:8083',
+        changeOrigin: true,
+      },
       '/api': {
         target: 'http://localhost:8080',
         changeOrigin: true,
