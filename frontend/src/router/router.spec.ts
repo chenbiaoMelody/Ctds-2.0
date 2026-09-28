@@ -8,6 +8,11 @@ import { isDemoAuthed, signInDemo, signOutDemo } from '../stores/demoAuth'
 // 顶层静态导入先于一切用例与超时窗口完成转换（先例：views/review/QueueView.spec.ts 的静态导入），
 // 彻底把该环境成本移出被测导航；vitest 配置受限重试方案未采用（无必要，留痕）
 import '../views/review/QueueView.vue'
+// WBS-3.2.6：空间域四视图同为懒加载路由，顶层静态预热以移出并发负载下的首次转换成本
+import '../views/space/ListView.vue'
+import '../views/space/DetailView.vue'
+import '../views/space/MyAdmissionsView.vue'
+import '../views/space/PlatformPolicyView.vue'
 
 /**
  * WBS-2.4.9 H3/H4 测试：
@@ -35,14 +40,14 @@ describe('路由表结构（H3）', () => {
     }
   })
 
-  it('权限路由声明权限点，其余菜单路由未声明（WBS-3.1.5 扩 admin-only/review-queue；WBS-3.1.11 扩 did-management）', () => {
+  it('权限路由声明权限点，其余菜单路由未声明（WBS-3.1.5 扩 admin-only/review-queue；WBS-3.1.11 扩 did-management；WBS-3.2.6 扩 space-list/platform-policy）', () => {
     const adminRoute = children.find((r) => r.name === 'admin-only')
     expect(adminRoute?.meta?.permission).toBe('demo:admin')
     const reviewRoute = children.find((r) => r.name === 'review-queue')
     expect(reviewRoute?.meta?.permission).toBe('subject.review')
     const didRoute = children.find((r) => r.name === 'did-management')
     expect(didRoute?.meta?.permission).toBe('did.admin')
-    const permissionRouteNames = ['admin-only', 'review-queue', 'did-management']
+    const permissionRouteNames = ['admin-only', 'review-queue', 'did-management', 'space-list', 'platform-policy']
     const normalRoutes = children.filter(
       (r) => r.meta?.menu === true && !permissionRouteNames.includes(String(r.name)),
     )
@@ -51,10 +56,10 @@ describe('路由表结构（H3）', () => {
     }
   })
 
-  it('DID 管理路由（WBS-3.1.11）：menuOrder=8 追加菜单末尾、icon=Key、did.admin 权限；演示页不占菜单', () => {
-    // 菜单末尾追加（lofi Q1/Q8：不重排既有菜单），menuOrder 全站最大值 7→8
+  it('DID 管理路由（WBS-3.1.11）：menuOrder=8、icon=Key、did.admin 权限；演示页不占菜单', () => {
+    // 菜单末尾追加（lofi Q1/Q8：不重排既有菜单）；WBS-3.2.6 追加 menuOrder 9/10 后全站最大值为 10
     const menuOrders = children.filter((r) => r.meta?.menu === true).map((r) => r.meta?.menuOrder ?? 0)
-    expect(Math.max(...menuOrders)).toBe(8)
+    expect(Math.max(...menuOrders)).toBe(10)
     const didRoute = children.find((r) => r.name === 'did-management')
     expect(didRoute?.path).toBe('did')
     expect(didRoute?.meta?.title).toBe('DID 管理')
@@ -84,10 +89,44 @@ describe('路由表结构（H3）', () => {
     expect(progressRoute?.meta?.menuOrder).toBe(7)
     expect(progressRoute?.meta?.icon).toBe('Search')
     expect(progressRoute?.meta?.permission).toBeUndefined()
-    // menuOrder=7 为入驻进度查询占位；WBS-3.1.11 新增 DID 管理（menuOrder=8）后全站最大值为 8
+    // menuOrder=7 为入驻进度查询占位；WBS-3.1.11（8）与 WBS-3.2.6（9/10）追加后全站最大值为 10
     const menuOrders = children.filter((r) => r.meta?.menu === true).map((r) => r.meta?.menuOrder ?? 0)
     expect(menuOrders).toContain(7)
-    expect(Math.max(...menuOrders)).toBe(8)
+    expect(Math.max(...menuOrders)).toBe(10)
+  })
+
+  it('空间管理界面路由（WBS-3.2.6 §3）：菜单 9/10、权限点 space.member / platform.policy，"我的邀请"不占菜单且在 :id 之前', () => {
+    const listRoute = children.find((r) => r.name === 'space-list')
+    expect(listRoute?.path).toBe('spaces')
+    expect(listRoute?.meta?.title).toBe('逻辑空间')
+    expect(listRoute?.meta?.menu).toBe(true)
+    expect(listRoute?.meta?.menuOrder).toBe(9)
+    expect(listRoute?.meta?.icon).toBe('Grid')
+    expect(listRoute?.meta?.permission).toBe('space.member')
+
+    const admissionsRoute = children.find((r) => r.name === 'space-my-admissions')
+    expect(admissionsRoute?.path).toBe('spaces/my-admissions')
+    expect(admissionsRoute?.meta?.title).toBe('我的邀请与申请')
+    expect(admissionsRoute?.meta?.menu).toBeUndefined()
+    expect(admissionsRoute?.meta?.permission).toBe('space.member')
+
+    const detailRoute = children.find((r) => r.name === 'space-detail')
+    expect(detailRoute?.path).toBe('spaces/:id')
+    expect(detailRoute?.meta?.title).toBe('空间详情')
+    expect(detailRoute?.meta?.menu).toBeUndefined()
+    expect(detailRoute?.meta?.permission).toBe('space.member')
+
+    const policyRoute = children.find((r) => r.name === 'platform-policy')
+    expect(policyRoute?.path).toBe('platform-policies')
+    expect(policyRoute?.meta?.title).toBe('平台策略治理')
+    expect(policyRoute?.meta?.menu).toBe(true)
+    expect(policyRoute?.meta?.menuOrder).toBe(10)
+    expect(policyRoute?.meta?.icon).toBe('Setting')
+    expect(policyRoute?.meta?.permission).toBe('platform.policy')
+
+    // 声明顺序：spaces/my-admissions 必须在 spaces/:id 之前（否则被动态段吞掉）
+    const paths = children.map((r) => r.path)
+    expect(paths.indexOf('spaces/my-admissions')).toBeLessThan(paths.indexOf('spaces/:id'))
   })
 
   it('登录页为顶层路由（WBS-2.4.12 B4）：不套布局、无菜单标记', () => {
@@ -163,6 +202,25 @@ describe('守卫 beforeEach 实际行为（H4）', () => {
     expect(router.currentRoute.value.name).toBe('dashboard')
     expect(router.currentRoute.value.query.denied).toBe('1')
   })
+
+  it('普通用户直连空间域四条路由：守卫逐条拦截重定向工作台带 denied（WBS-3.2.6 T28）', async () => {
+    const { default: router } = await import('../router/index')
+    setDemoRole('user')
+    for (const path of ['/spaces', '/spaces/1', '/spaces/my-admissions', '/platform-policies']) {
+      await router.push(path)
+      expect(router.currentRoute.value.name).toBe('dashboard')
+      expect(router.currentRoute.value.query.denied).toBe('1')
+    }
+  })
+
+  it('admin 角色直连空间域路由：放行（T28 正向对照）', async () => {
+    const { default: router } = await import('../router/index')
+    setDemoRole('admin')
+    await router.push('/spaces')
+    expect(router.currentRoute.value.name).toBe('space-list')
+    await router.push('/platform-policies')
+    expect(router.currentRoute.value.name).toBe('platform-policy')
+  }, 30000)
 
   // 显式放宽超时：懒加载 QueueView 模块首次经 vite-node 转换（并行负载下可达数秒），非被测行为慢
   it('admin（兼审核员）直连 /review 放行（F4 正向对照）', async () => {

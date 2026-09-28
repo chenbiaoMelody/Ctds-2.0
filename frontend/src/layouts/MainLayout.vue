@@ -1,10 +1,14 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 import { routes } from '../router'
-import { getDemoRole, setDemoRole, hasPermission, type DemoRole } from '../stores/demoRole'
+import { DEMO_ROLE_LABELS, getDemoRole, setDemoRole, hasPermission, type DemoRole } from '../stores/demoRole'
 import { signOutDemo } from '../stores/demoAuth'
+import { getDemoSubject, setDemoSubject } from '../api/client'
+import { ACTOR_MODE_LABELS, getActorMode, setActorMode, type ActorMode } from '../stores/demoIdentity'
+import { DEMO_SUBJECT_REQUIRED_TIP } from '../constants/space'
 
 /**
  * WBS-2.4.9 H2 三区布局骨架：左侧菜单栏（可折叠）+ 顶部栏 + 主内容区。
@@ -62,6 +66,22 @@ function onSignOut() {
   signOutDemo()
   router.push({ name: 'login' })
 }
+
+// WBS-3.2.6 §6.1：顶栏"演示身份"控件（主体编号 + 档位）；空间域请求按档位携带页面级角色头。
+const subjectNo = ref(getDemoSubject())
+const actorMode = ref<ActorMode>(getActorMode())
+
+function onSaveIdentity() {
+  const subject = subjectNo.value.trim()
+  if (!subject) {
+    // 主体编号为空 → 前置拦截（零请求）：后端会按未认证口径整头作废（§4 边界）
+    ElMessage.error(DEMO_SUBJECT_REQUIRED_TIP)
+    return
+  }
+  setDemoSubject(subject)
+  setActorMode(actorMode.value)
+  ElMessage.success(`已切换演示身份（主体：${subject}，档位：${ACTOR_MODE_LABELS[actorMode.value]}）`)
+}
 </script>
 
 <template>
@@ -104,9 +124,26 @@ function onSignOut() {
             aria-label="演示角色"
             @update:model-value="onRoleChange($event as DemoRole)"
           >
-            <el-option label="普通用户" value="user" />
-            <el-option label="管理员" value="admin" />
+            <el-option :label="DEMO_ROLE_LABELS.user" value="user" />
+            <el-option :label="DEMO_ROLE_LABELS.admin" value="admin" />
           </el-select>
+          <el-input
+            v-model="subjectNo"
+            size="small"
+            class="identity-subject"
+            placeholder="如 S20260925000001"
+            aria-label="演示身份主体编号"
+          />
+          <el-select
+            v-model="actorMode"
+            size="small"
+            class="identity-mode"
+            aria-label="演示身份档位"
+          >
+            <el-option :label="ACTOR_MODE_LABELS.subject" value="subject" />
+            <el-option :label="ACTOR_MODE_LABELS.operator" value="operator" />
+          </el-select>
+          <el-button size="small" class="identity-save" @click="onSaveIdentity">保存</el-button>
           <el-button size="small" text class="signout-btn" @click="onSignOut">退出</el-button>
         </div>
       </el-header>
@@ -212,6 +249,14 @@ function onSignOut() {
 
 .role-select {
   width: 110px;
+}
+
+.identity-subject {
+  width: 180px;
+}
+
+.identity-mode {
+  width: 120px;
 }
 
 .content {

@@ -8,6 +8,12 @@ export type DemoRole = 'user' | 'admin'
 const STORAGE_KEY = 'ctds-demo-role'
 const DEFAULT_ROLE: DemoRole = 'user'
 
+/** 演示角色 → 顶栏下拉中文标签（WBS-3.2.6 源集守卫 T29：页面源码不散写角色中文字面量）。 */
+export const DEMO_ROLE_LABELS: Record<DemoRole, string> = {
+  user: '普通用户',
+  admin: '管理员',
+}
+
 export function getDemoRole(): DemoRole {
   const stored = localStorage.getItem(STORAGE_KEY)
   return stored === 'admin' ? 'admin' : DEFAULT_ROLE

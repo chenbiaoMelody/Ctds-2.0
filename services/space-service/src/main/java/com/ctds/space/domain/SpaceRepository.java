@@ -41,6 +41,12 @@ public interface SpaceRepository {
     /** 空间活跃成员（status=ACTIVE；读面成员构成与权限判定共用）。 */
     List<SpaceMember> findActiveMembers(long spaceId);
 
+    /**
+     * 空间操作留痕分页（WBS-3.2.6 端点 25 读面；只读既有 space_action_log，按
+     * created_at DESC + id DESC 稳定排序，范围限本空间——参数化查询、字段白名单）。
+     */
+    PageResult<SpaceActionLog> searchActionLogs(long spaceId, PageQuery page);
+
     // ==== 命令（实现须 @Transactional）====
 
     /**
