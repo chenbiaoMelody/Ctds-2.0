@@ -96,10 +96,10 @@ public class SpaceCommandService {
                 request.effectiveFrom(), request.effectiveTo());
         final Space created = creationService.create(command);
         // DB-28（WBS-3.2.6 走查 C-2.1 S3-6）：幂等命中（ADR-007 模式 B 返回首次结果）不经过
-        // SpaceCreationService 方法体的名称锁判定，而命中结果是创建时快照（status 恒为 CREATED），
-        // 首次空间其后是否已解散只能以名称锁表为准（解散与锁定同事务写入，行为 2 规则 4）——
-        // 名称已锁定即按名称锁口径拒绝，避免以 code=0 返回已解散空间（界面"创建成功却查不到"误导）。
-        if (repository.existsInNameLock(normalizedName)) {
+        // SpaceCreationService 方法体的名称锁判定，且命中返回值是创建时快照（status 恒为 CREATED）
+        // ——命中空间其后是否已解散须按 id 重读当前行判定；已解散即按名称锁口径拒绝（行为 2 规则 4，
+        // 解散与锁定同事务写入），不以 code=0 返回已解散空间（界面"创建成功却查不到"误导）。
+        if (load(created.id()).status() == SpaceStatus.DISSOLVED) {
             throw new SpaceBizException(SpaceErrorCodes.SPACE_NAME_TAKEN,
                     SpaceErrorCodes.SPACE_NAME_LOCKED_MESSAGE);
         }

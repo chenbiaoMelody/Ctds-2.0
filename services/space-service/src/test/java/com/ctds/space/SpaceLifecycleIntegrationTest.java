@@ -519,7 +519,7 @@ class SpaceLifecycleIntegrationTest {
         assertThat(listNames("reader-t18", "user", "对账50")).hasSize(2);
     }
 
-    // ==== T19 DB-28 幂等命中补判名称锁（解散后同名重放被拒；WBS-3.2.3 遗留缺陷修复）====
+    // ==== T20 DB-28 幂等命中补判（解散后同名重放被拒；WBS-3.2.3 遗留缺陷修复）====
 
     @Test
     void dissolvedNameIdempotentReplayRejectedByLockedName() throws Exception {
@@ -545,7 +545,7 @@ class SpaceLifecycleIntegrationTest {
                 String.class, "重放锁定空间")).isEqualTo(String.valueOf(id));
     }
 
-    // ==== T20 幂等重放保持首次结果（未解散、名称未锁定；S1-7 语义回归锚）====
+    // ==== T21 幂等重放保持首次结果（未解散、名称未锁定；S1-7 语义回归锚）====
 
     @Test
     void idempotentReplayKeepsFirstResultWhileNameUnlocked() throws Exception {
@@ -559,7 +559,28 @@ class SpaceLifecycleIntegrationTest {
                 + "AND action = 'CREATE' AND result = 'SUCCESS'", Integer.class, id)).isEqualTo(1);
     }
 
-    // ==== T21 同键并发创建不劣化（"处理中"语义与单空间口径；沿 ADR-007 既有口径）====
+    // ==== T22 跨主体同名锁定不剥夺本方活跃空间重放（复核口径边界；评审修复批 R1 补测）====
+
+    @Test
+    void crossOwnerNameLockKeepsOwnLiveSpaceReplay() throws Exception {
+        // 跨主体同名活跃空间合法（T3 口径）：A 先建、B 再建同名，随后 A 解散（名称锁定指向 A 的空间）
+        final long spaceA = createSpace("owner-t22a", "跨主体锁定重放空间");
+        final long spaceB = createSpace("owner-t22b", "跨主体锁定重放空间");
+        assertThat(spaceA).isNotEqualTo(spaceB);
+        dissolve("owner-t22a", spaceA, "锁定名（他人同名空间仍活跃）", "DISSOLVED");
+        // B 重放自己的创建（幂等键命中、B 的空间仍活跃 CREATED）→ 仍返回首次结果（不因"名被他人锁"误拒）
+        replayExpectFirstResult("owner-t22b", "跨主体锁定重放空间", spaceB, "CREATED");
+        // A 重放自己的创建 → 命中空间已解散（终态）→ 按名称锁口径拒绝（同名同类请求两条重放路径的分界锚）
+        mockMvc.perform(auth(post(BASE), "owner-t22a", "user")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"跨主体锁定重放空间\",\"sceneType\":\"OTHER\","
+                                + "\"accessMode\":\"OPEN\",\"visibility\":\"PUBLIC\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("1006C0003"))
+                .andExpect(jsonPath("$.message").value("空间名称已被锁定，不可复用"));
+    }
+
+    // ==== T23 同键并发创建不劣化（"处理中"语义与单空间口径；沿 ADR-007 既有口径）====
 
     @Test
     void concurrentSameKeyCreationKeepsInProgressSemanticsAndSingleSpace() throws Exception {
