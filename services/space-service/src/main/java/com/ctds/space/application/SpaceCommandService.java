@@ -55,7 +55,7 @@ public class SpaceCommandService {
 
     /**
      * 创建入口：要素校验（1006C0005 逐字段）+ 归一化（移交①）后交幂等创建服务；
-     * 未认证 401（平台鉴权口径）。
+     * 未认证 401（平台鉴权口径）；返回后复核名称锁（DB-28：幂等命中不经过方法体判定）。
      */
     public Space create(final CreateSpaceCommand request) {
         final String subject = guard.requireSubject();
@@ -94,7 +94,16 @@ public class SpaceCommandService {
         final CreateSpaceCommand command = new CreateSpaceCommand(subject, request.name(), normalizedName,
                 request.sceneType(), request.accessMode(), request.visibility(), request.intro(),
                 request.effectiveFrom(), request.effectiveTo());
-        return creationService.create(command);
+        final Space created = creationService.create(command);
+        // DB-28（WBS-3.2.6 走查 C-2.1 S3-6）：幂等命中（ADR-007 模式 B 返回首次结果）不经过
+        // SpaceCreationService 方法体的名称锁判定，而命中结果是创建时快照（status 恒为 CREATED），
+        // 首次空间其后是否已解散只能以名称锁表为准（解散与锁定同事务写入，行为 2 规则 4）——
+        // 名称已锁定即按名称锁口径拒绝，避免以 code=0 返回已解散空间（界面"创建成功却查不到"误导）。
+        if (repository.existsInNameLock(normalizedName)) {
+            throw new SpaceBizException(SpaceErrorCodes.SPACE_NAME_TAKEN,
+                    SpaceErrorCodes.SPACE_NAME_LOCKED_MESSAGE);
+        }
+        return created;
     }
 
     // ==== 生命周期（行为 2）====

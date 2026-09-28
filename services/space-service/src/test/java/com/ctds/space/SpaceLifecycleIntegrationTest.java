@@ -19,6 +19,12 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 import org.junit.jupiter.api.AfterAll;
@@ -513,6 +519,103 @@ class SpaceLifecycleIntegrationTest {
         assertThat(listNames("reader-t18", "user", "对账50")).hasSize(2);
     }
 
+    // ==== T19 DB-28 幂等命中补判名称锁（解散后同名重放被拒；WBS-3.2.3 遗留缺陷修复）====
+
+    @Test
+    void dissolvedNameIdempotentReplayRejectedByLockedName() throws Exception {
+        final long id = createSpace("owner-t19", "重放锁定空间");
+        dissolve("owner-t19", id, "重放前置解散", "DISSOLVED");
+        final Integer rowsBefore = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM space WHERE owner_subject_no = 'owner-t19'", Integer.class);
+        // 同一幂等键（所有者 + 归一化名）重放：首次创建的空间已解散（名称已锁定）→ 按名称锁口径拒绝
+        mockMvc.perform(auth(post(BASE), "owner-t19", "user")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"重放锁定空间\",\"sceneType\":\"OTHER\",\"accessMode\":\"OPEN\","
+                                + "\"visibility\":\"PUBLIC\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("1006C0003"))
+                .andExpect(jsonPath("$.message").value("空间名称已被锁定，不可复用"));
+        // 空间数不变 / 无新 CREATE 留痕 / 锁定目标仍为首次空间（幂等窗口内不得以 code=0 返回历史空间）
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM space WHERE owner_subject_no = 'owner-t19'",
+                Integer.class)).isEqualTo(rowsBefore);
+        assertThat(statusOf(id)).isEqualTo("DISSOLVED");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM space_action_log WHERE space_id = ? "
+                + "AND action = 'CREATE' AND result = 'SUCCESS'", Integer.class, id)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT space_id FROM space_name_lock WHERE normalized_name = ?",
+                String.class, "重放锁定空间")).isEqualTo(String.valueOf(id));
+    }
+
+    // ==== T20 幂等重放保持首次结果（未解散、名称未锁定；S1-7 语义回归锚）====
+
+    @Test
+    void idempotentReplayKeepsFirstResultWhileNameUnlocked() throws Exception {
+        final long id = createSpace("owner-t20", "重放保持空间");
+        lifecycle("owner-t20", id, "enablement", "ACTIVE");
+        replayExpectFirstResult("owner-t20", "重放保持空间", id, "ACTIVE");
+        replayExpectFirstResult("owner-t20", "重放保持空间", id, "ACTIVE");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM space WHERE owner_subject_no = 'owner-t20'",
+                Integer.class)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM space_action_log WHERE space_id = ? "
+                + "AND action = 'CREATE' AND result = 'SUCCESS'", Integer.class, id)).isEqualTo(1);
+    }
+
+    // ==== T21 同键并发创建不劣化（"处理中"语义与单空间口径；沿 ADR-007 既有口径）====
+
+    @Test
+    void concurrentSameKeyCreationKeepsInProgressSemanticsAndSingleSpace() throws Exception {
+        final int threads = 4;
+        final CountDownLatch ready = new CountDownLatch(threads);
+        final CountDownLatch go = new CountDownLatch(1);
+        final List<MvcResult> responses = new CopyOnWriteArrayList<>();
+        final ExecutorService pool = Executors.newFixedThreadPool(threads);
+        final List<Future<?>> futures = new ArrayList<>();
+        try {
+            for (int i = 0; i < threads; i++) {
+                futures.add(pool.submit(() -> {
+                    ready.countDown();
+                    try {
+                        go.await(10, TimeUnit.SECONDS);
+                        responses.add(mockMvc.perform(auth(post(BASE), "owner-t21", "user")
+                                        .contentType(MediaType.APPLICATION_JSON)
+                                        .content("{\"name\":\"并发同键空间\",\"sceneType\":\"OTHER\","
+                                                + "\"accessMode\":\"OPEN\",\"visibility\":\"PUBLIC\"}"))
+                                .andReturn());
+                    } catch (Exception e) {
+                        throw new IllegalStateException(e);
+                    }
+                }));
+            }
+            assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+            go.countDown();
+            for (final Future<?> future : futures) {
+                future.get(30, TimeUnit.SECONDS);
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+        final long spaceId = jdbc.queryForObject("SELECT id FROM space WHERE owner_subject_no = 'owner-t21'",
+                Long.class);
+        assertThat(responses).hasSize(threads);
+        int successCount = 0;
+        for (final MvcResult response : responses) {
+            final JsonNode body = MAPPER.readTree(response.getResponse().getContentAsString());
+            if (response.getResponse().getStatus() == 200) {
+                assertThat(body.path("code").asText()).isEqualTo("0");
+                assertThat(body.path("data").path("id").asLong()).isEqualTo(spaceId);
+                successCount++;
+            } else {
+                // 同键并发败者 = "处理中"（1002C0001，ADR-007 既有口径）——不得出现名称锁拒绝或 5xx
+                assertThat(response.getResponse().getStatus()).isEqualTo(400);
+                assertThat(body.path("code").asText()).isEqualTo("1002C0001");
+            }
+        }
+        assertThat(successCount).isGreaterThanOrEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM space WHERE owner_subject_no = 'owner-t21'",
+                Integer.class)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM space_action_log WHERE space_id = ? "
+                + "AND action = 'CREATE' AND result = 'SUCCESS'", Integer.class, spaceId)).isEqualTo(1);
+    }
+
     // ==== 造数与断言助手 ====
 
     private static org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder auth(
@@ -567,6 +670,23 @@ class SpaceLifecycleIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value("0"))
                 .andExpect(jsonPath("$.data.status").value(expectedStatus));
+    }
+
+    /** 幂等重放：断言返回首次结果（同 id + 当前状态 + 空间数不变）——S1-7 语义锚。 */
+    private void replayExpectFirstResult(final String owner, final String name, final long expectedId,
+            final String expectedStatus) throws Exception {
+        final MvcResult replay = mockMvc.perform(auth(post(BASE), owner, "user")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"" + name + "\",\"sceneType\":\"OTHER\",\"accessMode\":\"OPEN\","
+                                + "\"visibility\":\"PUBLIC\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("0"))
+                .andReturn();
+        final JsonNode data = MAPPER.readTree(replay.getResponse().getContentAsString()).path("data");
+        assertThat(data.path("id").asLong()).isEqualTo(expectedId);
+        assertThat(data.path("status").asText()).isEqualTo(expectedStatus);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM space WHERE owner_subject_no = ?",
+                Integer.class, owner)).isEqualTo(1);
     }
 
     /** 取详情响应 data 节点。 */
