@@ -55,7 +55,7 @@
 | **T2** | 既有用例断言强化（`nonMemberDirectApiAccessIsDeniedServerSide` @L448、`nonMemberPrivateDetailKeeps404ShapeWithAccessDeniedLog` @L700、ActionLog T1） | 同上三处 | 每条拒绝留痕补 `createdAt` 非空 + ISO 秒级可解析断言（复用 `IsoSecondTimestamp` 先例，若 space 域无则新建支撑类） | 删除留痕写入时间戳赋值 → 必红 |
 | **T3** | `frozenSpaceIdempotentReplayKeepsFirstResult` | `SpaceLifecycleIntegrationTest`（沿用 T21 载体结构） | FROZEN 态同键重放 → **仍返回首次结果**（空间未解散、名称未锁；沿 DB-28 方案 A 语义：仅 DISSOLVED/锁名才拒）+ 空间数恒 1 + 无新 CREATE 留痕 | 把"命中后复核"错改为遇 FROZEN 即拒 → 必红 |
 | **T4** | 既有 T22 断言强化 | `SpaceLifecycleIntegrationTest` T22 | B 路径补"**无新 CREATE 留痕**"断言（重放前后 CREATE 留痕恒 1） | 删除该断言后人为造"重放误写留痕" → 必红 |
-| **T5** | `invalidElementsTakePriorityOverLockedName` | `SpaceLifecycleIntegrationTest`（沿用 T5 载体 + 已锁名称） | 创建请求**同时**带非法要素（如名称超长）**且**命中已锁名称 → 断言 **400 参数错先行**（控制器参数门先于服务层锁判定）、无新空间、无新留痕（留痕归属不混淆） | 调换门序使锁名 409 先行 → 必红 |
+| **T5** | `invalidElementsTakePriorityOverLockedName` | `SpaceLifecycleIntegrationTest`（沿用 T5 载体 + 已锁名称） | 创建请求**同时**带非法要素（如名称超长）**且**命中已锁名称 → 断言 **400 参数错先行**（应用层要素校验门〔SpaceCommandService.create〕先于创建服务锁名判定——勘误：原"控制器参数门"定位不准，评审④ R4-3）、无新空间、无新留痕（留痕归属不混淆） | 调换门序使锁名 409 先行 → 必红 |
 
 **补测边界**：以上 5 项**全部落既有测试类**，不新建平行测试世界；**只增不弱化**；T1/T3 为新用例（预计 +2 例），T2/T4 为断言强化（不增例数），T5 为新用例（+1 例）——预计 145 → **148 例**。
 

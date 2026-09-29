@@ -1053,6 +1053,9 @@ class SpaceMembershipIntegrationTest {
         assertThat(logs).hasSize(expectedCount);
         for (final Map<String, Object> log : logs) {
             assertThat(log.get("operator")).isEqualTo(operator);
+            if (targetType != null) {
+                assertThat(log.get("target_type")).as("target_type 逐行一致").isEqualTo(targetType);
+            }
             IsoSecondTimestamp.assertSecondPrecisionIso("created_at", String.valueOf(log.get("created_iso")));
         }
     }

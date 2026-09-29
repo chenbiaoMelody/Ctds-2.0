@@ -22,12 +22,16 @@ public final class IsoSecondTimestamp {
     private IsoSecondTimestamp() {
     }
 
-    /** 断言：非空、ISO-8601 本地时间形、秒级精度（整体匹配，故小数秒/偏移/纯数字时间戳均判违规）。 */
+    /**
+     * 断言：非空、ISO-8601 本地时间形、秒级精度（整体匹配，故偏移/纯数字时间戳均判违规）。
+     * 口径边界（评审④ R4-2）：SQL 侧经 DATE_FORMAT 渲染层校验，依赖库列秒级精度（DATETIME(0)）——
+     * 列若放宽为带小数秒，须在 SQL 侧补微秒位断言。
+     */
     public static void assertSecondPrecisionIso(final String field, final String value) {
         assertThat(value).as("%s 非空", field).isNotBlank();
         assertThat(value).as("%s 必须为 ISO-8601 秒级本地时间形（无小数秒、无时区偏移）", field)
                 .matches(SECOND_PRECISION);
-        assertThat(LocalDateTime.parse(value)).as("%s 必须可被 ISO_LOCAL_DATE_TIME 解析（防伪格式）", field)
-                .isNotNull();
+        // 解析失败即抛 DateTimeParseException（判别力所在）；成功结果恒非空，无须 isNotNull 装饰（评审④ R4-1）
+        LocalDateTime.parse(value);
     }
 }
