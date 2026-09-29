@@ -38,7 +38,8 @@ public class SpaceController {
         this.queryService = queryService;
     }
 
-    /** 端点 1 创建（行为 1 全部规则；幂等键 = 所有者+归一化名，重复提交返回首次结果）。 */
+    /** 端点 1 创建（行为 1 全部规则；幂等键 = 所有者+归一化名，重复提交返回首次结果；
+     * 命中空间已解散时按名称锁口径拒绝——DB-28，WBS-3.2.3 hifi §10 E13）。 */
     @PostMapping(produces = MediaType.APPLICATION_JSON_VALUE)
     public ApiResult<SpaceSummaryView.SpaceDetailView> create(
             @RequestBody final CreateSpaceRequest request) {

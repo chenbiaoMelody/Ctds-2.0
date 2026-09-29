@@ -55,7 +55,8 @@ public class SpaceCommandService {
 
     /**
      * 创建入口：要素校验（1006C0005 逐字段）+ 归一化（移交①）后交幂等创建服务；
-     * 未认证 401（平台鉴权口径）；返回后复核名称锁（DB-28：幂等命中不经过方法体判定）。
+     * 未认证 401（平台鉴权口径）；返回后按 id 重读复核终态（DB-28：幂等命中不经过方法体判定，
+     * 命中空间已解散即按名称锁口径拒绝）。
      */
     public Space create(final CreateSpaceCommand request) {
         final String subject = guard.requireSubject();

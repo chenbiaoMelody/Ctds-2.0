@@ -92,7 +92,7 @@
 
 ## 9. 交付物核对清单
 
-1. 四层代码（interfaces 1 控制器 / application / domain / infrastructure + client）；2. `SpaceErrorCodes`；3. subject yml 1 行授权（1 行映射 + 1 行注释）+ ADR-016 §6 补记；4. deploy/k8s 三文件 + runbook 1 行；5. **V2 迁移**（`space_action_log` 动作码登记 UPDATE + from_value/to_value 64→1024，只放宽不收窄——迁移历史断言随迁移集演进）；6. 测试 T1~T19 全绿；7. 本卡与 lofi/hifi 签署回填；8. 台账与日志。
+1. 四层代码（interfaces 1 控制器 / application / domain / infrastructure + client）；2. `SpaceErrorCodes`；3. subject yml 1 行授权（1 行映射 + 1 行注释）+ ADR-016 §6 补记；4. deploy/k8s 三文件 + runbook 1 行；5. **V2 迁移**（`space_action_log` 动作码登记 UPDATE + from_value/to_value 64→1024，只放宽不收窄——迁移历史断言随迁移集演进）；6. 测试 T1~T19 全绿（**T20~T23 随 DB-28 补测，见 §10 E13**）；7. 本卡与 lofi/hifi 签署回填；8. 台账与日志。
 
 ## 10. 评审循环 1 勘误与补测登记（2026-09-27，4 视角评审对账结论；均为澄清与补严，非需求变更）
 
