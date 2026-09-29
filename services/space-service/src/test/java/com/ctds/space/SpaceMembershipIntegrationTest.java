@@ -733,8 +733,9 @@ class SpaceMembershipIntegrationTest {
         mockMvc.perform(auth(get(BASE + "/" + spaceB + "/admissions"), "member-t24", "user"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("1006C0007"));
-        // 每端点恰 1 条 ACCESS_DENIED 留痕（共 2 条）+ 四要素含"何时"（created_at ISO 秒级）
-        assertDeniedLogsWithIsoSecondCreatedAt(spaceB, "member-t24", null, 2);
+        // 每端点恰 1 条 ACCESS_DENIED 留痕（共 2 条）+ 四要素逐字段（谁/目标/结果/何时——
+        // 两读端点拒绝留痕 target_type 恒 SPACE，库表无端点维度故按合计断言；评审① R1-2 采纳）
+        assertDeniedLogsWithIsoSecondCreatedAt(spaceB, "member-t24", "SPACE", 2);
         // 拒绝留痕归属不混淆：空间甲不因本次跨空间请求产生任何拒绝留痕
         assertThat(jdbc.queryForObject(
                 "SELECT COUNT(*) FROM space_action_log WHERE space_id = ? AND action = 'ACCESS_DENIED' "

@@ -56,7 +56,7 @@
 
 | 补测项 | 落点（实测锚） | 结果 |
 | --- | --- | --- |
-| T1 跨空间隔离字面用例 | `SpaceMembershipIntegrationTest.crossSpaceMemberAccessingOtherSpaceIsDenied`（新例） | ✅ 绿（403/`1006C0007` 双端点 + 正向对照 + 拒留痕含 createdAt ISO 秒级 + 归属不混淆） |
+| T1 跨空间隔离字面用例 | `SpaceMembershipIntegrationTest.crossSpaceMemberAccessingOtherSpaceIsDenied`（新例） | ✅ 绿（403/`1006C0007` 双端点 + 正向对照 + 拒留痕四要素逐字段：operator/target_type='SPACE'/result + createdAt ISO 秒级 + 归属不混淆） |
 | T2 拒绝留痕"何时"补断 | 同类 T10/T18 断言强化 + `SpaceActionLogIntegrationTest.memberAndOperatorCanReadLogsWhileNonMemberIsDeniedWithOneAuditRow` 强化；新建支撑类 `com.ctds.space.support.IsoSecondTimestamp`（沿 did 域同名类先例） | ✅ 绿（三处均断 createdAt 非空 + ISO 秒级可解析；既有约束仅增不弱化） |
 | T3 FROZEN 态重放 | `SpaceLifecycleIntegrationTest.frozenSpaceIdempotentReplayKeepsFirstResult`（新例） | ✅ 绿（FROZEN 返回首次结果 + 空间数 1 + CREATE 留痕 1 + 零锁名；与 T20/T21 钉死三态） |
 | T4 T22 B 路径留痕强化 | `SpaceLifecycleIntegrationTest.crossOwnerNameLockKeepsOwnLiveSpaceReplay`（断言强化） | ✅ 绿（两条重放路径后 CREATE 留痕均恒 1） |
