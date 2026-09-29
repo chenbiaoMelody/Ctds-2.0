@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.ctds.space.domain.SubjectAdmission;
 import com.ctds.space.domain.SubjectAdmissionPort;
+import com.ctds.space.support.IsoSecondTimestamp;
 import com.ctds.space.support.SharedMySqlContainer;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -92,6 +93,12 @@ class SpaceActionLogIntegrationTest {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("1006C0007"));
         assertThat(deniedLogCount(id, "outsider-t1a")).isEqualTo(1);
+        // WBS-3.2.7 T2 断言强化：拒绝留痕"何时"要素补断（created_at 非空 + ISO 秒级可解析）
+        final String deniedCreatedAt = jdbc.queryForObject(
+                "SELECT DATE_FORMAT(created_at, '%Y-%m-%dT%H:%i:%s') FROM space_action_log "
+                        + "WHERE space_id = ? AND action = 'ACCESS_DENIED' AND operator = 'outsider-t1a' "
+                        + "AND result = 'DENIED'", String.class, id);
+        IsoSecondTimestamp.assertSecondPrecisionIso("created_at", deniedCreatedAt);
 
         // 平台运营方：角色头映射 space.member → 可读（此时含上一步的拒绝留痕，共 CREATE + ENABLE + 拒绝 = 3 行）
         mockMvc.perform(auth(get(BASE + "/" + id + "/action-logs"), "operator-t1a", OPERATOR))

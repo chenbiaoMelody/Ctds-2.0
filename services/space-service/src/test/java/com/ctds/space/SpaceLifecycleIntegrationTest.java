@@ -568,6 +568,11 @@ class SpaceLifecycleIntegrationTest {
         final long spaceB = createSpace("owner-t22b", "跨主体锁定重放空间");
         assertThat(spaceA).isNotEqualTo(spaceB);
         dissolve("owner-t22a", spaceA, "锁定名（他人同名空间仍活跃）", "DISSOLVED");
+        // WBS-3.2.7 T4 断言强化：重放不写新 CREATE 留痕（重放前基准；两载体同验）
+        final int createLogsA = jdbc.queryForObject("SELECT COUNT(*) FROM space_action_log "
+                + "WHERE space_id = ? AND action = 'CREATE' AND result = 'SUCCESS'", Integer.class, spaceA);
+        final int createLogsB = jdbc.queryForObject("SELECT COUNT(*) FROM space_action_log "
+                + "WHERE space_id = ? AND action = 'CREATE' AND result = 'SUCCESS'", Integer.class, spaceB);
         // B 重放自己的创建（幂等键命中、B 的空间仍活跃 CREATED）→ 仍返回首次结果（不因"名被他人锁"误拒）
         replayExpectFirstResult("owner-t22b", "跨主体锁定重放空间", spaceB, "CREATED");
         // A 重放自己的创建 → 命中空间已解散（终态）→ 按名称锁口径拒绝（同名同类请求两条重放路径的分界锚）
@@ -578,6 +583,58 @@ class SpaceLifecycleIntegrationTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("1006C0003"))
                 .andExpect(jsonPath("$.message").value("空间名称已被锁定，不可复用"));
+        // T4：两条重放路径（命中放行 / 命中拒绝）后 CREATE 留痕均恒为首次那一条
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM space_action_log "
+                + "WHERE space_id = ? AND action = 'CREATE' AND result = 'SUCCESS'",
+                Integer.class, spaceB)).isEqualTo(createLogsB).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM space_action_log "
+                + "WHERE space_id = ? AND action = 'CREATE' AND result = 'SUCCESS'",
+                Integer.class, spaceA)).isEqualTo(createLogsA).isEqualTo(1);
+    }
+
+    // ==== WBS-3.2.7 T3 FROZEN 态幂等重放（DB-28 §6.6 移交补测候选；与 T20/T21 钉死三态）====
+
+    @Test
+    void frozenSpaceIdempotentReplayKeepsFirstResult() throws Exception {
+        final long id = createSpace("owner-t25", "冻结重放空间");
+        lifecycle("owner-t25", id, "enablement", "ACTIVE");
+        lifecycle("owner-t25", id, "freezing", "FROZEN");
+        // FROZEN 命中重放：空间未解散、名称未锁 → 仍返回首次结果（DB-28 方案 A：仅 DISSOLVED 才按锁名拒）
+        replayExpectFirstResult("owner-t25", "冻结重放空间", id, "FROZEN");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM space WHERE owner_subject_no = 'owner-t25'",
+                Integer.class)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM space_action_log WHERE space_id = ? "
+                + "AND action = 'CREATE' AND result = 'SUCCESS'", Integer.class, id)).isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM space_name_lock WHERE normalized_name = '冻结重放空间'",
+                Integer.class)).isZero();
+    }
+
+    // ==== WBS-3.2.7 T5 要素非法 + 名称锁命中优先序（DB-28 §6.6 移交；参数门先于服务层锁门）====
+
+    @Test
+    void invalidElementsTakePriorityOverLockedName() throws Exception {
+        final long lockedId = createSpace("owner-t26a", "组合优先级空间");
+        dissolve("owner-t26a", lockedId, "锁定前置解散", "DISSOLVED");
+        final int logsAfterLock = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM space_action_log WHERE space_id = ?", Integer.class, lockedId);
+        final String longIntro = "介".repeat(513);
+        // 非法要素（简介 513）与已锁名称同时命中 → 400 参数错先行，不得被名称锁 409 抢先
+        mockMvc.perform(auth(post(BASE), "owner-t26b", "user")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"组合优先级空间\",\"sceneType\":\"OTHER\",\"accessMode\":\"OPEN\","
+                                + "\"visibility\":\"PUBLIC\",\"intro\":\"" + longIntro + "\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("1006C0005"))
+                .andExpect(jsonPath("$.message").value("空间简介超长（≤512 字符）"));
+        // 无新空间 / 留痕条数不变（归属不混淆）/ 锁指向仍为首次空间
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM space WHERE owner_subject_no = 'owner-t26b'",
+                Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM space_action_log WHERE space_id = ?",
+                Integer.class, lockedId)).isEqualTo(logsAfterLock);
+        assertThat(jdbc.queryForObject(
+                "SELECT space_id FROM space_name_lock WHERE normalized_name = '组合优先级空间'",
+                String.class)).isEqualTo(String.valueOf(lockedId));
     }
 
     // ==== T23 同键并发创建不劣化（"处理中"语义与单空间口径；沿 ADR-007 既有口径）====

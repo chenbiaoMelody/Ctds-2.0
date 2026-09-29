@@ -52,27 +52,45 @@
 | 行为 6-③：运营方治理查看 visit 留痕 | **归 DB-29**（Q4 边界） | C-2.3 S1-5（DB-29 复验） |
 | 行为 1/2 补测（DB-28 移交） | **T3** FROZEN 重放 / **T4** T22 B 路径留痕 / **T5** 要素非法+锁名优先序 | C-2.1 S1-7、S3-6（回归锚） |
 
-**测试落点（编码会话回填，全部绿灯）**：待回填。
+**测试落点（编码会话回填，全部绿灯，2026-09-29 实测）**：
+
+| 补测项 | 落点（实测锚） | 结果 |
+| --- | --- | --- |
+| T1 跨空间隔离字面用例 | `SpaceMembershipIntegrationTest.crossSpaceMemberAccessingOtherSpaceIsDenied`（新例） | ✅ 绿（403/`1006C0007` 双端点 + 正向对照 + 拒留痕含 createdAt ISO 秒级 + 归属不混淆） |
+| T2 拒绝留痕"何时"补断 | 同类 T10/T18 断言强化 + `SpaceActionLogIntegrationTest.memberAndOperatorCanReadLogsWhileNonMemberIsDeniedWithOneAuditRow` 强化；新建支撑类 `com.ctds.space.support.IsoSecondTimestamp`（沿 did 域同名类先例） | ✅ 绿（三处均断 createdAt 非空 + ISO 秒级可解析；既有约束仅增不弱化） |
+| T3 FROZEN 态重放 | `SpaceLifecycleIntegrationTest.frozenSpaceIdempotentReplayKeepsFirstResult`（新例） | ✅ 绿（FROZEN 返回首次结果 + 空间数 1 + CREATE 留痕 1 + 零锁名；与 T20/T21 钉死三态） |
+| T4 T22 B 路径留痕强化 | `SpaceLifecycleIntegrationTest.crossOwnerNameLockKeepsOwnLiveSpaceReplay`（断言强化） | ✅ 绿（两条重放路径后 CREATE 留痕均恒 1） |
+| T5 要素非法+锁名优先序 | `SpaceLifecycleIntegrationTest.invalidElementsTakePriorityOverLockedName`（新例） | ✅ 绿（400/`1006C0005` 先行 + 无新空间 + 留痕数不变 + 锁指向不变） |
+
+**全量门禁（实测）**：`mvn -B -ntp -pl services/space-service test checkstyle:check` → **148/148 全绿 + 0 Checkstyle 违规 + BUILD SUCCESS**（基线 145 → 148，只增不减；计数：Lifecycle 20→22、Membership 24→25，ActionLog 强化不增例）。
 
 ## 四、执行记录
 
 | 项 | 内容 |
 | --- | --- |
-| 状态 | 🟢 **设计已确认（2026-09-29 22:5x 编排师"都按建议"）→ 编码会话进行中**（分支 `feat/WBS-3.2.7-逻辑空间测试与集成` 自 main = `37621a4`；第一步 = hifi §8 前置检查七项） |
+| 状态 | 🟢 **编码交付完成，待 4 视角评审与编排师验收**（2026-09-29 编码会话：T1~T5 全绿 148/148 + checkstyle 0 + 覆盖率 94.25% 达标 + 联调四链全 PASS + 交付态 package BUILD SUCCESS；"验收通过"≠合并授权） |
 | 立卡会话 | 2026-09-29（日志待落盘）——立卡前隔离探索（两路只读子智能体）：① 治理查看端点/留痕/动作码面盘点；② space-service 145 例测试覆盖面盘点（行为 × 覆盖对照 + 缺口清单） |
 | 冷启动锚点 | 台账「待编排师」行（WBS-3.2.7 立卡指示）；日志 `-2204`（三项裁定留痕）；WBS 行 257；DB-28 卡 §6.6；规格 C-2.1~2.3 行为 6 |
 | 设计确认会话 | 2026-09-29 22:5x（编码会话冷启动承接编排师"**都按建议**"：Q1~Q5 全采建议 A + D1 不拆分；确认批随编码分支首提交留痕） |
 
 ## 五、提交前自检单（章程附录 B1，编码会话填写）
 
-待编码会话填写（① 两级设计门禁 → 确认留痕回填后生效；②~⑦ 随交付回填）。
+**编码会话回填（2026-09-29，全部实测）**：
+
+1. **两级设计门禁已过** ✅：lofi/hifi 2026-09-29 落盘，编排师 22:5x"都按建议"一次确认（Q1~Q5 全 A + D1 不拆分）→ 编码契约生效；实现与设计逐条一致（T1~T5 按 hifi §3 落点与断言要点、覆盖率按 §4 命令行注入、联调按 §5 四链执行）；
+2. **映射表** ✅：卡 §三 已回填（行为 1~8 → 既有 145 例 + 补测 T1~T5 → 三剧本步骤，测试落点全绿灯）；
+3. **复用声明** ✅：`IsoSecondTimestamp` 复用 did 域同名支撑类设计（space 域新建同构副本——跨模块 test-jar 未依赖、本卡边界"落既有测试树"内，已注明先例出处）；**规格外实现声明：空**（零 `src/main` 改动）；
+4. **本地检查** ✅：`test` **148/148** 全绿（145→148 只增不减）+ `checkstyle:check` **0 违规** + 交付态 `package` **BUILD SUCCESS**（jar 29.9MB @23:23）+ jacoco 行覆盖 **94.25%**（1296/1375 ≥70% 达标，零零覆盖类）+ 前端 `npm run build` **EXIT 0**（零前端改动）+ 全仓门禁 `run-gates.ps1` **GREEN**（复跑证据见日志）；
+5. **高风险自查** ✅：并发——纯测试包无新并发路径；事务——零代码改动；加解密——无涉；性能——无涉（补测仅测试执行期开销）；
+6. **剧本更新建议**：**无需更新**——本卡零业务行为/零界面/零文案改动，三份剧本判定口径不变；
+7. **业务可读交付说明** ✅：见交付日志"交付对照表"。
 
 ## 六、体量登记（编码交付时回填）
 
 | 项 | 数值 |
 | --- | --- |
 | 预估（立卡阶段） | 后端补测 ≈ **150~300 行**（T1~T5 全部落既有测试类：2 新用例 + 3 处断言强化）；覆盖率实测零代码（命令行注入）；联调零代码；文档 ≈ 100 行；合计 **150~300 行有效变更，不超 400 行指引** |
-| 实测（编码会话回填） | 待回填 |
+| 实测（编码会话回填） | 后端补测 **4 文件 ≈ 155 行**（`git diff --stat`：3 既有测试类 +121/−10 + 新支撑类 33 行；3 新用例 + 2 处断言强化，全部落既有测试树，零 `src/main` 改动）；覆盖率实测零代码（jacoco 命令行注入，报告不入库）；联调零代码（curl + 库内查证，证据 `frontend/test-results/walkthrough/wbs327-*.json`，gitignored）；文档 ≈ 130 行；**合计 ≈ 285 行，未超 400 行指引（D1 不拆分成立）** |
 
 ---
 
