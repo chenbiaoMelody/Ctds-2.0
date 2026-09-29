@@ -55,7 +55,7 @@
 
 ## 5. 幂等与权限
 
-- **创建幂等**：`@Idempotent(key = "#cmd.ownerSubjectNo + ':' + #cmd.normalizedName")`（ADR-007 模式 B，沿 subject 注册先例；演示/单测 memory 模式）；重复提交返回首次结果。
+- **创建幂等**：`@Idempotent(key = "#cmd.ownerSubjectNo + ':' + #cmd.normalizedName")`（ADR-007 模式 B，沿 subject 注册先例；演示/单测 memory 模式）；重复提交返回首次结果。**（DB-28 修复补注，2026-09-28；见 §10 E13/E14）**：幂等命中返回首次结果**以命中空间未处于终态为前提**——命中返回值是创建时快照（`status` 恒为 CREATED，不反映其后解散），故 `SpaceCommandService` 在幂等调用返回后**按 id 重读当前行**：已 `DISSOLVED` → 按名称锁口径拒绝（`1006C0003` + 锁定文案），不以 `code=0` 返回已解散空间。
 - **双轨权限**（Q4-A）：① 平台角色 = 角色头（`platform.operator` 档加入演示期角色映射，`AuthProperties` 配置；subject/kms/did 同款机制）；② 空间内角色 = 查 `space_member`（`status='ACTIVE'` 且 `role IN ('OWNER','ADMIN')`，按动作差异化：解散仅 OWNER）。判定失败 → `1006C0007` + DENIED 留痕。**空间创建者写 owner 成员行**（行为 1 规则 1"创建者自动成为所有者"——`space_member` 插入 `role=OWNER, status=ACTIVE`，uk_active_owner 天然兜底）。
 
 ## 6. 部署清单（3.2.2 纪律声明顺延项兑现）
@@ -92,7 +92,7 @@
 
 ## 9. 交付物核对清单
 
-1. 四层代码（interfaces 1 控制器 / application / domain / infrastructure + client）；2. `SpaceErrorCodes`；3. subject yml 1 行授权（1 行映射 + 1 行注释）+ ADR-016 §6 补记；4. deploy/k8s 三文件 + runbook 1 行；5. **V2 迁移**（`space_action_log` 动作码登记 UPDATE + from_value/to_value 64→1024，只放宽不收窄——迁移历史断言随迁移集演进）；6. 测试 T1~T19 全绿；7. 本卡与 lofi/hifi 签署回填；8. 台账与日志。
+1. 四层代码（interfaces 1 控制器 / application / domain / infrastructure + client）；2. `SpaceErrorCodes`；3. subject yml 1 行授权（1 行映射 + 1 行注释）+ ADR-016 §6 补记；4. deploy/k8s 三文件 + runbook 1 行；5. **V2 迁移**（`space_action_log` 动作码登记 UPDATE + from_value/to_value 64→1024，只放宽不收窄——迁移历史断言随迁移集演进）；6. 测试 T1~T19 全绿（**T20~T23 随 DB-28 补测，见 §10 E13**）；7. 本卡与 lofi/hifi 签署回填；8. 台账与日志。
 
 ## 10. 评审循环 1 勘误与补测登记（2026-09-27，4 视角评审对账结论；均为澄清与补严，非需求变更）
 
@@ -110,3 +110,5 @@
 | E10 | §6 部署 | 激活前提补登记：**prometheus 三注解 + actuator/micrometer 依赖随激活批次补**（ADR-014）；ModuleMap/镜像构建入列；subject 服务集群可达；扩容前幂等/锁切 redis（ADR-007，当前 memory + 单副本一致）；网关/真实令牌就位前角色头信任边界沿 ADR-016 §2.7（仅本机/演示） |
 | E11 | §5 幂等 | 键卫生登记：键长上限 256（common）与业务极值 257（128+1+128）存在边缘冲突 → 3.2.4/沉淀候选（长度前缀或摘要编码）；`:` 分隔符理论碰撞（演示期身份受控，实务不可达） |
 | E12 | 沉淀建议 | ① `SubjectAdmissionClient` 与 did `SubjectStatusHttpClient` 逐字同构（第 2 份副本）→ 跨服务客户端沉淀候选；② common `GlobalExceptionHandler` 补 `MethodArgumentTypeMismatchException`→400（畸形数值入参当前 500）；③ 迁移测试独立库名/建库 GRANT 支撑逻辑第 4 份变体 → ADR-010 §10 已达触发条件（4 模块），立小卡待编排师 |
+| E13 | §5 幂等 | **DB-28 修复口径补注**（2026-09-28，WBS-3.2.6 走查 C-2.1 S3-6 FAIL）：幂等命中返回首次结果**以命中空间未处于终态为前提**——命中返回值 = 服务层创建时快照（`status` 恒为 CREATED；HTTP 响应的 `status` 为控制器按 id 重读的实时值），终态判定 = 按 id 重读当前行；已 `DISSOLVED` → `SpaceCommandService` 复核后按名称锁口径拒绝（`1006C0003` + 锁定文案）。**补测（生命周期集成类内编号）**：T20 解散后同名重放拒 / T21 未解散重放保持语义 / T22 跨主体同名锁定不剥夺本方活跃空间重放 / T23 同键并发不劣化 |
+| E14 | §5 幂等 | **复核判定口径与残余竞态登记**（评审修复批 R1，2026-09-28）：判定信号取"命中返回值对应空间按 id 重读的当前状态"而非名称锁表——① 避免跨主体场景误拒（他人同名空间解散写锁、本方同名活跃空间的幂等重放仍返回首次结果，T22 锚）；② 避免"已落库却被拒"（若以锁表为信号，创建提交与复核之间他方写锁会造成 409 但空间已建）。**残余窗口**（既有 check-then-insert 同类，登记不改）：创建提交与本次重读之间本方空间被并发解散（仅所有者/运营方、须已知 id）→ 拒绝但该空间已（且已解散）落库 |

@@ -20,7 +20,8 @@ import org.springframework.stereotype.Service;
  * 空间创建服务（幂等边界；WBS-3.2.3 hifi §5）。独立于 SpaceCommandService 的原因：
  * 幂等键 = 所有者 + 归一化名（hifi 定稿），归一化与要素校验在命令服务先行，跨 Bean 调用
  * 使幂等切面经代理拦截（同类自调用会被 AOP 绕过）。重复提交返回首次结果（ADR-007 模式 B，
- * 演示/单测 memory 模式）。
+ * 演示/单测 memory 模式）；命中空间其后已解散的拒绝判定在调用方（SpaceCommandService——
+ * 命中返回值是创建时快照，见 WBS-3.2.3 hifi §10 E13/E14，DB-28）。
  */
 @Service
 public class SpaceCreationService {
