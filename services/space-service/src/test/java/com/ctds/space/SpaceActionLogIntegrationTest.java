@@ -100,7 +100,8 @@ class SpaceActionLogIntegrationTest {
                         + "AND result = 'DENIED'", String.class, id);
         IsoSecondTimestamp.assertSecondPrecisionIso("created_at", deniedCreatedAt);
 
-        // 平台运营方：角色头映射 space.member → 可读（此时含上一步的拒绝留痕，共 CREATE + ENABLE + 拒绝 = 3 行）
+        // 平台运营方：角色头映射 space.member → 可读（此时含上一步的拒绝留痕，共 CREATE + ENABLE + 拒绝 = 3 行；
+        // DB-29 起运营方读后另写 GOVERNANCE_VIEW visit 行，"读后写"时序保证本响应 total 仍为 3，行数断言不受影响）
         mockMvc.perform(auth(get(BASE + "/" + id + "/action-logs"), "operator-t1a", OPERATOR))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value("0"))

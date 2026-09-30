@@ -29,11 +29,14 @@ public class SpaceQueryService {
 
     private final SpaceRepository repository;
     private final SpaceAccessGuard guard;
+    private final SpaceGovernanceVisitLogger visitLogger;
     private final Clock clock;
 
-    public SpaceQueryService(final SpaceRepository repository, final SpaceAccessGuard guard, final Clock clock) {
+    public SpaceQueryService(final SpaceRepository repository, final SpaceAccessGuard guard,
+            final SpaceGovernanceVisitLogger visitLogger, final Clock clock) {
         this.repository = repository;
         this.guard = guard;
+        this.visitLogger = visitLogger;
         this.clock = clock;
     }
 
@@ -50,7 +53,11 @@ public class SpaceQueryService {
                 prefix = normalized;
             }
         }
-        return repository.search(guard.isPlatformOperator(), prefix, PageQuery.of(pageNum, pageSize, null));
+        // 读后写：运营档治理查看留痕（DB-29）——本次结果不含本次 visit 行
+        final PageResult<Space> result = repository.search(guard.isPlatformOperator(), prefix,
+                PageQuery.of(pageNum, pageSize, null));
+        visitLogger.recordSpaceListView();
+        return result;
     }
 
     /**
@@ -62,7 +69,9 @@ public class SpaceQueryService {
         final Space space = repository.findById(spaceId)
                 .orElseThrow(() -> notFound());
         if (guard.isPlatformOperator() || guard.isOwner(space)) {
-            return new SpaceView(space, repository.findActiveMembers(spaceId), true);
+            final SpaceView view = new SpaceView(space, repository.findActiveMembers(spaceId), true);
+            visitLogger.recordSpaceView(spaceId);
+            return view;
         }
         final List<SpaceMember> members = repository.findActiveMembers(spaceId);
         final boolean isMember = subject != null && members.stream()
@@ -108,7 +117,10 @@ public class SpaceQueryService {
             throw new SpaceBizException(SpaceErrorCodes.SPACE_ACCESS_DENIED,
                     SpaceErrorCodes.SPACE_ACCESS_DENIED_MESSAGE);
         }
-        return repository.searchActionLogs(spaceId, page);
+        // 读后写：运营档治理查看留痕（DB-29）——本次分页结果不含本次 visit 行，再次查询可见
+        final PageResult<SpaceActionLog> logs = repository.searchActionLogs(spaceId, page);
+        visitLogger.recordSpaceView(spaceId);
+        return logs;
     }
 
     /** 读面视图：fullDetail=true 全量（含成员构成）；false = 非成员公开摘要（不含成员构成）。 */
