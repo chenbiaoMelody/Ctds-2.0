@@ -10,3 +10,5 @@ resources:
   - frontend-service.yaml
   - space-deployment.yaml
   - space-service.yaml
+  - catalog-deployment.yaml
+  - catalog-service.yaml
