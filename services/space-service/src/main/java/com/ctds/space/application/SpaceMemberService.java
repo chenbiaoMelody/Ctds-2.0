@@ -36,11 +36,14 @@ public class SpaceMemberService {
 
     private final SpaceRepository repository;
     private final SpaceAccessGuard guard;
+    private final SpaceGovernanceVisitLogger visitLogger;
     private final Clock clock;
 
-    public SpaceMemberService(final SpaceRepository repository, final SpaceAccessGuard guard, final Clock clock) {
+    public SpaceMemberService(final SpaceRepository repository, final SpaceAccessGuard guard,
+            final SpaceGovernanceVisitLogger visitLogger, final Clock clock) {
         this.repository = repository;
         this.guard = guard;
+        this.visitLogger = visitLogger;
         this.clock = clock;
     }
 
@@ -56,7 +59,10 @@ public class SpaceMemberService {
         if (!guard.canActAsMember(space, repository.findActiveMembers(spaceId))) {
             denyRead(space, subject);
         }
-        return repository.searchActiveMembers(spaceId, page);
+        // 读后写：运营档治理查看留痕（DB-29，仅运营方角色触发）
+        final PageResult<SpaceMember> members = repository.searchActiveMembers(spaceId, page);
+        visitLogger.recordSpaceView(spaceId);
+        return members;
     }
 
     // ==== 端点 8：角色授予/收回 ====

@@ -226,6 +226,22 @@ class SpaceMigrationIntegrationTest {
                 .contains("POLICY_DEFINE"), "action 注释应登记 POLICY_DEFINE 动作码");
     }
 
+    /** DB-29：V4 迁移——GOVERNANCE_VIEW 动作码注释登记（运营档治理查看留痕；零破坏：无新表无列变更）。 */
+    @Test
+    void v4RegistersGovernanceViewAction() throws SQLException {
+        final String db = freshDatabaseWithMigration("governance_view");
+        assertEquals(1, count(db, "SELECT COUNT(*) FROM flyway_schema_history"
+                + " WHERE version = '4' AND success = 1"), "V4 迁移应在位");
+        final String comment = scalar(db, "SELECT column_comment FROM information_schema.columns"
+                + " WHERE table_schema = ? AND table_name = 'space_action_log' AND column_name = 'action'", db);
+        assertTrue(comment.contains("GOVERNANCE_VIEW"), "action 注释应登记 GOVERNANCE_VIEW 动作码");
+        assertTrue(comment.contains("POLICY_DEFINE"), "既有动作码登记不得回退");
+        // 零破坏：表集合不变（六表）且列集合不变
+        assertEquals(6, count(db, "SELECT COUNT(*) FROM information_schema.tables"
+                + " WHERE table_schema = ? AND table_name IN ('space','space_name_lock','space_member',"
+                + "'space_admission','space_policy','space_action_log')", db), "V4 不得新增/删除表");
+    }
+
     // ---------- 助手：每用例独立库 + 迁移 + 纯 JDBC 断言 ----------
 
     /** 建独立库并在其上执行全新 V1~V3 迁移，返回库名（隔离语义等价方法级容器）。

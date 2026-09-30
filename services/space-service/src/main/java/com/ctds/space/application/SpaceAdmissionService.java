@@ -40,13 +40,16 @@ public class SpaceAdmissionService {
     private final SpaceRepository repository;
     private final SpaceAccessGuard guard;
     private final SubjectAdmissionGate admissionGate;
+    private final SpaceGovernanceVisitLogger visitLogger;
     private final Clock clock;
 
     public SpaceAdmissionService(final SpaceRepository repository, final SpaceAccessGuard guard,
-            final SubjectAdmissionGate admissionGate, final Clock clock) {
+            final SubjectAdmissionGate admissionGate, final SpaceGovernanceVisitLogger visitLogger,
+            final Clock clock) {
         this.repository = repository;
         this.guard = guard;
         this.admissionGate = admissionGate;
+        this.visitLogger = visitLogger;
         this.clock = clock;
     }
 
@@ -190,7 +193,10 @@ public class SpaceAdmissionService {
                 throw new BizException(ErrorCodes.PARAM_INVALID, "准入单状态筛选取值非法");
             }
         }
-        return repository.searchAdmissions(spaceId, statusFilter, page);
+        // 读后写：运营档治理查看留痕（DB-29，仅运营方角色触发）
+        final PageResult<SpaceAdmission> admissions = repository.searchAdmissions(spaceId, statusFilter, page);
+        visitLogger.recordSpaceView(spaceId);
+        return admissions;
     }
 
     /** 我的准入单（个人视角：发出的申请 + 收到的邀请——剧本"我的邀请等价入口"）。 */

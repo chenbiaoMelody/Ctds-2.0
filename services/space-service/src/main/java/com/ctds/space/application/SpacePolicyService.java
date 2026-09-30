@@ -37,12 +37,14 @@ public class SpacePolicyService {
 
     private final SpaceRepository repository;
     private final SpaceAccessGuard guard;
+    private final SpaceGovernanceVisitLogger visitLogger;
     private final Clock clock;
 
     public SpacePolicyService(final SpaceRepository repository, final SpaceAccessGuard guard,
-            final Clock clock) {
+            final SpaceGovernanceVisitLogger visitLogger, final Clock clock) {
         this.repository = repository;
         this.guard = guard;
+        this.visitLogger = visitLogger;
         this.clock = clock;
     }
 
@@ -100,7 +102,10 @@ public class SpacePolicyService {
 
     public PageResult<SpacePolicy> listPlatformEntries(final PageQuery page) {
         requirePlatformPermission();
-        return repository.searchPlatformEntries(page);
+        // 读后写：运营档治理查看留痕（DB-29，仅运营方角色触发；平台面沿 POLICY_DEFINE 留痕形态）
+        final PageResult<SpacePolicy> entries = repository.searchPlatformEntries(page);
+        visitLogger.recordPlatformPolicyView();
+        return entries;
     }
 
     // ==== 端点 4：空间覆盖提交 ====
@@ -173,8 +178,11 @@ public class SpacePolicyService {
         if (!allowed) {
             denyPolicyView(space, subject);
         }
-        return EffectivePolicyResolver.resolve(repository.findPlatformEntries(),
+        // 读后写：运营档治理查看留痕（DB-29，仅运营方角色触发；归档面同样可审——剧本 S3-6）
+        final List<EffectivePolicyRow> rows = EffectivePolicyResolver.resolve(repository.findPlatformEntries(),
                 repository.findSpaceEntries(spaceId));
+        visitLogger.recordSpaceView(spaceId);
+        return rows;
     }
 
     // ==== 内部 ====
