@@ -11,6 +11,8 @@ import com.ctds.catalog.domain.DatasetStatus;
 import com.ctds.catalog.domain.DeclareLevel;
 import com.ctds.catalog.domain.ProductReferenceGuard;
 import com.ctds.catalog.domain.SemanticTags;
+import com.ctds.catalog.domain.TagTermPort;
+import com.ctds.catalog.domain.TagVocabulary;
 import com.ctds.common.errorcode.BizException;
 import com.ctds.common.errorcode.ErrorCodes;
 import java.time.Clock;
@@ -49,15 +51,17 @@ public class DatasetCommandService {
     private final DatasetRegistrationService registrationService;
     private final ProductReferenceGuard productReferenceGuard;
     private final CatalogAccessGuard guard;
+    private final TagTermPort tagTermPort;
     private final Clock clock;
 
     public DatasetCommandService(final DatasetRepository repository,
             final DatasetRegistrationService registrationService, final ProductReferenceGuard guard,
-            final CatalogAccessGuard accessGuard, final Clock clock) {
+            final CatalogAccessGuard accessGuard, final TagTermPort tagTermPort, final Clock clock) {
         this.repository = repository;
         this.registrationService = registrationService;
         this.productReferenceGuard = guard;
         this.guard = accessGuard;
+        this.tagTermPort = tagTermPort;
         this.clock = clock;
     }
 
@@ -106,6 +110,9 @@ public class DatasetCommandService {
         if (!problems.isEmpty()) {
             throw new BizException(ErrorCodes.PARAM_INVALID, String.join("；", problems));
         }
+        // 第 6 步：语义标签词条成员校验（行为 1 规则 3「受控词表选取」；WBS-3.3.3 兑现）——
+        // 插在归一化判重与取号之前：非法入参不触碰任何库内状态（零资源行、零留痕、零取号）。
+        requireTermMembership(request.semanticTags());
         final CreateDatasetCommand command = new CreateDatasetCommand(spaceId, subject, name, normalizedName,
                 request.type(), request.intro(), request.semanticTags(), request.declareCategory(),
                 request.declareLevel(), request.declareImportant());
@@ -236,6 +243,17 @@ public class DatasetCommandService {
         }
     }
 
+    /**
+     * 语义标签成员校验（行为 1 规则 3）：任一标签不在受控词表 → 1007C0009（400）。
+     * 拒绝文案为服务端常量、<b>不回显被拒标签原文</b>（章程 4.3 + 防输入回显）。
+     */
+    private void requireTermMembership(final List<String> tags) {
+        if (!tagTermPort.findUnmatched(TagVocabulary.SEMANTIC_TAG, tags).isEmpty()) {
+            throw new CatalogBizException(CatalogErrorCodes.TAG_TERM_NOT_IN_VOCABULARY,
+                    CatalogErrorCodes.TAG_TERM_NOT_IN_VOCABULARY_MESSAGE);
+        }
+    }
+
     /** 简介校验（缺省 = 不变更；空串/超长 → 400）。 */
     private static String validIntro(final String intro) {
         if (intro == null) {
@@ -250,8 +268,8 @@ public class DatasetCommandService {
         return intro;
     }
 
-    /** 语义标签载体级校验 + JSON 化（缺省 = 不变更；载体问题 → 400）。 */
-    private static String validTagsJson(final List<String> tags) {
+    /** 语义标签载体级校验 + 词表成员校验 + JSON 化（缺省 = 不变更；载体问题 → 400，非词表标签 → 1007C0009）。 */
+    private String validTagsJson(final List<String> tags) {
         if (tags == null) {
             return null;
         }
@@ -259,6 +277,7 @@ public class DatasetCommandService {
         if (!problems.isEmpty()) {
             throw new BizException(ErrorCodes.PARAM_INVALID, String.join("；", problems));
         }
+        requireTermMembership(tags);
         return SemanticTags.toJson(tags);
     }
 

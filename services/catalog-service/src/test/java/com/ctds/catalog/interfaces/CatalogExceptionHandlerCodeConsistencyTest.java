@@ -25,7 +25,7 @@ class CatalogExceptionHandlerCodeConsistencyTest {
                 declared.add(((ErrorCode) field.get(null)).value());
             }
         }
-        assertThat(declared).as("1007 段码表应登记 8 个 C 码 + 2 个 S 码").hasSize(10);
+        assertThat(declared).as("1007 段码表应登记 10 个 C 码 + 2 个 S 码").hasSize(12);
         assertThat(new TreeSet<>(CatalogExceptionHandler.MAPPED_CODES))
                 .as("处理器映射集与码表必须逐项一致（不得漂移）")
                 .isEqualTo(declared);

@@ -9,8 +9,9 @@ import java.util.Set;
 
 /**
  * 语义标签 JSON 载体（WBS-3.3.2 hifi §3.1：semantic_tags 列 = JSON 数组字符串，载体级）。
- * 受控词表成员校验归 3.3.3（词表集合随其落定，沿 3.2.2 策略载体先例）；本类只做载体级
- * 序列化/反序列化与基础校验（必填、非空、数量 1~10、单标签 1~32、去重——Q7-A）。
+ * 受控词表成员校验已由 3.3.3 承接（{@code DatasetCommandService} 经 {@link TagTermPort}
+ * 做归一化差集校验，载体形态不变——Q2-A）；本类只做载体级序列化/反序列化与基础校验
+ * （必填、非空、数量 1~10、单标签 1~32、去重——Q7-A）。
  */
 public final class SemanticTags {
 

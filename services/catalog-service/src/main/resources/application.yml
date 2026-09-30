@@ -24,12 +24,13 @@ logging:
       file: logstash
 
 ctds:
-  # RBAC（WBS 2.4.5 模式 A 配置映射；WBS-3.3.2 hifi §1 权限点四枚）：演示期提供方主体角色持四点、
-  # admin 角色持读点（沿 space 双轨先例——写动作另有登记主体本人判定，权限点是第一道功能门槛）。
+  # RBAC（WBS 2.4.5 模式 A 配置映射；WBS-3.3.2 hifi §1 权限点四枚 + 3.3.3 新增 vocabulary.read 一枚）：
+  # 演示期提供方主体角色持五点、admin 角色持两点读权（沿 space 双轨先例——写动作另有登记主体本人判定，
+  # 权限点是第一道功能门槛）。
   auth:
     permissions:
-      provider: dataset.register,dataset.update,dataset.cancel,dataset.read
-      admin: dataset.read
+      provider: dataset.register,dataset.update,dataset.cancel,dataset.read,vocabulary.read
+      admin: dataset.read,vocabulary.read
   # 目录与资源服务参数（WBS-3.3.2 hifi §4~§5）
   catalog:
     # 主体服务衔接（资格判定只读通道，subject yml 已加 catalog-internal 1 行授权）：

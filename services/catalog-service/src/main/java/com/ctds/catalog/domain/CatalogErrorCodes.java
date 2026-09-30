@@ -39,6 +39,12 @@ public final class CatalogErrorCodes {
     /** 名称为空/超长/含控制字符（行为 1 规则 5——归一化后校验）。→ 400 */
     public static final ErrorCode DATASET_NAME_INVALID = ErrorCode.of("1007C0008");
     public static final String DATASET_NAME_INVALID_MESSAGE = "资源名称不能为空或超出长度限制";
+    /** 语义标签不在受控词表内（登记/变更，行为 1 规则 3「受控词表选取」——WBS-3.3.3 兑现）。→ 400 */
+    public static final ErrorCode TAG_TERM_NOT_IN_VOCABULARY = ErrorCode.of("1007C0009");
+    public static final String TAG_TERM_NOT_IN_VOCABULARY_MESSAGE = "语义标签不在受控词表范围内";
+    /** 词表册不存在（读面路径码未命中，WBS-3.3.3 hifi §1.1 R4）。→ 404 */
+    public static final ErrorCode TAG_VOCABULARY_NOT_FOUND = ErrorCode.of("1007C0010");
+    public static final String TAG_VOCABULARY_NOT_FOUND_MESSAGE = "受控词表册不存在";
     /** 主体服务不可达/失败（UNAVAILABLE 统一文案，不冒充资格拒绝——hifi §5）。→ 503 */
     public static final ErrorCode SUBJECT_SERVICE_UNAVAILABLE = ErrorCode.of("1007S0001");
     public static final String SUBJECT_SERVICE_UNAVAILABLE_MESSAGE = "主体服务暂不可用，请稍后重试";

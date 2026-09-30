@@ -23,7 +23,8 @@ public class CatalogExceptionHandler {
     /** 允许精确映射的 1007 段码值（CatalogErrorCodes 定稿集；新码须同步登记——一致性由
      * interfaces 包测试锚定，码表↔处理器集合不得漂移）。 */
     static final Set<String> MAPPED_CODES = Set.of("1007C0001", "1007C0002", "1007C0003", "1007C0004",
-            "1007C0005", "1007C0006", "1007C0007", "1007C0008", "1007S0001", "1007S0002");
+            "1007C0005", "1007C0006", "1007C0007", "1007C0008", "1007C0009", "1007C0010",
+            "1007S0001", "1007S0002");
 
     @ExceptionHandler(CatalogBizException.class)
     public ResponseEntity<ApiResult<Void>> onCatalogBizException(final CatalogBizException ex) {
@@ -40,8 +41,8 @@ public class CatalogExceptionHandler {
         return switch (code) {
             case "1007C0006" -> HttpStatus.FORBIDDEN;
             case "1007C0001", "1007C0002", "1007C0003", "1007C0004", "1007C0007" -> HttpStatus.CONFLICT;
-            case "1007C0005" -> HttpStatus.NOT_FOUND;
-            case "1007C0008" -> HttpStatus.BAD_REQUEST;
+            case "1007C0005", "1007C0010" -> HttpStatus.NOT_FOUND;
+            case "1007C0008", "1007C0009" -> HttpStatus.BAD_REQUEST;
             default -> HttpStatus.SERVICE_UNAVAILABLE;   // 1007S0001 / 1007S0002
         };
     }
