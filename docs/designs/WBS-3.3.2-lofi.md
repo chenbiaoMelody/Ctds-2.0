@@ -13,7 +13,7 @@
 **做**（= 任务卡交付物 ①~⑫）：
 
 1. 新建 `services/catalog-service` 域级服务（端口 8084 / 库 `ctds_catalog`），目录与资源域 3.3.2~3.3.5 共用宿主；
-2. 资源库 3 表迁移 + domain 模型类 + DB 约束兜底；
+2. 资源库 4 表迁移 + domain 模型类 + DB 约束兜底；
 3. 资源登记 / 变更 / 注销 3 个写面端点 + 本人列表 / 本人详情 2 个读面端点（共 5 端点）+ 应用服务全规则落地；
 4. space-service 加 1 个 internal 成员判定端点 + catalog 侧 2 个 client；
 5. `CatalogErrorCodes` 1007 段码值定稿 + 部署入列 + 集成测试 + 分级落级回写。
@@ -37,13 +37,14 @@
 | 库 | `ctds_catalog` | 每服务独立库惯例（沿 ctds_space） |
 | 资源名 | `datasets`（对外）/ `dataset`（表与实体） | 规格 §7 Q8 裁决；术语统一"数据资源"↔Dataset，不引入第二套概念（边界声明 6） |
 
-### 2.2 表清单（3 表）
+### 2.2 表清单（4 表；表数口径于评审循环 1 勘误为 4，含序号表）
 
 | 表 | 承载 | 硬约束（DB 兜底） |
 | --- | --- | --- |
 | `dataset` | 资源主表：id / data_no（数据标识）/ space_id / owner_subject_no / name / normalized_name / type / intro / semantic_tags / declare_category / declare_level / declare_important / status / created_at / updated_at | `uk_data_no`（全平台唯一）；`uk_space_norm_name`（同空间归一化名唯一，注销行参与锁定语义） |
 | `dataset_name_lock` | 注销名同空间锁定（space_id + normalized_name） | 锁定表复合 PK（注销后同空间不可复用，沿 space_name_lock 先例） |
-| `dataset_action_log` | 统一留痕：actor/space_id/dataset_id/action/from_value/to_value/result/created_at | ——（留痕结构断言探针） |
+| `dataset_action_log` | 统一留痕：actor/space_id/dataset_id/action/from_value/to_value/result/reason_code/created_at | ——（留痕结构断言探针） |
+| `dataset_no_seq` | 数据标识当日序号（seq_date + seq_key 复合 PK，seq_value 原子自增、当日重置） | 复合 PK（seq_date + seq_key） |
 
 > 无幂等表（`common/idempotency` 组件）、无产品表（3.3.5）、无标签关联表（词表归 3.3.3，本卡 JSON 字符串载体）。
 > data_no 业务编号 vs id 技术主键分离（沿 subjectNo / 技术 id 先例）。
