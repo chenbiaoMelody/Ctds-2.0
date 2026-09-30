@@ -1,6 +1,7 @@
 package com.ctds.catalog;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
@@ -8,16 +9,29 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 
+import com.ctds.catalog.domain.ActionResult;
+import com.ctds.catalog.domain.CatalogBizException;
+import com.ctds.catalog.domain.Dataset;
+import com.ctds.catalog.domain.DatasetActionLog;
+import com.ctds.catalog.domain.DatasetRepository;
+import com.ctds.catalog.domain.DatasetStatus;
+import com.ctds.catalog.domain.DatasetType;
+import com.ctds.catalog.domain.DeclareLevel;
 import com.ctds.catalog.domain.SpaceMembership;
 import com.ctds.catalog.domain.SpaceMembershipPort;
 import com.ctds.catalog.domain.SubjectAdmission;
 import com.ctds.catalog.domain.SubjectAdmissionPort;
 import com.ctds.catalog.support.SharedMySqlContainer;
+import com.ctds.common.errorcode.ErrorCodes;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.Date;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterAll;
@@ -88,6 +102,10 @@ class CatalogDatasetLifecycleIntegrationTest {
     @Autowired
     private JdbcTemplate jdbc;
 
+    /** 直连仓储：并发登记窗口（唯一索引兜底）用例绕过应用层预检，验证其真实生效。 */
+    @Autowired
+    private DatasetRepository datasetRepository;
+
     @MockitoBean
     private SubjectAdmissionPort admissionPort;
 
@@ -115,7 +133,7 @@ class CatalogDatasetLifecycleIntegrationTest {
         // 行为 7 规则 5：响应仅目录元数据，不含数据本体字段（字段集显式锚定）
         assertThat(payload.properties().stream().map(java.util.Map.Entry::getKey).toList())
                 .containsExactlyInAnyOrder("id", "dataNo", "spaceId", "name", "type", "intro",
-                        "semanticTags", "declareCategory", "declareLevel", "declareImportant", "status",
+                        "tags", "declareCategory", "declareLevel", "declareImportant", "status",
                         "createdAt");
         // 行为 1 规则 7：登记留痕四要素（谁/何时/对象/动作）+ 结果
         final Integer logs = jdbc.queryForObject(
@@ -136,6 +154,15 @@ class CatalogDatasetLifecycleIntegrationTest {
         assertThat(codeOf(denied)).isEqualTo("1007C0006");
         // 未入驻与"主体不存在"统一文案（防枚举）
         assertThat(root(denied).path("message").asText()).isEqualTo("主体未入驻或不存在，无法登记资源");
+        // 防枚举同形双路对照：另一主体（主体不存在，客户端侧归 NOT_ADMITTED）与未入驻的响应码与文案
+        // 逐字相同。**证据链说明**：本类以 @MockitoBean 表达资格端口，两路共用"NOT_ADMITTED 单一分支"，
+        // 同形由"客户端边界把两类上游答案归并为一态 + 应用层单一拒绝分支"共同保证——前者的独立可证伪
+        // 证据见 SubjectAdmissionClientTest#notFoundAndNotAdmittedAreIndistinguishableAtClientBoundary
+        final MvcResult absent = register("owner-t2-absent", 1002L, registerBody("资格数据集", ""));
+        assertThat(absent.getResponse().getStatus()).isEqualTo(denied.getResponse().getStatus());
+        assertThat(codeOf(absent)).isEqualTo(codeOf(denied));
+        assertThat(root(absent).path("message").asText())
+                .isEqualTo(root(denied).path("message").asText());
         given(admissionPort.check(any())).willReturn(SubjectAdmission.UNAVAILABLE);
         final MvcResult unavailable = register("owner-t2", 1002L, registerBody("资格数据集", ""));
         assertThat(unavailable.getResponse().getStatus()).isEqualTo(503);
@@ -260,13 +287,13 @@ class CatalogDatasetLifecycleIntegrationTest {
     void updateChangesFieldsAndOnlyTightensLevel() throws Exception {
         final long datasetId = registerOk("owner-t7", 1011L, "变更数据集", ",\"declareLevel\":\"L2\"");
         final MvcResult updated = update("owner-t7", datasetId,
-                "{\"intro\":\"新简介\",\"semanticTags\":[\"金融\",\"风控\"]}");
+                "{\"intro\":\"新简介\",\"tags\":[\"金融\",\"风控\"]}");
         assertThat(updated.getResponse().getStatus()).isEqualTo(200);
         assertThat(payload(updated).path("intro").asText()).isEqualTo("新简介");
         // 留痕含"从何值 → 到何值"
         final Integer introLogs = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM dataset_action_log WHERE dataset_id = ? AND action = 'UPDATE' "
-                        + "AND result = 'SUCCESS' AND from_value LIKE 'intro:%' AND to_value = ?",
+                        + "AND result = 'SUCCESS' AND from_value = 'intro:资源简介' AND to_value = ?",
                 Integer.class, datasetId, "intro:新简介");
         assertThat(introLogs).isEqualTo(1);
         // 级别上调（收紧）通过
@@ -388,6 +415,86 @@ class CatalogDatasetLifecycleIntegrationTest {
                 .isEqualTo(1);
     }
 
+    // ==== T15 并发与边界（评审循环 1 修复批：唯一索引兜底 / 分页边界 / 要素长度边界 / 数据标识口径）====
+
+    @Test
+    void concurrentRegistrationWindowIsGuardedByUniqueIndex() {
+        // 绕过应用层同空间预检直插两次同空间同归一化名：唯一索引 uk_space_norm_name 兜底并发登记窗口
+        // → 1007C0001（既不产生第二行、也不静默成功）
+        final long spaceId = 1020L;
+        // 共享容器重跑稳健性：本用例独占 space 1020，先清理本空间遗留行（避免 uk_data_no 冲突误红）
+        jdbc.update("DELETE FROM dataset_action_log WHERE space_id = ?", spaceId);
+        jdbc.update("DELETE FROM dataset WHERE space_id = ?", spaceId);
+        final LocalDateTime now = LocalDateTime.now();
+        final String conflictName = "并发窗口数据集";
+        final DatasetActionLog log = new DatasetActionLog(null, "owner-t11c", spaceId, null, "REGISTER",
+                null, DatasetStatus.ACTIVE.name(), ActionResult.SUCCESS, null, now);
+        final String datePart = LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE);
+        datasetRepository.create(
+                dataset("DS" + datePart + "990001", spaceId, "owner-t11c", conflictName, now), log);
+        assertThatThrownBy(() -> datasetRepository.create(
+                dataset("DS" + datePart + "990002", spaceId, "owner-t11c", conflictName, now), log))
+                .isInstanceOf(CatalogBizException.class)
+                .hasMessage("同一空间已存在同名资源");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM dataset WHERE space_id = ? "
+                + "AND normalized_name = ?", Integer.class, spaceId, conflictName)).isEqualTo(1);
+    }
+
+    @Test
+    void paginationBoundariesAndLongFieldValidation() throws Exception {
+        // 空结果：该主体无资源 → total=0、list 空、分页字段回显默认值
+        final MvcResult empty = mockMvc.perform(auth(get(DATASETS + "/mine"), "owner-t12", "provider"))
+                .andReturn();
+        assertThat(empty.getResponse().getStatus()).isEqualTo(200);
+        assertThat(payload(empty).path("total").asLong()).isZero();
+        assertThat(payload(empty).path("list")).isEmpty();
+        assertThat(payload(empty).path("pageNum").asInt()).isEqualTo(1);
+        assertThat(payload(empty).path("pageSize").asInt()).isEqualTo(10);
+        // 分页边界（common-pagination 口径 ADR-005 §3.2）：pageSize 1~100、pageNum 从 1 起
+        assertThat(minePage(1021L, "101", "1").getResponse().getStatus()).isEqualTo(400);
+        assertThat(minePage(1021L, "10", "0").getResponse().getStatus()).isEqualTo(400);
+        assertThat(minePage(1021L, "100", "1").getResponse().getStatus()).isEqualTo(200);
+        // 要素长度边界（hifi §3.1 列宽）：简介 512 / 分类申报 64 放行；各超 1 字符 → 400
+        assertThat(register("owner-t12", 1021L,
+                longFieldBody("边界要素数据集", "简".repeat(512), "金".repeat(64))).getResponse().getStatus())
+                .isEqualTo(200);
+        assertThat(register("owner-t12", 1021L,
+                longFieldBody("超长简介数据集", "简".repeat(513), "金融")).getResponse().getStatus())
+                .isEqualTo(400);
+        assertThat(register("owner-t12", 1021L,
+                longFieldBody("超长分类数据集", "简介", "金".repeat(65))).getResponse().getStatus())
+                .isEqualTo(400);
+    }
+
+    @Test
+    void dataNoDailySequenceResetsPerDayAndStopsAtUpperBound() throws Exception {
+        final LocalDate today = LocalDate.now();
+        // 当日重置口径（Q3-A）：前一日序号行置 5，不继承到当日
+        jdbc.update("INSERT INTO dataset_no_seq (seq_date, seq_key, seq_value) VALUES (?, 'DATASET', 5) "
+                + "ON DUPLICATE KEY UPDATE seq_value = 5", Date.valueOf(today.minusDays(1)));
+        final int before = jdbc.query("SELECT seq_value FROM dataset_no_seq WHERE seq_date = ? "
+                        + "AND seq_key = 'DATASET'", (rs, rowNum) -> rs.getInt(1), Date.valueOf(today))
+                .stream().findFirst().orElse(0);
+        final MvcResult registered = register("owner-t13", 1022L, registerBody("序号数据集", ""));
+        assertThat(registered.getResponse().getStatus()).isEqualTo(200);
+        assertThat(payload(registered).path("dataNo").asText())
+                .isEqualTo("DS" + today.format(DateTimeFormatter.BASIC_ISO_DATE)
+                        + String.format("%06d", before + 1));
+        // 当日序号上限（6 位）：置 999999 后登记 → 超限按内部错误处理（不溢出编号），事务回滚无残留
+        try {
+            jdbc.update("UPDATE dataset_no_seq SET seq_value = 999999 WHERE seq_date = ? "
+                    + "AND seq_key = 'DATASET'", Date.valueOf(today));
+            final MvcResult overflow = register("owner-t13", 1022L, registerBody("序号上限数据集", ""));
+            assertThat(overflow.getResponse().getStatus()).isEqualTo(500);
+            assertThat(codeOf(overflow)).isEqualTo(ErrorCodes.INTERNAL_ERROR.value());
+            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM dataset WHERE space_id = 1022 "
+                    + "AND normalized_name = '序号上限数据集'", Integer.class)).isZero();
+        } finally {
+            jdbc.update("UPDATE dataset_no_seq SET seq_value = ? WHERE seq_date = ? AND seq_key = 'DATASET'",
+                    before + 1, Date.valueOf(today));
+        }
+    }
+
     // ==== 助手 ====
 
     private static MockHttpServletRequestBuilder auth(final MockHttpServletRequestBuilder builder,
@@ -417,9 +524,29 @@ class CatalogDatasetLifecycleIntegrationTest {
                 .contentType(CONTENT_TYPE).content(body)).andReturn();
     }
 
+    private MvcResult minePage(final long spaceId, final String pageSize, final String pageNum)
+            throws Exception {
+        return mockMvc.perform(auth(get(DATASETS + "/mine").param("spaceId", String.valueOf(spaceId))
+                .param("pageSize", pageSize).param("pageNum", pageNum), "owner-t12", "provider"))
+                .andReturn();
+    }
+
+    /** 要素长度边界用例专用请求体（可显式给足简介与分类申报，避免与 scaffold 字段重名）。 */
+    private static String longFieldBody(final String name, final String intro, final String category) {
+        return "{\"name\":\"" + name + "\",\"type\":\"DATASET\",\"intro\":\"" + intro + "\","
+                + "\"tags\":[\"金融\"],\"declareCategory\":\"" + category + "\",\"declareLevel\":\"L2\"}";
+    }
+
+    /** 仓储级用例的领域对象构造（归一化名 = 名称，用例名不含空白无需归一化）。 */
+    private static Dataset dataset(final String dataNo, final long spaceId, final String owner,
+            final String name, final LocalDateTime now) {
+        return new Dataset(null, dataNo, spaceId, owner, name, name, DatasetType.DATASET, "资源简介",
+                "[\"金融\"]", "金融", DeclareLevel.L2, false, DatasetStatus.ACTIVE, now, now);
+    }
+
     private static String registerBody(final String name, final String extra) {
         return "{\"name\":\"" + name + "\",\"type\":\"DATASET\",\"intro\":\"资源简介\","
-                + "\"semanticTags\":[\"金融\",\"普惠\"],\"declareCategory\":\"金融\",\"declareLevel\":\"L2\""
+                + "\"tags\":[\"金融\",\"普惠\"],\"declareCategory\":\"金融\",\"declareLevel\":\"L2\""
                 + extra + "}";
     }
 

@@ -93,6 +93,18 @@ class SubjectAdmissionClientTest {
     }
 
     @Test
+    void notFoundAndNotAdmittedAreIndistinguishableAtClientBoundary() {
+        // 防枚举同形（行为 1 规则 1）：主体不存在（1000C0003）与未入驻（业务状态非 ADMITTED）在**客户端
+        // 边界**归并为同一三态值 → 应用层只有一条拒绝分支，对外码与文案必然逐字相同（若客户端为
+        // "主体不存在"另设一态，本用例必红——同形主张由此可证伪，而非靠两路 mock 巧合）
+        responseBody.set("{\"code\":\"1000C0003\",\"message\":\"申请编号不存在\"}");
+        final SubjectAdmission absent = client(baseUrl).check("S1");
+        responseBody.set("{\"code\":\"0\",\"data\":{\"subjectNo\":\"S1\",\"status\":\"PENDING_REVIEW\"}}");
+        final SubjectAdmission pending = client(baseUrl).check("S1");
+        assertThat(absent).isEqualTo(pending).isEqualTo(SubjectAdmission.NOT_ADMITTED);
+    }
+
+    @Test
     void httpFailureMapsToUnavailable() {
         responseStatus.set(500);
         assertThat(client(baseUrl).check("S1")).isEqualTo(SubjectAdmission.UNAVAILABLE);
@@ -117,12 +129,14 @@ class SubjectAdmissionClientTest {
 
     @Test
     void readTimeoutMapsToUnavailable() {
-        // 读超时（hifi §5 契约：readTimeout 3s）——响应挂起超时 → UNAVAILABLE（配置失守必红）
+        // 读超时（hifi §5 契约：readTimeout 3s）——桩返回**合法 ADMITTED 体**但挂起超时节流：
+        // 若读超时配置失守，则 4s 后拿到 200+ADMITTED → 本用例在结果与耗时两处必红（可证伪探针）
+        responseBody.set("{\"code\":\"0\",\"data\":{\"subjectNo\":\"S1\",\"status\":\"ADMITTED\"}}");
         delayMillis.set(4000L);
         final long startNanos = System.nanoTime();
         assertThat(client(baseUrl).check("S1")).isEqualTo(SubjectAdmission.UNAVAILABLE);
         final long elapsedMillis = (System.nanoTime() - startNanos) / 1_000_000L;
-        assertThat(elapsedMillis).as("应经读超时（约 3s）而非立即失败").isBetween(2500L, 8000L);
+        assertThat(elapsedMillis).as("应经读超时（约 3s）而非拿到 4s 后的完整响应").isBetween(2500L, 3900L);
     }
 
     @Test

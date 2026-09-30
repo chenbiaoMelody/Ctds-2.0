@@ -33,6 +33,8 @@ class SpaceMembershipClientTest {
     private final AtomicReference<String> requestPath = new AtomicReference<>("");
     private final AtomicReference<List<String>> subjectHeaders = new AtomicReference<>(List.of());
     private final AtomicReference<List<String>> roleHeaders = new AtomicReference<>(List.of());
+    /** 桩响应延迟（毫秒）——读超时用例把响应挂起超过客户端 3s 读超时（双 client 同契约）。 */
+    private final AtomicReference<Long> delayMillis = new AtomicReference<>(0L);
 
     @BeforeEach
     void startStub() throws IOException {
@@ -53,6 +55,14 @@ class SpaceMembershipClientTest {
     }
 
     private void respond(final HttpExchange exchange) throws IOException {
+        final long delay = delayMillis.get();
+        if (delay > 0) {
+            try {
+                Thread.sleep(delay);
+            } catch (final InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
         final byte[] body = responseBody.get().getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "application/json");
         exchange.sendResponseHeaders(responseStatus.get(), body.length);
@@ -112,6 +122,18 @@ class SpaceMembershipClientTest {
     void malformedBodyMapsToUnavailable() {
         responseBody.set("not-json");
         assertThat(client(baseUrl).check(9001L, "S1").available()).isFalse();
+    }
+
+    @Test
+    void readTimeoutMapsToUnavailable() {
+        // 读超时（hifi §5 契约：readTimeout 3s，双 client 同契约）——桩返回合法可解析体但挂起超时：
+        // 若读超时配置失守，4s 后拿到 200+ACTIVE/MEMBER → available()=true，本用例必红（可证伪探针）
+        responseBody.set("{\"code\":\"0\",\"data\":{\"spaceStatus\":\"ACTIVE\",\"role\":\"MEMBER\"}}");
+        delayMillis.set(4000L);
+        final long startNanos = System.nanoTime();
+        assertThat(client(baseUrl).check(9001L, "S1").available()).isFalse();
+        final long elapsedMillis = (System.nanoTime() - startNanos) / 1_000_000L;
+        assertThat(elapsedMillis).as("应经读超时（约 3s）而非拿到 4s 后的完整响应").isBetween(2500L, 3900L);
     }
 
     @Test

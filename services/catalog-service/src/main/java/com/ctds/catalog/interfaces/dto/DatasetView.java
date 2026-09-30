@@ -17,7 +17,7 @@ public record DatasetView(
         String name,
         String type,
         String intro,
-        List<String> semanticTags,
+        List<String> tags,
         String declareCategory,
         String declareLevel,
         boolean declareImportant,

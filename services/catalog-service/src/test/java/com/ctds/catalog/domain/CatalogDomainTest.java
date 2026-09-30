@@ -1,6 +1,7 @@
 package com.ctds.catalog.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -93,6 +94,16 @@ class CatalogDomainTest {
         // 空载体读面回空列表（不抛错）
         assertThat(SemanticTags.fromJson("")).isEmpty();
         assertThat(SemanticTags.fromJson(null)).isEmpty();
+    }
+
+    @Test
+    void semanticTagsInvalidJsonFailsLoudly() {
+        // 载体被污染（非法 JSON / 非数组结构）→ 显式失败，不静默回空列表
+        // （静默回空会把"读不到"当成"无标签"，掩盖存储污染）
+        assertThatThrownBy(() -> SemanticTags.fromJson("not-json"))
+                .isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> SemanticTags.fromJson("{\"tag\":\"金融\"}"))
+                .isInstanceOf(IllegalStateException.class);
     }
 
     @Test

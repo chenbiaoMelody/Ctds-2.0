@@ -80,6 +80,8 @@ class SpaceInternalMembershipEndpointIntegrationTest {
                 .andExpect(jsonPath("$.code").value("0"))
                 .andExpect(jsonPath("$.data.spaceStatus").value("ACTIVE"))
                 .andExpect(jsonPath("$.data.role").value("OWNER"));
+        mockMvc.perform(internal(spaceId, "S-admin"))
+                .andExpect(jsonPath("$.data.role").value("ADMIN"));
         mockMvc.perform(internal(spaceId, "S-member"))
                 .andExpect(jsonPath("$.data.role").value("MEMBER"));
         // 非成员 = NONE（与"空间不存在"同形但空间状态如实回 ACTIVE——两者语义分开）
