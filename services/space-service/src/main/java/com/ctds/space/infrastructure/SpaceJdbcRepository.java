@@ -663,7 +663,8 @@ public class SpaceJdbcRepository implements SpaceRepository {
      * 事务内留痕写入（同事务契约的落库点）。target_id 兜底：目标类型为空间而调用方未指实体时
      * 以 space_id 回填（V1 契约"探测被拒且无实体可指才允许 NULL"——CREATE 后实体已存在，
      * 按 target_id 检索留痕不可漏行，评审循环 1 补）。space_id 可空：NULL 仅限平台级策略动作
-     * 等少数场景（WBS-3.2.5 平台面留痕）。
+     * 等少数场景（WBS-3.2.5 平台面留痕）及 DB-29 治理查看的运营方空间检索列表行
+     * （GOVERNANCE_VIEW，space_id/target_id 均空）与平台策略条目面行（target_type=POLICY）。
      */
     private void insertLogWithinTransaction(final Long spaceId, final SpaceActionLog log) {
         final Long targetId = log.targetId() != null ? log.targetId()

@@ -69,8 +69,9 @@ public class SpaceQueryService {
         final Space space = repository.findById(spaceId)
                 .orElseThrow(() -> notFound());
         if (guard.isPlatformOperator() || guard.isOwner(space)) {
+            final SpaceView view = new SpaceView(space, repository.findActiveMembers(spaceId), true);
             visitLogger.recordSpaceView(spaceId);
-            return new SpaceView(space, repository.findActiveMembers(spaceId), true);
+            return view;
         }
         final List<SpaceMember> members = repository.findActiveMembers(spaceId);
         final boolean isMember = subject != null && members.stream()

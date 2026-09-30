@@ -236,15 +236,22 @@ class SpaceMigrationIntegrationTest {
                 + " WHERE table_schema = ? AND table_name = 'space_action_log' AND column_name = 'action'", db);
         assertTrue(comment.contains("GOVERNANCE_VIEW"), "action 注释应登记 GOVERNANCE_VIEW 动作码");
         assertTrue(comment.contains("POLICY_DEFINE"), "既有动作码登记不得回退");
-        // 零破坏：表集合不变（六表）且列集合不变
+        assertTrue(comment.contains("UPDATE="), "既有动作码登记不得回退（V2 UPDATE）");
+        // 零破坏：表集合不变（六表）、列集合不变、action 列类型保持（评审④ P3-4 护栏补强）
         assertEquals(6, count(db, "SELECT COUNT(*) FROM information_schema.tables"
                 + " WHERE table_schema = ? AND table_name IN ('space','space_name_lock','space_member',"
                 + "'space_admission','space_policy','space_action_log')", db), "V4 不得新增/删除表");
+        final String columnType = scalar(db, "SELECT column_type FROM information_schema.columns"
+                + " WHERE table_schema = ? AND table_name = 'space_action_log' AND column_name = 'action'", db);
+        assertEquals("varchar(32)", columnType, "action 列类型应保持不变");
+        assertEquals("NO", scalar(db, "SELECT is_nullable FROM information_schema.columns"
+                + " WHERE table_schema = ? AND table_name = 'space_action_log' AND column_name = 'action'", db),
+                "action 列应保持 NOT NULL");
     }
 
     // ---------- 助手：每用例独立库 + 迁移 + 纯 JDBC 断言 ----------
 
-    /** 建独立库并在其上执行全新 V1~V3 迁移，返回库名（隔离语义等价方法级容器）。
+    /** 建独立库并在其上执行全新 V1~V4 迁移（locations 全量自动前滚，随迁移目录演进），返回库名（隔离语义等价方法级容器）。
      * 建库/授权由 {@link com.ctds.space.support.SharedMySqlContainer} 以容器 root 完成
      * （应用用户对新库无 CREATE 权限，授权后 Flyway/断言仍以应用用户接入）。 */
     private String freshDatabaseWithMigration(final String label) {

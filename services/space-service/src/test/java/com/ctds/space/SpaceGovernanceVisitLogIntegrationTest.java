@@ -48,7 +48,7 @@ class SpaceGovernanceVisitLogIntegrationTest {
     private static final String BASE = "/api/v1/data-spaces";
     private static final String PLATFORM = "/api/v1/platform-policies";
     private static final String OPERATOR_ROLE = "platform.operator";
-    private static final String OPERATOR = "operator-db29";
+    private static final String OPERATOR_SUBJECT = "operator-db29";
     private static final String VISIT = "GOVERNANCE_VIEW";
 
     @DynamicPropertySource
@@ -78,57 +78,58 @@ class SpaceGovernanceVisitLogIntegrationTest {
         addActiveMember(id, "member-db29");
 
         // ① 检索列表（平台面：target_type=SPACE、target_id/space_id 均空）
-        final int listBefore = visitCount(null, OPERATOR);
-        mockMvc.perform(auth(get(BASE), OPERATOR, OPERATOR_ROLE)).andExpect(status().isOk())
+        final int listBefore = visitCount(null, OPERATOR_SUBJECT);
+        mockMvc.perform(auth(get(BASE), OPERATOR_SUBJECT, OPERATOR_ROLE)).andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value("0"));
-        assertThat(visitCount(null, OPERATOR)).isEqualTo(listBefore + 1);
+        assertThat(visitCount(null, OPERATOR_SUBJECT)).isEqualTo(listBefore + 1);
         assertLastVisitRow(null, "SPACE", null);
 
         // ② 空间详情
-        final int detailBefore = visitCount(id, OPERATOR);
-        mockMvc.perform(auth(get(BASE + "/" + id), OPERATOR, OPERATOR_ROLE)).andExpect(status().isOk())
+        final int detailBefore = visitCount(id, OPERATOR_SUBJECT);
+        mockMvc.perform(auth(get(BASE + "/" + id), OPERATOR_SUBJECT, OPERATOR_ROLE)).andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value("0"));
-        assertThat(visitCount(id, OPERATOR)).isEqualTo(detailBefore + 1);
+        assertThat(visitCount(id, OPERATOR_SUBJECT)).isEqualTo(detailBefore + 1);
         assertLastVisitRow(id, "SPACE", id);
 
         // ③ 留痕分页（自引用：本次结果不含本次 visit 行——total=调用前行数；再次查询 total+1 可见——读后写钉死）
-        final int logsBefore = visitCount(id, OPERATOR);
+        final int logsBefore = visitCount(id, OPERATOR_SUBJECT);
         final int allRowsBefore = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM space_action_log WHERE space_id = ?", Integer.class, id);
-        mockMvc.perform(auth(get(BASE + "/" + id + "/action-logs"), OPERATOR, OPERATOR_ROLE))
+        mockMvc.perform(auth(get(BASE + "/" + id + "/action-logs"), OPERATOR_SUBJECT, OPERATOR_ROLE))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.total").value(allRowsBefore));
-        assertThat(visitCount(id, OPERATOR)).isEqualTo(logsBefore + 1);
-        mockMvc.perform(auth(get(BASE + "/" + id + "/action-logs"), OPERATOR, OPERATOR_ROLE))
+        assertThat(visitCount(id, OPERATOR_SUBJECT)).isEqualTo(logsBefore + 1);
+        assertLastVisitRow(id, "SPACE", id);
+        mockMvc.perform(auth(get(BASE + "/" + id + "/action-logs"), OPERATOR_SUBJECT, OPERATOR_ROLE))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.total").value(allRowsBefore + 1));
 
         // ④ 有效策略
-        final int policyBefore = visitCount(id, OPERATOR);
-        mockMvc.perform(auth(get(BASE + "/" + id + "/policies/effective"), OPERATOR, OPERATOR_ROLE))
+        final int policyBefore = visitCount(id, OPERATOR_SUBJECT);
+        mockMvc.perform(auth(get(BASE + "/" + id + "/policies/effective"), OPERATOR_SUBJECT, OPERATOR_ROLE))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.code").value("0"));
-        assertThat(visitCount(id, OPERATOR)).isEqualTo(policyBefore + 1);
+        assertThat(visitCount(id, OPERATOR_SUBJECT)).isEqualTo(policyBefore + 1);
         assertLastVisitRow(id, "SPACE", id);
 
         // ⑤ 成员列表
-        final int memberBefore = visitCount(id, OPERATOR);
-        mockMvc.perform(auth(get(BASE + "/" + id + "/members"), OPERATOR, OPERATOR_ROLE))
+        final int memberBefore = visitCount(id, OPERATOR_SUBJECT);
+        mockMvc.perform(auth(get(BASE + "/" + id + "/members"), OPERATOR_SUBJECT, OPERATOR_ROLE))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.code").value("0"));
-        assertThat(visitCount(id, OPERATOR)).isEqualTo(memberBefore + 1);
+        assertThat(visitCount(id, OPERATOR_SUBJECT)).isEqualTo(memberBefore + 1);
         assertLastVisitRow(id, "SPACE", id);
 
         // ⑥ 准入单列表
-        final int admissionBefore = visitCount(id, OPERATOR);
-        mockMvc.perform(auth(get(BASE + "/" + id + "/admissions"), OPERATOR, OPERATOR_ROLE))
+        final int admissionBefore = visitCount(id, OPERATOR_SUBJECT);
+        mockMvc.perform(auth(get(BASE + "/" + id + "/admissions"), OPERATOR_SUBJECT, OPERATOR_ROLE))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.code").value("0"));
-        assertThat(visitCount(id, OPERATOR)).isEqualTo(admissionBefore + 1);
+        assertThat(visitCount(id, OPERATOR_SUBJECT)).isEqualTo(admissionBefore + 1);
         assertLastVisitRow(id, "SPACE", id);
 
         // ⑦ 平台策略条目列表（平台面：space_id 空、target_type=POLICY、target_id 空）
-        final int platformBefore = visitCount(null, OPERATOR);
-        mockMvc.perform(auth(get(PLATFORM), OPERATOR, OPERATOR_ROLE)).andExpect(status().isOk())
+        final int platformBefore = visitCount(null, OPERATOR_SUBJECT);
+        mockMvc.perform(auth(get(PLATFORM), OPERATOR_SUBJECT, OPERATOR_ROLE)).andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value("0"));
-        assertThat(visitCount(null, OPERATOR)).isEqualTo(platformBefore + 1);
+        assertThat(visitCount(null, OPERATOR_SUBJECT)).isEqualTo(platformBefore + 1);
         assertLastVisitRow(null, "POLICY", null);
     }
 
@@ -139,29 +140,35 @@ class SpaceGovernanceVisitLogIntegrationTest {
         final long id = enabledSpace("owner-db29b", "成员访问不写留痕空间", "INVITE", "PRIVATE");
         addActiveMember(id, "member-db29b");
 
-        // 成员常规访问（允许面）：成功但不写 visit 行
-        final int before = visitCount(id, OPERATOR);
+        // 成员常规访问（允许面）：成功但不写 visit 行（采样 + 全量负向：五端点逐一）
+        final int before = visitCount(id, OPERATOR_SUBJECT);
         mockMvc.perform(auth(get(BASE + "/" + id), "member-db29b", "user")).andExpect(status().isOk());
+        mockMvc.perform(auth(get(BASE), "member-db29b", "user")).andExpect(status().isOk());
+        mockMvc.perform(auth(get(BASE + "/" + id + "/action-logs"), "member-db29b", "user"))
+                .andExpect(status().isOk());
         mockMvc.perform(auth(get(BASE + "/" + id + "/members"), "member-db29b", "user")).andExpect(status().isOk());
+        mockMvc.perform(auth(get(BASE + "/" + id + "/admissions"), "member-db29b", "user"))
+                .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("1006C0007"));
         mockMvc.perform(auth(get(BASE + "/" + id + "/policies/effective"), "member-db29b", "user"))
                 .andExpect(status().isOk());
-        assertThat(visitCount(id, OPERATOR)).isEqualTo(before);
+        assertThat(visitCount(id, OPERATOR_SUBJECT)).isEqualTo(before);
 
         // 所有者常规访问：同样不写 visit 行
         mockMvc.perform(auth(get(BASE + "/" + id), "owner-db29b", "user")).andExpect(status().isOk());
-        assertThat(visitCount(id, OPERATOR)).isEqualTo(before);
+        assertThat(visitCount(id, OPERATOR_SUBJECT)).isEqualTo(before);
 
-        // 成员访问平台条目面：无 platform.policy 权限 → 403 拒绝且无 visit 行（拒绝语义不回归）
+        // 成员访问平台条目面：无 platform.policy 权限 → 403 拒绝且无 visit 行（拒绝语义不回归；平台面基线单独采集——评审③④ P2）
+        final int platformBefore = visitCount(null, OPERATOR_SUBJECT);
         mockMvc.perform(auth(get(PLATFORM), "member-db29b", "user")).andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("1006C0007"));
-        assertThat(visitCount(null, OPERATOR)).isEqualTo(before);
+        assertThat(visitCount(null, OPERATOR_SUBJECT)).isEqualTo(platformBefore);
 
         // 非成员越权（非运营方）：对外拒绝形态不变 + 拒绝留痕照旧、visit 行为零混淆
         mockMvc.perform(auth(get(BASE + "/" + id), "outsider-db29", "user")).andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("1006C0004"));
         mockMvc.perform(auth(get(BASE + "/" + id + "/action-logs"), "outsider-db29", "user"))
                 .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("1006C0007"));
-        assertThat(visitCount(id, OPERATOR)).isEqualTo(before);
+        assertThat(visitCount(id, OPERATOR_SUBJECT)).isEqualTo(before);
         final Integer denied = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM space_action_log WHERE space_id = ? AND action = 'ACCESS_DENIED' "
                         + "AND operator = 'outsider-db29' AND result = 'DENIED'", Integer.class, id);
@@ -178,14 +185,19 @@ class SpaceGovernanceVisitLogIntegrationTest {
                         .content("{\"confirmDissolve\":true}"))
                 .andExpect(status().isOk());
 
-        final int before = visitCount(id, OPERATOR);
-        mockMvc.perform(auth(get(BASE + "/" + id), OPERATOR, OPERATOR_ROLE)).andExpect(status().isOk())
+        // 三端点逐面"基线-断言"（评审④ P3：聚合计数可互抵，拆开钉死单端点恰 +1）
+        final int detailBefore = visitCount(id, OPERATOR_SUBJECT);
+        mockMvc.perform(auth(get(BASE + "/" + id), OPERATOR_SUBJECT, OPERATOR_ROLE)).andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value("0"));
-        mockMvc.perform(auth(get(BASE + "/" + id + "/action-logs"), OPERATOR, OPERATOR_ROLE))
+        assertThat(visitCount(id, OPERATOR_SUBJECT)).isEqualTo(detailBefore + 1);
+        final int logsBefore2 = visitCount(id, OPERATOR_SUBJECT);
+        mockMvc.perform(auth(get(BASE + "/" + id + "/action-logs"), OPERATOR_SUBJECT, OPERATOR_ROLE))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.code").value("0"));
-        mockMvc.perform(auth(get(BASE + "/" + id + "/policies/effective"), OPERATOR, OPERATOR_ROLE))
+        assertThat(visitCount(id, OPERATOR_SUBJECT)).isEqualTo(logsBefore2 + 1);
+        final int policyBefore2 = visitCount(id, OPERATOR_SUBJECT);
+        mockMvc.perform(auth(get(BASE + "/" + id + "/policies/effective"), OPERATOR_SUBJECT, OPERATOR_ROLE))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.code").value("0"));
-        assertThat(visitCount(id, OPERATOR)).isEqualTo(before + 3);
+        assertThat(visitCount(id, OPERATOR_SUBJECT)).isEqualTo(policyBefore2 + 1);
         assertLastVisitRow(id, "SPACE", id);
     }
 
@@ -216,7 +228,7 @@ class SpaceGovernanceVisitLogIntegrationTest {
     /** GOVERNANCE_VIEW visit 行计数（spaceId 传 null = 平台面行，space_id IS NULL）。 */
     private int visitCount(final Long spaceId, final String operator) {
         final Integer count = jdbc.queryForObject(
-                "SELECT COUNT(*) FROM space_action_log WHERE action = 'GOVERNANCE_VIEW' AND operator = ? "
+                "SELECT COUNT(*) FROM space_action_log WHERE action = '" + VISIT + "' AND operator = ? "
                         + "AND ((? IS NULL AND space_id IS NULL) OR space_id = ?)",
                 Integer.class, operator, spaceId, spaceId);
         return count == null ? 0 : count;
@@ -227,13 +239,13 @@ class SpaceGovernanceVisitLogIntegrationTest {
         final Map<String, Object> row = jdbc.queryForMap(
                 "SELECT space_id, target_type, target_id, operator, result, reason, from_value, to_value, "
                         + "DATE_FORMAT(created_at, '%Y-%m-%dT%H:%i:%s') AS created_iso "
-                        + "FROM space_action_log WHERE action = 'GOVERNANCE_VIEW' AND operator = ? "
+                        + "FROM space_action_log WHERE action = '" + VISIT + "' AND operator = ? "
                         + "AND ((? IS NULL AND space_id IS NULL) OR space_id = ?) ORDER BY id DESC LIMIT 1",
-                OPERATOR, spaceId, spaceId);
+                OPERATOR_SUBJECT, spaceId, spaceId);
         assertThat(row.get("space_id")).isEqualTo(spaceId);
         assertThat(row.get("target_type")).isEqualTo(targetType);
         assertThat(row.get("target_id")).isEqualTo(targetId);
-        assertThat(row.get("operator")).isEqualTo(OPERATOR);
+        assertThat(row.get("operator")).isEqualTo(OPERATOR_SUBJECT);
         assertThat(row.get("result")).isEqualTo("SUCCESS");
         assertThat(row.get("reason")).isNull();
         assertThat(row.get("from_value")).isNull();
