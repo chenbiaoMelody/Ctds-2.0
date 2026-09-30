@@ -16,6 +16,7 @@ import com.ctds.space.domain.Visibility;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.stereotype.Service;
 
 /**
@@ -123,7 +124,37 @@ public class SpaceQueryService {
         return logs;
     }
 
+    /** 空间不存在（防枚举同形表达）。 */
+    public static final String STATUS_NONE = "NONE";
+    /** 非成员（成员行不存在或已终态）。 */
+    public static final String ROLE_NONE = "NONE";
+
+    /**
+     * 服务间内部只读面（WBS-3.3.2 hifi §1.2，Q2-A）：供目录服务判定"空间状态 + 调用主体成员角色"。
+     * <b>最小暴露</b>：只回判定所需两字段语义（spaceStatus + role|NONE），不回空间名称/详情/成员列表；
+     * 空间不存在 → spaceStatus=NONE 同形表达（防枚举，沿 ADR-016 §6 口径）；
+     * 身份门槛由接口层注解（space.internal.read，仅授予 catalog-internal）承担，本方法不做调用者归属断言
+     * 与查看留痕（内部只读面，诚实边界沿 subject 内部端点登记）。
+     */
+    public MembershipCheck internalMembership(final long spaceId, final String subjectNo) {
+        final Optional<Space> space = repository.findById(spaceId);
+        if (space.isEmpty()) {
+            return new MembershipCheck(STATUS_NONE, ROLE_NONE);
+        }
+        final String role = repository.findActiveMembers(spaceId).stream()
+                .filter(member -> subjectNo != null && subjectNo.equals(member.subjectNo()))
+                .map(SpaceMember::role)
+                .map(Enum::name)
+                .findFirst()
+                .orElse(ROLE_NONE);
+        return new MembershipCheck(space.get().status().name(), role);
+    }
+
     /** 读面视图：fullDetail=true 全量（含成员构成）；false = 非成员公开摘要（不含成员构成）。 */
     public record SpaceView(Space space, List<SpaceMember> members, boolean fullDetail) {
+    }
+
+    /** 内部只读面判定结果：空间状态 + 主体成员角色（两字段即全部暴露面）。 */
+    public record MembershipCheck(String spaceStatus, String role) {
     }
 }
