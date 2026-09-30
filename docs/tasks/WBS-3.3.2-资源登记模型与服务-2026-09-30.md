@@ -44,7 +44,7 @@
 | **Q8** | 分级落级回写 | **A**：hifi 落级表 + 分级规范 §6.1 补行（同步动作，非需求变更，沿 3.2.2 Q9 先例） |
 | **D1** | 体量 / 是否拆分 | **A**：不拆分——预估 ~1600~2200 行（迁移 ~150 + domain ~350 + 四层 ~700 + client ~200 + 测试 ~500 + 骨架/配置 ~150），超 400 行指引，按"单服务单目标原子交付"豁免（沿 3.2.2 / 3.2.3 D1 先例） |
 
-> **确认留痕（待回填）**：
+> **确认留痕（2026-09-30 20:4x，编排师会话回复"**都按建议口径**"）**：**Q1~Q8 均采建议口径 A + D1 不拆分豁免**——lofi/hifi 两级设计转**V1.0（编码契约）**，确认记录同批签署（lofi/hifi 版本行回填）；实现进入编码阶段（测试先行）。
 
 ## 三、规格行为 → 端点/规则/测试 映射表
 
@@ -70,7 +70,7 @@
 
 | 项 | 内容 |
 | --- | --- |
-| 状态 | 🟡 **已立卡，待编排师表决 Q1~Q8 + D1**（两级设计一并提交；确认后进入编码） |
+| 状态 | 🟡 **设计已确认（2026-09-30 20:4x 编排师"都按建议口径"：Q1~Q8 全采 A + D1 不拆分豁免），编码中**（两级设计转 V1.0 编码契约；测试先行 RED → 实现 GREEN → 评审） |
 | 立卡前素材盘点（只读） | ① WBS 行 263~269 + 规格 V1.0 全文（行为 1/2 + §6 边界声明 5/6 + §7 Q1/Q3/Q8 裁决落点）；② **仓库既有资产**：`services/` 现五服务（subject 8080 / kms 8081 / did 8082 / space 8083），**无目录域任何代码与迁移**（本域全新起点，3.3.1 卡盘点同结论）；端口顺延 8084；根 pom modules 需追加 `services/catalog-service`；③ **space-service 端点实测**：业务端点全清单（Space/Membership/Policy/PlatformPolicy/ActionLog 五控制器），**无 internal 端点**——成员判定通道需本卡新建（Q2-A）；④ **subject 内部端点实测**：`InternalAdmissionController`（`@RequirePermission("subject.internal.read")`，最小暴露 subjectNo+status）+ yml 授权先例（did-internal/space-internal 两行）；**subject 编号先例**：`nextDailySeq`（申请编号当日序号原子自增）→ 数据标识规则 Q3-A 同源派生；⑤ **错误码段位**：1000~1006 已占用（1006=空间域），1007 空闲（3.3.1 评审已核验全库仅三文件提及）；⑥ **迁移先例**：space V1/V2（六表+留痕表模式+name_lock 锁定表+生成列唯一索引）、subject V1/V2；ORM = spring-boot-starter-jdbc；⑦ **分级规范**：CAT-03/07 + §4.5-3 + §6.1 回写落点（3.2.2 期已有五行先例）；⑧ **deploy/k8s 现况**：example+frontend+subject+kms+did+space（3.2.3 起入列惯例） |
 | 规格外实现声明 | 无（端点/规则全部由规格行为 1/2/7 派生；Q4/Q5/Q6/Q7 均为规格授权范围内的实现形态决策，规格 §4 非目标 1 明确"数据模型与接口实现归 3.3.2"） |
 | 复用声明 | 复用 subject 内部端点（ADR-016 §6）、space 域成员/状态口径（internal 端点新增复用其查询语义）、did/space client 先例形态（JDK HttpClient 零依赖）、3.2.2 表设计惯例（name_lock/action_log/归一化唯一索引）、3.2.3 服务实现全套模式（幂等注解/乐观门槛/两写·三写事务/错误码常量类/二次确认 API 强表达/subject yml 授权模式/deploy 入列）、subject nextDailySeq 编号先例、common 幂等/鉴权/分页/错误码；**未新增第三方依赖** |
