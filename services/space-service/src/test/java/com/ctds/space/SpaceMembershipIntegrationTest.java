@@ -10,11 +10,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.ctds.space.domain.SubjectAdmission;
 import com.ctds.space.domain.SubjectAdmissionPort;
+import com.ctds.space.support.IsoSecondTimestamp;
 import com.ctds.space.support.SharedMySqlContainer;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -453,11 +457,8 @@ class SpaceMembershipIntegrationTest {
         mockMvc.perform(auth(get(BASE + "/" + id + "/admissions"), "outsider-t10", "user"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("1006C0007"));
-        final Integer deniedLogs = jdbc.queryForObject(
-                "SELECT COUNT(*) FROM space_action_log WHERE space_id = ? AND action = 'ACCESS_DENIED' "
-                        + "AND result = 'DENIED' AND operator = 'outsider-t10'",
-                Integer.class, id);
-        assertThat(deniedLogs).isEqualTo(2);
+        // WBS-3.2.7 T2 断言强化：拒绝留痕"何时"要素补断（created_at 非空 + ISO 秒级可解析）
+        assertDeniedLogsWithIsoSecondCreatedAt(id, "outsider-t10", null, 2);
     }
 
     // ==== T11 admin 正向邀请（行为 4 规则 2；剧本 S2-6——admin 能力未被误伤）====
@@ -702,11 +703,8 @@ class SpaceMembershipIntegrationTest {
         mockMvc.perform(auth(get(BASE + "/" + id), "outsider-t18", "user"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("1006C0004"));
-        final Integer deniedLogs = jdbc.queryForObject(
-                "SELECT COUNT(*) FROM space_action_log WHERE space_id = ? AND action = 'ACCESS_DENIED' "
-                        + "AND result = 'DENIED' AND operator = 'outsider-t18' AND target_type = 'SPACE'",
-                Integer.class, id);
-        assertThat(deniedLogs).isEqualTo(1);
+        // WBS-3.2.7 T2 断言强化：拒绝留痕"何时"要素补断（保留 target_type='SPACE' 既有约束）
+        assertDeniedLogsWithIsoSecondCreatedAt(id, "outsider-t18", "SPACE", 1);
         // 对照：公开空间详情对非成员返回摘要（可检索 ≠ 可访问资源，读面不留痕）
         final long publicId = enabledSpace("owner-t18b", "公开空间T18", "OPEN", "PUBLIC");
         mockMvc.perform(auth(get(BASE + "/" + publicId), "outsider-t18", "user"))
@@ -715,6 +713,33 @@ class SpaceMembershipIntegrationTest {
                 "SELECT COUNT(*) FROM space_action_log WHERE space_id = ? AND action = 'ACCESS_DENIED'",
                 Integer.class, publicId);
         assertThat(publicDenied).isZero();
+    }
+
+    // ==== WBS-3.2.7 T1 跨空间隔离字面用例（行为 6 规则 1）：他空间有效成员访问本空间被拒 ====
+
+    @Test
+    void crossSpaceMemberAccessingOtherSpaceIsDenied() throws Exception {
+        final long spaceA = enabledSpace("owner-t24a", "跨空间隔离空间A", "INVITE", "PRIVATE");
+        final long spaceB = enabledSpace("owner-t24b", "跨空间隔离空间B", "INVITE", "PRIVATE");
+        final long memberIdA = activeMemberId(spaceA, "member-t24");
+        assertThat(memberIdA).isPositive();
+        // 正向对照：member-t24 在本方空间 A 读取正常（载体自证，排除"成员面整体失效"假红）
+        mockMvc.perform(auth(get(BASE + "/" + spaceA + "/members"), "member-t24", "user"))
+                .andExpect(status().isOk());
+        // 字面场景：空间甲的有效成员直接访问空间乙的成员/准入单读端点 → 双拒（他空间成员身份不豁免隔离）
+        mockMvc.perform(auth(get(BASE + "/" + spaceB + "/members"), "member-t24", "user"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("1006C0007"));
+        mockMvc.perform(auth(get(BASE + "/" + spaceB + "/admissions"), "member-t24", "user"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("1006C0007"));
+        // 每端点恰 1 条 ACCESS_DENIED 留痕（共 2 条）+ 四要素逐字段（谁/目标/结果/何时——
+        // 两读端点拒绝留痕 target_type 恒 SPACE，库表无端点维度故按合计断言；评审① R1-2 采纳）
+        assertDeniedLogsWithIsoSecondCreatedAt(spaceB, "member-t24", "SPACE", 2);
+        // 拒绝留痕归属不混淆：空间甲不因本次跨空间请求产生任何拒绝留痕
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM space_action_log WHERE space_id = ? AND action = 'ACCESS_DENIED' "
+                        + "AND operator = 'member-t24'", Integer.class, spaceA)).isZero();
     }
 
     // ==== T19 准入单状态机（行为 3 规则 2 + Q7 码值）====
@@ -1007,5 +1032,31 @@ class SpaceMembershipIntegrationTest {
     private static MockHttpServletRequestBuilder auth(final MockHttpServletRequestBuilder builder,
             final String subject, final String roles) {
         return builder.header("X-Ctds-Subject", subject).header("X-Ctds-Roles", roles);
+    }
+
+    /**
+     * 拒绝留痕断言（WBS-3.2.7 T1/T2）：条数精确 + 四要素"何时"补断——created_at 非空且 ISO 秒级可解析。
+     * targetType 传 null 不过滤（保留各既有用例原约束面，仅增不弱化）。
+     */
+    private void assertDeniedLogsWithIsoSecondCreatedAt(final long spaceId, final String operator,
+            final String targetType, final int expectedCount) {
+        final StringBuilder sql = new StringBuilder(
+                "SELECT operator, target_type, result, DATE_FORMAT(created_at, '%Y-%m-%dT%H:%i:%s') AS created_iso "
+                        + "FROM space_action_log WHERE space_id = ? AND action = 'ACCESS_DENIED' "
+                        + "AND result = 'DENIED' AND operator = ? ");
+        final List<Object> params = new ArrayList<>(List.of(spaceId, operator));
+        if (targetType != null) {
+            sql.append("AND target_type = ? ");
+            params.add(targetType);
+        }
+        final List<Map<String, Object>> logs = jdbc.queryForList(sql.toString(), params.toArray());
+        assertThat(logs).hasSize(expectedCount);
+        for (final Map<String, Object> log : logs) {
+            assertThat(log.get("operator")).isEqualTo(operator);
+            if (targetType != null) {
+                assertThat(log.get("target_type")).as("target_type 逐行一致").isEqualTo(targetType);
+            }
+            IsoSecondTimestamp.assertSecondPrecisionIso("created_at", String.valueOf(log.get("created_iso")));
+        }
     }
 }
