@@ -33,6 +33,9 @@ public final class CatalogErrorCodes {
      * 码值复用 1007C0006——hifi §2 码表未设独立资格码，hifi §1.1 W1 主要错误码列亦未单列，
      * 403 无权限语义下以本常量承载统一出站文案，实现口径已在交付说明登记）。 */
     public static final String ADMISSION_REQUIRED_MESSAGE = "主体未入驻或不存在，无法登记资源";
+    /** 主体未入驻统一文案·目录场景（WBS-3.3.4 Q8-A：R6/R7/R8/W4/W6 检索与交互链同款防枚举口径，
+     * 码值复用 1007C0006；与登记场景文案同源异表——目录域不表意"登记"）。 */
+    public static final String CATALOG_ADMISSION_REQUIRED_MESSAGE = "主体未入驻或不存在，无法使用统一目录服务";
     /** 资源已注销，终态不可再操作（行为 2 规则 4——终态自环显式门槛）。→ 409 */
     public static final ErrorCode DATASET_ALREADY_DELETED = ErrorCode.of("1007C0007");
     public static final String DATASET_ALREADY_DELETED_MESSAGE = "资源已注销，不可再变更或注销";
@@ -45,6 +48,20 @@ public final class CatalogErrorCodes {
     /** 词表册不存在（读面路径码未命中，WBS-3.3.3 hifi §1.1 R4）。→ 404 */
     public static final ErrorCode TAG_VOCABULARY_NOT_FOUND = ErrorCode.of("1007C0010");
     public static final String TAG_VOCABULARY_NOT_FOUND_MESSAGE = "受控词表册不存在";
+    /** 产品不存在或未在架（WBS-3.3.4 hifi §2：R7 未上架/不存在/已下架/已注销同形；W4/W6 新发起对非在架产品；
+     * R8 产品行不存在与非订阅者同码同文案——一律不区分差异，防枚举，行为 7 规则 2 同源口径）。→ 404 */
+    public static final ErrorCode PRODUCT_NOT_FOUND_OR_NOT_LISTED = ErrorCode.of("1007C0011");
+    public static final String PRODUCT_NOT_FOUND_OR_NOT_LISTED_MESSAGE = "产品不存在或未在架";
+    /** 本人收藏或订阅条目不存在（W5/W7 取消动作对无条目产品，hifi §2；剧本文案表意"记录不存在"）。→ 404 */
+    public static final ErrorCode PRODUCT_RECORD_NOT_FOUND = ErrorCode.of("1007C0012");
+    public static final String PRODUCT_RECORD_NOT_FOUND_MESSAGE = "收藏或订阅记录不存在";
+    /** 检索参数不合法（R6 keyword 超长 / categoryCode 非类目树节点，WBS-3.3.4 hifi §2）。→ 400 */
+    public static final ErrorCode CATALOG_SEARCH_PARAM_INVALID = ErrorCode.of("1007C0013");
+    public static final String CATALOG_SEARCH_PARAM_INVALID_MESSAGE = "检索参数不合法";
+    /** 分类申报不在平台受控类目范围内（W1/W2 类目成员校验失败，WBS-3.3.4 hifi §2——不回显申报原文，
+     * 沿 1007C0009 文案口径）。→ 400 */
+    public static final ErrorCode CATEGORY_NOT_IN_CONTROLLED_TREE = ErrorCode.of("1007C0014");
+    public static final String CATEGORY_NOT_IN_CONTROLLED_TREE_MESSAGE = "分类申报不在平台受控类目范围内";
     /** 主体服务不可达/失败（UNAVAILABLE 统一文案，不冒充资格拒绝——hifi §5）。→ 503 */
     public static final ErrorCode SUBJECT_SERVICE_UNAVAILABLE = ErrorCode.of("1007S0001");
     public static final String SUBJECT_SERVICE_UNAVAILABLE_MESSAGE = "主体服务暂不可用，请稍后重试";
