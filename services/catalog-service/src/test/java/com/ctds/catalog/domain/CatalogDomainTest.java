@@ -9,9 +9,12 @@ import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 /**
- * 目录域值域与载体单测（WBS-3.3.2 hifi §6 T13 枚举封闭 + 归一化/标签载体承诺）：
- * 枚举值域封闭（受控枚举不得被隐式扩展）；级别收紧方向矩阵；归一化口径（控制字符去除、
- * U+3000/U+00A0 显式空白集、折叠与 trim）；语义标签载体级校验与 JSON 往返。
+ * 目录域值域与载体单测（WBS-3.3.2 hifi §6 T13 枚举封闭 + 归一化/标签载体承诺；
+ * WBS-3.3.3 hifi §5 T8 受控词表领域单测）：枚举值域封闭（受控枚举不得被隐式扩展）；
+ * 级别收紧方向矩阵；归一化口径（控制字符去除、U+3000/U+00A0 显式空白集、折叠与 trim）；
+ * 语义标签载体级校验与 JSON 往返；受控词表实体构造约束与词条编号形态。
+ * （成员校验差集口径不在本类：评审循环 1 处置——桩端口对生产唯一实现零证伪力，
+ * 已移至 {@code CatalogTagVocabularyIntegrationTest} 对生产仓储实跑。）
  */
 class CatalogDomainTest {
 
@@ -123,5 +126,35 @@ class CatalogDomainTest {
         assertThat(CatalogErrorCodes.tailOf(CatalogErrorCodes.DATASET_IMPORTANT_REJECTED)).isEqualTo("C0003");
         assertThat(CatalogErrorCodes.tailOf(CatalogErrorCodes.DATASET_FORBIDDEN)).isEqualTo("C0006");
         assertThat(CatalogErrorCodes.tailOf(CatalogErrorCodes.SPACE_SERVICE_UNAVAILABLE)).isEqualTo("S0002");
+    }
+
+    // ==== T8 受控词表领域单测（WBS-3.3.3 hifi §5 T8）====
+
+    @Test
+    void tagVocabularyRequiresCodeAndName() {
+        assertThat(new TagVocabulary("SEMANTIC_TAG", "语义标签受控词表").vocabularyCode())
+                .isEqualTo("SEMANTIC_TAG");
+        assertThatThrownBy(() -> new TagVocabulary("  ", "语义标签受控词表"))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new TagVocabulary("SEMANTIC_TAG", ""))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new TagVocabulary(null, "语义标签受控词表"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void tagTermRequiresWellFormedCodeAndNames() {
+        // 编号形态 TT + 4 位（沿业务编号先例；非法形态在构造期即暴露）
+        assertThat(new TagTerm("TT0001", "金融", "金融").normalizedTerm()).isEqualTo("金融");
+        assertThatThrownBy(() -> new TagTerm("TT001", "金融", "金融"))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new TagTerm("TT00012", "金融", "金融"))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new TagTerm("tt0001", "金融", "金融"))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new TagTerm("TT0001", " ", "金融"))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new TagTerm("TT0001", "金融", ""))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 }
