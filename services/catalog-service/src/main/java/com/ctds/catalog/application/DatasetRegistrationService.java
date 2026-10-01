@@ -12,6 +12,8 @@ import com.ctds.catalog.domain.SpaceMembership;
 import com.ctds.catalog.domain.SpaceMembershipPort;
 import com.ctds.catalog.domain.SubjectAdmission;
 import com.ctds.catalog.domain.SubjectAdmissionPort;
+import com.ctds.catalog.domain.TagTermPort;
+import com.ctds.catalog.domain.TagVocabulary;
 import com.ctds.common.errorcode.ErrorCode;
 import com.ctds.common.idempotency.Idempotent;
 import java.time.Clock;
@@ -25,9 +27,10 @@ import org.springframework.stereotype.Service;
  * 幂等键 = 空间 + 登记主体 + 归一化名（hifi §4.2 定稿），归一化与要素校验在命令服务先行，
  * 跨 Bean 调用使幂等切面经代理拦截（同类自调用会被 AOP 绕过，沿 space SpaceCreationService 先例）。
  *
- * <p>登记事务顺序（hifi §4.2）：资格三态 → 空间状态门槛（NONE/CREATED/FROZEN/DISSOLVED 一律
- * 1007C0002）→ 成员门槛（NONE → 1007C0006 + DENIED 留痕）→ 重要数据拒收（1007C0003 + DENIED
- * 留痕，代码强制/§4.5-3 硬约束）→ 名称锁定与判重（1007C0001）→ 取号 + INSERT + REGISTER 留痕。</p>
+ * <p>登记事务顺序（WBS-3.3.2 hifi §4.2 + WBS-3.3.3 hifi §4.1 插入 6′）：资格三态 → 空间状态门槛
+ * （NONE/CREATED/FROZEN/DISSOLVED 一律 1007C0002）→ 成员门槛（NONE → 1007C0006 + DENIED 留痕）→
+ * 重要数据拒收（1007C0003 + DENIED 留痕，代码强制/§4.5-3 硬约束）→ <b>语义标签词条成员校验
+ * （1007C0009，WBS-3.3.3 第 6′ 步）</b>→ 名称锁定与判重（1007C0001）→ 取号 + INSERT + REGISTER 留痕。</p>
  */
 @Service
 public class DatasetRegistrationService {
@@ -44,26 +47,30 @@ public class DatasetRegistrationService {
     private final DatasetRepository repository;
     private final SubjectAdmissionPort subjectAdmissionPort;
     private final SpaceMembershipPort spaceMembershipPort;
+    private final TagTermPort tagTermPort;
     private final Clock clock;
 
     public DatasetRegistrationService(final DatasetRepository repository,
             final SubjectAdmissionPort subjectAdmissionPort, final SpaceMembershipPort spaceMembershipPort,
-            final Clock clock) {
+            final TagTermPort tagTermPort, final Clock clock) {
         this.repository = repository;
         this.subjectAdmissionPort = subjectAdmissionPort;
         this.spaceMembershipPort = spaceMembershipPort;
+        this.tagTermPort = tagTermPort;
         this.clock = clock;
     }
 
     /**
      * 登记（行为 1 全部规则）：资格门槛（防枚举同形）→ 空间状态门槛 → 成员门槛（DENIED 留痕）→
-     * 重要数据拒收（DENIED 留痕）→ 名称锁定/同空间判重（DB 唯一键兜底）→ 取号 + INSERT + 留痕同事务。
+     * 重要数据拒收（DENIED 留痕）→ 语义标签成员校验（第 6′ 步）→ 名称锁定/同空间判重（DB 唯一键兜底）→
+     * 取号 + INSERT + 留痕同事务。成员校验位于幂等切面之内：重放命中按 ADR-007 模式 B 回放首次结果。
      */
     @Idempotent(key = "'REGISTER:' + #cmd.spaceId + ':' + #cmd.ownerSubjectNo + ':' + #cmd.normalizedName")
     public Dataset register(final CreateDatasetCommand cmd) {
         requireAdmitted(cmd);
         requireActiveSpaceAndMember(cmd);
         rejectImportantDeclaration(cmd);
+        requireTermMembership(cmd);
         if (repository.existsInNameLock(cmd.spaceId(), cmd.normalizedName())) {
             throw new CatalogBizException(CatalogErrorCodes.DATASET_NAME_DUPLICATED,
                     CatalogErrorCodes.DATASET_NAME_LOCKED_MESSAGE);
@@ -125,6 +132,18 @@ public class DatasetRegistrationService {
             insertDenied(cmd, CatalogErrorCodes.DATASET_IMPORTANT_REJECTED);
             throw new CatalogBizException(CatalogErrorCodes.DATASET_IMPORTANT_REJECTED,
                     CatalogErrorCodes.DATASET_IMPORTANT_REJECTED_MESSAGE);
+        }
+    }
+
+    /**
+     * 语义标签词条成员校验（WBS-3.3.3 hifi §4.1 第 6′ 步，行为 1 规则 3）：任一标签不在受控词表 →
+     * 1007C0009（400）。拒绝文案为服务端常量、不回显被拒标签原文；此处不写 DENIED 留痕
+     * （非法入参零库内副作用——零资源行、零留痕、零取号）。
+     */
+    private void requireTermMembership(final CreateDatasetCommand cmd) {
+        if (!tagTermPort.findUnmatched(TagVocabulary.SEMANTIC_TAG, cmd.semanticTags()).isEmpty()) {
+            throw new CatalogBizException(CatalogErrorCodes.TAG_TERM_NOT_IN_VOCABULARY,
+                    CatalogErrorCodes.TAG_TERM_NOT_IN_VOCABULARY_MESSAGE);
         }
     }
 

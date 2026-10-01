@@ -3,8 +3,6 @@ package com.ctds.catalog.domain;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.ctds.common.pagination.PageQuery;
-import com.ctds.common.pagination.PageResult;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -15,6 +13,8 @@ import org.junit.jupiter.api.Test;
  * WBS-3.3.3 hifi §5 T8 受控词表领域单测）：枚举值域封闭（受控枚举不得被隐式扩展）；
  * 级别收紧方向矩阵；归一化口径（控制字符去除、U+3000/U+00A0 显式空白集、折叠与 trim）；
  * 语义标签载体级校验与 JSON 往返；受控词表实体构造约束与词条编号形态。
+ * （成员校验差集口径不在本类：评审循环 1 处置——桩端口对生产唯一实现零证伪力，
+ * 已移至 {@code CatalogTagVocabularyIntegrationTest} 对生产仓储实跑。）
  */
 class CatalogDomainTest {
 
@@ -156,47 +156,5 @@ class CatalogDomainTest {
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new TagTerm("TT0001", "金融", ""))
                 .isInstanceOf(IllegalArgumentException.class);
-    }
-
-    @Test
-    void normalizedDifferenceDrivesMembershipDecision() {
-        // 差集算法（多标签 / 重复输入 / 空输入）——成员校验唯一口径，此处桩端口实现可证伪
-        final TagTermPort port = new StubTagTermPort(List.of("金融", "普惠", "风控"));
-        assertThat(port.findUnmatched(TagVocabulary.SEMANTIC_TAG, List.of("金融", "普惠"))).isEmpty();
-        // 全半角与首尾空白写法归一后命中同一词条（不新增第二套归一化）
-        assertThat(port.findUnmatched(TagVocabulary.SEMANTIC_TAG, List.of("　普惠　", " 金融 "))).isEmpty();
-        assertThat(port.findUnmatched(TagVocabulary.SEMANTIC_TAG, List.of("金融", "火星数据")))
-                .containsExactly("火星数据");
-        // 重复输入去重后参与判定（重复项本身由载体级校验拦截）
-        assertThat(port.findUnmatched(TagVocabulary.SEMANTIC_TAG, List.of("金融", "金融"))).isEmpty();
-        assertThat(port.findUnmatched(TagVocabulary.SEMANTIC_TAG, List.of())).isEmpty();
-        assertThat(port.findUnmatched(TagVocabulary.SEMANTIC_TAG, null)).isEmpty();
-    }
-
-    /** 成员校验差集的桩实现（与 JdbcTagTermRepository 同口径：归一化后差集）。 */
-    private record StubTagTermPort(List<String> knownTerms) implements TagTermPort {
-
-        @Override
-        public List<TagVocabulary> listVocabularies() {
-            return List.of(new TagVocabulary(TagVocabulary.SEMANTIC_TAG, "语义标签受控词表"));
-        }
-
-        @Override
-        public PageResult<TagTerm> pageTerms(final String vocabularyCode, final String keyword,
-                final PageQuery page) {
-            return PageResult.of(List.of(), 0, page);
-        }
-
-        @Override
-        public List<String> findUnmatched(final String vocabularyCode, final List<String> tags) {
-            if (tags == null || tags.isEmpty()) {
-                return List.of();
-            }
-            return tags.stream()
-                    .map(DatasetNameNormalizer::normalize)
-                    .distinct()
-                    .filter(normalized -> !knownTerms.contains(normalized))
-                    .toList();
-        }
     }
 }

@@ -69,7 +69,7 @@ public class DatasetCommandService {
 
     /**
      * 登记入口：要素校验（名称类问题 1007C0008；其余要素 400 通用参数码）→ 归一化 →
-     * 交幂等登记服务（跨 Bean 调用使幂等切面生效，沿 space 先例）。
+     * 交幂等登记服务（语义标签成员校验在其链序第 6′ 步——WBS-3.3.3 hifi §4.1，跨 Bean 调用沿先例）。
      */
     public Dataset create(final long spaceId, final CreateDatasetCommand request) {
         final String subject = guard.requireSubject();
@@ -110,9 +110,6 @@ public class DatasetCommandService {
         if (!problems.isEmpty()) {
             throw new BizException(ErrorCodes.PARAM_INVALID, String.join("；", problems));
         }
-        // 第 6 步：语义标签词条成员校验（行为 1 规则 3「受控词表选取」；WBS-3.3.3 兑现）——
-        // 插在归一化判重与取号之前：非法入参不触碰任何库内状态（零资源行、零留痕、零取号）。
-        requireTermMembership(request.semanticTags());
         final CreateDatasetCommand command = new CreateDatasetCommand(spaceId, subject, name, normalizedName,
                 request.type(), request.intro(), request.semanticTags(), request.declareCategory(),
                 request.declareLevel(), request.declareImportant());

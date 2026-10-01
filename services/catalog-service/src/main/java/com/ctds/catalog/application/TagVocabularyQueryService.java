@@ -1,7 +1,5 @@
 package com.ctds.catalog.application;
 
-import com.ctds.catalog.domain.CatalogBizException;
-import com.ctds.catalog.domain.CatalogErrorCodes;
 import com.ctds.catalog.domain.TagTerm;
 import com.ctds.catalog.domain.TagTermPort;
 import com.ctds.catalog.domain.TagVocabulary;
@@ -32,16 +30,12 @@ public class TagVocabularyQueryService {
     }
 
     /**
-     * R4 词条分页：册不存在 → 1007C0010（404），与"册存在但 keyword 无命中 → 200 空列表"可分辨；
+     * R4 词条分页：册不存在 → 1007C0010（404，由仓储层册码解析时判定——单一失败语义，
+     * 不做服务层预查）；与"册存在但 keyword 无命中 → 200 空列表"可分辨；
      * 稳定排序 = term_code 升序（分页跨页结果不漂移，ADR-005 §3.2）。
      */
     public PageResult<TagTerm> terms(final String vocabularyCode, final String keyword,
             final Integer pageNum, final Integer pageSize) {
-        if (port.listVocabularies().stream()
-                .noneMatch(vocabulary -> vocabulary.vocabularyCode().equals(vocabularyCode))) {
-            throw new CatalogBizException(CatalogErrorCodes.TAG_VOCABULARY_NOT_FOUND,
-                    CatalogErrorCodes.TAG_VOCABULARY_NOT_FOUND_MESSAGE);
-        }
         return port.pageTerms(vocabularyCode, keyword, PageQuery.of(pageNum, pageSize, null));
     }
 }

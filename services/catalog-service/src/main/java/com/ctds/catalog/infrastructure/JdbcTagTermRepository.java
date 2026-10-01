@@ -1,5 +1,7 @@
 package com.ctds.catalog.infrastructure;
 
+import com.ctds.catalog.domain.CatalogBizException;
+import com.ctds.catalog.domain.CatalogErrorCodes;
 import com.ctds.catalog.domain.DatasetNameNormalizer;
 import com.ctds.catalog.domain.TagTerm;
 import com.ctds.catalog.domain.TagTermPort;
@@ -19,9 +21,9 @@ import org.springframework.stereotype.Repository;
  * 受控词表仓储（JdbcClient，ADR-009 迁移规范建表 V2；沿 {@code JdbcDatasetRepository} 先例）。
  *
  * <p>读面（R3/R4）与写面成员校验共用同一数据源：选词入口与准入口径同源，不可能漂移。
- * 成员校验 = 归一化差集（hifi §4.3）：入参经 {@link DatasetNameNormalizer} 归一化后与
- * 册内 {@code normalized_term} 做 {@code IN} 比对，大小写折叠由列排序规则 0900_ai_ci 承担
- * （应用层不额外 toLowerCase——单一口径）。</p>
+ * 成员校验 = 归一化差集（hifi §4.3，差集在 DB 侧一次算出）：入参经 {@link DatasetNameNormalizer}
+ * 归一化后与册内 {@code normalized_term} 做折叠比对，大小写折叠由列排序规则 0900_ai_ci 承担
+ * （应用层不额外 toLowerCase——单一口径），返回未命中的候选原文。</p>
  */
 @Repository
 public class JdbcTagTermRepository implements TagTermPort {
@@ -88,21 +90,28 @@ public class JdbcTagTermRepository implements TagTermPort {
             // 册缺失 = 无从判定成员 → 一律视为未命中（fail-closed：不放行未验证标签，业务 unavailable 也不冒充通过）
             return candidates;
         }
-        final String placeholders = String.join(",", Collections.nCopies(candidates.size(), "?"));
-        JdbcClient.StatementSpec spec = jdbc.sql("SELECT normalized_term FROM tag_term "
-                        + "WHERE vocabulary_id = ? AND normalized_term IN (" + placeholders + ")")
-                .param(vocabularyId.get());
+        // 未命中差集在 DB 侧一次算出（WBS-3.3.3 hifi §4.3 评审循环 1 补正）：命中判定只经
+        // normalized_term = 候选 的 0900_ai_ci 折叠比对这一道口径。不可"查命中列值再在 Java 侧减"——
+        // DB 判命中（'smartcity' 折叠命中 'SmartCity'）而 Java 按列值精确比对会误判为未命中（评审实证）。
+        // VALUES 派生表携带候选原文，NOT EXISTS 过滤后返回未命中的候选原文。
+        final String candidateRows = String.join(", ", Collections.nCopies(candidates.size(), "ROW(?)"));
+        JdbcClient.StatementSpec spec = jdbc.sql("SELECT v.candidate FROM (VALUES " + candidateRows
+                + ") AS v(candidate) WHERE NOT EXISTS (SELECT 1 FROM tag_term t "
+                + "WHERE t.vocabulary_id = ? AND t.normalized_term = v.candidate)");
         for (final String candidate : candidates) {
             spec = spec.param(candidate);
         }
-        final List<String> matched = spec.query((rs, rowNum) -> rs.getString(1)).list();
-        return candidates.stream().filter(candidate -> !matched.contains(candidate)).toList();
+        return spec.param(vocabularyId.get())
+                .query((rs, rowNum) -> rs.getString(1))
+                .list();
     }
 
-    /** 册码 → 技术主键（册不存在 = 编码/维护缺陷，快速暴露而非静默空结果）。 */
+    /** 册码 → 技术主键（册不存在 = 读面路径码未命中 → 1007C0010/404，hifi §1.1 R4；
+     * 与"册存在但 keyword 无命中 → 200 空列表"可分辨）。 */
     private long requireVocabularyId(final String vocabularyCode) {
         final Long id = findVocabularyId(vocabularyCode)
-                .orElseThrow(() -> new IllegalStateException("受控词表册不存在：" + vocabularyCode));
+                .orElseThrow(() -> new CatalogBizException(CatalogErrorCodes.TAG_VOCABULARY_NOT_FOUND,
+                        CatalogErrorCodes.TAG_VOCABULARY_NOT_FOUND_MESSAGE));
         return id;
     }
 

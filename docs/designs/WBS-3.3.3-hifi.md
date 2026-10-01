@@ -2,7 +2,7 @@
 
 | 字段 | 内容 |
 | --- | --- |
-| 版本 | **V1.0（已确认 = 编码契约，实现须逐条一致）**——2026-10-01 编排师会话回复"**确认**"→ Q1~Q10 均采建议 A + D1 不拆分豁免；与 lofi 同批签署（章程 2.6.3 一次确认） |
+| 版本 | **V1.1（编码契约·评审循环 1 补正版）**——V1.0 于 2026-10-01 获编排师"**确认**"（Q1~Q10 均采建议 A + D1 不拆分）；**V1.1 = 4 视角评审循环 1 后的设计补正**（仅实现口径澄清与勘误，业务判定零变更，逐条见文末"补正记录"） |
 | 日期 | 2026-09-30 |
 | 任务卡 | `docs/tasks/WBS-3.3.3-元数据采集服务-2026-09-30.md` |
 | lofi | `docs/designs/WBS-3.3.3-lofi.md`（Q1~Q10 + D1 全文） |
@@ -23,7 +23,7 @@
 > 端点编号续 3.3.2 的读面编号（R1 本人列表 / R2 本人详情）排为 **R3/R4**——**不占用 V1/V2 字样**（V1/V2 在本文档中保留给迁移版本与规格版本，避免混淆）；写面 W1/W2 为 3.3.2 既有端点，本卡只升级其校验链。
 
 - 响应**仅词条元数据**：无数据本体、无主体信息、无个人可识别信息（行为 7 规则 5；§6 边界声明 3）；
-- 权限点映射（catalog `application.yml` 1 行改动）：`provider: …,vocabulary.read`、`admin: dataset.read,vocabulary.read`——**不动既有 `dataset.*` 四点**；
+- 权限点映射（catalog `application.yml` 改动：provider/admin 两行权限映射各加 `vocabulary.read` + 注释同步，实际 **+5 −4** 行——**不动既有 `dataset.*` 四点**）；
 - 读面**不做** ADMITTED 资格门槛（Q8-A 口径登记）；不引入枚举型"业务码"字段（术语沿 §6 边界声明 6）。
 
 ### 1.2 既有写面（**端点与入参零变更**，仅校验链升级）
@@ -121,6 +121,8 @@ findUnmatched(vocabularyCode, tags):
 - 归一化复用 `DatasetNameNormalizer`（trim + 去控制字符 + 折叠空白含 U+3000），**不新建第二套归一化**（DB-30 族：不扩大重复面）；
 - 大小写折叠由 DB 排序规则（`0900_ai_ci`）承担，应用层不额外 `toLowerCase`（保持单一口径）。
 
+> **V1.1 补正（差集承载）**：上列伪代码"查命中列值 → Java 侧差集"在拉丁大小写场景有误判缺陷（DB 侧 `ai_ci` 判 `'smartcity'` 命中 `'SmartCity'`，但返回列值原文 `SmartCity` 与候选原文 Java 精确比对不相等 → 已命中被误判为未命中——评审循环 1 实证）。**实现定稿 = 差集下沉 DB 一次算出**：`SELECT v.candidate FROM (VALUES ROW(?),…) AS v(candidate) WHERE NOT EXISTS (SELECT 1 FROM tag_term t WHERE t.vocabulary_id = ? AND t.normalized_term = v.candidate)`，折叠判定只经 DB 一道口径、返回未命中候选原文，Java 侧零比对逻辑。
+
 ## 5. 测试计划（Testcontainers MySQL 8 实跑，沿 `SharedMySqlContainer` + root 建库 GRANT 先例）
 
 | 组 | 用例 | 对应规格 / 契约 |
@@ -133,6 +135,8 @@ findUnmatched(vocabularyCode, tags):
 | T6 变更联动 | 本人变更标签为合法集 → `from→to` 留痕逐字；提交整份含非法项 → 拒绝且**既有行标签不变**（无部分写入） | 行为 2 规则 1 |
 | T7 既有数据兼容 | 插入 3.3.2 走查同款记录（标签 `金融/普惠/风控`）后，对其执行变更（合法标签集）→ 通过（证明种子集覆盖既有演示数据） | Q4-A / Q6-A |
 | T8 领域单测 | `TagTerm` / `TagVocabulary` 构造与校验、词条编号格式（`^TT\d{4}$`）、归一化差集算法（多标签/重复输入/空输入）、枚举（若有）封闭性 | 设计契约 |
+
+> **V1.1 补正（T8 承载形态）**：差集算法用例改由**生产仓储实跑**（`CatalogTagVocabularyIntegrationTest#findUnmatchedContractOnProductionRepository`，经真实 DB 验证归一化命中/去重/空输入/册缺失 fail-closed）——桩端口单测对唯一生产实现零证伪力（评审④ P2），种子全中文无法端到端呈现大小写折叠，另补拉丁字母词条探针（`registerMatchesLatinTermWrittenInDifferentCaseViaDbCollation`，用后即删）。
 | T9 回归（**不降级**） | `catalog-service` 既有 **58/58 全量回归**（写面校验链加固后判定零变更，含 T15 并发/边界与双 client 用例） + 两模块 `checkstyle:check` 0 违规 | 既有保护 |
 | T10 一致性锚 | 新码值（1007C0009/0010）↔ `CatalogExceptionHandler` HTTP 映射一致性锚（沿 3.3.2 `CatalogExceptionHandlerCodeConsistencyTest` 先例） | 设计契约 §2 |
 
@@ -157,15 +161,17 @@ findUnmatched(vocabularyCode, tags):
 ```
 services/catalog-service
 ├─ src/main/java/com/ctds/catalog/
-│   ├─ interfaces/TagVocabularyController.java          【新增】R3/R4 两端点 + TagVocabularyView/TagTermView
-│   ├─ application/DatasetCommandService.java           【改 2 处】create()/validTagsJson() 插入词条成员校验
-│   ├─ application/TagVocabularyQueryService.java       【新增】词表读面编排
+│   ├─ interfaces/TagVocabularyController.java          【新增】R3/R4 两端点（视图 DTO 落 interfaces/dto 包——V1.1 注记，沿 3.3.2 DatasetView 归位口径）
+│   ├─ interfaces/dto/TagVocabularyView.java / TagTermView.java 【新增】2 视图 DTO
+│   ├─ application/DatasetCommandService.java           【改 1 处】变更路径 validTagsJson() 插入词条成员校验（登记路径的成员校验在 DatasetRegistrationService 链序第 6′ 步——V1.1 澄清）
+│   ├─ application/TagVocabularyQueryService.java       【新增】词表读面编排（册不存在 404 由仓储层判定——V1.1 澄清，不做服务层预查）
+│   ├─ application/DatasetRegistrationService.java      【改】register() 链序第 6′ 步插入词条成员校验（WBS-3.3.3 hifi §4.1）
 │   ├─ domain/TagVocabulary.java / TagTerm.java         【新增】实体
 │   ├─ domain/TagTermPort.java                          【新增】读面 + 成员校验差集端口（端口-适配器，沿 SubjectAdmissionPort 先例）
 │   ├─ domain/CatalogErrorCodes.java                    【改】顺延 1007C0009 / 1007C0010
 │   ├─ domain/SemanticTags.java                         【改注释】"词表归 3.3.3"承接兑现（行为不变）
-│   └─ infrastructure/JdbcTagTermRepository.java        【新增】JdbcClient 实现（IN 查询 + 分页）
-├─ src/main/resources/application.yml                   【改 1 行】provider/admin 角色映射加 vocabulary.read
+│   └─ infrastructure/JdbcTagTermRepository.java        【新增】JdbcClient 实现（折叠比对 + NOT EXISTS 差集 + 分页）
+├─ src/main/resources/application.yml                   【改】provider/admin 角色映射各加 vocabulary.read（+注释同步）
 └─ src/main/resources/db/migration/V2__create_tag_vocabulary.sql  【新增】两表 + 种子 12 条
 ```
 
@@ -185,4 +191,17 @@ services/catalog-service
 4. **3.3.2 hifi §10.1 备忘**（"届时如改关联表结构走变更流程"）：本卡 Q2-A **不改**结构，该备忘继续有效；
 5. **DB-30 族**：本卡显式复用 `DatasetNameNormalizer`，不新增归一化副本；只读 client 副本问题与本卡无关（本卡零跨服务调用）；
 6. **3.3.4 备忘**：若需按类目过滤词条，`category` 列与索引随其迁移增补（本卡不预置未用列）；词表册可多册（`vocabulary_code` 已预留）；
-7. **演示数据**：既有 `ctds_catalog` 走查数据（空间 28 + 3 条资源 + 留痕 12 + 名称锁 1）按 3.2.7 口径留置，随"下次真机演示/走查前统一清理"处置；**本卡上线不回填、不清洗既有行**。
+7. **演示数据**：既有 `ctds_catalog` 走查数据（空间 28 + 3 条资源 + 留痕 12 + 名称锁 1）按 3.2.7 口径留置，随"下次真机演示/走查前统一清理"处置；**本卡上线不回填、不清洗既有行**；
+8. **`keyword` 通配符语义**（V1.1 补登，评审①/②）：`keyword` 按字面匹配——`%`、`_` 与转义符 `!` 一律失去通配语义（`LIKE ? ESCAPE '!'` + `escapeLike()` 全量转义，不沿用 space 的 `\` 前缀口径；多副本收敛登记 **DB-33**）；keyword 本身无长度上限（无注入面，超长仅空结果，跟踪项）；
+9. **幂等切面与成员校验的位置**（V1.1 澄清，评审①）：成员校验位于幂等切面**之内**（register() 方法体第 6′ 步）——幂等键命中（空间+主体+归一化名）的重放请求按 ADR-007 模式 B **回放首次结果**，重放载荷的标签合法性不再单独判定（与 §1.2"命中的重复提交仍返回首次结果"一致）；幂等组件只在成功时缓存，首次被拒（如 1007C0009）不缓存、后续合法重试正常走全链。
+
+## 11. 补正记录（V1.0 → V1.1，4 视角评审循环 1 后；业务判定零变更）
+
+| # | 补正 | 依据 |
+| --- | --- | --- |
+| E1 | §1.1 yml 改动量口径更正（"1 行"→ 两行权限映射 + 注释同步，实际 +5 −4） | 评审①/③（文档失真） |
+| E2 | §4.3 差集承载定稿：下沉 DB（VALUES + NOT EXISTS，返回候选原文），伪代码"Java 侧差集"存在拉丁大小写误判缺陷 | 评审④ P3 转实证 + 修复批 T4 大小写探针（测试先行 RED 抓出） |
+| E3 | §4.1 插入点澄清：6′ 在 register() 方法体内（幂等切面之内）、资格/空间/重要数据拒收之后——编码批误置于 create() 参数校验后（幂等切面之外），R1 修复 | 评审① P1（FAIL 主因） |
+| E4 | §5 T8 承载更正：差集用例改生产仓储实跑 + 拉丁词条大小写探针 | 评审④ P2×2 |
+| E5 | §8 骨架落位注记：视图 DTO 落 `interfaces/dto` 包；yml 改动量、成员校验落点同步 | 评审①/③（文档失真） |
+| E6 | §10 备忘 8~9 补登：keyword 通配符字面化（DB-33）/ 幂等切面之内语义 | 评审①②④ |
