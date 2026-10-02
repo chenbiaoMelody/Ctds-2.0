@@ -203,9 +203,10 @@ public class DatasetCommandService {
             throw new BizException(ErrorCodes.PARAM_INVALID, CANCEL_CONFIRM_REQUIRED_MESSAGE);
         }
         if (productReferenceGuard.hasActiveProductReferences(datasetId)) {
-            // 3.3.5 移交：产品表落地后本分支替换为业务码拒绝（错误码随 3.3.5 定，hifi §4.4）；
-            // 本卡实现恒 false、分支不可达——保留显式 fail-closed 出口（不静默放行）
-            throw new IllegalStateException("资源存在未注销产品引用，拒绝注销（错误码待 3.3.5 定稿）");
+            // 3.3.5 兑现（WBS-3.3.5 hifi §2/§4）：拒绝码 1007C0021 随 3.3.5 定稿落位——
+            // 引用保护由 JdbcProductReferenceGuard 实体检查实现（替换 3.3.2 恒放行实现）
+            throw new CatalogBizException(CatalogErrorCodes.PRODUCT_DATASET_REFERENCED,
+                    CatalogErrorCodes.PRODUCT_DATASET_REFERENCED_MESSAGE);
         }
         final LocalDateTime now = LocalDateTime.now(clock);
         final DatasetActionLog log = new DatasetActionLog(null, subject, dataset.spaceId(), dataset.id(),

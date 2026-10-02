@@ -18,6 +18,9 @@ public record SpaceMembership(boolean available, String spaceStatus, String role
     public static final String STATUS_NONE = "NONE";
     /** 非成员。 */
     public static final String ROLE_NONE = "NONE";
+    /** 已解散空间状态名（WBS-3.3.5 上收：产品封装/上架的"空间未解散"门槛共用判定值——
+     * 与 space 域 SpaceStatus 枚举名对齐；沿用 "DISSOLVED" 字面值域由本行注释锚定）。 */
+    public static final String SPACE_STATUS_DISSOLVED = "DISSOLVED";
 
     /** 空间服务不可用（统一 UNAVAILABLE 语义）。 */
     public static SpaceMembership unavailable() {

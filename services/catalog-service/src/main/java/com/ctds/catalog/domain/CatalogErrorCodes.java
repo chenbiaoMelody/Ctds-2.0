@@ -55,13 +55,49 @@ public final class CatalogErrorCodes {
     /** 本人收藏或订阅条目不存在（W5/W7 取消动作对无条目产品，hifi §2；剧本文案表意"记录不存在"）。→ 404 */
     public static final ErrorCode PRODUCT_RECORD_NOT_FOUND = ErrorCode.of("1007C0012");
     public static final String PRODUCT_RECORD_NOT_FOUND_MESSAGE = "收藏或订阅记录不存在";
+    /** 1007C0012 管理面文案（同码不同文案，沿 DATASET_NAME_LOCKED_MESSAGE 先例——S3 修复：
+     * W9~W13/R12 对不存在产品的拒绝以管理语境表意，不再沿用收藏订阅语境文案）。 */
+    public static final String PRODUCT_MANAGE_NOT_FOUND_MESSAGE = "产品不存在或无权操作";
     /** 检索参数不合法（R6 keyword 超长 / categoryCode 非类目树节点，WBS-3.3.4 hifi §2）。→ 400 */
     public static final ErrorCode CATALOG_SEARCH_PARAM_INVALID = ErrorCode.of("1007C0013");
     public static final String CATALOG_SEARCH_PARAM_INVALID_MESSAGE = "检索参数不合法";
-    /** 分类申报不在平台受控类目范围内（W1/W2 类目成员校验失败，WBS-3.3.4 hifi §2——不回显申报原文，
+    /** 分类申报不在平台受控类目范围内（登记/变更，WBS-3.3.4 hifi §2——不回显申报原文，
      * 沿 1007C0009 文案口径）。→ 400 */
     public static final ErrorCode CATEGORY_NOT_IN_CONTROLLED_TREE = ErrorCode.of("1007C0014");
     public static final String CATEGORY_NOT_IN_CONTROLLED_TREE_MESSAGE = "分类申报不在平台受控类目范围内";
+    /** 非提供方本人无权操作该产品（写面越权拒绝，行为 4 规则 6/行为 7 规则 1——DENIED 留痕联动，
+     * WBS-3.3.5 hifi §2；沿 1007C0006 模式）。→ 403 */
+    public static final ErrorCode PRODUCT_FORBIDDEN = ErrorCode.of("1007C0015");
+    public static final String PRODUCT_FORBIDDEN_MESSAGE = "仅提供方本人可执行该产品操作";
+    /** 来源资源当前状态不可封装/上架（行为 3 规则 1/行为 4 规则 2——资源已注销或所在空间已解散，
+     * 沿 1007C0002"状态不可登记"同款表意、主语为来源资源；C-3.3 剧本 S1-5/S2-4 判定面）。→ 409 */
+    public static final ErrorCode PRODUCT_DATASET_STATE_FORBIDDEN = ErrorCode.of("1007C0016");
+    public static final String PRODUCT_DATASET_STATE_FORBIDDEN_MESSAGE = "来源资源当前状态不允许封装或上架产品";
+    /** 同一提供方下已存在同名产品（归一化判定，行为 3 规则 5；唯一键含已注销行——注销后同名不可
+     * 复用，沿 dataset 名称锁同源口径；并发命中 uk_provider_norm_name 转译本码）。→ 409 */
+    public static final ErrorCode PRODUCT_NAME_DUPLICATED = ErrorCode.of("1007C0017");
+    public static final String PRODUCT_NAME_DUPLICATED_MESSAGE = "同一提供方下已存在同名产品";
+    /** 产品名称为空/超长/含控制字符（行为 3 规则 5——归一化后校验，沿 1007C0008 口径）。→ 400 */
+    public static final ErrorCode PRODUCT_NAME_INVALID = ErrorCode.of("1007C0018");
+    public static final String PRODUCT_NAME_INVALID_MESSAGE = "产品名称不能为空或超出长度限制";
+    /** 产品当前状态不允许该操作（状态机矩阵封闭，行为 4 规则 1——在架注销/未上架下架/已注销
+     * 再动作/非法转换一律拒绝；C-3.3 剧本 S3-6 判定面）。→ 409 */
+    public static final ErrorCode PRODUCT_STATE_FORBIDDEN = ErrorCode.of("1007C0019");
+    public static final String PRODUCT_STATE_FORBIDDEN_MESSAGE = "产品当前状态不允许该操作";
+    /** 定价信息不齐备或非法（行为 4 规则 2 上架前提，C-3.3 剧本 S2-2 判定面——付费档数值缺失/
+     * 非正值/分成比例超界/免费档携带数值）。→ 409 */
+    public static final ErrorCode PRODUCT_PRICE_INCOMPLETE = ErrorCode.of("1007C0020");
+    public static final String PRODUCT_PRICE_INCOMPLETE_MESSAGE = "定价信息不齐备或非法，无法上架";
+    /** 0020 分语境文案（同码不同文案，沿 DATASET_NAME_LOCKED_MESSAGE 先例）：免费档携值。 */
+    public static final String PRODUCT_PRICE_FREE_WITH_AMOUNT_MESSAGE = "免费档不得携带价格数值";
+    /** 0020 分语境文案：付费档数值须为正数（0 值边界统一为"须为正数"——hifi §11 勘误）。 */
+    public static final String PRODUCT_PRICE_AMOUNT_POSITIVE_MESSAGE = "价格数值须为正数";
+    /** 0020 分语境文案：分成比例超界。 */
+    public static final String PRODUCT_PRICE_SHARE_RATE_MESSAGE = "交易额分成比例须在 0~100 之间";
+    /** 资源存在未注销产品引用、不得注销（行为 2 规则 2"先处理产品"——3.3.2 移交拒绝码随本卡定，
+     * WBS-3.3.5 hifi §2；C-3.1 剧本 S3 步骤 4 判定面）。→ 409 */
+    public static final ErrorCode PRODUCT_DATASET_REFERENCED = ErrorCode.of("1007C0021");
+    public static final String PRODUCT_DATASET_REFERENCED_MESSAGE = "资源存在未注销产品引用，请先处理产品";
     /** 主体服务不可达/失败（UNAVAILABLE 统一文案，不冒充资格拒绝——hifi §5）。→ 503 */
     public static final ErrorCode SUBJECT_SERVICE_UNAVAILABLE = ErrorCode.of("1007S0001");
     public static final String SUBJECT_SERVICE_UNAVAILABLE_MESSAGE = "主体服务暂不可用，请稍后重试";

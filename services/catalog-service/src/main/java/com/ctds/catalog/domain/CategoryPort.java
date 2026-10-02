@@ -33,4 +33,12 @@ public interface CategoryPort {
      * @return true = 在受控类目集合内（通过）
      */
     boolean existsByNormalizedName(String declareCategory);
+
+    /**
+     * 按申报原文定位类目码（WBS-3.3.5 hifi §4 W8 步骤 ⑥：产品类目缺省继承——资源
+     * {@code declare_category} 经归一化在 DB 侧一次比对定位 {@code category_code}；匹配不到
+     * （申报早于类目树/值不在树）返回 null，由调用方落产品类目 NULL、不阻断封装（Q2-A 传导）。
+     * 归一化单点同 {@link #existsByNormalizedName}。
+     */
+    String findCodeByNormalizedName(String declareCategory);
 }

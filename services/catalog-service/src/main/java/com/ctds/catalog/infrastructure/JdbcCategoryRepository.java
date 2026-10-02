@@ -63,6 +63,16 @@ public class JdbcCategoryRepository implements CategoryPort {
                 .single() > 0;
     }
 
+    @Override
+    public String findCodeByNormalizedName(final String declareCategory) {
+        return jdbc.sql("SELECT category_code FROM category_node WHERE normalized_name = ? "
+                        + "ORDER BY id ASC LIMIT 1")
+                .param(DatasetNameNormalizer.normalize(declareCategory))
+                .query(String.class)
+                .optional()
+                .orElse(null);
+    }
+
     private static CategoryNode mapNode(final ResultSet rs) throws SQLException {
         return new CategoryNode(rs.getLong("id"), rs.getString("category_code"),
                 rs.getString("category_name"), rs.getString("normalized_name"), rs.getString("parent_code"),

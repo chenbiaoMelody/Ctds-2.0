@@ -25,6 +25,7 @@ public class CatalogExceptionHandler {
     static final Set<String> MAPPED_CODES = Set.of("1007C0001", "1007C0002", "1007C0003", "1007C0004",
             "1007C0005", "1007C0006", "1007C0007", "1007C0008", "1007C0009", "1007C0010",
             "1007C0011", "1007C0012", "1007C0013", "1007C0014",
+            "1007C0015", "1007C0016", "1007C0017", "1007C0018", "1007C0019", "1007C0020", "1007C0021",
             "1007S0001", "1007S0002");
 
     @ExceptionHandler(CatalogBizException.class)
@@ -40,10 +41,11 @@ public class CatalogExceptionHandler {
 
     private static HttpStatus statusOf(final String code) {
         return switch (code) {
-            case "1007C0006" -> HttpStatus.FORBIDDEN;
-            case "1007C0001", "1007C0002", "1007C0003", "1007C0004", "1007C0007" -> HttpStatus.CONFLICT;
+            case "1007C0006", "1007C0015" -> HttpStatus.FORBIDDEN;
+            case "1007C0001", "1007C0002", "1007C0003", "1007C0004", "1007C0007",
+                 "1007C0016", "1007C0017", "1007C0019", "1007C0020", "1007C0021" -> HttpStatus.CONFLICT;
             case "1007C0005", "1007C0010", "1007C0011", "1007C0012" -> HttpStatus.NOT_FOUND;
-            case "1007C0008", "1007C0009", "1007C0013", "1007C0014" -> HttpStatus.BAD_REQUEST;
+            case "1007C0008", "1007C0009", "1007C0013", "1007C0014", "1007C0018" -> HttpStatus.BAD_REQUEST;
             default -> HttpStatus.SERVICE_UNAVAILABLE;   // 1007S0001 / 1007S0002
         };
     }

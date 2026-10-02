@@ -12,6 +12,7 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.Optional;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 
 /**
@@ -54,7 +55,9 @@ public class ProductInteractionService {
         this.clock = clock;
     }
 
-    /** W4 收藏（行为 6 规则 1；幂等重放先于状态门槛——链序锚 T3）。返回 favoritedAt（首次时间）。 */
+    /** W4 收藏（行为 6 规则 1；幂等重放先于状态门槛——链序锚 T3）。返回 favoritedAt（首次时间）。
+     * DB-34 收口（WBS-3.3.5 Q6-A）：并发两请求同过"先查后插"时后插入方撞 uk_subject_product →
+     * 捕获后重放首次结果（幂等成功，消除 500 态——沿本卡新写面唯一键转译同款手法）。 */
     public LocalDateTime favorite(final long productId) {
         final String subject = guard.requireSubject();
         guard.requireAdmitted(subject);
@@ -64,8 +67,13 @@ public class ProductInteractionService {
             return existing.get();
         }
         requireListed(subject, productId, ProductInteractionLog.ACTION_FAVORITE, now);
-        favoriteRepository.insertWithLog(subject, productId, now,
-                succeededLog(subject, productId, ProductInteractionLog.ACTION_FAVORITE, now));
+        try {
+            favoriteRepository.insertWithLog(subject, productId, now,
+                    succeededLog(subject, productId, ProductInteractionLog.ACTION_FAVORITE, now));
+        } catch (final DuplicateKeyException e) {
+            return favoriteRepository.findFavoritedAt(subject, productId)
+                    .orElseThrow(() -> e);
+        }
         return now;
     }
 
@@ -85,7 +93,7 @@ public class ProductInteractionService {
         return existing.get();
     }
 
-    /** W6 订阅（行为 6 规则 2；链序同 W4）。返回 subscribedAt（首次时间）。 */
+    /** W6 订阅（行为 6 规则 2；链序同 W4，含 DB-34 收口同款并发转译）。返回 subscribedAt（首次时间）。 */
     public LocalDateTime subscribe(final long productId) {
         final String subject = guard.requireSubject();
         guard.requireAdmitted(subject);
@@ -95,8 +103,13 @@ public class ProductInteractionService {
             return existing.get();
         }
         requireListed(subject, productId, ProductInteractionLog.ACTION_SUBSCRIBE, now);
-        subscriptionRepository.insertWithLog(subject, productId, now,
-                succeededLog(subject, productId, ProductInteractionLog.ACTION_SUBSCRIBE, now));
+        try {
+            subscriptionRepository.insertWithLog(subject, productId, now,
+                    succeededLog(subject, productId, ProductInteractionLog.ACTION_SUBSCRIBE, now));
+        } catch (final DuplicateKeyException e) {
+            return subscriptionRepository.findSubscribedAt(subject, productId)
+                    .orElseThrow(() -> e);
+        }
         return now;
     }
 
