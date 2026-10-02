@@ -3,6 +3,7 @@ package com.ctds.catalog.application;
 import com.ctds.catalog.domain.ActionResult;
 import com.ctds.catalog.domain.CatalogBizException;
 import com.ctds.catalog.domain.CatalogErrorCodes;
+import com.ctds.catalog.domain.CategoryPort;
 import com.ctds.catalog.domain.Dataset;
 import com.ctds.catalog.domain.DatasetActionLog;
 import com.ctds.catalog.domain.DatasetNameNormalizer;
@@ -52,16 +53,19 @@ public class DatasetCommandService {
     private final ProductReferenceGuard productReferenceGuard;
     private final CatalogAccessGuard guard;
     private final TagTermPort tagTermPort;
+    private final CategoryPort categoryPort;
     private final Clock clock;
 
     public DatasetCommandService(final DatasetRepository repository,
             final DatasetRegistrationService registrationService, final ProductReferenceGuard guard,
-            final CatalogAccessGuard accessGuard, final TagTermPort tagTermPort, final Clock clock) {
+            final CatalogAccessGuard accessGuard, final TagTermPort tagTermPort,
+            final CategoryPort categoryPort, final Clock clock) {
         this.repository = repository;
         this.registrationService = registrationService;
         this.productReferenceGuard = guard;
         this.guard = accessGuard;
         this.tagTermPort = tagTermPort;
+        this.categoryPort = categoryPort;
         this.clock = clock;
     }
 
@@ -278,8 +282,13 @@ public class DatasetCommandService {
         return SemanticTags.toJson(tags);
     }
 
-    /** 分类申报校验（缺省 = 不变更；空串/超长 → 400）。 */
-    private static String validCategory(final String category) {
+    /**
+     * 分类申报校验（缺省 = 不变更；空串/超长 → 400）+ 类目成员校验（WBS-3.3.4 hifi §4.1 组内后位：
+     * declare_category 在变更可变字段集内（hifi §10.6 实测确认），与登记路径同链序——组内词表校验
+     * （validTagsJson）先、类目校验后；非受控类目 → 1007C0014，文案不回显申报原文；
+     * 非法入参零副作用——无部分写入、零留痕）。
+     */
+    private String validCategory(final String category) {
         if (category == null) {
             return null;
         }
@@ -289,6 +298,10 @@ public class DatasetCommandService {
         if (category.length() > CATEGORY_MAX_LENGTH) {
             throw new BizException(ErrorCodes.PARAM_INVALID,
                     "分类申报超长（≤" + CATEGORY_MAX_LENGTH + " 字符）");
+        }
+        if (!categoryPort.existsByNormalizedName(category)) {
+            throw new CatalogBizException(CatalogErrorCodes.CATEGORY_NOT_IN_CONTROLLED_TREE,
+                    CatalogErrorCodes.CATEGORY_NOT_IN_CONTROLLED_TREE_MESSAGE);
         }
         return category;
     }

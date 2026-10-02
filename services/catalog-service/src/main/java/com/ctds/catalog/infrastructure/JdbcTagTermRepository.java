@@ -33,7 +33,6 @@ public class JdbcTagTermRepository implements TagTermPort {
     /** LIKE 转义符（keyword 中的 %、_、! 一律转义——用户输入的通配符不作为通配符使用；
      * 取 '!' 而不用 '\'，免与 MySQL 字符串转义语义纠缠）。 */
     private static final char ESCAPE = '!';
-
     private final JdbcClient jdbc;
 
     public JdbcTagTermRepository(final JdbcClient jdbc) {
@@ -131,8 +130,9 @@ public class JdbcTagTermRepository implements TagTermPort {
                 rs.getString("normalized_term"));
     }
 
-    /** LIKE 转义：%、_ 与转义符本身失去通配语义（防用户输入的通配符放大或畸形结果）。 */
-    private static String escapeLike(final String keyword) {
+    /** LIKE 转义：%、_ 与转义符本身失去通配语义（防用户输入的通配符放大或畸形结果）。
+     * 包内共享（JdbcDataProductRepository 检索同用——DB-33 收敛方向：不新增第二副本）。 */
+    static String escapeLike(final String keyword) {
         final StringBuilder escaped = new StringBuilder(keyword.length() * 2);
         for (int i = 0; i < keyword.length(); i++) {
             final char ch = keyword.charAt(i);

@@ -455,8 +455,11 @@ class CatalogDatasetLifecycleIntegrationTest {
         assertThat(minePage(1021L, "10", "0").getResponse().getStatus()).isEqualTo(400);
         assertThat(minePage(1021L, "100", "1").getResponse().getStatus()).isEqualTo(200);
         // 要素长度边界（hifi §3.1 列宽）：简介 512 / 分类申报 64 放行；各超 1 字符 → 400
+        // WBS-3.3.4 类目校验生效后：64 字符边界用受控类目名 + 尾随空白（归一化命中，保留长度边界语义；
+        // 非受控类目申报一律 1007C0014 拒——"金".repeat(64) 不再是合法登记值）
         assertThat(register("owner-t12", 1021L,
-                longFieldBody("边界要素数据集", "简".repeat(512), "金".repeat(64))).getResponse().getStatus())
+                longFieldBody("边界要素数据集", "简".repeat(512), "金融" + " ".repeat(62)))
+                .getResponse().getStatus())
                 .isEqualTo(200);
         assertThat(register("owner-t12", 1021L,
                 longFieldBody("超长简介数据集", "简".repeat(513), "金融")).getResponse().getStatus())

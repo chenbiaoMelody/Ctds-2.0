@@ -24,6 +24,7 @@ public class CatalogExceptionHandler {
      * interfaces 包测试锚定，码表↔处理器集合不得漂移）。 */
     static final Set<String> MAPPED_CODES = Set.of("1007C0001", "1007C0002", "1007C0003", "1007C0004",
             "1007C0005", "1007C0006", "1007C0007", "1007C0008", "1007C0009", "1007C0010",
+            "1007C0011", "1007C0012", "1007C0013", "1007C0014",
             "1007S0001", "1007S0002");
 
     @ExceptionHandler(CatalogBizException.class)
@@ -41,8 +42,8 @@ public class CatalogExceptionHandler {
         return switch (code) {
             case "1007C0006" -> HttpStatus.FORBIDDEN;
             case "1007C0001", "1007C0002", "1007C0003", "1007C0004", "1007C0007" -> HttpStatus.CONFLICT;
-            case "1007C0005", "1007C0010" -> HttpStatus.NOT_FOUND;
-            case "1007C0008", "1007C0009" -> HttpStatus.BAD_REQUEST;
+            case "1007C0005", "1007C0010", "1007C0011", "1007C0012" -> HttpStatus.NOT_FOUND;
+            case "1007C0008", "1007C0009", "1007C0013", "1007C0014" -> HttpStatus.BAD_REQUEST;
             default -> HttpStatus.SERVICE_UNAVAILABLE;   // 1007S0001 / 1007S0002
         };
     }
