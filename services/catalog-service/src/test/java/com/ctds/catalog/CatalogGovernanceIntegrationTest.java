@@ -93,6 +93,8 @@ class CatalogGovernanceIntegrationTest {
                 .andReturn();
         assertThat(ok.getResponse().getStatus()).as(body(ok)).isEqualTo(200);
         assertThat(payload(ok).get("status").asText()).as("未上架对象治理可读").isEqualTo("未上架");
+        assertThat(payload(ok).has("priceAmount")).as("治理视图含定价字段（全量治理信息）").isTrue();
+        assertThat(payload(ok).has("datasetId")).as("治理视图含来源资源指向").isTrue();
         final Integer views = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM product_action_log WHERE product_id = ? "
                         + "AND action = 'GOVERNANCE_VIEW' AND operator_subject_no = 'admin-g1'",

@@ -332,6 +332,81 @@ class CatalogProductLifecycleIntegrationTest {
                 .as("已下架可重新上架").isEqualTo(200);
     }
 
+    // ==== 修复批补测（评审循环 1：T4/T9/T3）====
+
+    /** T4：W12 负向面（理由缺失 400 / 非 LISTED 强下 0019 / provider 角色调治理动作 403）。 */
+    @Test
+    void forceDelistNegativePathsRejected() throws Exception {
+        final long listedId = insertProduct("强下负向在架产品", "FREE", null, "LISTED",
+                LocalDateTime.now(), "provider-l11");
+        final MvcResult noReason = mockMvc.perform(auth(
+                        post(PRODUCTS + "/" + listedId + "/force-delist"), "admin-g1", ADMIN)
+                        .content("{}"))
+                .andReturn();
+        assertThat(noReason.getResponse().getStatus()).as(body(noReason)).isEqualTo(400);
+
+        final long delistedId = insertProduct("强下负向已下架产品", "FREE", null, "DELISTED", null,
+                "provider-l11");
+        final MvcResult nonListed = mockMvc.perform(auth(
+                        post(PRODUCTS + "/" + delistedId + "/force-delist"), "admin-g1", ADMIN)
+                        .content("{\"forceReason\":\"重复下架试探\"}"))
+                .andReturn();
+        assertThat(nonListed.getResponse().getStatus()).as(body(nonListed)).isEqualTo(409);
+        assertThat(codeOf(nonListed)).as("非在架强下 → 1007C0019").isEqualTo("1007C0019");
+
+        final MvcResult forbidden = mockMvc.perform(auth(
+                        post(PRODUCTS + "/" + listedId + "/force-delist"), "provider-l11", PROVIDER)
+                        .content("{\"forceReason\":\"提供方试探治理动作\"}"))
+                .andReturn();
+        assertThat(forbidden.getResponse().getStatus())
+                .as("provider 无 catalog.governance → 403 静态门").isEqualTo(403);
+    }
+
+    /** T9：状态机残缺组合补锚（CANCELLED→delist、LISTED 重复 publish → 1007C0019）。 */
+    @Test
+    void stateMachineResidualCombinationsRejected() throws Exception {
+        final long cancelledId = insertProduct("状态机补锚已注销", "FREE", null, "CANCELLED", null,
+                "provider-l12");
+        final MvcResult delist = mockMvc.perform(auth(
+                        post(PRODUCTS + "/" + cancelledId + "/delist"), "provider-l12", PROVIDER))
+                .andReturn();
+        assertThat(delist.getResponse().getStatus()).as(body(delist)).isEqualTo(409);
+        assertThat(codeOf(delist)).as("已注销下架拒绝").isEqualTo("1007C0019");
+
+        final long listedId = insertProduct("状态机补锚在架产品", "FREE", null, "LISTED",
+                LocalDateTime.now(), "provider-l12");
+        final MvcResult republish = mockMvc.perform(auth(
+                        post(PRODUCTS + "/" + listedId + "/publish"), "provider-l12", PROVIDER))
+                .andReturn();
+        assertThat(republish.getResponse().getStatus()).as(body(republish)).isEqualTo(409);
+        assertThat(codeOf(republish)).as("在架重复上架拒绝").isEqualTo("1007C0019");
+    }
+
+    /** T3：R11 提供方管理列表（本人全状态分页——含未上架/已注销行可见、他人产品不可见）。 */
+    @Test
+    void mineReturnsOwnProductsAcrossAllStates() throws Exception {
+        final long mineListed = insertProduct("管理列表在架", "FREE", null, "LISTED",
+                LocalDateTime.now(), "provider-l13");
+        insertProduct("管理列表未上架", "FREE", null, "DRAFT", null, "provider-l13");
+        insertProduct("管理列表已注销", "FREE", null, "CANCELLED", null, "provider-l13");
+        insertProduct("管理列表他人产品", "FREE", null, "LISTED", LocalDateTime.now(), "provider-l14");
+
+        final MvcResult ok = mockMvc.perform(auth(get(PRODUCTS + "/mine"), "provider-l13", PROVIDER))
+                .andReturn();
+        assertThat(ok.getResponse().getStatus()).as(body(ok)).isEqualTo(200);
+        final JsonNode page = payload(ok);
+        assertThat(page.get("total").asLong()).as("仅本人全部状态产品（3 = 在架+未上架+已注销）")
+                .isEqualTo(3);
+        final JsonNode first = page.get("list").get(0);
+        assertThat(first.get("status").asText()).as("管理视图含状态字段").isEqualTo("已注销");
+        assertThat(first.get("productId").asLong()).as("createdAt 倒序：最新在前").isEqualTo(
+                jdbc.queryForObject(
+                        "SELECT id FROM data_product WHERE product_name = '管理列表已注销'",
+                        Long.class));
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM data_product WHERE product_name = ?",
+                Integer.class, "管理列表在架")).isEqualTo(1);
+    }
+
     // ==== T9 引用保护：存在未注销产品引用的资源不得注销（C-3.1 剧本 S3-4 兑现）====
 
     @Test

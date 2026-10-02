@@ -57,6 +57,9 @@ class CatalogProductEncapsulationIntegrationTest {
     @Autowired
     private JdbcTemplate jdbc;
 
+    @Autowired
+    private com.ctds.catalog.domain.DataProductRepository productRepository;
+
     @MockitoBean
     private SubjectAdmissionPort admissionPort;
 
@@ -230,6 +233,93 @@ class CatalogProductEncapsulationIntegrationTest {
         final Integer count = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM data_product WHERE product_name = '幂等产品'", Integer.class);
         assertThat(count).as("产品数量不变（S1-6）").isEqualTo(1);
+    }
+
+    // ==== 修复批补测（评审循环 1：S1/S2/T5/T6/T1）====
+
+    /** S1/SEC2：缺失简介拒绝（规格行为 3 规则 5"要素必填"）。 */
+    @Test
+    void createProductWithoutIntroRejected() throws Exception {
+        final long datasetId = insertDataset("缺简介资源", "provider-p10", "ACTIVE");
+        final MvcResult denied = mockMvc.perform(auth(post(PRODUCTS), "provider-p10", PROVIDER)
+                        .content("{\"datasetId\":" + datasetId + ",\"productName\":\"缺简介产品\","
+                                + "\"productType\":\"DATASET\",\"pricingModel\":\"FREE\"}"))
+                .andReturn();
+        assertThat(denied.getResponse().getStatus()).as(body(denied)).isEqualTo(400);
+    }
+
+    /** T5：非法形态/定价档枚举 → 400。 */
+    @Test
+    void createProductInvalidEnumRejected() throws Exception {
+        final long datasetId = insertDataset("枚举探针资源", "provider-p11", "ACTIVE");
+        final MvcResult badType = mockMvc.perform(auth(post(PRODUCTS), "provider-p11", PROVIDER)
+                        .content(createBody(datasetId, "非法形态产品", "FREE", null, null)
+                                .replace("\"DATASET\"", "\"VIDEO\"")))
+                .andReturn();
+        assertThat(badType.getResponse().getStatus()).as(body(badType)).isEqualTo(400);
+        final MvcResult badModel = mockMvc.perform(auth(post(PRODUCTS), "provider-p11", PROVIDER)
+                        .content(createBody(datasetId, "非法档位产品", "YEARLY", null, null)))
+                .andReturn();
+        assertThat(badModel.getResponse().getStatus()).as(body(badModel)).isEqualTo(400);
+    }
+
+    /** T5：定价数值边界（0/负数/分成超 100 → 1007C0020）。 */
+    @Test
+    void createProductPricingBoundaryRejected() throws Exception {
+        final long datasetId = insertDataset("定价边界资源", "provider-p12", "ACTIVE");
+        for (final String amount : new String[] {"0.00", "-1.00"}) {
+            final MvcResult denied = mockMvc.perform(auth(post(PRODUCTS), "provider-p12", PROVIDER)
+                            .content(createBody(datasetId, "零负价产品" + amount, "PER_CALL", amount, null)))
+                    .andReturn();
+            assertThat(denied.getResponse().getStatus()).as(body(denied) + amount).isEqualTo(409);
+            assertThat(codeOf(denied)).as("0/负价 → 1007C0020（" + amount + "）").isEqualTo("1007C0020");
+        }
+        final MvcResult overShare = mockMvc.perform(auth(post(PRODUCTS), "provider-p12", PROVIDER)
+                        .content(createBody(datasetId, "超界分成产品", "REVENUE_SHARE", "100.01", null)))
+                .andReturn();
+        assertThat(overShare.getResponse().getStatus()).as(body(overShare)).isEqualTo(409);
+        assertThat(codeOf(overShare)).as("分成比例 >100 → 1007C0020").isEqualTo("1007C0020");
+    }
+
+    /** T6：控制字符名称（归一化剥离后为空 → 1007C0018）。 */
+    @Test
+    void createProductControlCharNameRejected() throws Exception {
+        final long datasetId = insertDataset("控制字符资源", "provider-p13", "ACTIVE");
+        final MvcResult denied = mockMvc.perform(auth(post(PRODUCTS), "provider-p13", PROVIDER)
+                        .content("{\"datasetId\":" + datasetId + ",\"productName\":\"\\u0000\\u0007\","
+                                + "\"intro\":\"简介\",\"productType\":\"DATASET\","
+                                + "\"pricingModel\":\"FREE\"}"))
+                .andReturn();
+        assertThat(denied.getResponse().getStatus()).as(body(denied)).isEqualTo(400);
+        assertThat(codeOf(denied)).as("控制字符名称归一化后为空 → 1007C0018").isEqualTo("1007C0018");
+    }
+
+    /** S2：显式非法类目 → 1007C0014。 */
+    @Test
+    void createProductInvalidExplicitCategoryRejected() throws Exception {
+        final long datasetId = insertDataset("非法类目资源", "provider-p14", "ACTIVE");
+        final MvcResult denied = mockMvc.perform(auth(post(PRODUCTS), "provider-p14", PROVIDER)
+                        .content(createBody(datasetId, "非法类目产品", "FREE", null, "火星类目")))
+                .andReturn();
+        assertThat(denied.getResponse().getStatus()).as(body(denied)).isEqualTo(400);
+        assertThat(codeOf(denied)).isEqualTo("1007C0014");
+    }
+
+    /** T1：仓储层唯一键并发转译（绕过服务层预检直调 create → DuplicateKeyException → 0017）。 */
+    @Test
+    void repositoryDuplicateKeyTranslatedToBusinessCode() {
+        final long datasetId = insertDataset("并发转译资源", "provider-p15", "ACTIVE");
+        final var row = new com.ctds.catalog.domain.ProviderProductRow(null, "并发同名产品", "简介",
+                "DATASET", "FREE", null, com.ctds.catalog.domain.ProductStatus.DRAFT, "provider-p15",
+                datasetId, null, null, null, java.time.LocalDateTime.now());
+        productRepository.create(row, new com.ctds.catalog.domain.ProductActionLog(null, 0L, "CREATE",
+                "provider-p15", null, java.time.LocalDateTime.now()));
+        // 直调仓储 create（预检在服务层——此处绕过以确定性触发 uk_provider_norm_name 冲突转译）
+        org.junit.jupiter.api.Assertions.assertThrows(
+                com.ctds.catalog.domain.CatalogBizException.class, () -> productRepository.create(row,
+                        new com.ctds.catalog.domain.ProductActionLog(null, 0L, "CREATE",
+                                "provider-p15", null, java.time.LocalDateTime.now())),
+                "仓储层 DuplicateKeyException 应转译 0017 而非 500");
     }
 
     // ==== 未入驻统一文案（防枚举；零副作用）====

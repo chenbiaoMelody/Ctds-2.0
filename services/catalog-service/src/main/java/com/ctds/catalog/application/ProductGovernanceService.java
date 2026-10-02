@@ -42,7 +42,7 @@ public class ProductGovernanceService {
         final String subject = guard.requireSubject();
         final ProviderProductRow product = productRepository.findById(productId)
                 .orElseThrow(() -> new CatalogBizException(CatalogErrorCodes.PRODUCT_RECORD_NOT_FOUND,
-                        CatalogErrorCodes.PRODUCT_RECORD_NOT_FOUND_MESSAGE));
+                        CatalogErrorCodes.PRODUCT_MANAGE_NOT_FOUND_MESSAGE));
         productRepository.insertLog(new ProductActionLog(null, product.productId(),
                 ProductActionLog.ACTION_GOVERNANCE_VIEW, subject, null, LocalDateTime.now(clock)));
         return product;

@@ -19,9 +19,14 @@ ALTER TABLE data_product
 
 -- 留痕动作码值域登记（零结构变更；沿 3.2.3 V2"留痕动作码登记"与 DB-29 V4 先例——不删不改既有码）。
 -- 产品侧：R8 订阅者可见值域 = CREATE/UPDATE/PUBLISH/DELIST/FORCE_DELIST/CANCEL 六类（变更类）；
--- DENIED_* 拒绝留痕与 GOVERNANCE_VIEW 治理查看留痕不对订阅者暴露（Q5-A）。
+-- DENIED_ 前缀拒绝留痕与 GOVERNANCE_VIEW 治理查看留痕不对订阅者暴露（Q5-A）。产品侧表无 reason
+-- 列（V3 零结构变更）：DENIED 行不落理由码尾号，取证 = 动作码 + 操作者 + 时点（C2 口径修正——
+-- 与 dataset 侧 reason_code 列承载的差异在此声明）；可直达写入面 = DENIED_UPDATE / DENIED_PUBLISH /
+-- DENIED_DELIST / DENIED_CANCEL（封装越权落资源域 DENIED_CREATE、强制下架无属主门槛故无
+-- DENIED_FORCE_DELIST——两码不预设，登记值域以实际写入面为准）。
 ALTER TABLE product_action_log
-    MODIFY COLUMN action VARCHAR(32) NOT NULL COMMENT '动作码（值域随 WBS-3.3.5 封装写面登记，沿 3.2.3 V2 先例）：CREATE 封装 / UPDATE 信息与定价变更（summary 含 field:from→to） / PUBLISH 上架 / DELIST 下架 / FORCE_DELIST 强制下架（summary 含理由全文） / CANCEL 注销 / DENIED_CREATE / DENIED_UPDATE / DENIED_PUBLISH / DENIED_DELIST / DENIED_FORCE_DELIST / DENIED_CANCEL 拒绝留痕（reason 尾号同 dataset 口径） / GOVERNANCE_VIEW 运营方治理查看留痕——订阅者读面 R8 可见值域 = 变更类六码（Q5-A）；不删不改既有码';
--- 资源侧：追加治理查看留痕码（Q5-A 资源侧治理例外，DB-29 同款机制复用——通用码 + 实际登录主体）。
+    MODIFY COLUMN action VARCHAR(32) NOT NULL COMMENT '动作码（值域随 WBS-3.3.5 封装写面登记，沿 3.2.3 V2 先例）：CREATE 封装 / UPDATE 信息与定价变更（summary 含 field:from→to，单值截断） / PUBLISH 上架 / DELIST 下架 / FORCE_DELIST 强制下架（summary 含理由全文） / CANCEL 注销 / DENIED_UPDATE / DENIED_PUBLISH / DENIED_DELIST / DENIED_CANCEL 拒绝留痕（本表无 reason 列，取证 = 动作码+操作者+时点） / GOVERNANCE_VIEW 运营方治理查看留痕（实际登录主体）——订阅者读面 R8 可见值域 = 变更类六码（Q5-A）；不删不改既有码';
+-- 资源侧：追加治理查看留痕码与产品封装越权拒绝码（Q5-A 资源侧治理例外，DB-29 同款机制复用——
+-- 通用码 + 实际登录主体；DENIED_CREATE = 封装越权拒绝落资源域〔产品未成行无从落产品留痕〕，C1 登记）。
 ALTER TABLE dataset_action_log
-    MODIFY COLUMN action VARCHAR(32) NOT NULL COMMENT '动作码（值域 = WBS-3.3.2 hifi §3.3 登记 + WBS-3.3.5 追加：GOVERNANCE_VIEW 运营方治理查看留痕〔仅 admin 触发，Q5-A/DB-29 同款〕）；不删不改既有码';
+    MODIFY COLUMN action VARCHAR(32) NOT NULL COMMENT '动作码（值域 = WBS-3.3.2 hifi §3.3 登记 + WBS-3.3.5 追加：GOVERNANCE_VIEW 运营方治理查看留痕〔仅 admin 触发，Q5-A/DB-29 同款〕 + DENIED_CREATE 产品封装越权拒绝〔码值复用 1007C0006，尾号落 reason_code〕）；不删不改既有码';

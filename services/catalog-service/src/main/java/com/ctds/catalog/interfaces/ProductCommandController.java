@@ -3,10 +3,10 @@ package com.ctds.catalog.interfaces;
 import com.ctds.catalog.application.ProductCommandService;
 import com.ctds.catalog.domain.ProviderProductRow;
 import com.ctds.catalog.interfaces.dto.CancellationRequest;
-import com.ctds.catalog.interfaces.dto.CreateProductBody;
-import com.ctds.catalog.interfaces.dto.ForceDelistBody;
+import com.ctds.catalog.interfaces.dto.CreateProductRequest;
+import com.ctds.catalog.interfaces.dto.ForceDelistRequest;
 import com.ctds.catalog.interfaces.dto.ProviderProductView;
-import com.ctds.catalog.interfaces.dto.UpdateProductBody;
+import com.ctds.catalog.interfaces.dto.UpdateProductRequest;
 import com.ctds.common.api.ApiResult;
 import com.ctds.common.auth.RequirePermission;
 import com.ctds.common.pagination.PageQuery;
@@ -25,7 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
  * 产品命令端点（WBS-3.3.5 hifi §1：W8 封装 / W9 变更 / W10 上架 / W11 下架 / W12 强制下架 /
  * W13 注销 + R11 提供方管理列表）。权限点 = catalog.product（提供方管理动作第一道功能门槛）与
  * catalog.governance（W12 治理兜底，admin）；属主判定在应用服务落定（数据行相关，非静态门可表达——
- * 沿 {@code DatasetController} 双轨先例）。W8 幂等经 X-Idempotency-Key 头由 ADR-007 切面承载。
+ * 沿 {@code DatasetController} 双轨先例）。W8 幂等 = ADR-007 业务键（提供方+来源资源+归一化产品名，切面 SpEL 派生——hifi §11 勘误）。
  */
 @RestController
 @RequestMapping("/api/v1")
@@ -37,10 +37,10 @@ public class ProductCommandController {
         this.commandService = commandService;
     }
 
-    /** W8 封装（行为 3 全部规则；仅资源登记主体本人——应用服务判定；重复提交幂等返回首次结果）。 */
+    /** W8 封装（行为 3 全部规则；仅资源登记主体本人——应用服务判定；同键重复提交幂等返回首次结果）。 */
     @PostMapping(path = "/data-products", produces = MediaType.APPLICATION_JSON_VALUE)
     @RequirePermission("catalog.product")
-    public ApiResult<ProviderProductView> create(@RequestBody final CreateProductBody body) {
+    public ApiResult<ProviderProductView> create(@RequestBody final CreateProductRequest body) {
         return ApiResult.ok(ProviderProductView.from(commandService.create(body.toCommand())));
     }
 
@@ -48,7 +48,7 @@ public class ProductCommandController {
     @PutMapping(path = "/data-products/{productId}", produces = MediaType.APPLICATION_JSON_VALUE)
     @RequirePermission("catalog.product")
     public ApiResult<ProviderProductView> update(@PathVariable final long productId,
-            @RequestBody final UpdateProductBody body) {
+            @RequestBody final UpdateProductRequest body) {
         return ApiResult.ok(ProviderProductView.from(commandService.update(productId,
                 body.toCommand())));
     }
@@ -72,7 +72,7 @@ public class ProductCommandController {
             produces = MediaType.APPLICATION_JSON_VALUE)
     @RequirePermission("catalog.governance")
     public ApiResult<ProviderProductView> forceDelist(@PathVariable final long productId,
-            @RequestBody final ForceDelistBody body) {
+            @RequestBody final ForceDelistRequest body) {
         return ApiResult.ok(ProviderProductView.from(commandService.forceDelist(productId,
                 body.forceReason())));
     }

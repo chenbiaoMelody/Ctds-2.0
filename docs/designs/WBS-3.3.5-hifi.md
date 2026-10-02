@@ -133,3 +133,13 @@ ALTER TABLE dataset_action_log
 3. **W9~W13 校验链顺序微调**：终态/状态机断言先于定价与要素校验（沿 dataset `requireActive` 先于字段校验同款先例——已注销语义压倒定价缺失）；W12 维持 hifi 原序（存在 0012 → 理由 400 → 状态机 0019）；
 4. **R8 可见值域**以封闭常量集承载（`ProductActionLog.SUBSCRIBER_VISIBLE_ACTIONS` 六码）——新增动作码默认不可见，须显式纳入（封闭值域原则，沿 3.3.4 status 枚举封闭先例）；
 5. **既有测试合法同步 3 处**（沿 3.3.2/3.3.3/3.3.4 先例）：`CatalogExceptionHandlerCodeConsistencyTest` 码数锚 16→23；`CatalogProductChangeLogIntegrationTest` 自造行动作码字面量 LIST→PUBLISH（值域定稿后旧字面量不在值域）；`CatalogDirectoryMigrationIntegrationTest` data_product 列序锚增补 V4 两列。
+
+### 11.1 修复批勘误（评审循环 1 后；评审结论 ①FAIL + ②③④PASS-with-notes，4×P1 + 9×P2 + 17×P3 全闭环）
+
+6. **§1 契约文本修正四处**（S6/T7）：W8 幂等机制 = ADR-007 **业务键**（提供方+来源资源+归一化产品名，切面 SpEL 派生）而非 X-Idempotency-Key 请求头（头为装饰性、实现不读取——控制器 javadoc 同步修正）；W9 响应无 updatedAt 字段（§1 文本删该字段）；W13 响应 = 标准 ProviderProductView（status=已注销），无独立"不可逆声明"字段；付费档数值边界统一为"须为正数"（0 值拒绝——0020 分语境文案常量三枚登记于码表）；
+7. **空间门槛口径**（S5/C5）：W8/W10 的空间判定 = `SpaceMembershipPort.check()` + `spaceStatus == DISSOLVED` 直比（常量上收 `SpaceMembership.SPACE_STATUS_DISSOLVED`），**非** `isSpaceActive()`（该法要求 ACTIVE，会误拒 FROZEN/CREATED 空间——规格行为 3 规则 1 仅要求"未解散"）；NONE〔空间不存在〕随放行、由资源行存在性兜底；§1/§4/任务卡 §三 的 isSpaceActive() 表述失准以此为准；
+8. **W9/W11/W13 的 ADMITTED 现值复核**（SEC3）：规格行为 4 规则 2 仅上架明文要求 ADMITTED，W9/W11/W13 的资格复核为已确认 hifi §4 的**从紧选择**（"①②同上/同 W10 前四步"字面），实现按设计补齐；
+9. **W9 空载体 400 先于存在性查询**（C11）：省一次查询，业务判定影响小（全 null 请求本非法）；W9 切换付费档未携数值 → 400"切换付费档位时须同时提供价格数值"（S7-① 参数完备性防御）；FREE 切档清空 price_amount 时 UPDATE 留痕以 "priceAmount:旧值→（清空）" 补记（S7-②）；
+10. **DTO 命名分轨**（C4）：接口层请求体 = `*Request`（沿 RegisterDatasetRequest 家族先例），应用层命令 = `*Command`（CreateProductCommand/ProductUpdateCommand）；§8 骨架中 GovernedProductView/GovernedDatasetView 裁撤（治理面复用 ProviderProductView/DatasetView——字段集未越界）；R8 可见值域过滤落点 = 仓储层（JdbcProductActionLogRepository.pageByProduct，非查询服务层）；
+11. **留痕单值截断**（SEC1/P1 修复）：W9 变更留痕 summary 的 from/to 值各截断 ≤64 字符（超长以"…(n 字符)"尾注），summary 恒 ≤512——§4"≤512 由字段值域保证"的原文论证不成立，以此勘误为准；updateFields 增设乐观门槛 `AND status <> 'CANCELLED'`（0 行 → 1007C0019，SEC5 并发终态保护）；产品侧留痕单写通道（ProductActionLogRepository.insert 死代码删除——C3）；
+12. **文档数字口径**（C7/C8/C9）：本卡端点数 = 写 6 + **读 3**（R11/R12/R13）；既有基线 = **17 端点**（读 10 写 7）；体量统计口径 = services/catalog-service 范围（不含本卡自产任务卡/设计/日志）；复用声明更正 = "JdbcDatasetRepository.create/updateFields 两写同事务先例 + 本卡新增 transitionStatus（乐观门槛沿 cancel WHERE status 先例）"。

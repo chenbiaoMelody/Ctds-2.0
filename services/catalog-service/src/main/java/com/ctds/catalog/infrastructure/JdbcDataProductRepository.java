@@ -205,10 +205,16 @@ public class JdbcDataProductRepository implements DataProductRepository {
             sets.add("category_code = ?");
             params.add(update.categoryCode());
         }
-        jdbc.sql("UPDATE data_product SET " + String.join(", ", sets) + " WHERE id = ?")
+        final int updated = jdbc.sql("UPDATE data_product SET " + String.join(", ", sets)
+                        + " WHERE id = ? AND status <> 'CANCELLED'")
                 .params(params)
                 .param(productId)
                 .update();
+        if (updated == 0) {
+            // SEC5 修复：并发注销竞争中命中 0 行 → 终态不可变不变式（1007C0019），变更整体回滚
+            throw new CatalogBizException(CatalogErrorCodes.PRODUCT_STATE_FORBIDDEN,
+                    CatalogErrorCodes.PRODUCT_STATE_FORBIDDEN_MESSAGE);
+        }
         insertLogWithinTransaction(log);
     }
 
@@ -237,7 +243,11 @@ public class JdbcDataProductRepository implements DataProductRepository {
 
     // ==== 内部 ====
 
-    /** 归一化名取值（直造行语义不适用写面——封装链恒已归一化，此处防御性兜底为 null）。 */
+    /**
+     * 归一化名取值（C10 口径声明：服务层 CreateProductCommand.normalizedName 为幂等键与判重的
+     * 权威值；此处从原始名重算仅为仓储层防御——同一 DatasetNameNormalizer 单点算法无漂移，
+     * 两处取值口径以服务层为准）。
+     */
     private static String normalizedOrNull(final ProviderProductRow product) {
         return product.productName() == null ? null
                 : DatasetNameNormalizer.normalize(product.productName());

@@ -55,6 +55,9 @@ public final class CatalogErrorCodes {
     /** 本人收藏或订阅条目不存在（W5/W7 取消动作对无条目产品，hifi §2；剧本文案表意"记录不存在"）。→ 404 */
     public static final ErrorCode PRODUCT_RECORD_NOT_FOUND = ErrorCode.of("1007C0012");
     public static final String PRODUCT_RECORD_NOT_FOUND_MESSAGE = "收藏或订阅记录不存在";
+    /** 1007C0012 管理面文案（同码不同文案，沿 DATASET_NAME_LOCKED_MESSAGE 先例——S3 修复：
+     * W9~W13/R12 对不存在产品的拒绝以管理语境表意，不再沿用收藏订阅语境文案）。 */
+    public static final String PRODUCT_MANAGE_NOT_FOUND_MESSAGE = "产品不存在或无权操作";
     /** 检索参数不合法（R6 keyword 超长 / categoryCode 非类目树节点，WBS-3.3.4 hifi §2）。→ 400 */
     public static final ErrorCode CATALOG_SEARCH_PARAM_INVALID = ErrorCode.of("1007C0013");
     public static final String CATALOG_SEARCH_PARAM_INVALID_MESSAGE = "检索参数不合法";
@@ -85,6 +88,12 @@ public final class CatalogErrorCodes {
      * 非正值/分成比例超界/免费档携带数值）。→ 409 */
     public static final ErrorCode PRODUCT_PRICE_INCOMPLETE = ErrorCode.of("1007C0020");
     public static final String PRODUCT_PRICE_INCOMPLETE_MESSAGE = "定价信息不齐备或非法，无法上架";
+    /** 0020 分语境文案（同码不同文案，沿 DATASET_NAME_LOCKED_MESSAGE 先例）：免费档携值。 */
+    public static final String PRODUCT_PRICE_FREE_WITH_AMOUNT_MESSAGE = "免费档不得携带价格数值";
+    /** 0020 分语境文案：付费档数值须为正数（0 值边界统一为"须为正数"——hifi §11 勘误）。 */
+    public static final String PRODUCT_PRICE_AMOUNT_POSITIVE_MESSAGE = "价格数值须为正数";
+    /** 0020 分语境文案：分成比例超界。 */
+    public static final String PRODUCT_PRICE_SHARE_RATE_MESSAGE = "交易额分成比例须在 0~100 之间";
     /** 资源存在未注销产品引用、不得注销（行为 2 规则 2"先处理产品"——3.3.2 移交拒绝码随本卡定，
      * WBS-3.3.5 hifi §2；C-3.1 剧本 S3 步骤 4 判定面）。→ 409 */
     public static final ErrorCode PRODUCT_DATASET_REFERENCED = ErrorCode.of("1007C0021");
