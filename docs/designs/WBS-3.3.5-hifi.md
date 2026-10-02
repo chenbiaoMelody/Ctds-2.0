@@ -136,7 +136,7 @@ ALTER TABLE dataset_action_log
 
 ### 11.1 修复批勘误（评审循环 1 后；评审结论 ①FAIL + ②③④PASS-with-notes，4×P1 + 9×P2 + 17×P3 全闭环）
 
-6. **§1 契约文本修正四处**（S6/T7）：W8 幂等机制 = ADR-007 **业务键**（提供方+来源资源+归一化产品名，切面 SpEL 派生）而非 X-Idempotency-Key 请求头（头为装饰性、实现不读取——控制器 javadoc 同步修正）；W9 响应无 updatedAt 字段（§1 文本删该字段）；W13 响应 = 标准 ProviderProductView（status=已注销），无独立"不可逆声明"字段；付费档数值边界统一为"须为正数"（0 值拒绝——0020 分语境文案常量三枚登记于码表）；
+6. **§1 契约文本修正四处（§1 原文未就地改动，以本条为准）**（S6/T7）：W8 幂等机制 = ADR-007 **业务键**（提供方+来源资源+归一化产品名，切面 SpEL 派生）而非 X-Idempotency-Key 请求头（头为装饰性、实现不读取——控制器 javadoc 同步修正）；W9 响应无 updatedAt 字段（§1 该字段以本条为准不承载）；W13 响应 = 标准 ProviderProductView（status=已注销），无独立"不可逆声明"字段；付费档数值边界统一为"须为正数"（0 值拒绝——0020 分语境文案常量三枚登记于码表）；
 7. **空间门槛口径**（S5/C5）：W8/W10 的空间判定 = `SpaceMembershipPort.check()` + `spaceStatus == DISSOLVED` 直比（常量上收 `SpaceMembership.SPACE_STATUS_DISSOLVED`），**非** `isSpaceActive()`（该法要求 ACTIVE，会误拒 FROZEN/CREATED 空间——规格行为 3 规则 1 仅要求"未解散"）；NONE〔空间不存在〕随放行、由资源行存在性兜底；§1/§4/任务卡 §三 的 isSpaceActive() 表述失准以此为准；
 8. **W9/W11/W13 的 ADMITTED 现值复核**（SEC3）：规格行为 4 规则 2 仅上架明文要求 ADMITTED，W9/W11/W13 的资格复核为已确认 hifi §4 的**从紧选择**（"①②同上/同 W10 前四步"字面），实现按设计补齐；
 9. **W9 空载体 400 先于存在性查询**（C11）：省一次查询，业务判定影响小（全 null 请求本非法）；W9 切换付费档未携数值 → 400"切换付费档位时须同时提供价格数值"（S7-① 参数完备性防御）；FREE 切档清空 price_amount 时 UPDATE 留痕以 "priceAmount:旧值→（清空）" 补记（S7-②）；

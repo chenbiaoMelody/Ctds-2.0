@@ -4,7 +4,7 @@ import com.ctds.catalog.application.ProductCommandService;
 import java.math.BigDecimal;
 
 /**
- * 产品封装请求体（WBS-3.3.5 hifi §1 W8；幂等经 X-Idempotency-Key 头由 ADR-007 切面自动承载）。
+ * 产品封装请求体（WBS-3.3.5 hifi §1 W8；幂等 = ADR-007 业务键（提供方+来源资源+归一化产品名，切面 SpEL 派生——hifi §11 勘误 6））。
  * 六要素：datasetId/productName/intro/productType/pricingModel 必填，priceAmount 按档语义
  * （免费档不得携带——Q2-A），categoryCode 可选（缺省按资源申报类目继承）。
  */

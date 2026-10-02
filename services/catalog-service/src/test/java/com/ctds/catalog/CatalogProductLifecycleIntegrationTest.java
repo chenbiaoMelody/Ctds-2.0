@@ -146,6 +146,25 @@ class CatalogProductLifecycleIntegrationTest {
                 .contains("priceAmount:3.00→19.90");
     }
 
+    // ==== 复审 R2：超长简介变更 → 留痕 summary 单值截断（SEC1 修复触达）====
+
+    @Test
+    void updateLongIntroTruncatesSummaryWithinColumnLimit() throws Exception {
+        final long productId = insertProduct("长简介变更产品", "FREE", null, "LISTED",
+                LocalDateTime.now(), "provider-l15");
+        final String longIntro = "长".repeat(200);
+        final MvcResult ok = mockMvc.perform(auth(put(PRODUCTS + "/" + productId),
+                        "provider-l15", PROVIDER)
+                        .content("{\"intro\":\"" + longIntro + "\"}"))
+                .andReturn();
+        assertThat(ok.getResponse().getStatus()).as(body(ok)).isEqualTo(200);
+        final String summary = jdbc.queryForObject(
+                "SELECT summary FROM product_action_log WHERE product_id = ? AND action = 'UPDATE'",
+                String.class, productId);
+        assertThat(summary).as("超长值以尾注承载（SEC1 截断）").contains("…(200 字符)");
+        assertThat(summary.length()).as("summary 恒 ≤512（列宽硬保证）").isLessThanOrEqualTo(512);
+    }
+
     // ==== S2-4：已解散空间内资源的未上架产品上架拒绝 ====
 
     @Test

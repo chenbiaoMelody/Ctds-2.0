@@ -190,10 +190,13 @@ public class ProductCommandService {
         }
         if (request.priceAmount() != null || (request.pricingModel() != null
                 && FREE_MODEL.equals(pricing.modelName()))) {
-            // FREE 切档清空 price_amount 时 DB 变更须留痕（S7-②：to 为 null 也记，以"（清空）"承载）
-            appendChange(summary, "priceAmount", product.priceAmount() == null ? null
-                    : product.priceAmount().toPlainString(), pricing.amount() == null ? "（清空）"
-                    : pricing.amount().toPlainString());
+            // FREE 切档清空 price_amount 时 DB 变更须留痕（S7-②：to 为 null 以"（清空）"承载）；
+            // FREE 原档重发（原值/新值均 null）无实际 DB 变更 → 不产生幻影留痕（复审 R1）
+            if (!(product.priceAmount() == null && pricing.amount() == null)) {
+                appendChange(summary, "priceAmount", product.priceAmount() == null ? null
+                        : product.priceAmount().toPlainString(), pricing.amount() == null ? "（清空）"
+                        : pricing.amount().toPlainString());
+            }
         }
         appendChange(summary, "categoryCode", product.categoryCode(), category);
         if (summary.isEmpty()) {

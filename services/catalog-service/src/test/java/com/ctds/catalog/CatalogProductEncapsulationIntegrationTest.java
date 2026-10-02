@@ -315,11 +315,13 @@ class CatalogProductEncapsulationIntegrationTest {
         productRepository.create(row, new com.ctds.catalog.domain.ProductActionLog(null, 0L, "CREATE",
                 "provider-p15", null, java.time.LocalDateTime.now()));
         // 直调仓储 create（预检在服务层——此处绕过以确定性触发 uk_provider_norm_name 冲突转译）
-        org.junit.jupiter.api.Assertions.assertThrows(
-                com.ctds.catalog.domain.CatalogBizException.class, () -> productRepository.create(row,
-                        new com.ctds.catalog.domain.ProductActionLog(null, 0L, "CREATE",
-                                "provider-p15", null, java.time.LocalDateTime.now())),
-                "仓储层 DuplicateKeyException 应转译 0017 而非 500");
+        try {
+            productRepository.create(row, new com.ctds.catalog.domain.ProductActionLog(null, 0L,
+                    "CREATE", "provider-p15", null, java.time.LocalDateTime.now()));
+            org.junit.jupiter.api.Assertions.fail("仓储层 DuplicateKeyException 应转译 0017 而非 500");
+        } catch (final com.ctds.catalog.domain.CatalogBizException e) {
+            assertThat(e.getErrorCode().value()).as("转译业务码逐字锚").isEqualTo("1007C0017");
+        }
     }
 
     // ==== 未入驻统一文案（防枚举；零副作用）====
