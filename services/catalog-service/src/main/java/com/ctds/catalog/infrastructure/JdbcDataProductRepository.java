@@ -5,6 +5,9 @@ import com.ctds.catalog.domain.DataProductRepository;
 import com.ctds.catalog.domain.ProductStatus;
 import com.ctds.common.pagination.PageQuery;
 import com.ctds.common.pagination.PageResult;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -93,8 +96,8 @@ public class JdbcDataProductRepository implements DataProductRepository {
                 .map(ProductStatus::valueOf);
     }
 
-    private static CatalogProductRow mapRow(final java.sql.ResultSet rs,
-            final java.time.LocalDateTime interactedAt) throws java.sql.SQLException {
+    private static CatalogProductRow mapRow(final ResultSet rs, final LocalDateTime interactedAt)
+            throws SQLException {
         return new CatalogProductRow(rs.getLong("id"), rs.getString("product_name"), rs.getString("intro"),
                 rs.getString("product_type"), rs.getString("pricing_model"),
                 ProductStatus.valueOf(rs.getString("status")), rs.getString("provider_subject_no"),

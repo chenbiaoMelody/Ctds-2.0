@@ -299,7 +299,7 @@ public class DatasetCommandService {
             throw new BizException(ErrorCodes.PARAM_INVALID,
                     "分类申报超长（≤" + CATEGORY_MAX_LENGTH + " 字符）");
         }
-        if (!categoryPort.existsByNormalizedName(DatasetNameNormalizer.normalize(category))) {
+        if (!categoryPort.existsByNormalizedName(category)) {
             throw new CatalogBizException(CatalogErrorCodes.CATEGORY_NOT_IN_CONTROLLED_TREE,
                     CatalogErrorCodes.CATEGORY_NOT_IN_CONTROLLED_TREE_MESSAGE);
         }

@@ -46,7 +46,7 @@ public class ProductCatalogController {
     @GetMapping(path = "/catalog/categories", produces = MediaType.APPLICATION_JSON_VALUE)
     @RequirePermission("catalog.read")
     public ApiResult<List<CategoryNodeView>> categories() {
-        return ApiResult.ok(categoryTreeService.tree());
+        return ApiResult.ok(CategoryNodeView.treeOf(categoryTreeService.allNodes()));
     }
 
     /** R6 目录检索（行为 5：恒仅已上架 + 分类过滤〔子树〕+ 关键词名称/简介 + 分页 + 上架时间倒序；

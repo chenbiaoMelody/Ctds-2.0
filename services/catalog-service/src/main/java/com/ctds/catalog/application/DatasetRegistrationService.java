@@ -6,7 +6,6 @@ import com.ctds.catalog.domain.CatalogErrorCodes;
 import com.ctds.catalog.domain.CategoryPort;
 import com.ctds.catalog.domain.Dataset;
 import com.ctds.catalog.domain.DatasetActionLog;
-import com.ctds.catalog.domain.DatasetNameNormalizer;
 import com.ctds.catalog.domain.DatasetRepository;
 import com.ctds.catalog.domain.DatasetStatus;
 import com.ctds.catalog.domain.SemanticTags;
@@ -100,7 +99,9 @@ public class DatasetRegistrationService {
 
     // ==== 内部：门槛与要素 ====
 
-    /** 资格门槛三态（行为 1 规则 1）：NOT_ADMITTED → 统一文案（防枚举）；UNAVAILABLE → 1007S0001。 */
+    /** 资格门槛三态（行为 1 规则 1）：NOT_ADMITTED → 统一文案（防枚举）；UNAVAILABLE → 1007S0001。
+     * 与 {@code CatalogAccessGuard.requireAdmitted} 同族不同文（登记语境 ADMISSION_REQUIRED_MESSAGE；
+     * 目录读面/交互面已收敛于 guard 单点），因文案不同保留独立实现。 */
     private void requireAdmitted(final CreateDatasetCommand cmd) {
         final SubjectAdmission admission = subjectAdmissionPort.check(cmd.ownerSubjectNo());
         if (admission == SubjectAdmission.NOT_ADMITTED) {
@@ -156,13 +157,14 @@ public class DatasetRegistrationService {
     }
 
     /**
-     * 类目成员校验（WBS-3.3.4 hifi §4.1 组内后位，兑现 3.3.2 移交"类目树校验"）：申报值经
-     * {@link DatasetNameNormalizer} 归一化后不在受控类目集合 → 1007C0014（400）。拒绝文案为
-     * 服务端常量、不回显申报原文（沿 1007C0009 文案口径）；此处不写 DENIED 留痕（非法入参零库内
-     * 副作用——零资源行、零留痕、零取号）；只作用新写入、不回填历史（沿 3.3.3 Q6-A）。
+     * 类目成员校验（WBS-3.3.4 hifi §4.1 组内后位，兑现 3.3.2 移交"类目树校验"）：申报值归一化后
+     * 不在受控类目集合 → 1007C0014（400）——归一化单点在 {@link CategoryPort} 实现内（沿词表通道
+     * findUnmatched 同款），调用方传申报原文、不做第二次归一化。拒绝文案为服务端常量、不回显申报
+     * 原文（沿 1007C0009 文案口径）；此处不写 DENIED 留痕（非法入参零库内副作用——零资源行、
+     * 零留痕、零取号）；只作用新写入、不回填历史（沿 3.3.3 Q6-A）。
      */
     private void requireCategoryMembership(final CreateDatasetCommand cmd) {
-        if (!categoryPort.existsByNormalizedName(DatasetNameNormalizer.normalize(cmd.declareCategory()))) {
+        if (!categoryPort.existsByNormalizedName(cmd.declareCategory())) {
             throw new CatalogBizException(CatalogErrorCodes.CATEGORY_NOT_IN_CONTROLLED_TREE,
                     CatalogErrorCodes.CATEGORY_NOT_IN_CONTROLLED_TREE_MESSAGE);
         }

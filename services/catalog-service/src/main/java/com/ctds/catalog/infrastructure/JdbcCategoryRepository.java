@@ -12,9 +12,10 @@ import org.springframework.stereotype.Repository;
 /**
  * 受控类目树仓储（JdbcClient，ADR-009 迁移规范建表 V3；沿 {@code JdbcTagTermRepository} 先例）。
  *
- * <p>成员校验 = 归一化申报值与 {@code category_node.normalized_name} 的 <b>DB 侧一次比对</b>
- * （WBS-3.3.4 hifi §3；单值申报无需差集，同一请求内只有这一道口径，沿 3.3.3"差集必须同库算"
- * 教训——不在 Java 侧做第二次判定）。大小写折叠由列排序规则 0900_ai_ci 承担。</p>
+ * <p>成员校验 = 申报原文经 {@link DatasetNameNormalizer} 归一化后与 {@code category_node.normalized_name}
+ * 的 <b>DB 侧一次比对</b>（WBS-3.3.4 hifi §3；单值申报无需差集，同一请求内只有这一道口径，沿 3.3.3
+ * "差集必须同库算"教训——不在 Java 侧做第二次判定）。归一化单点在本实现内（沿词表通道 findUnmatched
+ * 同款），调用方不做第二次归一化。大小写折叠由列排序规则 0900_ai_ci 承担。</p>
  */
 @Repository
 public class JdbcCategoryRepository implements CategoryPort {

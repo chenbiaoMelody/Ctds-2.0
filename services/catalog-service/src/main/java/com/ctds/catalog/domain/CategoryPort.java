@@ -23,12 +23,14 @@ public interface CategoryPort {
     List<String> selfAndDescendantCodes(String categoryCode);
 
     /**
-     * 类目成员校验（hifi §3 匹配口径唯一实现）：归一化申报值与 {@code category_node.normalized_name}
-     * 在 <b>DB 侧一次比对</b>（沿 3.3.3 教训不搞"DB 判定 + Java 原文差集"两道口径；大小写折叠由
-     * 列排序规则 0900_ai_ci 承担，应用层不额外归一化第二次）。
+     * 类目成员校验（hifi §3 匹配口径唯一实现）：申报原文经 {@link DatasetNameNormalizer} 归一化后，
+     * 与 {@code category_node.normalized_name} 在 <b>DB 侧一次比对</b>（沿 3.3.3 教训不搞
+     * "DB 判定 + Java 原文差集"两道口径；大小写折叠由列排序规则 0900_ai_ci 承担）。归一化单点在
+     * 本端口实现内（沿 {@link TagTermPort#findUnmatched} 词表通道同款），调用方传申报原文、
+     * 不做第二次归一化。
      *
-     * @param normalizedName 经 {@link DatasetNameNormalizer#normalize} 归一化后的申报值
+     * @param declareCategory 资源分类申报原文（落库同值，不改写）
      * @return true = 在受控类目集合内（通过）
      */
-    boolean existsByNormalizedName(String normalizedName);
+    boolean existsByNormalizedName(String declareCategory);
 }

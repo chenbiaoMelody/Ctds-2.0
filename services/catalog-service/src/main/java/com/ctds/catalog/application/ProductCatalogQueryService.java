@@ -9,8 +9,6 @@ import com.ctds.catalog.domain.ProductActionLogRepository;
 import com.ctds.catalog.domain.ProductChangeLogRow;
 import com.ctds.catalog.domain.ProductFavoriteRepository;
 import com.ctds.catalog.domain.ProductSubscriptionRepository;
-import com.ctds.catalog.domain.SubjectAdmission;
-import com.ctds.catalog.domain.SubjectAdmissionPort;
 import com.ctds.common.pagination.PageQuery;
 import com.ctds.common.pagination.PageResult;
 import java.util.List;
@@ -33,20 +31,18 @@ public class ProductCatalogQueryService {
     private final ProductSubscriptionRepository subscriptionRepository;
     private final ProductActionLogRepository actionLogRepository;
     private final CategoryPort categoryPort;
-    private final SubjectAdmissionPort admissionPort;
     private final CatalogAccessGuard guard;
 
     public ProductCatalogQueryService(final DataProductRepository dataProductRepository,
             final ProductFavoriteRepository favoriteRepository,
             final ProductSubscriptionRepository subscriptionRepository,
             final ProductActionLogRepository actionLogRepository, final CategoryPort categoryPort,
-            final SubjectAdmissionPort admissionPort, final CatalogAccessGuard guard) {
+            final CatalogAccessGuard guard) {
         this.dataProductRepository = dataProductRepository;
         this.favoriteRepository = favoriteRepository;
         this.subscriptionRepository = subscriptionRepository;
         this.actionLogRepository = actionLogRepository;
         this.categoryPort = categoryPort;
-        this.admissionPort = admissionPort;
         this.guard = guard;
     }
 
@@ -57,7 +53,8 @@ public class ProductCatalogQueryService {
      */
     public PageResult<CatalogProductRow> search(final String categoryCode, final String keyword,
             final PageQuery page) {
-        requireAdmitted(guard.requireSubject());
+        final String subject = guard.requireSubject();
+        guard.requireAdmitted(subject);
         if (keyword != null && keyword.length() > KEYWORD_MAX_LENGTH) {
             throw new CatalogBizException(CatalogErrorCodes.CATALOG_SEARCH_PARAM_INVALID,
                     CatalogErrorCodes.CATALOG_SEARCH_PARAM_INVALID_MESSAGE);
@@ -78,7 +75,8 @@ public class ProductCatalogQueryService {
      * 1007C0011 同形拒绝（防枚举——不区分差异）。
      */
     public CatalogProductRow detail(final long productId) {
-        requireAdmitted(guard.requireSubject());
+        final String subject = guard.requireSubject();
+        guard.requireAdmitted(subject);
         return dataProductRepository.findListedDetail(productId)
                 .orElseThrow(() -> new CatalogBizException(CatalogErrorCodes.PRODUCT_NOT_FOUND_OR_NOT_LISTED,
                         CatalogErrorCodes.PRODUCT_NOT_FOUND_OR_NOT_LISTED_MESSAGE));
@@ -91,7 +89,7 @@ public class ProductCatalogQueryService {
      */
     public PageResult<ProductChangeLogRow> changeLogs(final long productId, final PageQuery page) {
         final String subject = guard.requireSubject();
-        requireAdmitted(subject);
+        guard.requireAdmitted(subject);
         if (!dataProductRepository.existsById(productId)
                 || subscriptionRepository.findSubscribedAt(subject, productId).isEmpty()) {
             throw new CatalogBizException(CatalogErrorCodes.PRODUCT_NOT_FOUND_OR_NOT_LISTED,
@@ -108,19 +106,5 @@ public class ProductCatalogQueryService {
     /** R10 我的订阅分页（口径同 R9）。 */
     public PageResult<CatalogProductRow> subscriptions(final PageQuery page) {
         return subscriptionRepository.pageBySubject(guard.requireSubject(), page);
-    }
-
-    /** ADMITTED 资格门槛（Q8-A 复用既有通道）：未入驻统一文案（防枚举，码复用 1007C0006）；
-     * 主体服务不可用 → 1007S0001（不冒充资格拒绝）。 */
-    private void requireAdmitted(final String subject) {
-        final SubjectAdmission admission = admissionPort.check(subject);
-        if (admission == SubjectAdmission.NOT_ADMITTED) {
-            throw new CatalogBizException(CatalogErrorCodes.DATASET_FORBIDDEN,
-                    CatalogErrorCodes.CATALOG_ADMISSION_REQUIRED_MESSAGE);
-        }
-        if (admission == SubjectAdmission.UNAVAILABLE) {
-            throw new CatalogBizException(CatalogErrorCodes.SUBJECT_SERVICE_UNAVAILABLE,
-                    CatalogErrorCodes.SUBJECT_SERVICE_UNAVAILABLE_MESSAGE);
-        }
     }
 }

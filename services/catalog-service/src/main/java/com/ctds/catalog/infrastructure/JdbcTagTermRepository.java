@@ -32,7 +32,8 @@ public class JdbcTagTermRepository implements TagTermPort {
     private static final String TERM_COLUMNS = "term_code, term_name, normalized_term";
     /** LIKE 转义符（keyword 中的 %、_、! 一律转义——用户输入的通配符不作为通配符使用；
      * 取 '!' 而不用 '\'，免与 MySQL 字符串转义语义纠缠）。 */
-    private static final char ESCAPE = '!';    private final JdbcClient jdbc;
+    private static final char ESCAPE = '!';
+    private final JdbcClient jdbc;
 
     public JdbcTagTermRepository(final JdbcClient jdbc) {
         this.jdbc = jdbc;

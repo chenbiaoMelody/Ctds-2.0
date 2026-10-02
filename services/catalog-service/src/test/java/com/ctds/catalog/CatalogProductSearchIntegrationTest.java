@@ -16,6 +16,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -282,7 +283,7 @@ class CatalogProductSearchIntegrationTest {
     }
 
     private static List<String> namesOf(final JsonNode page) {
-        final List<String> names = new java.util.ArrayList<>();
+        final List<String> names = new ArrayList<>();
         page.get("list").forEach(node -> names.add(node.get("productName").asText()));
         return names;
     }

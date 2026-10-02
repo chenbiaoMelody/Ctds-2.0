@@ -8,8 +8,6 @@ import com.ctds.catalog.domain.ProductInteractionLog;
 import com.ctds.catalog.domain.ProductInteractionLogRepository;
 import com.ctds.catalog.domain.ProductStatus;
 import com.ctds.catalog.domain.ProductSubscriptionRepository;
-import com.ctds.catalog.domain.SubjectAdmission;
-import com.ctds.catalog.domain.SubjectAdmissionPort;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
@@ -40,7 +38,6 @@ public class ProductInteractionService {
     private final ProductFavoriteRepository favoriteRepository;
     private final ProductSubscriptionRepository subscriptionRepository;
     private final ProductInteractionLogRepository interactionLogRepository;
-    private final SubjectAdmissionPort admissionPort;
     private final CatalogAccessGuard guard;
     private final Clock clock;
 
@@ -48,12 +45,11 @@ public class ProductInteractionService {
             final ProductFavoriteRepository favoriteRepository,
             final ProductSubscriptionRepository subscriptionRepository,
             final ProductInteractionLogRepository interactionLogRepository,
-            final SubjectAdmissionPort admissionPort, final CatalogAccessGuard guard, final Clock clock) {
+            final CatalogAccessGuard guard, final Clock clock) {
         this.dataProductRepository = dataProductRepository;
         this.favoriteRepository = favoriteRepository;
         this.subscriptionRepository = subscriptionRepository;
         this.interactionLogRepository = interactionLogRepository;
-        this.admissionPort = admissionPort;
         this.guard = guard;
         this.clock = clock;
     }
@@ -61,7 +57,7 @@ public class ProductInteractionService {
     /** W4 收藏（行为 6 规则 1；幂等重放先于状态门槛——链序锚 T3）。返回 favoritedAt（首次时间）。 */
     public LocalDateTime favorite(final long productId) {
         final String subject = guard.requireSubject();
-        requireAdmitted(subject);
+        guard.requireAdmitted(subject);
         final LocalDateTime now = now();
         final Optional<LocalDateTime> existing = favoriteRepository.findFavoritedAt(subject, productId);
         if (existing.isPresent()) {
@@ -92,7 +88,7 @@ public class ProductInteractionService {
     /** W6 订阅（行为 6 规则 2；链序同 W4）。返回 subscribedAt（首次时间）。 */
     public LocalDateTime subscribe(final long productId) {
         final String subject = guard.requireSubject();
-        requireAdmitted(subject);
+        guard.requireAdmitted(subject);
         final LocalDateTime now = now();
         final Optional<LocalDateTime> existing = subscriptionRepository.findSubscribedAt(subject, productId);
         if (existing.isPresent()) {
@@ -129,19 +125,6 @@ public class ProductInteractionService {
                     CatalogErrorCodes.PRODUCT_NOT_FOUND_OR_NOT_LISTED, now);
             throw new CatalogBizException(CatalogErrorCodes.PRODUCT_NOT_FOUND_OR_NOT_LISTED,
                     CatalogErrorCodes.PRODUCT_NOT_FOUND_OR_NOT_LISTED_MESSAGE);
-        }
-    }
-
-    /** ADMITTED 资格门槛（Q8-A，仅 W4/W6）：未入驻统一文案（零留痕零副作用）；服务不可用 → 1007S0001。 */
-    private void requireAdmitted(final String subject) {
-        final SubjectAdmission admission = admissionPort.check(subject);
-        if (admission == SubjectAdmission.NOT_ADMITTED) {
-            throw new CatalogBizException(CatalogErrorCodes.DATASET_FORBIDDEN,
-                    CatalogErrorCodes.CATALOG_ADMISSION_REQUIRED_MESSAGE);
-        }
-        if (admission == SubjectAdmission.UNAVAILABLE) {
-            throw new CatalogBizException(CatalogErrorCodes.SUBJECT_SERVICE_UNAVAILABLE,
-                    CatalogErrorCodes.SUBJECT_SERVICE_UNAVAILABLE_MESSAGE);
         }
     }
 

@@ -2,6 +2,7 @@ package com.ctds.catalog.infrastructure;
 
 import com.ctds.catalog.domain.CatalogProductRow;
 import com.ctds.catalog.domain.ProductInteractionLog;
+import com.ctds.catalog.domain.ProductInteractionLogRepository;
 import com.ctds.catalog.domain.ProductStatus;
 import com.ctds.catalog.domain.ProductSubscriptionRepository;
 import com.ctds.common.pagination.PageQuery;
@@ -19,7 +20,8 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * 产品订阅关系仓储（JdbcClient，ADR-009 迁移规范建表 V3；沿 {@code JdbcProductFavoriteRepository} 同款）。
  * R10 列表 join data_product 读时计算产品当前状态（Q5-A）；订阅者判定（R8）复用 findSubscribedAt；
- * 条目 + 留痕两写同事务的边界在本仓储方法内。
+ * 条目 + 留痕两写同事务的边界在本仓储方法内；留痕写入复用 {@code ProductInteractionLogRepository.insert}
+ * （REQUIRED join 同事务——留痕 INSERT 单一实现，防多副本演进漏改）。
  */
 @Repository
 public class JdbcProductSubscriptionRepository implements ProductSubscriptionRepository {
@@ -33,9 +35,12 @@ public class JdbcProductSubscriptionRepository implements ProductSubscriptionRep
             + "LEFT JOIN category_node c ON c.category_code = p.category_code";
 
     private final JdbcClient jdbc;
+    private final ProductInteractionLogRepository interactionLogRepository;
 
-    public JdbcProductSubscriptionRepository(final JdbcClient jdbc) {
+    public JdbcProductSubscriptionRepository(final JdbcClient jdbc,
+            final ProductInteractionLogRepository interactionLogRepository) {
         this.jdbc = jdbc;
+        this.interactionLogRepository = interactionLogRepository;
     }
 
     @Override
@@ -57,7 +62,7 @@ public class JdbcProductSubscriptionRepository implements ProductSubscriptionRep
                 .param(productId)
                 .param(createdAt)
                 .update();
-        insertLog(log);
+        interactionLogRepository.insert(log);
     }
 
     @Override
@@ -69,7 +74,7 @@ public class JdbcProductSubscriptionRepository implements ProductSubscriptionRep
                 .param(subjectNo)
                 .param(productId)
                 .update() > 0;
-        insertLog(log);
+        interactionLogRepository.insert(log);
         return deleted;
     }
 
@@ -88,19 +93,6 @@ public class JdbcProductSubscriptionRepository implements ProductSubscriptionRep
                 .query((rs, rowNum) -> mapRow(rs))
                 .list();
         return PageResult.of(list, total, page);
-    }
-
-    /** 留痕写入（随条目写入同事务；列序沿 product_interaction_log 四要素）。 */
-    private void insertLog(final ProductInteractionLog log) {
-        jdbc.sql("INSERT INTO product_interaction_log (subject_no, product_id, action, outcome, "
-                        + "deny_reason, created_at) VALUES (?, ?, ?, ?, ?, ?)")
-                .param(log.subjectNo())
-                .param(log.productId())
-                .param(log.action())
-                .param(log.outcome())
-                .param(log.denyReason())
-                .param(log.createdAt())
-                .update();
     }
 
     private static CatalogProductRow mapRow(final ResultSet rs) throws SQLException {
