@@ -46,9 +46,9 @@ class CatalogDirectoryMigrationIntegrationTest {
         final Map<String, List<String>> columns = new LinkedHashMap<>();
         columns.put("category_node", List.of("id", "category_code", "category_name", "normalized_name",
                 "parent_code", "sort_order", "created_at"));
-        columns.put("data_product", List.of("id", "product_name", "intro", "product_type", "pricing_model",
-                "status", "provider_subject_no", "dataset_id", "category_code", "listed_at",
-                "created_at", "updated_at"));
+        columns.put("data_product", List.of("id", "product_name", "normalized_product_name", "intro",
+                "product_type", "pricing_model", "price_amount", "status", "provider_subject_no",
+                "dataset_id", "category_code", "listed_at", "created_at", "updated_at"));
         columns.put("product_favorite", List.of("id", "subject_no", "product_id", "created_at"));
         columns.put("product_subscription", List.of("id", "subject_no", "product_id", "created_at"));
         columns.put("product_interaction_log", List.of("id", "subject_no", "product_id", "action",

@@ -25,13 +25,15 @@ logging:
 
 ctds:
   # RBAC（WBS 2.4.5 模式 A 配置映射；WBS-3.3.2 hifi §1 权限点四枚 + 3.3.3 vocabulary.read +
-  # 3.3.4 catalog.read/catalog.interact 两枚）：演示期提供方主体角色持七点、admin 角色持三点读权
-  # （沿 space 双轨先例——写动作另有登记主体本人/条目本人判定，权限点是第一道功能门槛；
-  # catalog.interact 为业务交互动作〔收藏/订阅〕，admin 不持）。
+  # 3.3.4 catalog.read/catalog.interact 两枚 + 3.3.5 catalog.product/catalog.governance 两枚）：
+  # 演示期提供方主体角色持八点、admin 角色持四点（沿 space 双轨先例——写动作另有登记主体本人/
+  # 条目本人判定，权限点是第一道功能门槛；catalog.interact 为业务交互动作〔收藏/订阅〕，admin 不持；
+  # catalog.product 为产品管理动作〔封装/上下架/注销〕，admin 不持；catalog.governance 为治理
+  # 例外读面〔R12/R13 治理详情 + W12 强制下架〕，provider 不持）。
   auth:
     permissions:
-      provider: dataset.register,dataset.update,dataset.cancel,dataset.read,vocabulary.read,catalog.read,catalog.interact
-      admin: dataset.read,vocabulary.read,catalog.read
+      provider: dataset.register,dataset.update,dataset.cancel,dataset.read,vocabulary.read,catalog.read,catalog.interact,catalog.product
+      admin: dataset.read,vocabulary.read,catalog.read,catalog.governance
   # 目录与资源服务参数（WBS-3.3.2 hifi §4~§5）
   catalog:
     # 主体服务衔接（资格判定只读通道，subject yml 已加 catalog-internal 1 行授权）：

@@ -71,7 +71,7 @@ class CatalogProductChangeLogIntegrationTest {
     void subscriberCanReadChangeLogsInReverseOrder() throws Exception {
         final long productId = insertListedProduct("变更留痕产品");
         insertSubscription("reader-c1", productId);
-        insertActionLog(productId, "LIST", "产品已上架", "provider-c", LocalDateTime.of(2026, 10, 1, 9, 0));
+        insertActionLog(productId, "PUBLISH", "产品已上架", "provider-c", LocalDateTime.of(2026, 10, 1, 9, 0));
         insertActionLog(productId, "UPDATE", "简介变更:旧→新", "provider-c",
                 LocalDateTime.of(2026, 10, 1, 10, 0));
         insertActionLog(productId, "DELIST", "产品已下架", "provider-c",
@@ -84,7 +84,8 @@ class CatalogProductChangeLogIntegrationTest {
         assertThat(page.get("total").asLong()).isEqualTo(3);
         assertThat(page.get("list").get(0).get("action").asText())
                 .as("按 created_at 倒序：最新在前").isEqualTo("DELIST");
-        assertThat(page.get("list").get(2).get("action").asText()).isEqualTo("LIST");
+        assertThat(page.get("list").get(2).get("action").asText())
+                .as("值域定稿后自造行沿 PUBLISH（WBS-3.3.5 V4 动作码登记）").isEqualTo("PUBLISH");
         assertThat(page.get("list").get(0).properties().stream()
                 .map(java.util.Map.Entry::getKey).toList())
                 .as("R8 出站字段白名单（四要素；不含敏感原文与数据本体）")
@@ -98,7 +99,7 @@ class CatalogProductChangeLogIntegrationTest {
     void nonSubscriberAndMissingProductRejectedSameShape() throws Exception {
         final long productId = insertListedProduct("非订阅者探针产品");
         insertSubscription("reader-c2-other", productId);
-        insertActionLog(productId, "LIST", "产品已上架", "provider-c", LocalDateTime.now());
+        insertActionLog(productId, "PUBLISH", "产品已上架", "provider-c", LocalDateTime.now());
 
         final MvcResult nonSubscriber = mockMvc.perform(auth(get("/api/v1/data-products/" + productId
                 + "/change-logs"), "reader-c2", PROVIDER)).andReturn();

@@ -125,3 +125,11 @@ ALTER TABLE dataset_action_log
 - 3.3.4 移交四件全部落定：data_product 写面（§1/§4）、product_action_log 写入面与动作码集合（§3.2）、产品业务编号规则（Q1-A：不取号沿 id）、NoopProductReferenceGuard 实体化（§4）；
 - 规格授权落定五件：产品字段明细（§3.1 增列定稿）、形态一致性（Q3-A）、数量上限（Q4-A：不设）、定价数值字段（Q2-A）、治理查看留痕机制复用形态（Q5-A：DB-29 同款复用、零新表）；
 - DB 承接：DB-34 收口（Q6-A）/ DB-35 评估结论留痕（Q7-A）/ DB-36 收窄移交 3.3.6（Q8-A）/ DB-37 落定（Q5-A 内）/ DB-38 补测份额（T10）/ DB-39 孪生 DTO 裁决 = 维持现状留痕（R9/R10 已交付读面零改动，合并评估随 3.3.6 契约定稿）。
+
+## 11. 勘误与实现期微调（V1.0 编码期，业务判定零变更；供评审）
+
+1. **`normalized_product_name` 列 NOT NULL → NULL 允许**（§3.1 勘误）：3.3.4 期测试/预置直造行无归一化值，NOT NULL 会破坏既有用例生态；NULL 行不参与唯一判定（MySQL 唯一键多 NULL 共存），封装写面写入恒非空，并发防重兜底不受影响（写面行归一化值非空，后插入方撞 `uk_provider_norm_name`）——V4 迁移列注释已锚定该口径；
+2. **W8 判重预检移入幂等切面之内**（§4 步骤 ⑧⑨ 顺序勘误）：预检若在切面之外，幂等重放会被 1007C0017 挡住（重放必须先于判重命中）——沿 dataset register 同款链位（判重在 @Idempotent 方法体内，`DatasetRegistrationService.register` 先例）；幂等键语义 = 提供方+来源资源+归一化名，同键重放返回首次结果、跨资源同名（不同键）判重拒绝——T7 两用例分别锚定；
+3. **W9~W13 校验链顺序微调**：终态/状态机断言先于定价与要素校验（沿 dataset `requireActive` 先于字段校验同款先例——已注销语义压倒定价缺失）；W12 维持 hifi 原序（存在 0012 → 理由 400 → 状态机 0019）；
+4. **R8 可见值域**以封闭常量集承载（`ProductActionLog.SUBSCRIBER_VISIBLE_ACTIONS` 六码）——新增动作码默认不可见，须显式纳入（封闭值域原则，沿 3.3.4 status 枚举封闭先例）；
+5. **既有测试合法同步 3 处**（沿 3.3.2/3.3.3/3.3.4 先例）：`CatalogExceptionHandlerCodeConsistencyTest` 码数锚 16→23；`CatalogProductChangeLogIntegrationTest` 自造行动作码字面量 LIST→PUBLISH（值域定稿后旧字面量不在值域）；`CatalogDirectoryMigrationIntegrationTest` data_product 列序锚增补 V4 两列。
