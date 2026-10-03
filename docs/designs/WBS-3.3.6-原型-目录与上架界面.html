@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>WBS-3.3.6 线框原型 · 目录与上架界面（低保真）</title>
+<style>
+  /* 低保真线框：只表达信息架构与操作流，不做视觉定稿（高保真阶段定稿） */
+  body { font-family: sans-serif; margin: 0; background: #f5f5f5; }
+  .frame { border: 2px dashed #999; margin: 16px; padding: 12px; }
+  .frame h2 { margin-top: 0; }
+  .layout { display: flex; gap: 12px; }
+  .side { width: 190px; border: 1px dashed #999; padding: 8px; min-height: 260px; }
+  .main { flex: 1; border: 1px dashed #999; padding: 8px; }
+  table { border-collapse: collapse; width: 100%; background: #fff; }
+  th, td { border: 1px solid #bbb; padding: 6px 8px; font-size: 13px; text-align: left; }
+  th { background: #eee; }
+  .btn { display: inline-block; border: 1px solid #666; padding: 3px 10px; margin: 2px; font-size: 13px; background: #fff; text-decoration: none; color: #000; }
+  .btn-danger { border-color: #a00; color: #a00; }
+  .note { color: #888; font-size: 12px; }
+  .field { margin: 4px 0; font-size: 13px; }
+  .label { display: inline-block; width: 150px; color: #555; }
+  .section { border: 1px dashed #aaa; padding: 6px; margin: 6px 0; background: #fff; }
+  .placeholder { color: #aaa; font-style: italic; }
+  .modal { border: 2px solid #666; background: #fff; padding: 10px; margin: 8px 0; width: 680px; }
+  .modal h3 { margin: 0 0 6px 0; font-size: 15px; }
+  .warn { color: #a00; font-weight: bold; }
+  .tabs span { display: inline-block; border: 1px solid #666; border-bottom: none; padding: 4px 12px; margin-right: 4px; font-size: 13px; background: #fff; }
+  .tabs span.on { background: #eee; font-weight: bold; }
+  .topbar { border: 1px solid #666; background: #fff; padding: 6px 10px; font-size: 13px; margin-bottom: 10px; }
+  .tag { border: 1px solid #888; border-radius: 8px; padding: 1px 8px; font-size: 12px; }
+  .tag-warn { border-color: #a00; color: #a00; }
+  .tag-ok { border-color: #2a7; color: #2a7; }
+</style>
+</head>
+<body>
+
+<div class="frame">
+  <h2>画面 0：全局布局（侧边菜单 + 顶栏"演示身份"控件）</h2>
+  <div class="topbar">
+    <b>顶栏</b>：折叠按钮 ｜ 面包屑：数据目录 / 产品详情 ｜ 右侧：<b>[ 演示身份 ]</b>
+    主体编号 <span class="placeholder">[ S20260925000001 ]</span>
+    档位 <span class="placeholder">[ 普通主体 ▾ ｜ 平台运营方 ]</span> <a class="btn" href="#">保存</a>
+    ｜ 演示模式标识 ｜ 角色切换（user/admin） ｜ 退出
+    <div class="note">演示期专用（沿用 3.2.6 顶栏控件，零新增）：主体编号写入 ctds-demo-subject；档位写入 ctds-demo-actor-mode。
+      <b>目录域角色头（本卡新增）：普通档 = provider；运营档 = admin</b>（服务端 provider 八点 / admin 四点）。
+      <b>硬约束：普通档不得携带 admin</b>——否则治理类与"越权被拒"类剧本步骤会被服务端放行。主体编号必填（为空 = 未认证，前端拦零请求）。</div>
+  </div>
+  <div class="layout">
+    <div class="side">
+      <div class="field"><b>侧边菜单</b>（按权限显隐）</div>
+      <div class="field">工作台</div>
+      <div class="field">标准能力</div>
+      <div class="field"><b>数据目录</b> ◀（menuOrder 3 既有项；替换占位页；无权限点，登录即可见）</div>
+      <div class="field">仅管理员可见</div>
+      <div class="field">主体入驻 / 主体审核 / 入驻进度查询 / DID 管理</div>
+      <div class="field">逻辑空间 / 平台策略治理</div>
+      <div class="field"><b>资源登记</b> ◀（menuOrder 11；权限点 dataset.register）</div>
+      <div class="field"><b>产品上架</b> ◀（menuOrder 12；权限点 catalog.product）</div>
+      <div class="field"><b>目录治理</b> ◀（menuOrder 13；权限点 catalog.governance）</div>
+      <div class="note">菜单计数：admin 10 → 13；普通角色仍 5（「数据目录」保持无权限点 → e2e 登录冒烟零改动）</div>
+    </div>
+    <div class="main">
+      <div class="note">本区为页面承载区（画面 1~7 分别为各路由内容）。</div>
+    </div>
+  </div>
+</div>
+
+<div class="frame" id="portal">
+  <h2>画面 1：数据目录 · 检索门户（/catalog，替换 2.4.9 占位页）</h2>
+  <div class="tabs"><span class="on">目录检索</span><span>我的收藏</span><span>我的订阅</span><span>我的互动留痕</span></div>
+  <div class="layout">
+    <div class="side">
+      <div class="field"><b>分类类目</b>（平台受控，R5）</div>
+      <div class="field">全部</div>
+      <div class="field">金融</div>
+      <div class="field">　├ 银行保险</div>
+      <div class="field">　└ <b>普惠金融</b> ◀</div>
+      <div class="field">医疗健康 / 交通运输 / …（8 一级 + 16 二级）</div>
+      <div class="note">点父类目 = 含其下全部子类（子树展开由服务端承载；界面不做过滤判定）</div>
+    </div>
+    <div class="main">
+      <div class="section"><b>检索</b>
+        <div class="field"><span class="label">关键词（名称/简介）</span> [ 普惠金融 ]　<a class="btn" href="#">查询</a><a class="btn" href="#">重置</a></div>
+        <div class="note">R6：分类过滤 + 关键词 + 分页；结果恒仅"已上架"产品；keyword ≤64；未入驻主体检索 → 统一业务文案（防枚举，见画面 7）</div>
+      </div>
+      <div class="field"><b>检索结果</b>（分页；<b>仅目录元数据</b>，不含数据本体）</div>
+      <table>
+        <tr><th>产品名称</th><th>简介</th><th>形态</th><th>定价模型</th><th>类目</th><th>提供方主体编号</th><th>上架时间</th><th>操作</th></tr>
+        <tr><td>普惠金融数据服务</td><td><span class="placeholder">（全文见详情）</span></td><td>数据集</td><td>按次</td><td>普惠金融</td><td>S20260925000001</td><td>2026-10-02 20:1x</td><td><a class="btn" href="#detail">查看详情</a></td></tr>
+        <tr><td><span class="placeholder">（未上架 / 已下架 / 已注销产品不出现在这里——目录仅呈现已上架）</span></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+      </table>
+      <div class="field note">分页控件：上一页 / 下一页 / 页码（pageNum/pageSize/total/totalPages；越界 → 1000C0001 原样展示）</div>
+      <div class="field note">空态（非报错）：没有找到符合条件的产品</div>
+    </div>
+  </div>
+</div>
+
+<div class="frame" id="mine">
+  <h2>画面 2：数据目录 · 我的收藏 / 我的订阅 / 我的互动留痕（页内页签，不占菜单）</h2>
+  <div class="tabs"><span>目录检索</span><span class="on">我的收藏</span><span>我的订阅</span><span>我的互动留痕</span></div>
+  <div class="section"><b>我的收藏</b>（R9，分页）
+    <table>
+      <tr><th>产品名称</th><th>形态</th><th>定价</th><th>产品当前状态</th><th>收藏时间</th><th>操作</th></tr>
+      <tr><td>普惠金融数据服务</td><td>数据集</td><td>包月</td><td><span class="tag tag-warn">已下架</span></td><td>2026-10-02</td><td><a class="btn" href="#">取消收藏</a></td></tr>
+      <tr><td>目录样例产品</td><td>API接口</td><td>免费</td><td><span class="tag tag-ok">已上架</span></td><td>2026-10-03</td><td><a class="btn" href="#">取消收藏</a></td></tr>
+    </table>
+    <div class="note">状态为"读时计算"：下架/注销后条目<b>保留不删除</b>并标记当前状态（行为 6 规则 3）；空态 = 暂未收藏任何产品</div>
+  </div>
+  <div class="section"><b>我的互动留痕</b>（R16，Q2-A，分页）
+    <table>
+      <tr><th>动作</th><th>结果</th><th>产品编号/名称</th><th>时间</th><th>拒绝原因（码）</th></tr>
+      <tr><td>收藏</td><td><span class="tag tag-ok">成功</span></td><td>4 普惠金融数据服务</td><td>2026-10-03 18:0x</td><td>—</td></tr>
+      <tr><td>订阅</td><td><span class="tag tag-ok">成功</span></td><td>4 普惠金融数据服务</td><td>2026-10-03 18:0x</td><td>—</td></tr>
+      <tr><td>取消收藏</td><td><span class="tag tag-warn">被拒</span></td><td>4 普惠金融数据服务</td><td>2026-10-03 18:1x</td><td>C0012（本人无此条目）</td></tr>
+    </table>
+    <div class="note">仅本人记录（谁=本人/何时/对哪个产品/结果）；含被拒绝的越权探测记录（C-3.2 S2-3 判定面）；不含敏感原文</div>
+  </div>
+</div>
+
+<div class="frame" id="detail">
+  <h2>画面 3：产品详情（/catalog/products/:productId，深链可直达）</h2>
+  <div class="section"><b>目录元数据</b>（R7；<b>无数据本体内容段落</b>——检索 ≠ 可访问）
+    <div class="field"><span class="label">产品名称</span> 普惠金融数据服务　状态 <span class="tag tag-ok">已上架</span></div>
+    <div class="field"><span class="label">简介</span>（全文）</div>
+    <div class="field"><span class="label">形态 / 定价 / 类目</span> 数据集 / 包月 / 普惠金融</div>
+    <div class="field"><span class="label">提供方主体编号 / 上架时间</span> S20260925000001 / 2026-10-02 20:1x</div>
+    <div class="field"><a class="btn" href="#">收藏</a><a class="btn" href="#">订阅</a>
+      <span class="note">重复收藏/订阅 = 幂等重放（提示成功、不新增条目）；运营档不显示收藏/订阅按钮（体验层；服务端仍为判定源）</span></div>
+    <div class="field note">非本人 / 未上架（含已下架、已注销）按编号直链打开 → <b>同形拒绝</b>「产品不存在或未在架」（不区分差异，防枚举）</div>
+  </div>
+  <div class="section"><b>变更记录</b>（R8，分页；<b>订阅者可读</b>）
+    <table>
+      <tr><th>动作</th><th>摘要（含从何值→到何值）</th><th>操作者主体编号</th><th>时间</th></tr>
+      <tr><td>变更</td><td>定价：按次 → 包月</td><td>S20260925000001</td><td>2026-10-03 17:5x</td></tr>
+      <tr><td>上架</td><td>产品上架</td><td>S20260925000001</td><td>2026-10-02 20:2x</td></tr>
+    </table>
+    <div class="note">未订阅时该区显示提示"订阅后可查看产品变更记录"（体验层；后端对非订阅者仍同码同文案拒绝）</div>
+  </div>
+</div>
+
+<div class="frame" id="datasets">
+  <h2>画面 4：资源登记页（/catalog/datasets，权限点 dataset.register）</h2>
+  <div class="section"><b>我的资源</b>（R1，分页）
+    <div class="field"><a class="btn" href="#ds-create">登记资源</a>
+      <span class="note">列表恒仅本人资源；含全部状态（生效中 / 已注销）；空态 = 暂未登记资源</span></div>
+    <table>
+      <tr><th>数据标识</th><th>名称</th><th>类型</th><th>状态</th><th>所属空间</th><th>分类分级申报</th><th>登记时间</th><th>操作</th></tr>
+      <tr><td>DS20261001000001</td><td>普惠金融数据集</td><td>数据集</td><td><span class="tag tag-ok">生效中</span></td><td>1 普惠金融空间</td><td>普惠金融 / L2</td><td>2026-10-01</td><td><a class="btn" href="#ds-update">变更</a><a class="btn btn-danger" href="#ds-cancel">注销</a></td></tr>
+      <tr><td>DS20261001000002</td><td>待注销数据集</td><td>数据集</td><td><span class="tag tag-warn">已注销</span></td><td>1 普惠金融空间</td><td>金融 / L2</td><td>2026-10-01</td><td><span class="placeholder">（终态，无操作）</span></td></tr>
+    </table>
+  </div>
+  <div class="section"><b>操作留痕</b>（R14，Q2-A，分页；本人可见）
+    <table>
+      <tr><th>动作</th><th>结果</th><th>操作者</th><th>时间</th><th>从何值→到何值</th><th>拒绝码</th></tr>
+      <tr><td>登记</td><td><span class="tag tag-ok">成功</span></td><td>S20260925000001</td><td>2026-10-01</td><td>—</td><td>—</td></tr>
+      <tr><td>变更</td><td><span class="tag tag-ok">成功</span></td><td>S20260925000001</td><td>2026-10-01</td><td>简介：旧 → 新</td><td>—</td></tr>
+      <tr><td>变更（越权）</td><td><span class="tag tag-warn">被拒</span></td><td>S20260925000002</td><td>2026-10-01</td><td>—</td><td>C0006（仅登记主体本人）</td></tr>
+      <tr><td>治理查看</td><td><span class="tag tag-ok">成功</span></td><td>S20260914000003</td><td>2026-10-02</td><td>—</td><td>—</td></tr>
+    </table>
+    <div class="note">四要素（谁/何时/对象/动作）+ 结果 + 从何值→到何值 + 拒绝码；不含敏感原文与数据本体</div>
+  </div>
+</div>
+
+<div class="frame" id="ds-create">
+  <h2>画面 5：登记 / 变更 / 注销（弹窗；规格行为 1/2）</h2>
+  <div class="modal">
+    <h3>登记资源（W1）</h3>
+    <div class="field"><span class="label">资源名称 *</span> <span class="placeholder">[ 如：普惠金融数据集 ]</span> <span class="note">≤128；首尾空白与控制字符归一化后同空间判重</span></div>
+    <div class="field"><span class="label">资源类型 *</span> <span class="placeholder">[ 数据集 ▾ ｜ API接口 ｜ 报告 ｜ 模型 ]</span> <span class="note">四类受控枚举（出站为枚举码，界面经 constants/catalog.ts 映射中文——DB-36 Q5-A）</span></div>
+    <div class="field"><span class="label">简介 *</span> <span class="placeholder">[ ≤512 ]</span></div>
+    <div class="field"><span class="label">语义标签 *</span> <span class="placeholder">[ 多选：从受控词表（R4）选取 ]</span> <span class="note">提交词条名称；词表外标签 → 1007C0009 原样展示</span></div>
+    <div class="field"><span class="label">分类分级申报 *</span> 类目 <span class="placeholder">[ 普惠金融 ▾（R5 受控类目）]</span>　级别 <span class="placeholder">[ L2 ▾ ]</span>　☐ 申报为重要数据</div>
+    <div class="field"><span class="label">所属空间 *</span> 编号 <span class="placeholder">[ 1 ]</span>
+      <a class="btn" href="#">从我的空间选择</a> <span class="note">（下拉快捷回填：名称 + 状态标签；<b>可直填编号</b>——非成员/未启用/冻结/解散空间由服务端拒绝，界面不拦截提交）</span></div>
+    <div class="field"><a class="btn" href="#">提交登记</a> <span class="note">必填项留空 = 前置拦截（零请求）</span></div>
+    <div class="note">剧本承载：C-3.1 S1-1（C 主体统一文案）/ S1-2（非成员拒 + 留痕）/ S1-3（未启用空间拒）/ S1-4（成功 + 数据标识）/ S1-5（重要数据拒收）/ S1-6（同名两路）/ S1-8（词表外）/ S1-9（类目外）</div>
+  </div>
+  <div class="modal">
+    <h3>变更资源（W2，仅可变字段集）</h3>
+    <div class="field">简介 / 语义标签 / 分类申报（类目 + 级别）——<b>名称与类型不可变</b></div>
+    <div class="field"><span class="warn">分级只能收紧就高</span>：下调（如 L2 → L1）→ 1007C0004 原样展示且不提交成功态</div>
+  </div>
+  <div class="modal">
+    <h3>注销资源（W3，二次确认）</h3>
+    <div class="field">确认文案含"<b>注销后不可恢复</b>"与资源名称 → 取消 = <b>零请求</b>；确认 = 提交二次确认</div>
+    <div class="field note">存在未注销产品引用 → 1007C0021 原样展示（先处理产品——C-3.1 S3-4）</div>
+  </div>
+</div>
+
+<div class="frame" id="products">
+  <h2>画面 6：产品上架页（/catalog/products，权限点 catalog.product）</h2>
+  <div class="section"><b>我的产品</b>（R11，分页；<b>全部状态</b>）
+    <div class="field"><a class="btn" href="#p-create">封装产品</a>
+      <span class="note">运营档打开本页：服务端按权限拒绝（原样展示 + 体验层提示"请切回普通主体档"）</span></div>
+    <table>
+      <tr><th>名称</th><th>来源资源</th><th>形态</th><th>定价</th><th>状态</th><th>类目</th><th>上架时间</th><th>操作</th></tr>
+      <tr><td>普惠金融数据服务</td><td>普惠金融数据集</td><td>数据集</td><td>包月 / 99.00</td><td><span class="tag tag-ok">已上架</span></td><td>普惠金融</td><td>2026-10-02</td><td><a class="btn" href="#">下架</a><a class="btn" href="#p-update">变更</a></td></tr>
+      <tr><td>普惠金融数据服务（免费体验版）</td><td>普惠金融数据集</td><td>API接口</td><td>免费</td><td><span class="tag">未上架</span></td><td>普惠金融</td><td><span class="placeholder">（未上架）</span></td><td><a class="btn" href="#">上架</a><a class="btn" href="#p-update">变更</a><a class="btn btn-danger" href="#p-cancel">注销</a></td></tr>
+      <tr><td>目录样例产品</td><td>目录样例数据集</td><td>报告</td><td>按次 / 10.00</td><td><span class="tag tag-warn">已下架</span></td><td>医疗健康</td><td><span class="placeholder">（已下架）</span></td><td><a class="btn" href="#">重新上架</a><a class="btn btn-danger" href="#p-cancel">注销</a></td></tr>
+    </table>
+    <div class="field note">来源资源名 = R1 本人资源列表映射（页容量内；超出的仅显示编号）；状态机（服务端）：未上架 → 已上架 ⇄ 已下架；注销仅从"未上架 / 已下架"发起</div>
+  </div>
+  <div class="section"><b>操作留痕</b>（R15，Q2-A，分页；全值域）
+    <table>
+      <tr><th>动作</th><th>摘要</th><th>操作者</th><th>时间</th></tr>
+      <tr><td>封装</td><td>产品封装</td><td>S20260925000001</td><td>2026-10-02</td></tr>
+      <tr><td>变更</td><td>定价：按次 → 包月</td><td>S20260925000001</td><td>2026-10-03</td></tr>
+      <tr><td>上架 / 下架 / 重新上架</td><td>状态流转</td><td>S20260925000001</td><td>2026-10-03</td></tr>
+      <tr><td>强制下架</td><td><b>理由全文</b>：违规宣传用语</td><td>S20260914000003（运营方）</td><td>2026-10-03</td></tr>
+      <tr><td>拒绝（越权下架）</td><td>DENIED_DELIST</td><td>S20260925000002</td><td>2026-10-03</td></tr>
+      <tr><td>治理查看</td><td>GOVERNANCE_VIEW</td><td>S20260914000003</td><td>2026-10-03</td></tr>
+    </table>
+  </div>
+</div>
+
+<div class="frame" id="p-create">
+  <h2>画面 7：封装 / 变更 / 注销（弹窗；规格行为 3/4）</h2>
+  <div class="modal">
+    <h3>封装产品（W8）</h3>
+    <div class="field"><span class="label">来源资源 *</span> <span class="placeholder">[ 本人资源下拉（R1）]</span> <span class="note">非本人资源由服务端拒（1007C0006 / 0016）；已注销资源与已解散空间资源可选后由服务端拒（C-3.3 S1-5）</span></div>
+    <div class="field"><span class="label">产品名称 *</span> <span class="placeholder">[ ≤128 ]</span> <span class="note">同一提供方内唯一（归一化）；同名 → 1007C0017</span></div>
+    <div class="field"><span class="label">简介 *</span> <span class="placeholder">[ ≤512 ]</span></div>
+    <div class="field"><span class="label">形态 *</span> <span class="placeholder">[ 数据集 ▾｜API接口｜报告｜模型 ]</span> <span class="label">定价 *</span> <span class="placeholder">[ 免费 ▾｜按次｜包月｜交易额分成 ]</span> 数值 <span class="placeholder">[ ___ ]</span></div>
+    <div class="field"><span class="label">类目（可选）</span> <span class="placeholder">[ ▾（缺省继承资源申报类目）]</span></div>
+    <div class="field"><a class="btn" href="#">提交封装</a> <span class="note">免费档不携数值；付费档数值须为正数（草稿态可先空、上架时强制齐备）</span></div>
+  </div>
+  <div class="modal">
+    <h3>上架 / 下架 / 重新上架（W10 / W11）</h3>
+    <div class="field">上架前校验（服务端）：定价齐备 + 资源有效 + 空间未解散 + 提供方仍入驻 → 不齐备 → <b>1007C0020 原样展示</b>（C-3.3 S2-2）</div>
+    <div class="field">在架产品直接注销 → 1007C0019（须先下架，C-3.3 S3-6）；被强制下架产品由提供方自助重新上架</div>
+  </div>
+  <div class="modal">
+    <h3>注销产品（W13，二次确认）</h3>
+    <div class="field">确认文案含"不可逆"；取消 = 零请求</div>
+  </div>
+</div>
+
+<div class="frame" id="governance">
+  <h2>画面 8：目录治理页（/catalog/governance，权限点 catalog.governance；平台运营方）</h2>
+  <div class="section"><b>治理查看</b>（R12 / R13；按编号直查任意状态对象）
+    <div class="field">产品编号 <span class="placeholder">[ 4 ]</span> <a class="btn" href="#">查看产品治理信息</a>　
+      资源编号 <span class="placeholder">[ 1 ]</span> <a class="btn" href="#">查看资源治理信息</a></div>
+    <div class="field note">含未上架 / 已下架 / 已注销对象；<b>每次查看写治理查看留痕</b>（谁/何时/看了什么——提供方在画面 4/6 的留痕区可见）</div>
+    <div class="field">产品治理视图：全量字段（含定价与来源资源）+ 状态 <span class="tag tag-ok">已上架</span> → <a class="btn btn-danger" href="#force">强制下架</a></div>
+  </div>
+  <div class="modal" id="force">
+    <h3>强制下架（W12）</h3>
+    <div class="field"><span class="label">理由 *</span> <span class="placeholder">[ 1~256 字 ]</span> <span class="note">留空 = 前置拦截（零请求）；提交后留痕含理由全文与操作者</span></div>
+    <div class="field note">非 admin 档访问治理端点 → 403 原样展示（读面拒绝不留痕，沿 DB-37 口径）</div>
+  </div>
+</div>
+
+<div class="frame" id="rules">
+  <h2>画面 9：同形提示与错误展示纪律（口径板）</h2>
+  <div class="section">
+    <div class="field">① 资源不存在 / 非本人：<b>同一条</b>提示「资源不存在或无权访问」（1007C0005）——不区分"不存在 / 非本人"</div>
+    <div class="field">② 产品不存在 / 未上架 / 已下架 / 已注销 / 非订阅者：<b>同一条</b>提示「产品不存在或未在架」（1007C0011）或管理面「产品不存在或无权操作」（1007C0012）——不区分差异</div>
+    <div class="field">③ 未入驻检索：统一业务文案「主体未入驻或不存在，无法使用统一目录服务」（不提示"主体不存在"）</div>
+    <div class="field">④ 一切写动作<b>不做乐观更新</b>：被拒后界面状态不变，一律以响应为准刷新；错误文案原样展示（不吞、不改写）</div>
+    <div class="field">⑤ 危险动作（注销 / 强制下架）二次确认；取消 = 零请求；必填留空 = 前置拦截（零请求）</div>
+    <div class="field">⑥ 认证失效（1000C0002）→ 提示后端文案 → 清登录态 → 回登录页（复用共享 authGuide）</div>
+  </div>
+</div>
+
+</body>
+</html>
