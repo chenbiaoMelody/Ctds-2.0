@@ -61,16 +61,19 @@ describe('权限菜单显隐（H4）', () => {
     expect(wrapper.text()).toContain('入驻进度查询')
   })
 
-  it('admin 角色：菜单渲染 10 项，含"仅管理员可见"、"主体审核"、"DID 管理"与空间域两项（WBS-3.2.6 新增）', () => {
+  it('admin 角色：菜单渲染 13 项，含"仅管理员可见"、"主体审核"、"DID 管理"、空间域两项与目录域三项（WBS-3.3.6 新增）', () => {
     setDemoRole('admin')
     const wrapper = mountLayout()
     const items = wrapper.findAll('.el-menu-item')
-    expect(items.length).toBe(10)
+    expect(items.length).toBe(13)
     expect(wrapper.text()).toContain('仅管理员可见')
     expect(wrapper.text()).toContain('主体审核')
     expect(wrapper.text()).toContain('DID 管理')
     expect(wrapper.text()).toContain('逻辑空间')
     expect(wrapper.text()).toContain('平台策略治理')
+    expect(wrapper.text()).toContain('资源登记')
+    expect(wrapper.text()).toContain('产品上架')
+    expect(wrapper.text()).toContain('目录治理')
   })
 })
 

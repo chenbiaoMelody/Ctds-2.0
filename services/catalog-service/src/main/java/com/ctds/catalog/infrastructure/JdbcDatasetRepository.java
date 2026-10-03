@@ -1,5 +1,6 @@
 package com.ctds.catalog.infrastructure;
 
+import com.ctds.catalog.domain.ActionResult;
 import com.ctds.catalog.domain.CatalogBizException;
 import com.ctds.catalog.domain.CatalogErrorCodes;
 import com.ctds.catalog.domain.Dataset;
@@ -99,6 +100,33 @@ public class JdbcDatasetRepository implements DatasetRepository {
                 .query((rs, rowNum) -> mapDataset(rs))
                 .list();
         return PageResult.of(list, total, page);
+    }
+
+    @Override
+    public PageResult<DatasetActionLog> pageLogsByDataset(final long datasetId, final PageQuery page) {
+        // 只读既有 dataset_action_log（WBS-3.3.6 R14；按 created_at DESC, id DESC 稳定排序）
+        final long total = jdbc.sql("SELECT COUNT(*) FROM dataset_action_log WHERE dataset_id = ?")
+                .param(datasetId)
+                .query(Long.class)
+                .single();
+        final List<DatasetActionLog> list = jdbc.sql("SELECT id, actor_subject_no, space_id, dataset_id, "
+                        + "action, from_value, to_value, result, reason_code, created_at "
+                        + "FROM dataset_action_log WHERE dataset_id = ? "
+                        + "ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?")
+                .param(datasetId)
+                .param(page.pageSize())
+                .param(page.offset())
+                .query((rs, rowNum) -> mapActionLog(rs))
+                .list();
+        return PageResult.of(list, total, page);
+    }
+
+    private static DatasetActionLog mapActionLog(final ResultSet rs) throws SQLException {
+        return new DatasetActionLog(rs.getLong("id"), rs.getString("actor_subject_no"),
+                rs.getLong("space_id"), rs.getLong("dataset_id"), rs.getString("action"),
+                rs.getString("from_value"), rs.getString("to_value"),
+                ActionResult.valueOf(rs.getString("result")), rs.getString("reason_code"),
+                rs.getTimestamp("created_at").toLocalDateTime());
     }
 
     @Override

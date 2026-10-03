@@ -6,6 +6,7 @@ import com.ctds.catalog.domain.CatalogErrorCodes;
 import com.ctds.catalog.domain.Dataset;
 import com.ctds.catalog.domain.DatasetActionLog;
 import com.ctds.catalog.domain.DatasetRepository;
+import com.ctds.common.auth.AccessControl;
 import com.ctds.common.pagination.PageQuery;
 import com.ctds.common.pagination.PageResult;
 import java.time.Clock;
@@ -25,14 +26,19 @@ public class DatasetQueryService {
     /** 读面拒绝留痕动作码（值域 = 动作 + DENIED_ 前缀变体，hifi §3.3）。 */
     private static final String ACTION_DENIED_READ = "DENIED_READ";
 
+    /** 治理例外权限点（WBS-3.3.6 R14：admin 读留痕不另写留痕——hifi §1.2 读面留痕口径）。 */
+    private static final String PERMISSION_GOVERNANCE = "catalog.governance";
+
     private final DatasetRepository repository;
     private final CatalogAccessGuard guard;
+    private final AccessControl accessControl;
     private final Clock clock;
 
     public DatasetQueryService(final DatasetRepository repository, final CatalogAccessGuard guard,
-            final Clock clock) {
+            final AccessControl accessControl, final Clock clock) {
         this.repository = repository;
         this.guard = guard;
+        this.accessControl = accessControl;
         this.clock = clock;
     }
 
@@ -58,6 +64,26 @@ public class DatasetQueryService {
             throw notFoundOrNoAccess();
         }
         return dataset;
+    }
+
+    /**
+     * R14 资源操作留痕分页（WBS-3.3.6 hifi §1.2）：读面 = 登记主体本人 或 治理例外
+     * （{@code catalog.governance}，admin 读不另写留痕）；非本人且非治理档 → 1007C0005 同形
+     * + DENIED_READ 恰 1 行（沿 R2 既有先例）；对象不存在 → 同形拒绝、无留痕（无对象指向）。
+     */
+    public PageResult<DatasetActionLog> actionLogs(final long datasetId, final PageQuery page) {
+        final String subject = guard.requireSubject();
+        final Dataset dataset = repository.findById(datasetId)
+                .orElseThrow(DatasetQueryService::notFoundOrNoAccess);
+        final boolean owner = dataset.ownerSubjectNo().equals(subject);
+        if (!owner && !accessControl.hasPermission(PERMISSION_GOVERNANCE)) {
+            repository.insertLog(new DatasetActionLog(null, subject, dataset.spaceId(), dataset.id(),
+                    ACTION_DENIED_READ, dataset.status().name(), null, ActionResult.DENIED,
+                    CatalogErrorCodes.tailOf(CatalogErrorCodes.DATASET_NOT_FOUND_OR_NO_ACCESS),
+                    LocalDateTime.now(clock)));
+            throw notFoundOrNoAccess();
+        }
+        return repository.pageLogsByDataset(datasetId, page);
     }
 
     /** 资源不存在/无权访问（统一 1007C0005，读面防枚举同形）。 */

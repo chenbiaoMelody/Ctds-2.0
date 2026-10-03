@@ -16,7 +16,7 @@ import {
   MY_ADMISSIONS_EMPTY_TIP,
   labelOf,
 } from '../../constants/space'
-import { guideToLoginIfAuthFailed } from './authGuide'
+import { guideToLoginIfAuthFailed } from '../../api/authGuide'
 
 const router = useRouter()
 const loading = ref(false)

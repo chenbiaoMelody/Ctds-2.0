@@ -15,4 +15,10 @@ public interface ProductActionLogRepository {
      * GOVERNANCE_VIEW 不对订阅者暴露）。
      */
     PageResult<ProductChangeLogRow> pageByProduct(long productId, PageQuery page);
+
+    /**
+     * 产品操作留痕分页——<b>全值域</b>（WBS-3.3.6 R15 只读读面；含 DENIED_* 与 GOVERNANCE_VIEW，
+     * 与 {@link #pageByProduct} 的订阅者可见值域过滤方法并存、互不改写；按 created_at DESC, id DESC）。
+     */
+    PageResult<ProductActionLogRow> pageAllByProduct(long productId, PageQuery page);
 }

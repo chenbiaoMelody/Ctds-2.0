@@ -7,6 +7,8 @@
  *   会被服务端角色头映射放行，使"越权被拒"步骤失真（让绿灯失真）；
  * - 主体编号复用 `api/client.ts` 的 `getDemoSubject()` / `setDemoSubject()`，不新建第二份存储；
  * - 全局 `demoRolesHeader()` 一字不动（最小权限面，沿 WBS-3.1.11 Q7 先例）。
+ * WBS-3.3.6 扩展（hifi §4）：目录域页面级角色头 `catalogRolesHeader()`——普通档 `provider` /
+ * 运营档 `admin`（沿 3.3.5 验收走查实测口径）；硬约束（T17）：**普通档不得携带 `admin`**。
  */
 export type ActorMode = 'subject' | 'operator'
 
@@ -32,4 +34,9 @@ export function setActorMode(mode: ActorMode): void {
 /** 空间域页面级角色头（覆盖 `apiJson` 的全局演示角色头）。 */
 export function spaceRolesHeader(): string {
   return getActorMode() === 'operator' ? 'applicant,platform.operator' : 'applicant'
+}
+
+/** 目录域页面级角色头（WBS-3.3.6；覆盖 `apiJson` 的全局演示角色头，与空间域互不污染）。 */
+export function catalogRolesHeader(): string {
+  return getActorMode() === 'operator' ? 'admin' : 'provider'
 }

@@ -71,7 +71,7 @@ import {
   spaceDissolveConfirmTip,
   spacePolicyBlockTip,
 } from '../../constants/space'
-import { guideToLoginIfAuthFailed } from './authGuide'
+import { guideToLoginIfAuthFailed } from '../../api/authGuide'
 
 const route = useRoute()
 const router = useRouter()

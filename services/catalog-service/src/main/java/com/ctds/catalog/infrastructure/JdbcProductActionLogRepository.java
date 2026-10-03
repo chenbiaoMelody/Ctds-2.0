@@ -1,6 +1,7 @@
 package com.ctds.catalog.infrastructure;
 
 import com.ctds.catalog.domain.ProductActionLog;
+import com.ctds.catalog.domain.ProductActionLogRow;
 import com.ctds.catalog.domain.ProductActionLogRepository;
 import com.ctds.catalog.domain.ProductChangeLogRow;
 import com.ctds.common.pagination.PageQuery;
@@ -51,6 +52,30 @@ public class JdbcProductActionLogRepository implements ProductActionLogRepositor
         return PageResult.of(list, total, page);
     }
 
+
+    @Override
+    public PageResult<ProductActionLogRow> pageAllByProduct(final long productId, final PageQuery page) {
+        // 全值域只读（WBS-3.3.6 R15；与 pageByProduct 的可见值域过滤并存，互不改写）
+        final long total = jdbc.sql("SELECT COUNT(*) FROM product_action_log WHERE product_id = ?")
+                .param(productId)
+                .query(Long.class)
+                .single();
+        final List<ProductActionLogRow> list = jdbc.sql("SELECT id, action, operator_subject_no, summary, "
+                        + "created_at FROM product_action_log WHERE product_id = ? "
+                        + "ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?")
+                .param(productId)
+                .param(page.pageSize())
+                .param(page.offset())
+                .query((rs, rowNum) -> mapFullRow(rs))
+                .list();
+        return PageResult.of(list, total, page);
+    }
+
+    private static ProductActionLogRow mapFullRow(final ResultSet rs) throws SQLException {
+        return new ProductActionLogRow(rs.getLong("id"), rs.getString("action"),
+                rs.getString("operator_subject_no"), rs.getString("summary"),
+                rs.getTimestamp("created_at").toLocalDateTime());
+    }
 
     private static ProductChangeLogRow mapRow(final ResultSet rs) throws SQLException {
         return new ProductChangeLogRow(rs.getString("action"), rs.getString("summary"),

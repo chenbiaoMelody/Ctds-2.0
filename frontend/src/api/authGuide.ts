@@ -1,6 +1,7 @@
 /**
- * WBS-3.2.6 认证失效引导（hifi §8.9；评审 R3 修复落点）：
- * 空间域请求以 `1000C0002`（认证失败或身份已失效，`AUTH_FAILED_CODE`）失败时，
+ * WBS-3.2.6 认证失效引导（hifi §8.9；评审 R3 修复落点）；WBS-3.3.6 平移至 `api/`（逻辑零变更，
+ * 目录域与空间域共用，4 处空间视图 import 一行同步——hifi §2）：
+ * 请求以 `1000C0002`（认证失败或身份已失效，`AUTH_FAILED_CODE`）失败时，
  * 界面**原样展示后端文案**并**引导回登录页**（不吞、不改、不伪造成功）。
  *
  * **撤登录态是"引导回登录页"的必要条件**：路由登录守卫要求"未登录"才允许停留在 `/login`
@@ -10,9 +11,9 @@
  */
 import { ElMessage } from 'element-plus'
 import type { Router } from 'vue-router'
-import { ApiError } from '../../api/client'
-import { AUTH_FAILED_CODE } from '../../constants/space'
-import { signOutDemo } from '../../stores/demoAuth'
+import { ApiError } from './client'
+import { AUTH_FAILED_CODE } from '../constants/space'
+import { signOutDemo } from '../stores/demoAuth'
 
 /**
  * 命中 `1000C0002` 时：原样提示后端文案 → 清演示登录态 → 回登录页；返回 true。
