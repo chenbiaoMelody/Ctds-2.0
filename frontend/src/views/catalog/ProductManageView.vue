@@ -84,6 +84,7 @@ const updateForm = ref({
   productType: '',
   pricingModel: '',
   priceAmount: '',
+  categoryCode: '',
 })
 
 // ==== 留痕区（R15） ====
@@ -211,24 +212,46 @@ async function submitCreate(): Promise<void> {
   }
 }
 
-function openUpdate(row: ProviderProduct): void {
+async function openUpdate(row: ProviderProduct): Promise<void> {
   updateTarget.value = row
   updateForm.value = {
     intro: row.intro ?? '',
-    productType: row.productType,
-    pricingModel: row.pricingModel,
+    productType: productTypeKey(row.productType),
+    pricingModel: pricingModelKey(row.pricingModel),
     priceAmount: row.priceAmount ?? '',
+    categoryCode: row.categoryCode ?? '',
   }
   updateVisible.value = true
+  if (categoryOptions.value.length === 0) {
+    try {
+      categoryOptions.value = await listCategories()
+    } catch (error) {
+      showError(error)
+    }
+  }
+}
+
+/** 产品面中文显示名 → 枚举键（W9 请求体提交枚举；产品面出参为中文——DB-36 双轨）。 */
+function productTypeKey(displayName: string): string {
+  return Object.entries(DATASET_TYPE_LABELS).find(([, label]) => label === displayName)?.[0] ?? displayName
+}
+
+/** 定价面中文显示名 → 枚举键（同上）。 */
+function pricingModelKey(displayName: string): string {
+  return Object.entries(PRICING_MODEL_LABELS).find(([, label]) => label === displayName)?.[0] ?? displayName
 }
 
 async function submitUpdate(): Promise<void> {
   const target = updateTarget.value
   if (!target) return
   // 请求体只含可变白名单字段（W9：名称不可变）；免费档切档清空数值（不提交 priceAmount）
-  const payload: { intro?: string; productType?: string; pricingModel?: string; priceAmount?: string } = {}
+  const payload: { intro?: string; productType?: string; pricingModel?: string; priceAmount?: string; categoryCode?: string } = {}
   if (updateForm.value.intro.trim() !== (target.intro ?? '')) payload.intro = updateForm.value.intro.trim()
-  if (updateForm.value.pricingModel !== target.pricingModel) payload.pricingModel = updateForm.value.pricingModel
+  if (updateForm.value.productType && updateForm.value.productType !== productTypeKey(target.productType)) {
+    payload.productType = updateForm.value.productType
+  }
+  if (updateForm.value.pricingModel !== pricingModelKey(target.pricingModel)) payload.pricingModel = updateForm.value.pricingModel
+  if (createFormCategoryChanged(target.categoryCode)) payload.categoryCode = updateForm.value.categoryCode
   if (updateForm.value.pricingModel === 'FREE') {
     // 免费档：不携带数值（服务端清空 price_amount）
   } else if (updateForm.value.priceAmount.trim() !== (target.priceAmount ?? '')) {
@@ -330,6 +353,10 @@ function isListed(status: string): boolean {
 
 function isDelisted(status: string): boolean {
   return statusText(status) === PRODUCT_STATUS_LABELS.DELISTED
+}
+
+function createFormCategoryChanged(targetCode: string | null): boolean {
+  return (updateForm.value.categoryCode ?? '') !== (targetCode ?? '')
 }
 
 function datasetStatusLabel(datasetId: number): string {
@@ -476,7 +503,7 @@ onMounted(() => {
         </el-form-item>
         <el-form-item label="产品形态" required>
           <el-select v-model="createForm.productType" class="create-type">
-            <el-option label="API" value="API" />
+            <el-option :label="DATASET_TYPE_LABELS.API" value="API" />
             <el-option :label="DATASET_TYPE_LABELS.DATASET" value="DATASET" />
             <el-option :label="DATASET_TYPE_LABELS.REPORT" value="REPORT" />
             <el-option :label="DATASET_TYPE_LABELS.MODEL" value="MODEL" />
@@ -518,6 +545,14 @@ onMounted(() => {
         <el-form-item label="简介">
           <el-input v-model="updateForm.intro" class="update-intro" type="textarea" maxlength="512" :rows="3" />
         </el-form-item>
+        <el-form-item label="产品形态">
+          <el-select v-model="updateForm.productType" class="update-type">
+            <el-option :label="DATASET_TYPE_LABELS.API" value="API" />
+            <el-option :label="DATASET_TYPE_LABELS.DATASET" value="DATASET" />
+            <el-option :label="DATASET_TYPE_LABELS.REPORT" value="REPORT" />
+            <el-option :label="DATASET_TYPE_LABELS.MODEL" value="MODEL" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="定价档">
           <el-select v-model="updateForm.pricingModel" class="update-pricing">
             <el-option :label="PRICING_MODEL_LABELS.FREE" value="FREE" />
@@ -528,6 +563,11 @@ onMounted(() => {
         </el-form-item>
         <el-form-item label="价格数值">
           <el-input v-model="updateForm.priceAmount" class="update-price" :disabled="updateForm.pricingModel === 'FREE'" />
+        </el-form-item>
+        <el-form-item label="类目">
+          <el-select v-model="updateForm.categoryCode" class="update-category" clearable placeholder="可选；缺省继承资源申报类目">
+            <el-option v-for="cat in flattenCategories(categoryOptions)" :key="cat.code" :label="cat.name" :value="cat.code" />
+          </el-select>
         </el-form-item>
       </el-form>
       <template #footer>

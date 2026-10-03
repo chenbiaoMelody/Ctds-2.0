@@ -220,7 +220,7 @@ describe('登记资源（T11）', () => {
   })
 
   it('未启用空间允许提交（界面不拦截），1007C0002 原样展示', async () => {
-    mockedRegister.mockRejectedValue(new ApiError('1007C0002', '当前空间状态不可登记资源'))
+    mockedRegister.mockRejectedValue(new ApiError('1007C0002', '空间当前状态不允许登记资源'))
     const wrapper = await openDialog()
     await wrapper.find('.register-name input').setValue('普惠金融数据集')
     await wrapper.findComponent('.register-type').setValue('DATASET')
@@ -232,13 +232,13 @@ describe('登记资源（T11）', () => {
     await wrapper.find('.register-submit').trigger('click')
     await flushPromises()
     expect(mockedRegister).toHaveBeenCalledWith(30, expect.objectContaining({ name: '普惠金融数据集' }))
-    expect(document.body.textContent).toContain('当前空间状态不可登记资源')
+    expect(document.body.textContent).toContain('空间当前状态不允许登记资源')
   })
 
   it('重要数据申报 1007C0003 / 词表外标签 1007C0009 / 类目外申报 1007C0014 / 非成员 1007C0006 原样展示', async () => {
     const cases: Array<{ code: string; message: string; setup?: () => void }> = [
-      { code: '1007C0003', message: '申报为重要数据的资源一律拒收登记' },
-      { code: '1007C0009', message: '语义标签不在受控词表内' },
+      { code: '1007C0003', message: '申报为重要数据的资源暂不受理登记' },
+      { code: '1007C0009', message: '语义标签不在受控词表范围内' },
       { code: '1007C0014', message: '分类申报不在平台受控类目范围内' },
       { code: '1007C0006', message: '主体未入驻或不存在，无法登记资源' },
     ]
@@ -274,7 +274,7 @@ describe('变更与注销（T12）', () => {
   })
 
   it('级别下调尝试：以服务端判定为准，1007C0004 原样展示且表格数据不变（不乐观更新）', async () => {
-    mockedUpdate.mockRejectedValue(new ApiError('1007C0004', '分类级别只能收紧，不得放宽'))
+    mockedUpdate.mockRejectedValue(new ApiError('1007C0004', '分类级别变更只能就高收紧，不可放宽'))
     const wrapper = await mountPage()
     await wrapper.find('.update-btn').trigger('click')
     await flushPromises()
@@ -282,7 +282,7 @@ describe('变更与注销（T12）', () => {
     await wrapper.find('.update-submit').trigger('click')
     await flushPromises()
     expect(mockedUpdate).toHaveBeenCalledWith(9, expect.objectContaining({ declareLevel: 'L1' }))
-    expect(document.body.textContent).toContain('分类级别只能收紧，不得放宽')
+    expect(document.body.textContent).toContain('分类级别变更只能就高收紧，不可放宽')
     // 不乐观更新：表格仍显示原级别申报
     expect(wrapper.text()).toContain('L2')
   })
@@ -299,12 +299,26 @@ describe('变更与注销（T12）', () => {
 
   it('注销确认后提交：confirmCancellation=true；引用保护 1007C0021 原样展示', async () => {
     vi.spyOn(ElMessageBox, 'confirm').mockResolvedValue('confirm' as never)
-    mockedCancel.mockRejectedValue(new ApiError('1007C0021', '资源存在未注销产品引用，须先处理产品'))
+    mockedCancel.mockRejectedValue(new ApiError('1007C0021', '资源存在未注销产品引用，请先处理产品'))
     const wrapper = await mountPage()
     await wrapper.find('.cancel-btn').trigger('click')
     await flushPromises()
     expect(mockedCancel).toHaveBeenCalledWith(9)
-    expect(document.body.textContent).toContain('资源存在未注销产品引用，须先处理产品')
+    expect(document.body.textContent).toContain('资源存在未注销产品引用，请先处理产品')
+  })
+
+  it('注销成功：以响应为准刷新列表（已注销行无操作入口）', async () => {
+    vi.spyOn(ElMessageBox, 'confirm').mockResolvedValue('confirm' as never)
+    mockedCancel.mockResolvedValue({ datasetId: 9, dataNo: 'DS20261002000004', status: 'DELETED', cancelled: true })
+    // 首载为有效资源（有注销入口）；注销成功后的刷新读到已注销行（无操作入口）
+    mockedDatasets.mockResolvedValueOnce(page([dataset()]))
+    mockedDatasets.mockResolvedValue(page([dataset({ status: 'DELETED' })]))
+    const wrapper = await mountPage()
+    await wrapper.find('.cancel-btn').trigger('click')
+    await flushPromises()
+    expect(mockedCancel).toHaveBeenCalledWith(9)
+    expect(mockedDatasets).toHaveBeenCalledTimes(2)
+    expect(wrapper.find('.cancel-btn').exists()).toBe(false)
   })
 })
 

@@ -164,19 +164,52 @@ describe('详情元数据（T6）', () => {
 })
 
 describe('收藏 / 订阅动作（T7）', () => {
-  it('收藏成功后可取消收藏；订阅成功后可退订（按钮按本人当前状态显隐）', async () => {
+  it('收藏成功后可取消收藏（提示成功且列表不重复——幂等重放由服务端 uk 兜底）', async () => {
     mockedFavorite.mockResolvedValue({ productId: 7, favoritedAt: '2026-10-02T22:00:00' })
     const wrapper = await mountPage()
     expect(wrapper.find('.favorite-btn').exists()).toBe(true)
     expect(wrapper.find('.unfavorite-btn').exists()).toBe(false)
 
-    // 收藏成功后的刷新将读到已收藏状态（以响应为准，不做乐观更新）
+    // 收藏成功后的刷新将读到已收藏状态（以响应为准，不做乐观更新；收藏列表恒 1 条 = 不重复）
     mockedFavorites.mockResolvedValue(page([favoriteItem()]))
     await wrapper.find('.favorite-btn').trigger('click')
     await flushPromises()
     expect(mockedFavorite).toHaveBeenCalledWith(7)
     expect(mockedFavorites).toHaveBeenCalledTimes(2)
+    // 幂等重放判定面：提示成功 + 状态翻转后重复收藏入口消失（不新增条目）
+    expect(document.body.textContent).toContain('已收藏')
+    expect(wrapper.text()).toContain('普惠金融数据服务')
+    expect(wrapper.findAll('.favorite-btn').length).toBe(0)
     expect(wrapper.find('.unfavorite-btn').exists()).toBe(true)
+  })
+
+  it('订阅成功：状态翻转并加载变更记录区；订阅被拒 1007C0011 原样且状态不变', async () => {
+    mockedSubscribe.mockResolvedValue({ productId: 7, subscribedAt: '2026-10-02T22:01:00' })
+    const wrapper = await mountPage()
+    expect(wrapper.find('.subscribe-btn').exists()).toBe(true)
+    expect(wrapper.find('.change-logs-tip').exists()).toBe(true)
+
+    // 订阅成功后的刷新读到已订阅状态 → 动作条翻转 + 变更记录区加载（T10 联动）
+    mockedSubscriptions.mockResolvedValue(page([subscriptionItem()]))
+    mockedChangeLogs.mockResolvedValue({ list: [changeLog()], total: 1, pageNum: 1, pageSize: 10, totalPages: 1 })
+    await wrapper.find('.subscribe-btn').trigger('click')
+    await flushPromises()
+    expect(mockedSubscribe).toHaveBeenCalledWith(7)
+    expect(mockedSubscriptions).toHaveBeenCalledTimes(2)
+    expect(wrapper.find('.unsubscribe-btn').exists()).toBe(true)
+    expect(mockedChangeLogs).toHaveBeenCalledWith(7, 1, 10)
+
+    // 订阅被拒（1007C0011 原样）且状态不变（不乐观更新）
+    document.body.innerHTML = ''
+    mockedSubscriptions.mockResolvedValue(page([]))
+    mockedChangeLogs.mockReset()
+    mockedSubscribe.mockRejectedValue(new ApiError('1007C0011', PRODUCT_NOT_ACCESSIBLE_TIP))
+    const wrapper2 = await mountPage()
+    await wrapper2.find('.subscribe-btn').trigger('click')
+    await flushPromises()
+    expect(document.body.textContent).toContain(PRODUCT_NOT_ACCESSIBLE_TIP)
+    expect(wrapper2.find('.subscribe-btn').exists()).toBe(true)
+    expect(wrapper2.find('.unsubscribe-btn').exists()).toBe(false)
   })
 
   it('已收藏状态：动作条按当前状态翻转（重复收藏不再产生新收藏动作——幂等由服务端承载）', async () => {

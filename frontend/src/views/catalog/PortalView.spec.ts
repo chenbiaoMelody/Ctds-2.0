@@ -259,6 +259,19 @@ describe('我的收藏 / 我的订阅（T8）', () => {
     expect(wrapper.text()).toContain(FAVORITES_EMPTY_TIP)
   })
 
+  it('收藏页签翻页：按新页码重新拉取', async () => {
+    mockedFavorites.mockResolvedValue({ list: [favorite()], total: 25, pageNum: 1, pageSize: 10, totalPages: 3 })
+    const wrapper = await mountPage()
+    await wrapper.find('#tab-favorites').trigger('click')
+    await flushPromises()
+
+    mockedFavorites.mockResolvedValue({ list: [favorite({ productId: 8, productName: '小微企业信贷数据服务' })], total: 25, pageNum: 2, pageSize: 10, totalPages: 3 })
+    await wrapper.find('.favorites-pager .btn-next').trigger('click')
+    await flushPromises()
+    expect(mockedFavorites).toHaveBeenLastCalledWith(2, 10)
+    expect(wrapper.text()).toContain('小微企业信贷数据服务')
+  })
+
   it('订阅页签：翻页按新页码重新拉取（条目与状态渲染同收藏页签）', async () => {
     mockedSubscriptions.mockResolvedValue({ list: [subscription()], total: 25, pageNum: 1, pageSize: 10, totalPages: 3 })
     const wrapper = await mountPage()

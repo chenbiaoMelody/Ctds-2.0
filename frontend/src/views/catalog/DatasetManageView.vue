@@ -28,6 +28,9 @@ import {
 } from '../../api/catalog'
 import { listSpaces, type SpaceSummary } from '../../api/space'
 import {
+  DECLARE_CATEGORY_REQUIRED_TIP,
+  DECLARE_LEVEL_REQUIRED_TIP,
+  RESOURCE_TYPE_REQUIRED_TIP,
   DATASET_TYPE_LABELS,
   DATASET_STATUS_LABELS,
   DATASET_STATUS_TYPES,
@@ -64,11 +67,11 @@ const registerVisible = ref(false)
 const submitting = ref(false)
 const registerForm = ref({
   name: '',
-  type: 'DATASET',
+  type: '',
   intro: '',
   tags: [] as string[],
   declareCategory: '',
-  declareLevel: 'L2',
+  declareLevel: '',
   declareImportant: false,
   spaceId: '',
 })
@@ -114,11 +117,11 @@ function flattenCategoryNames(nodes: CategoryNode[]): string[] {
 async function openRegister(): Promise<void> {
   registerForm.value = {
     name: '',
-    type: 'DATASET',
+    type: '',
     intro: '',
     tags: [],
     declareCategory: '',
-    declareLevel: 'L2',
+    declareLevel: '',
     declareImportant: false,
     spaceId: '',
   }
@@ -143,6 +146,10 @@ async function submitRegister(): Promise<void> {
     ElMessage.error(RESOURCE_NAME_REQUIRED_TIP)
     return
   }
+  if (!registerForm.value.type) {
+    ElMessage.error(RESOURCE_TYPE_REQUIRED_TIP)
+    return
+  }
   if (!registerForm.value.intro.trim()) {
     ElMessage.error(RESOURCE_INTRO_REQUIRED_TIP)
     return
@@ -152,7 +159,11 @@ async function submitRegister(): Promise<void> {
     return
   }
   if (!registerForm.value.declareCategory.trim()) {
-    ElMessage.error('请填写分类申报')
+    ElMessage.error(DECLARE_CATEGORY_REQUIRED_TIP)
+    return
+  }
+  if (!registerForm.value.declareLevel) {
+    ElMessage.error(DECLARE_LEVEL_REQUIRED_TIP)
     return
   }
   const spaceId = registerForm.value.spaceId.trim()
@@ -289,10 +300,7 @@ function fromToText(row: DatasetActionLog): string {
   return `${row.fromValue ?? '—'} → ${row.toValue ?? '—'}`
 }
 
-function spaceLabel(spaceId: number): string {
-  const space = spaceOptions.value.find((item) => item.id === spaceId)
-  return space ? `${space.name}（${labelOf(SPACE_STATUS_LABELS, space.status)}）` : String(spaceId)
-}
+
 
 onMounted(() => {
   void loadDatasets()
@@ -330,9 +338,7 @@ onMounted(() => {
             <el-tag :type="statusType(scope.row.status)">{{ labelOf(DATASET_STATUS_LABELS, scope.row.status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="所属空间" width="150">
-          <template #default="scope">{{ spaceLabel(scope.row.spaceId) }}</template>
-        </el-table-column>
+        <el-table-column prop="spaceId" label="所属空间" width="110" />
         <el-table-column label="分类分级申报" width="130">
           <template #default="scope">{{ scope.row.declareCategory }} / {{ scope.row.declareLevel }}</template>
         </el-table-column>
@@ -406,7 +412,7 @@ onMounted(() => {
         <el-form-item label="资源类型" required>
           <el-select v-model="registerForm.type" class="register-type">
             <el-option :label="DATASET_TYPE_LABELS.DATASET" value="DATASET" />
-            <el-option label="API" value="API" />
+            <el-option :label="DATASET_TYPE_LABELS.API" value="API" />
             <el-option :label="DATASET_TYPE_LABELS.REPORT" value="REPORT" />
             <el-option :label="DATASET_TYPE_LABELS.MODEL" value="MODEL" />
           </el-select>

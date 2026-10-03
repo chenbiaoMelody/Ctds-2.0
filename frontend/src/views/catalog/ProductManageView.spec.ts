@@ -280,12 +280,12 @@ describe('封装产品（T15）', () => {
 
 describe('上架 / 下架 / 重新上架 / 注销（T16）', () => {
   it('定价不齐备上架：1007C0020 原样展示且状态不变（不乐观更新）', async () => {
-    mockedPublish.mockRejectedValue(new ApiError('1007C0020', '定价信息不齐备，无法上架'))
+    mockedPublish.mockRejectedValue(new ApiError('1007C0020', '定价信息不齐备或非法，无法上架'))
     const wrapper = await mountPage()
     await wrapper.find('.publish-btn').trigger('click')
     await flushPromises()
     expect(mockedPublish).toHaveBeenCalledWith(7)
-    expect(document.body.textContent).toContain('定价信息不齐备，无法上架')
+    expect(document.body.textContent).toContain('定价信息不齐备或非法，无法上架')
     expect(wrapper.text()).toContain('未上架')
   })
 

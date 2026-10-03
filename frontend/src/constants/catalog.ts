@@ -12,7 +12,7 @@
 
 export const DATASET_TYPE_LABELS: Record<string, string> = {
   DATASET: '数据集',
-  API: 'API',
+  API: 'API接口',
   REPORT: '报告',
   MODEL: '模型',
 }
@@ -166,7 +166,10 @@ export const OPERATOR_MODE_TIP = '当前为平台运营方档，提供方页面�
 // ==== 必填前置拦截提示（零请求） ====
 
 export const RESOURCE_NAME_REQUIRED_TIP = '请填写资源名称'
+export const RESOURCE_TYPE_REQUIRED_TIP = '请选择资源类型'
 export const RESOURCE_INTRO_REQUIRED_TIP = '请填写资源简介'
+export const DECLARE_CATEGORY_REQUIRED_TIP = '请填写分类申报'
+export const DECLARE_LEVEL_REQUIRED_TIP = '请选择级别申报'
 export const SPACE_ID_REQUIRED_TIP = '请填写所属空间编号'
 export const SPACE_ID_NUMERIC_TIP = '空间编号须为数字'
 export const PRODUCT_NAME_REQUIRED_TIP = '请填写产品名称'

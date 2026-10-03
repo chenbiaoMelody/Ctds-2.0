@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 
+import com.ctds.catalog.domain.CatalogErrorCodes;
 import com.ctds.catalog.domain.SubjectAdmission;
 import com.ctds.catalog.domain.SubjectAdmissionPort;
 import com.ctds.catalog.support.SharedMySqlContainer;
@@ -116,12 +117,16 @@ class CatalogActionLogsIntegrationTest {
                 + "/action-logs"), "intruder-r14b", PROVIDER)).andReturn();
         assertThat(denied.getResponse().getStatus()).as("非本人 → 404").isEqualTo(404);
         assertThat(codeOf(denied)).isEqualTo("1007C0005");
-        assertThat(root(denied).get("message").asText()).isEqualTo("资源不存在或无权访问");
+        assertThat(root(denied).get("message").asText())
+                .isEqualTo(CatalogErrorCodes.DATASET_NOT_FOUND_OR_NO_ACCESS_MESSAGE);
         final long after = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM dataset_action_log WHERE dataset_id = ?", Long.class, datasetId);
         assertThat(after - before).as("非本人命中写 DENIED_READ 恰 1 行（沿 R2 先例）").isEqualTo(1);
         assertThat(jdbc.queryForObject("SELECT action FROM dataset_action_log WHERE dataset_id = ? "
                 + "ORDER BY id DESC LIMIT 1", String.class, datasetId)).isEqualTo("DENIED_READ");
+        assertThat(jdbc.queryForObject("SELECT actor_subject_no FROM dataset_action_log WHERE dataset_id = ? "
+                + "ORDER BY id DESC LIMIT 1", String.class, datasetId))
+                .as("留痕归属 = 越权者本人（非资源主）").isEqualTo("intruder-r14b");
     }
 
     @Test
@@ -131,7 +136,8 @@ class CatalogActionLogsIntegrationTest {
         assertThat(missing.getResponse().getStatus()).as("不存在 → 同码同文案").isEqualTo(404);
         assertThat(codeOf(missing)).isEqualTo("1007C0005");
         assertThat(root(missing).get("message").asText())
-                .as("不存在与非本人逐字一致（防枚举）").isEqualTo("资源不存在或无权访问");
+                .as("不存在与非本人逐字一致（防枚举）")
+                .isEqualTo(CatalogErrorCodes.DATASET_NOT_FOUND_OR_NO_ACCESS_MESSAGE);
         assertThat(jdbc.queryForObject(
                 "SELECT COUNT(*) FROM dataset_action_log WHERE dataset_id = 999999", Long.class))
                 .as("不存在对象无留痕（无对象指向）").isZero();
@@ -192,16 +198,18 @@ class CatalogActionLogsIntegrationTest {
         final long productId = insertProduct("R15 全值域产品", "provider-r15");
         insertProductLog(productId, "CREATE", "封装产品", "provider-r15");
         insertProductLog(productId, "DENIED_PUBLISH", "上架被拒", "provider-r15");
+        insertProductLog(productId, "DENIED_CREATE", "封装被拒", "intruder-r15");
         insertProductLog(productId, "GOVERNANCE_VIEW", "治理查看：运营方 governor-r15", "governor-r15");
 
         final MvcResult ok = mockMvc.perform(auth(get("/api/v1/data-products/" + productId
                 + "/action-logs"), "provider-r15", PROVIDER)).andReturn();
         assertThat(ok.getResponse().getStatus()).as(body(ok)).isEqualTo(200);
         final JsonNode page = payload(ok);
-        assertThat(page.get("total").asLong()).as("全值域（含 DENIED_* 与 GOVERNANCE_VIEW）").isEqualTo(3);
+        assertThat(page.get("total").asLong()).as("全值域（含 DENIED_* 与 GOVERNANCE_VIEW）").isEqualTo(4);
         final StringBuilder actions = new StringBuilder();
         page.get("list").forEach(row -> actions.append(row.get("action").asText()).append(','));
-        assertThat(actions.toString()).contains("CREATE").contains("DENIED_PUBLISH").contains("GOVERNANCE_VIEW");
+        assertThat(actions.toString()).contains("CREATE").contains("DENIED_PUBLISH")
+                .contains("DENIED_CREATE").contains("GOVERNANCE_VIEW");
         // 字段白名单 + 强制下架/治理查看摘要全文承载
         assertThat(page.get("list").get(0).properties().stream().map(java.util.Map.Entry::getKey).toList())
                 .containsExactlyInAnyOrder("id", "action", "operatorSubjectNo", "summary", "createdAt");
@@ -217,14 +225,15 @@ class CatalogActionLogsIntegrationTest {
         assertThat(denied.getResponse().getStatus()).as("非本人 → 404").isEqualTo(404);
         assertThat(codeOf(denied)).isEqualTo("1007C0012");
         assertThat(root(denied).get("message").asText())
-                .as("管理面文案同形").isEqualTo("产品不存在或无权操作");
+                .as("管理面文案同形").isEqualTo(CatalogErrorCodes.PRODUCT_MANAGE_NOT_FOUND_MESSAGE);
 
         final MvcResult missing = mockMvc.perform(auth(get("/api/v1/data-products/999999/action-logs"),
                 "provider-r15b", PROVIDER)).andReturn();
         assertThat(missing.getResponse().getStatus()).isEqualTo(404);
         assertThat(codeOf(missing)).isEqualTo("1007C0012");
         assertThat(root(missing).get("message").asText())
-                .as("不存在与非本人逐字一致（沿产品面读面既有口径，不写留痕）").isEqualTo("产品不存在或无权操作");
+                .as("不存在与非本人逐字一致（沿产品面读面既有口径，不写留痕）")
+                .isEqualTo(CatalogErrorCodes.PRODUCT_MANAGE_NOT_FOUND_MESSAGE);
     }
 
     @Test
@@ -275,19 +284,22 @@ class CatalogActionLogsIntegrationTest {
         insertInteractionLog("user-r16a", 7, "FAVORITE", "SUCCEEDED", null);
         insertInteractionLog("user-r16a", 7, "SUBSCRIBE", "SUCCEEDED", null);
         insertInteractionLog("user-r16a", 999, "UNFAVORITE", "DENIED", "C0012");
+        insertInteractionLog("user-r16a", 7, "UNSUBSCRIBE", "SUCCEEDED", null);
         insertInteractionLog("user-r16b", 7, "UNSUBSCRIBE", "SUCCEEDED", null);
 
         final MvcResult ok = mockMvc.perform(auth(get("/api/v1/catalog/interaction-logs"),
                 "user-r16a", PROVIDER)).andReturn();
         assertThat(ok.getResponse().getStatus()).as(body(ok)).isEqualTo(200);
         final JsonNode page = payload(ok);
-        assertThat(page.get("total").asLong()).as("恒仅本人行（B 的行不可见）").isEqualTo(3);
+        assertThat(page.get("total").asLong()).as("恒仅本人行（B 的行不可见）").isEqualTo(4);
         final StringBuilder content = new StringBuilder();
         page.get("list").forEach(row -> content.append(row.get("action").asText()).append('/')
                 .append(row.get("outcome").asText()).append('/').append(row.get("denyReason").asText()).append(';'));
         assertThat(content.toString()).contains("FAVORITE/SUCCEEDED/null")
-                .contains("SUBSCRIBE/SUCCEEDED/null").contains("UNFAVORITE/DENIED/C0012");
-        assertThat(content.toString()).doesNotContain("UNSUBSCRIBE");
+                .contains("SUBSCRIBE/SUCCEEDED/null").contains("UNFAVORITE/DENIED/C0012")
+                .as("四动作齐备（本人行含退订成功）").contains("UNSUBSCRIBE/SUCCEEDED/null");
+        assertThat(content.toString().split("UNSUBSCRIBE", -1).length - 1)
+                .as("B 主体的退订行不可见（仅本人 1 行）").isEqualTo(1);
         assertThat(page.get("list").get(0).properties().stream().map(java.util.Map.Entry::getKey).toList())
                 .as("R16 出参字段白名单（无敏感原文）")
                 .containsExactlyInAnyOrder("id", "productId", "action", "outcome", "denyReason", "createdAt");

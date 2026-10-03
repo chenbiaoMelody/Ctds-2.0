@@ -69,6 +69,15 @@ describe('目录界面源集守卫（T19）', () => {
     expect(Object.keys(withoutSpecs(apiSources)).length).toBe(1)
   })
 
+  it('留痕结果渲染正向锚定：结果标签经 constants 引用承载（评审④ P2 收口）', () => {
+    const source = withoutComments(uiScanned())
+    // 资源留痕区与互动留痕区的结果 tag 均经结果标签常量渲染，不得散写
+    expect(hits(source, 'ACTION_RESULT_LABELS')).toBeGreaterThan(0)
+    expect(hits(source, 'INTERACTION_OUTCOME_LABELS')).toBeGreaterThan(0)
+    // 反向探针：散写样本必被同一口径命中
+    expect(hits(withoutComments("const t = '被拒'"), '被拒')).toBe(1)
+  })
+
   it('目录视图与 API 模块不得直接 fetch（必须经 apiJson 封装）', () => {
     expect(hits(uiScanned(), 'fetch(')).toBe(0)
     // 反向探针：同一扫描口径对已知违规样本必命中
@@ -80,6 +89,8 @@ describe('目录界面源集守卫（T19）', () => {
     // 产品状态四态 / 资源状态两态
     // 形态四类（API 为非中文码，不入清单）与定价四档
     // 长动作标签（短词"收藏/订阅/上架时间"等列头文案除外——常量引用由视图 import 面承载）
+    // 留痕结果标签 '被拒' 无法按子串锚定（UI 帮助文案"将被拒收/将被拒绝"合法含该子串）——
+    // 改为正向锚定：留痕结果的渲染必须经结果标签常量引用（正向断言见下方用例）
     const bareLiterals = ['未上架', '已上架', '已下架', '已注销', '生效中',
       '数据集', '报告',
       '免费', '按次', '包月', '交易额分成',
