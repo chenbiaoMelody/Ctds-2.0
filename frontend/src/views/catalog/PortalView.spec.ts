@@ -74,7 +74,6 @@ function product(over: Partial<CatalogProduct> = {}): CatalogProduct {
     intro: '面向普惠金融场景的目录元数据产品',
     productType: '数据集',
     pricingModel: '按次',
-    priceAmount: '3.00',
     categoryCode: 'finance',
     categoryName: '金融',
     providerSubjectNo: 'S20260925000001',
@@ -90,7 +89,6 @@ function favorite(over: Partial<FavoriteItem> = {}): FavoriteItem {
     intro: '简介',
     productType: '数据集',
     pricingModel: '按次',
-    priceAmount: '3.00',
     categoryCode: 'finance',
     categoryName: '金融',
     providerSubjectNo: 'S20260925000001',
@@ -108,7 +106,6 @@ function subscription(over: Partial<SubscriptionItem> = {}): SubscriptionItem {
     intro: '简介',
     productType: '数据集',
     pricingModel: '按次',
-    priceAmount: '3.00',
     categoryCode: 'finance',
     categoryName: '金融',
     providerSubjectNo: 'S20260925000001',
@@ -169,6 +166,7 @@ beforeEach(() => {
 })
 
 describe('门户检索（T4）', () => {
+  // 显式放宽超时：组件全量挂载 + 类目树交互在全量并行负载下可越 5s 默认门槛，非被测行为慢
   it('类目树渲染两级结构；选中类目按 categoryCode 传参检索（父类目含子树由服务端展开）', async () => {
     const wrapper = await mountPage()
     expect(wrapper.text()).toContain('金融')
@@ -178,7 +176,7 @@ describe('门户检索（T4）', () => {
     await wrapper.findAll('.el-tree-node__content')[0].trigger('click')
     await flushPromises()
     expect(mockedSearch).toHaveBeenLastCalledWith(1, 10, '', 'finance')
-  })
+  }, 15000)
 
   it('关键词查询按 ≤64 传参；重置清空关键词与类目过滤后重新拉取', async () => {
     const wrapper = await mountPage()

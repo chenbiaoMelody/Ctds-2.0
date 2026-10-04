@@ -9,7 +9,12 @@
  * - 全局 `demoRolesHeader()` 一字不动（最小权限面，沿 WBS-3.1.11 Q7 先例）。
  * WBS-3.3.6 扩展（hifi §4）：目录域页面级角色头 `catalogRolesHeader()`——普通档 `provider` /
  * 运营档 `admin`（沿 3.3.5 验收走查实测口径）；硬约束（T17）：**普通档不得携带 `admin`**。
+ * WBS-3.3.6 缺陷修复批（走查登记 F1，hifi §12 E3）：新增演示身份变更信号 `demoIdentityRevision`
+ * ——保存身份且值确有变化时自增，顶栏所属布局以它为当前页面 key：身份变更 = 页面整体重挂并按
+ * 新身份重拉数据（服务端行级过滤仍为判定源；刷新自愈的缺陷根因即组件态未随身份变化失效）。
  */
+import { ref } from 'vue'
+
 export type ActorMode = 'subject' | 'operator'
 
 const ACTOR_MODE_KEY = 'ctds-demo-actor-mode'
@@ -29,6 +34,18 @@ export function getActorMode(): ActorMode {
 /** 写入档位。 */
 export function setActorMode(mode: ActorMode): void {
   localStorage.setItem(ACTOR_MODE_KEY, mode)
+}
+
+/**
+ * 演示身份变更信号（F1 修复批）：保存身份且值确有变化时自增。
+ * 顶栏所属布局（MainLayout）以它作为 `router-view` 的 key —— 变更 = 当前页面整体重挂，
+ * 按主体取数的列表 / 下拉 / 档位提示随之重拉。
+ */
+export const demoIdentityRevision = ref(0)
+
+/** 标记演示身份已变更（唯一调用点 = 顶栏保存且主体或档位确有变化）。 */
+export function markDemoIdentityChanged(): void {
+  demoIdentityRevision.value += 1
 }
 
 /** 空间域页面级角色头（覆盖 `apiJson` 的全局演示角色头）。 */

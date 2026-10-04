@@ -177,10 +177,10 @@ onMounted(() => {
         </div>
 
         <el-descriptions :column="2" border class="meta-descriptions">
+          <!-- 字段清单 = hifi §6.3；R7 出参无 priceAmount（3.3.4 既有契约）→ 不得展示"价格数值"行 -->
           <el-descriptions-item label="简介">{{ detail.intro ?? '—' }}</el-descriptions-item>
           <el-descriptions-item label="形态">{{ detail.productType }}</el-descriptions-item>
           <el-descriptions-item label="定价模型">{{ detail.pricingModel }}</el-descriptions-item>
-          <el-descriptions-item label="价格数值">{{ detail.priceAmount ?? '—' }}</el-descriptions-item>
           <el-descriptions-item label="类目">{{ detail.categoryName ?? '—' }}</el-descriptions-item>
           <el-descriptions-item label="提供方主体编号">{{ detail.providerSubjectNo }}</el-descriptions-item>
           <el-descriptions-item label="上架时间">{{ detail.listedAt ?? '—' }}</el-descriptions-item>

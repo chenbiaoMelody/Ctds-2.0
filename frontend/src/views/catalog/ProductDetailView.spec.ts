@@ -56,7 +56,6 @@ function detail(over: Partial<CatalogProductDetail> = {}): CatalogProductDetail 
     intro: '面向普惠金融场景的目录元数据产品（全文）',
     productType: '数据集',
     pricingModel: '按次',
-    priceAmount: '3.00',
     categoryCode: 'finance',
     categoryName: '金融',
     providerSubjectNo: 'S20260925000001',
@@ -80,7 +79,7 @@ function changeLog(over: Partial<ProductChangeLog> = {}): ProductChangeLog {
 function favoriteItem(over: Partial<FavoriteItem> = {}): FavoriteItem {
   return {
     productId: 7, productName: '普惠金融数据服务', intro: '简介', productType: '数据集',
-    pricingModel: '按次', priceAmount: '3.00', categoryCode: 'finance', categoryName: '金融',
+    pricingModel: '按次', categoryCode: 'finance', categoryName: '金融',
     providerSubjectNo: 'S20260925000001', listedAt: null, productStatus: '已上架',
     favoritedAt: '2026-10-02T22:00:00',
     ...over,
@@ -90,7 +89,7 @@ function favoriteItem(over: Partial<FavoriteItem> = {}): FavoriteItem {
 function subscriptionItem(over: Partial<SubscriptionItem> = {}): SubscriptionItem {
   return {
     productId: 7, productName: '普惠金融数据服务', intro: '简介', productType: '数据集',
-    pricingModel: '按次', priceAmount: '3.00', categoryCode: 'finance', categoryName: '金融',
+    pricingModel: '按次', categoryCode: 'finance', categoryName: '金融',
     providerSubjectNo: 'S20260925000001', listedAt: null, productStatus: '已上架',
     subscribedAt: '2026-10-02T22:01:00',
     ...over,
@@ -136,7 +135,7 @@ beforeEach(() => {
 })
 
 describe('详情元数据（T6）', () => {
-  it('逐字段渲染：名称 / 状态 / 简介全文 / 形态 / 定价 / 类目 / 提供方主体编号 / 上架时间', async () => {
+  it('逐字段渲染：名称 / 状态 / 简介全文 / 形态 / 定价模型 / 类目 / 提供方主体编号 / 上架时间；且无"价格数值"行（F2 修复批：R7 出参无该字段）', async () => {
     const wrapper = await mountPage()
     const text = wrapper.text()
     expect(text).toContain('普惠金融数据服务')
@@ -144,7 +143,8 @@ describe('详情元数据（T6）', () => {
     expect(text).toContain('面向普惠金融场景的目录元数据产品（全文）')
     expect(text).toContain('数据集')
     expect(text).toContain('按次')
-    expect(text).toContain('3.00')
+    // hifi §6.3 字段清单无"价格数值"；R7 出参（3.3.4 既有契约）亦无该字段 → 不得展示该行
+    expect(text).not.toContain('价格数值')
     expect(text).toContain('金融')
     expect(text).toContain('S20260925000001')
     expect(text).toContain('2026-10-02T21:37:59')

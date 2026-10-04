@@ -7,7 +7,7 @@ import { routes } from '../router'
 import { DEMO_ROLE_LABELS, getDemoRole, setDemoRole, hasPermission, type DemoRole } from '../stores/demoRole'
 import { signOutDemo } from '../stores/demoAuth'
 import { getDemoSubject, setDemoSubject } from '../api/client'
-import { ACTOR_MODE_LABELS, getActorMode, setActorMode, type ActorMode } from '../stores/demoIdentity'
+import { ACTOR_MODE_LABELS, getActorMode, setActorMode, demoIdentityRevision, markDemoIdentityChanged, type ActorMode } from '../stores/demoIdentity'
 import { DEMO_SUBJECT_REQUIRED_TIP } from '../constants/space'
 
 /**
@@ -68,6 +68,7 @@ function onSignOut() {
 }
 
 // WBS-3.2.6 §6.1：顶栏"演示身份"控件（主体编号 + 档位）；空间域请求按档位携带页面级角色头。
+// WBS-3.3.6 F1 修复批（hifi §12 E3）：身份确有变化时自增变更信号 → 当前页面整体重挂并按新身份重拉。
 const subjectNo = ref(getDemoSubject())
 const actorMode = ref<ActorMode>(getActorMode())
 
@@ -78,8 +79,10 @@ function onSaveIdentity() {
     ElMessage.error(DEMO_SUBJECT_REQUIRED_TIP)
     return
   }
+  const changed = getDemoSubject() !== subject || getActorMode() !== actorMode.value
   setDemoSubject(subject)
   setActorMode(actorMode.value)
+  if (changed) markDemoIdentityChanged()
   ElMessage.success(`已切换演示身份（主体：${subject}，档位：${ACTOR_MODE_LABELS[actorMode.value]}）`)
 }
 </script>
@@ -158,7 +161,8 @@ function onSaveIdentity() {
           class="denied-tip"
           @close="dismissDenied"
         />
-        <router-view />
+        <!-- WBS-3.3.6 F1 修复批：身份变更信号作 key —— 切换演示身份后当前页整体重挂并按新身份重拉 -->
+        <router-view :key="demoIdentityRevision" />
       </el-main>
     </el-container>
   </el-container>

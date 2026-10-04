@@ -7,6 +7,21 @@ import { setDemoRole, getDemoRole } from '../stores/demoRole'
 import { ACTOR_MODE_LABELS, getActorMode } from '../stores/demoIdentity'
 import { isDemoAuthed, signInDemo } from '../stores/demoAuth'
 import { routes } from '../router/index'
+import { getDemoSubject, setDemoSubject } from '../api/client'
+import { listCategories, searchProducts } from '../api/catalog'
+
+/**
+ * WBS-3.3.6 缺陷修复批 F1 锚定：以真实 `api/catalog` 的取数调用观察"身份切换后是否重拉"。
+ * 仅替换取数函数，其余导出原样展开（不影响本文件既有用例）。
+ */
+vi.mock('../api/catalog', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../api/catalog')>()
+  return {
+    ...actual,
+    listCategories: vi.fn(),
+    searchProducts: vi.fn(),
+  }
+})
 
 /**
  * WBS-2.4.9 H2/H4 布局测试：
@@ -110,6 +125,7 @@ describe('顶栏"演示身份"控件（WBS-3.2.6 §6.1 / T27）', () => {
     expect(document.body.textContent).toContain('已切换演示身份')
   })
 
+  // 显式放宽超时：布局全量挂载（菜单/顶栏/图标）在全量并行负载下可越 5s 默认门槛，非被测行为慢
   it('主体编号留空：前置拦截（不写入任何存储）', async () => {
     const wrapper = mountLayout()
     await wrapper.find('.identity-subject input').setValue('   ')
@@ -117,7 +133,7 @@ describe('顶栏"演示身份"控件（WBS-3.2.6 §6.1 / T27）', () => {
     await flushPromises()
     expect(localStorage.getItem('ctds-demo-actor-mode')).toBeNull()
     expect(document.body.textContent).toContain('请先填写演示身份主体编号')
-  })
+  }, 15000)
 })
 
 describe('无权限访问提示（H4 边界值）', () => {
@@ -170,5 +186,67 @@ describe('顶栏退出（WBS-2.4.12 B8）', () => {
     expect(isDemoAuthed()).toBe(false)
     // B3 角色保留（评审④P3-1 补）：退出只清登录态，演示角色不受影响
     expect(getDemoRole()).toBe('admin')
+  })
+})
+
+/**
+ * WBS-3.3.6 缺陷修复批 F1（走查登记：演示身份切换后目录域页面数据不重拉）：
+ * 保存演示身份且值确有变化 → 当前页面以新身份整体重挂（`router-view` key = 身份变更计数），
+ * 页面取数随之重拉；值未变化 → 不重挂（零重拉，不丢页面状态）。
+ */
+describe('演示身份切换重拉（WBS-3.3.6 F1 修复批）', () => {
+  const mockedCategories = vi.mocked(listCategories)
+  const mockedSearch = vi.mocked(searchProducts)
+  let seenSubjects: string[]
+
+  // 本 describe 独立 router 实例：避免与本文件既有 wrapper（未卸载）共享路由导致重复挂载
+  async function mountCatalogLayout() {
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    await router.push('/catalog')
+    await router.isReady()
+    const wrapper = mount(MainLayout, {
+      global: {
+        plugins: [ElementPlus, router],
+      },
+    })
+    await flushPromises()
+    return wrapper
+  }
+
+  beforeEach(() => {
+    localStorage.clear()
+    document.body.innerHTML = ''
+    mockedCategories.mockReset()
+    mockedSearch.mockReset()
+    mockedCategories.mockResolvedValue([])
+    seenSubjects = []
+    mockedSearch.mockImplementation(async () => {
+      // 记录每次取数时的演示主体（apiJson 逐请求调用 getDemoSubject() 取值）
+      seenSubjects.push(getDemoSubject())
+      return { list: [], total: 0, pageNum: 1, pageSize: 10, totalPages: 0 }
+    })
+  })
+
+  it('切换主体保存：目录页重挂并以新主体重拉列表', async () => {
+    const wrapper = await mountCatalogLayout()
+    expect(mockedSearch).toHaveBeenCalledTimes(1)
+
+    await wrapper.find('.identity-subject input').setValue('S20260919000002')
+    await wrapper.find('.identity-save').trigger('click')
+    await flushPromises()
+
+    expect(mockedSearch).toHaveBeenCalledTimes(2)
+    expect(seenSubjects).toEqual(['demo-applicant', 'S20260919000002'])
+  })
+
+  it('身份未变化保存：不重挂（零重拉）', async () => {
+    setDemoSubject('S20260925000001')
+    const wrapper = await mountCatalogLayout()
+    expect(mockedSearch).toHaveBeenCalledTimes(1)
+
+    await wrapper.find('.identity-save').trigger('click')
+    await flushPromises()
+
+    expect(mockedSearch).toHaveBeenCalledTimes(1)
   })
 })

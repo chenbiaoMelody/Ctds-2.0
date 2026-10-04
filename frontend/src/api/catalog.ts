@@ -23,14 +23,13 @@ export interface CategoryNode {
   children: CategoryNode[]
 }
 
-/** 目录检索条目（R6；响应不含 status——结果恒已上架）。 */
+/** 目录检索条目（R6；响应不含 status——结果恒已上架；R7/R9/R10 同源字段）。 */
 export interface CatalogProduct {
   productId: number
   productName: string
   intro: string | null
   productType: string
   pricingModel: string
-  priceAmount: string | null
   categoryCode: string | null
   categoryName: string | null
   providerSubjectNo: string

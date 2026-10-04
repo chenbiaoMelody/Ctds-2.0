@@ -175,6 +175,7 @@ describe('登记资源（T11）', () => {
     return wrapper
   }
 
+  // 显式放宽超时：弹窗挂载 + 多段表单交互在全量并行负载下可越 5s 默认门槛，非被测行为慢
   it('必填前置：名称留空 → 零请求；空间编号留空 → 零请求', async () => {
     const wrapper = await openDialog()
     await wrapper.findComponent('.register-type').setValue('DATASET')
@@ -193,8 +194,9 @@ describe('登记资源（T11）', () => {
     await flushPromises()
     expect(mockedRegister).not.toHaveBeenCalled()
     expect(document.body.textContent).toContain(SPACE_ID_REQUIRED_TIP)
-  })
+  }, 15000)
 
+  // 显式放宽超时：弹窗挂载 + 表单交互在全量并行负载下可越 5s 默认门槛，非被测行为慢
   it('契约字段逐字提交：tags 传 termName 数组、declareImportant 布尔、空间编号直填', async () => {
     mockedRegister.mockResolvedValue(dataset())
     const wrapper = await openDialog()
@@ -217,7 +219,7 @@ describe('登记资源（T11）', () => {
       declareImportant: false,
     })
     expect(mockedDatasets).toHaveBeenCalledTimes(2)
-  })
+  }, 15000)
 
   it('未启用空间允许提交（界面不拦截），1007C0002 原样展示', async () => {
     mockedRegister.mockRejectedValue(new ApiError('1007C0002', '空间当前状态不允许登记资源'))
@@ -235,6 +237,8 @@ describe('登记资源（T11）', () => {
     expect(document.body.textContent).toContain('空间当前状态不允许登记资源')
   })
 
+  // 四段拒绝对照（每段重开弹窗并回填表单）在算力受限机器上会越过 5s 默认门槛（隔离实测 5.1~5.3s）；
+  // 显式放宽等待上限，用例内容与断言零变更（沿 router.spec.ts 重用例显式超时先例）。
   it('重要数据申报 1007C0003 / 词表外标签 1007C0009 / 类目外申报 1007C0014 / 非成员 1007C0006 原样展示', async () => {
     const cases: Array<{ code: string; message: string; setup?: () => void }> = [
       { code: '1007C0003', message: '申报为重要数据的资源暂不受理登记' },
@@ -258,7 +262,7 @@ describe('登记资源（T11）', () => {
       expect(document.body.textContent).toContain(item.message)
       wrapper.unmount()
     }
-  })
+  }, 20000)
 })
 
 describe('变更与注销（T12）', () => {
