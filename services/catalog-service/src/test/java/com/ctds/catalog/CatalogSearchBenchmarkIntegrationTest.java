@@ -161,7 +161,10 @@ class CatalogSearchBenchmarkIntegrationTest {
                 sorted[ROUNDS - 1], totalRows);
     }
 
-    /** 结果 JSON 落 target/benchmark/（target 不入库）；摘要行打 stdout 随 surefire 日志留痕。 */
+    /**
+     * 结果 JSON 落 target/benchmark/（target 不入库）；数字摘要随开发日志留痕。
+     * 不写 stdout（AGENTS §4 禁止提交调试输出；评审④ P3 处置）——数字留痕以本 JSON + 开发日志为准。
+     */
     private void writeResultJson(final Map<String, ScenarioResult> results) throws IOException {
         final ObjectNode root = MAPPER.createObjectNode();
         root.put("card", "WBS-3.3.7");
@@ -180,7 +183,8 @@ class CatalogSearchBenchmarkIntegrationTest {
         root.putObject("boundary")
                 .put("qualificationGate", "stub（无真实 subject HTTP 往返）")
                 .put("channel", "MockMvc 进程内全链（无网络与网关）")
-                .put("load", "串行 50 轮，无并发加压——正式并发压测与阶梯加压归 WBS-4.2.1");
+                .put("load", "串行 50 轮，无并发加压——正式并发压测与阶梯加压归 WBS-4.2.1")
+                .put("warmup", "未设预热轮：首轮含 JIT/冷启动开销，maxMs 受其影响（P95 取 50 轮最近邻秩，影响有限）");
         final ArrayNode scenarios = root.putArray("scenarios");
         results.values().forEach(r -> {
             final ObjectNode node = scenarios.addObject();
@@ -196,8 +200,6 @@ class CatalogSearchBenchmarkIntegrationTest {
                 + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")) + ".json");
         Files.writeString(file, MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(root),
                 StandardCharsets.UTF_8);
-        System.out.println("[WBS-3.3.7 基准] 五场景 P50/P95/max(ms) 已写 " + file
-                + "；判定 PASS（P95 ≤ 500ms，容器内口径；正式并发压测归 4.2.1）");
     }
 
     // ==== 助手 ====
