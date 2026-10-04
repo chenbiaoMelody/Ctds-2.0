@@ -21,6 +21,12 @@ public interface DatasetRepository {
     /** 按技术主键取资源（W2/W3/R2 目标定位）。 */
     Optional<Dataset> findById(long datasetId);
 
+    /**
+     * 资源操作留痕分页（WBS-3.3.6 R14 只读读面；按 created_at DESC, id DESC 稳定排序——
+     * 只读既有 dataset_action_log，零写入面）。
+     */
+    PageResult<DatasetActionLog> pageLogsByDataset(long datasetId, PageQuery page);
+
     /** 同空间是否已有同名（归一化）资源——活跃与注销行共同参与（uk_space_norm_name 口径）。 */
     boolean existsBySpaceAndNormalizedName(long spaceId, String normalizedName);
 

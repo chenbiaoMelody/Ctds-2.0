@@ -92,6 +92,7 @@ describe('DID 管理页 · 记录清单（WBS-3.1.11 T10）', () => {
     localStorage.clear()
   })
 
+  // 显式放宽超时：记录清单页全量挂载在全量并行负载下可越 5s 默认门槛，非被测行为慢
   it('渲染记录清单：主体编号/签发序号/DID/状态标签（三值）/密钥引用/签发时间', async () => {
     mockedRecords.mockResolvedValue(page([activeRow, revokedRow, pendingRow]) as never)
     const { wrapper } = await mountPage()
@@ -104,7 +105,7 @@ describe('DID 管理页 · 记录清单（WBS-3.1.11 T10）', () => {
     expect(wrapper.text()).toContain('待签发（记录中间态）')
     expect(wrapper.text()).toContain('did-S20260925000001-1')
     expect(wrapper.text()).toContain('2026-09-25T10:00:00')
-  })
+  }, 15000)
 
   it('状态文案经常量收口且与设计口径逐字一致（hifi §6.4；R2 修复）', async () => {
     mockedRecords.mockResolvedValue(page([activeRow, revokedRow, pendingRow]) as never)

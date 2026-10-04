@@ -13,6 +13,12 @@ import '../views/space/ListView.vue'
 import '../views/space/DetailView.vue'
 import '../views/space/MyAdmissionsView.vue'
 import '../views/space/PlatformPolicyView.vue'
+// WBS-3.3.6：目录域五视图同为懒加载路由，同款静态预热（PortalView 替换占位 IndexView）
+import '../views/catalog/PortalView.vue'
+import '../views/catalog/ProductDetailView.vue'
+import '../views/catalog/DatasetManageView.vue'
+import '../views/catalog/ProductManageView.vue'
+import '../views/catalog/GovernanceView.vue'
 
 /**
  * WBS-2.4.9 H3/H4 测试：
@@ -40,14 +46,15 @@ describe('路由表结构（H3）', () => {
     }
   })
 
-  it('权限路由声明权限点，其余菜单路由未声明（WBS-3.1.5 扩 admin-only/review-queue；WBS-3.1.11 扩 did-management；WBS-3.2.6 扩 space-list/platform-policy）', () => {
+  it('权限路由声明权限点，其余菜单路由未声明（WBS-3.1.5 扩 admin-only/review-queue；WBS-3.1.11 扩 did-management；WBS-3.2.6 扩 space-list/platform-policy；WBS-3.3.6 扩 catalog 三菜单）', () => {
     const adminRoute = children.find((r) => r.name === 'admin-only')
     expect(adminRoute?.meta?.permission).toBe('demo:admin')
     const reviewRoute = children.find((r) => r.name === 'review-queue')
     expect(reviewRoute?.meta?.permission).toBe('subject.review')
     const didRoute = children.find((r) => r.name === 'did-management')
     expect(didRoute?.meta?.permission).toBe('did.admin')
-    const permissionRouteNames = ['admin-only', 'review-queue', 'did-management', 'space-list', 'platform-policy']
+    const permissionRouteNames = ['admin-only', 'review-queue', 'did-management', 'space-list', 'platform-policy',
+      'catalog-datasets', 'catalog-products', 'catalog-governance']
     const normalRoutes = children.filter(
       (r) => r.meta?.menu === true && !permissionRouteNames.includes(String(r.name)),
     )
@@ -57,9 +64,9 @@ describe('路由表结构（H3）', () => {
   })
 
   it('DID 管理路由（WBS-3.1.11）：menuOrder=8、icon=Key、did.admin 权限；演示页不占菜单', () => {
-    // 菜单末尾追加（lofi Q1/Q8：不重排既有菜单）；WBS-3.2.6 追加 menuOrder 9/10 后全站最大值为 10
+    // 菜单末尾追加（lofi Q1/Q8：不重排既有菜单）；WBS-3.3.6 追加 menuOrder 11/12/13 后全站最大值为 13
     const menuOrders = children.filter((r) => r.meta?.menu === true).map((r) => r.meta?.menuOrder ?? 0)
-    expect(Math.max(...menuOrders)).toBe(10)
+    expect(Math.max(...menuOrders)).toBe(13)
     const didRoute = children.find((r) => r.name === 'did-management')
     expect(didRoute?.path).toBe('did')
     expect(didRoute?.meta?.title).toBe('DID 管理')
@@ -89,10 +96,11 @@ describe('路由表结构（H3）', () => {
     expect(progressRoute?.meta?.menuOrder).toBe(7)
     expect(progressRoute?.meta?.icon).toBe('Search')
     expect(progressRoute?.meta?.permission).toBeUndefined()
-    // menuOrder=7 为入驻进度查询占位；WBS-3.1.11（8）与 WBS-3.2.6（9/10）追加后全站最大值为 10
+    // menuOrder=7 为入驻进度查询占位；WBS-3.1.11（8）与 WBS-3.2.6（9/10）追加后全站最大值为 10；
+    // WBS-3.3.6（11/12/13）追加后全站最大值为 13
     const menuOrders = children.filter((r) => r.meta?.menu === true).map((r) => r.meta?.menuOrder ?? 0)
     expect(menuOrders).toContain(7)
-    expect(Math.max(...menuOrders)).toBe(10)
+    expect(Math.max(...menuOrders)).toBe(13)
   })
 
   it('空间管理界面路由（WBS-3.2.6 §3）：菜单 9/10、权限点 space.member / platform.policy，"我的邀请"不占菜单且在 :id 之前', () => {
@@ -127,6 +135,52 @@ describe('路由表结构（H3）', () => {
     // 声明顺序：spaces/my-admissions 必须在 spaces/:id 之前（否则被动态段吞掉）
     const paths = children.map((r) => r.path)
     expect(paths.indexOf('spaces/my-admissions')).toBeLessThan(paths.indexOf('spaces/:id'))
+  })
+
+  it('目录域路由（WBS-3.3.6 §3）：占位菜单内容替换 + 三菜单 11/12/13 + 深链不占菜单且声明在 catalog/products 之后', () => {
+    const portalRoute = children.find((r) => r.name === 'catalog')
+    expect(portalRoute?.path).toBe('catalog')
+    expect(portalRoute?.meta?.title).toBe('数据目录')
+    expect(portalRoute?.meta?.menu).toBe(true)
+    expect(portalRoute?.meta?.menuOrder).toBe(3)
+    expect(portalRoute?.meta?.icon).toBe('FolderOpened')
+    // 数据目录不加权限点：登录即可见（检索资格由服务端 ADMITTED 承载），普通角色菜单计数不变
+    expect(portalRoute?.meta?.permission).toBeUndefined()
+
+    const datasetsRoute = children.find((r) => r.name === 'catalog-datasets')
+    expect(datasetsRoute?.path).toBe('catalog/datasets')
+    expect(datasetsRoute?.meta?.title).toBe('资源登记')
+    expect(datasetsRoute?.meta?.menu).toBe(true)
+    expect(datasetsRoute?.meta?.menuOrder).toBe(11)
+    expect(datasetsRoute?.meta?.icon).toBe('Files')
+    expect(datasetsRoute?.meta?.permission).toBe('dataset.register')
+
+    const productsRoute = children.find((r) => r.name === 'catalog-products')
+    expect(productsRoute?.path).toBe('catalog/products')
+    expect(productsRoute?.meta?.title).toBe('产品上架')
+    expect(productsRoute?.meta?.menu).toBe(true)
+    expect(productsRoute?.meta?.menuOrder).toBe(12)
+    expect(productsRoute?.meta?.icon).toBe('Goods')
+    expect(productsRoute?.meta?.permission).toBe('catalog.product')
+
+    const detailRoute = children.find((r) => r.name === 'catalog-product-detail')
+    expect(detailRoute?.path).toBe('catalog/products/:productId')
+    expect(detailRoute?.meta?.title).toBe('产品详情')
+    expect(detailRoute?.meta?.menu).toBeUndefined()
+    // 产品详情深链不设权限点（门槛在服务端）
+    expect(detailRoute?.meta?.permission).toBeUndefined()
+
+    const governanceRoute = children.find((r) => r.name === 'catalog-governance')
+    expect(governanceRoute?.path).toBe('catalog/governance')
+    expect(governanceRoute?.meta?.title).toBe('目录治理')
+    expect(governanceRoute?.meta?.menu).toBe(true)
+    expect(governanceRoute?.meta?.menuOrder).toBe(13)
+    expect(governanceRoute?.meta?.icon).toBe('View')
+    expect(governanceRoute?.meta?.permission).toBe('catalog.governance')
+
+    // 声明顺序：catalog/products/:productId 必须在 catalog/products 之后声明（深链匹配不吞噬清单页）
+    const paths = children.map((r) => r.path)
+    expect(paths.indexOf('catalog/products')).toBeLessThan(paths.indexOf('catalog/products/:productId'))
   })
 
   it('登录页为顶层路由（WBS-2.4.12 B4）：不套布局、无菜单标记', () => {
@@ -223,6 +277,29 @@ describe('守卫 beforeEach 实际行为（H4）', () => {
   }, 30000)
 
   // 显式放宽超时：懒加载 QueueView 模块首次经 vite-node 转换（并行负载下可达数秒），非被测行为慢
+  it('普通用户直连目录域三条权限路由：守卫逐条拦截重定向工作台带 denied（WBS-3.3.6 T18）', async () => {
+    const { default: router } = await import('../router/index')
+    setDemoRole('user')
+    for (const path of ['/catalog/datasets', '/catalog/products', '/catalog/governance']) {
+      await router.push(path)
+      expect(router.currentRoute.value.name).toBe('dashboard')
+      expect(router.currentRoute.value.query.denied).toBe('1')
+    }
+  })
+
+  it('admin 角色直连目录域权限路由与门户：放行（T18 正向对照；门户登录即可见）', async () => {
+    const { default: router } = await import('../router/index')
+    setDemoRole('admin')
+    await router.push('/catalog')
+    expect(router.currentRoute.value.name).toBe('catalog')
+    await router.push('/catalog/datasets')
+    expect(router.currentRoute.value.name).toBe('catalog-datasets')
+    await router.push('/catalog/products/7')
+    expect(router.currentRoute.value.name).toBe('catalog-product-detail')
+    await router.push('/catalog/governance')
+    expect(router.currentRoute.value.name).toBe('catalog-governance')
+  }, 30000)
+
   it('admin（兼审核员）直连 /review 放行（F4 正向对照）', async () => {
     const { default: router } = await import('../router/index')
     // QueueView 已在文件顶层静态预热（见文件头注释），此导航不再承担首次转换成本

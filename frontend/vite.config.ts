@@ -17,6 +17,29 @@ export default defineConfig({
         target: 'http://localhost:8082',
         changeOrigin: true,
       },
+      // WBS-3.3.6 目录域（8084）：界面走查经 5173 访问目录服务（开发期转发，不改服务契约与门禁配置）。
+      // 首键为 ^ 正则键（Vite 8 doesProxyContextMatchUrl 支持）：资源登记 W1 挂在空间域路径段
+      // /data-spaces/{id}/datasets 上，必须先于下方 '/api/v1/data-spaces' 前缀键命中（键序先行）。
+      '^/api/v1/data-spaces/[^/]+/datasets': {
+        target: 'http://localhost:8084',
+        changeOrigin: true,
+      },
+      '/api/v1/datasets': {
+        target: 'http://localhost:8084',
+        changeOrigin: true,
+      },
+      '/api/v1/data-products': {
+        target: 'http://localhost:8084',
+        changeOrigin: true,
+      },
+      '/api/v1/catalog': {
+        target: 'http://localhost:8084',
+        changeOrigin: true,
+      },
+      '/api/v1/tag-vocabularies': {
+        target: 'http://localhost:8084',
+        changeOrigin: true,
+      },
       // WBS-3.2.6 空间域（8083）：界面走查经 5173 访问空间服务（开发期转发，不改服务契约与门禁配置）。
       '/api/v1/data-spaces': {
         target: 'http://localhost:8083',

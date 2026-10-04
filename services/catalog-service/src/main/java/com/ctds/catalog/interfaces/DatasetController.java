@@ -5,11 +5,14 @@ import com.ctds.catalog.application.DatasetQueryService;
 import com.ctds.catalog.domain.Dataset;
 import com.ctds.catalog.interfaces.dto.CancellationRequest;
 import com.ctds.catalog.interfaces.dto.CancellationView;
+import com.ctds.catalog.interfaces.dto.DatasetActionLogView;
+import com.ctds.catalog.interfaces.dto.PageViews;
 import com.ctds.catalog.interfaces.dto.DatasetView;
 import com.ctds.catalog.interfaces.dto.RegisterDatasetRequest;
 import com.ctds.catalog.interfaces.dto.UpdateDatasetRequest;
 import com.ctds.common.api.ApiResult;
 import com.ctds.common.auth.RequirePermission;
+import com.ctds.common.pagination.PageQuery;
 import com.ctds.common.pagination.PageResult;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -87,5 +90,20 @@ public class DatasetController {
     @RequirePermission("dataset.read")
     public ApiResult<DatasetView> detail(@PathVariable final long datasetId) {
         return ApiResult.ok(DatasetView.from(queryService.detail(datasetId)));
+    }
+
+    /**
+     * R14 资源操作留痕分页（WBS-3.3.6 hifi §1.2，Q2-A；只读既有 dataset_action_log）：
+     * 读面 = 登记主体本人 或 治理例外（catalog.governance，应用服务行级判定）；
+     * 非本人与不存在 → 1007C0005 同形（非本人命中写 DENIED_READ 恰 1 行，沿 R2 先例）。
+     */
+    @GetMapping(path = "/datasets/{datasetId}/action-logs", produces = MediaType.APPLICATION_JSON_VALUE)
+    @RequirePermission("dataset.read")
+    public ApiResult<PageResult<DatasetActionLogView>> actionLogs(@PathVariable final long datasetId,
+            @RequestParam(required = false) final Integer pageNum,
+            @RequestParam(required = false) final Integer pageSize) {
+        return ApiResult.ok(PageViews.page(
+                queryService.actionLogs(datasetId, PageQuery.of(pageNum, pageSize, null)),
+                DatasetActionLogView::from));
     }
 }

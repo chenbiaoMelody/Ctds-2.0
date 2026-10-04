@@ -23,7 +23,7 @@ import {
   policyDisplayName,
   policyValueLabel,
 } from '../../constants/space'
-import { guideToLoginIfAuthFailed } from './authGuide'
+import { guideToLoginIfAuthFailed } from '../../api/authGuide'
 
 const router = useRouter()
 const loading = ref(false)

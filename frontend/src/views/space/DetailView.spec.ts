@@ -147,6 +147,7 @@ beforeEach(() => {
 })
 
 describe('概览（T10）', () => {
+  // 显式放宽超时：空间详情页全量挂载 + 多区块渲染在全量并行负载下可越 5s 默认门槛，非被测行为慢
   it('渲染所有者主体编号 / 状态 / 创建时间与操作留痕四要素', async () => {
     const wrapper = await mountPage()
     const text = wrapper.text()
@@ -156,7 +157,7 @@ describe('概览（T10）', () => {
     // 留痕：动作标签 + 结果 + 值变化（fromValue → toValue）
     expect(text).toContain('冻结空间')
     expect(text).toContain('ACTIVE → FROZEN')
-  })
+  }, 15000)
 
   it('概览三要素（场景类型 / 参与方范围 / 可见性）显示中文标签，不出现裸枚举码（R4 / §6.6.1）', async () => {
     mockedGetSpace.mockResolvedValue(detail({ sceneType: 'MEDICAL', accessMode: 'APPROVAL', visibility: 'PRIVATE' }))

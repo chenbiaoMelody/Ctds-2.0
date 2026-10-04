@@ -56,11 +56,39 @@ const routes = [
         component: () => import('../views/std-capabilities/IndexView.vue'),
         meta: { title: '标准能力', menu: true, menuOrder: 2, icon: 'Connection' },
       },
+      // WBS-3.3.6：数据目录菜单内容替换为检索门户（PortalView，含我的收藏/订阅/互动留痕页签）；
+      // 既有菜单项 menuOrder:3 零改动、无权限点（登录即可见，检索资格由服务端 ADMITTED 承载）
       {
         path: 'catalog',
         name: 'catalog',
-        component: () => import('../views/catalog/IndexView.vue'),
+        component: () => import('../views/catalog/PortalView.vue'),
         meta: { title: '数据目录', menu: true, menuOrder: 3, icon: 'FolderOpened' },
+      },
+      // WBS-3.3.6 目录域三菜单（menuOrder 11/12/13，追加菜单末尾不重排既有项）+ 产品详情深链
+      {
+        path: 'catalog/datasets',
+        name: 'catalog-datasets',
+        component: () => import('../views/catalog/DatasetManageView.vue'),
+        meta: { title: '资源登记', menu: true, menuOrder: 11, icon: 'Files', permission: 'dataset.register' },
+      },
+      {
+        path: 'catalog/products',
+        name: 'catalog-products',
+        component: () => import('../views/catalog/ProductManageView.vue'),
+        meta: { title: '产品上架', menu: true, menuOrder: 12, icon: 'Goods', permission: 'catalog.product' },
+      },
+      // 产品详情深链：须声明在 catalog/products 之后；不占菜单；无权限点（门槛在服务端）
+      {
+        path: 'catalog/products/:productId',
+        name: 'catalog-product-detail',
+        component: () => import('../views/catalog/ProductDetailView.vue'),
+        meta: { title: '产品详情' },
+      },
+      {
+        path: 'catalog/governance',
+        name: 'catalog-governance',
+        component: () => import('../views/catalog/GovernanceView.vue'),
+        meta: { title: '目录治理', menu: true, menuOrder: 13, icon: 'View', permission: 'catalog.governance' },
       },
       {
         path: 'admin-only',

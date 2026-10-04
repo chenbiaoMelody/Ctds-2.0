@@ -9,6 +9,9 @@ import com.ctds.catalog.interfaces.dto.CatalogProductDetail;
 import com.ctds.catalog.interfaces.dto.CatalogProductView;
 import com.ctds.catalog.interfaces.dto.CatalogSubscriptionItemView;
 import com.ctds.catalog.interfaces.dto.CategoryNodeView;
+import com.ctds.catalog.interfaces.dto.InteractionLogView;
+import com.ctds.catalog.interfaces.dto.PageViews;
+import com.ctds.catalog.interfaces.dto.ProductActionLogView;
 import com.ctds.catalog.interfaces.dto.ProductChangeLogView;
 import com.ctds.common.api.ApiResult;
 import com.ctds.common.auth.RequirePermission;
@@ -111,5 +114,31 @@ public class ProductCatalogController {
     private static PageResult<CatalogProductView> mapProducts(final PageResult<CatalogProductRow> result) {
         return new PageResult<>(result.list().stream().map(CatalogProductView::from).toList(),
                 result.total(), result.pageNum(), result.pageSize(), result.totalPages());
+    }
+
+    /**
+     * R15 产品操作留痕分页（WBS-3.3.6 hifi §1.2，Q2-A；只读既有 product_action_log，<b>全值域</b>——
+     * 含 DENIED_* 与 GOVERNANCE_VIEW，与 R8 订阅者可见值域形成对照）：读面 = 提供方本人 或 治理例外
+     * （catalog.governance，应用服务行级判定）；非本人与不存在 → 1007C0012 管理面文案同形（不写留痕）。
+     */
+    @GetMapping(path = "/data-products/{productId}/action-logs", produces = MediaType.APPLICATION_JSON_VALUE)
+    @RequirePermission("catalog.read")
+    public ApiResult<PageResult<ProductActionLogView>> actionLogs(@PathVariable final long productId,
+            @RequestParam(required = false) final Integer pageNum,
+            @RequestParam(required = false) final Integer pageSize) {
+        return ApiResult.ok(PageViews.page(
+                queryService.actionLogs(productId, PageQuery.of(pageNum, pageSize, null)),
+                ProductActionLogView::from));
+    }
+
+    /** R16 本人互动留痕分页（WBS-3.3.6 hifi §1.2，Q2-A；恒仅本人、无跨主体读法；空列表正常空页）。 */
+    @GetMapping(path = "/catalog/interaction-logs", produces = MediaType.APPLICATION_JSON_VALUE)
+    @RequirePermission("catalog.read")
+    public ApiResult<PageResult<InteractionLogView>> interactionLogs(
+            @RequestParam(required = false) final Integer pageNum,
+            @RequestParam(required = false) final Integer pageSize) {
+        return ApiResult.ok(PageViews.page(
+                queryService.myInteractionLogs(PageQuery.of(pageNum, pageSize, null)),
+                InteractionLogView::from));
     }
 }

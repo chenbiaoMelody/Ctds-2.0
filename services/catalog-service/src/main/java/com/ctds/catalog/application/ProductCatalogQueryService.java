@@ -5,10 +5,15 @@ import com.ctds.catalog.domain.CatalogErrorCodes;
 import com.ctds.catalog.domain.CatalogProductRow;
 import com.ctds.catalog.domain.CategoryPort;
 import com.ctds.catalog.domain.DataProductRepository;
+import com.ctds.catalog.domain.InteractionLogRow;
 import com.ctds.catalog.domain.ProductActionLogRepository;
+import com.ctds.catalog.domain.ProductActionLogRow;
 import com.ctds.catalog.domain.ProductChangeLogRow;
 import com.ctds.catalog.domain.ProductFavoriteRepository;
+import com.ctds.catalog.domain.ProductInteractionLogRepository;
+import com.ctds.catalog.domain.ProviderProductRow;
 import com.ctds.catalog.domain.ProductSubscriptionRepository;
+import com.ctds.common.auth.AccessControl;
 import com.ctds.common.pagination.PageQuery;
 import com.ctds.common.pagination.PageResult;
 import java.util.List;
@@ -26,24 +31,33 @@ public class ProductCatalogQueryService {
     /** keyword 长度上限（hifi §1：超长 1007C0013；不与 DatasetNameNormalizer 混用——模糊匹配非精确判重）。 */
     private static final int KEYWORD_MAX_LENGTH = 64;
 
+    /** 治理例外权限点（WBS-3.3.6 R15：admin 读留痕不另写留痕——hifi §1.2 读面留痕口径）。 */
+    private static final String PERMISSION_GOVERNANCE = "catalog.governance";
+
     private final DataProductRepository dataProductRepository;
     private final ProductFavoriteRepository favoriteRepository;
     private final ProductSubscriptionRepository subscriptionRepository;
     private final ProductActionLogRepository actionLogRepository;
+    private final ProductInteractionLogRepository interactionLogRepository;
     private final CategoryPort categoryPort;
     private final CatalogAccessGuard guard;
+    private final AccessControl accessControl;
 
     public ProductCatalogQueryService(final DataProductRepository dataProductRepository,
             final ProductFavoriteRepository favoriteRepository,
             final ProductSubscriptionRepository subscriptionRepository,
-            final ProductActionLogRepository actionLogRepository, final CategoryPort categoryPort,
-            final CatalogAccessGuard guard) {
+            final ProductActionLogRepository actionLogRepository,
+            final ProductInteractionLogRepository interactionLogRepository,
+            final CategoryPort categoryPort,
+            final CatalogAccessGuard guard, final AccessControl accessControl) {
         this.dataProductRepository = dataProductRepository;
         this.favoriteRepository = favoriteRepository;
         this.subscriptionRepository = subscriptionRepository;
         this.actionLogRepository = actionLogRepository;
+        this.interactionLogRepository = interactionLogRepository;
         this.categoryPort = categoryPort;
         this.guard = guard;
+        this.accessControl = accessControl;
     }
 
     /**
@@ -96,6 +110,33 @@ public class ProductCatalogQueryService {
                     CatalogErrorCodes.PRODUCT_NOT_FOUND_OR_NOT_LISTED_MESSAGE);
         }
         return actionLogRepository.pageByProduct(productId, page);
+    }
+
+    /**
+     * R15 产品操作留痕分页（WBS-3.3.6 hifi §1.2，<b>全值域</b>）：读面 = 提供方本人 或 治理例外
+     * （{@code catalog.governance}，admin 读不另写留痕）；非本人且非治理档与不存在 → 1007C0012
+     * 管理面文案同形拒绝（404；沿产品面读面既有口径，不写留痕）。
+     */
+    public PageResult<ProductActionLogRow> actionLogs(final long productId, final PageQuery page) {
+        final String subject = guard.requireSubject();
+        final ProviderProductRow product = dataProductRepository.findById(productId)
+                .orElseThrow(ProductCatalogQueryService::manageNotFound);
+        if (!product.providerSubjectNo().equals(subject)
+                && !accessControl.hasPermission(PERMISSION_GOVERNANCE)) {
+            throw manageNotFound();
+        }
+        return actionLogRepository.pageAllByProduct(productId, page);
+    }
+
+    /** R16 本人互动留痕分页（WBS-3.3.6 hifi §1.2；恒仅本人、无跨主体读法；空列表正常空页）。 */
+    public PageResult<InteractionLogRow> myInteractionLogs(final PageQuery page) {
+        return interactionLogRepository.pageBySubject(guard.requireSubject(), page);
+    }
+
+    /** 产品不存在/无权操作（统一 1007C0012 管理面文案，读面同形）。 */
+    private static CatalogBizException manageNotFound() {
+        return new CatalogBizException(CatalogErrorCodes.PRODUCT_RECORD_NOT_FOUND,
+                CatalogErrorCodes.PRODUCT_MANAGE_NOT_FOUND_MESSAGE);
     }
 
     /** R9 我的收藏分页（恒仅本人条目；无 ADMITTED 门槛——条目产生于 ADMITTED 期，hifi §1）。 */

@@ -155,6 +155,7 @@ beforeEach(() => {
 })
 
 describe('成员表格（T14）', () => {
+  // 显式放宽超时：成员表格区块全量挂载在全量并行负载下可越 5s 默认门槛，非被测行为慢
   it('渲染角色 / 状态 / 加入时间，并按角色给出对应动作', async () => {
     mockedMembers.mockResolvedValue(page([
       member({ id: 31, subjectNo: OWNER_SUBJECT, role: 'OWNER' }),
@@ -173,10 +174,11 @@ describe('成员表格（T14）', () => {
     expect(wrapper.findAll('.member-remove').length).toBe(2)
     expect(wrapper.findAll('.role-revoke').length).toBe(1)
     expect(wrapper.findAll('.role-grant').length).toBe(1)
-  })
+  }, 15000)
 })
 
 describe('状态门槛提示（R1 / §8.6、§6.3 C）', () => {
+  // 显式放宽超时：三档状态对照流程（逐档重挂载）在全量并行负载下可越 5s 默认门槛，非被测行为慢
   it('空间未启用 / 已冻结 / 已解散：邀请按钮禁用并给出状态门槛提示（T15 状态维度）', async () => {
     const blocked = [
       ['CREATED', SPACE_STATUS_LABELS.CREATED],
@@ -197,7 +199,7 @@ describe('状态门槛提示（R1 / §8.6、§6.3 C）', () => {
       expect(mockedInvite).not.toHaveBeenCalled()
       wrapper.unmount()
     }
-  })
+  }, 15000)
 
   it('审批制空间未启用：提交加入申请按钮禁用并给出状态门槛提示（T16 状态维度）', async () => {
     mockedGetSpace.mockResolvedValue(detail({ accessMode: 'APPROVAL', status: 'CREATED' }))
