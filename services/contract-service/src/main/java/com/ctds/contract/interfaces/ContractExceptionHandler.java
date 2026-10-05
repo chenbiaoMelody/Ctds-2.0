@@ -24,9 +24,13 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 public class ContractExceptionHandler {
 
     /** 允许精确映射的 1008 段码值（ContractErrorCodes 定稿集；新码须同步登记——一致性由
-     * interfaces 包测试锚定，码表↔处理器集合不得漂移，沿 catalog 先例）。 */
+     * interfaces 包测试锚定，码表↔处理器集合不得漂移，沿 catalog 先例）。
+     * WBS-3.4.3 续延：C0010~C0019（协商与签署域）+ S0002/S0003（did/目录不可达）。 */
     static final Set<String> MAPPED_CODES = Set.of("1008C0001", "1008C0002", "1008C0003", "1008C0004",
-            "1008C0005", "1008C0006", "1008C0007", "1008C0008", "1008C0009", "1008S0001");
+            "1008C0005", "1008C0006", "1008C0007", "1008C0008", "1008C0009",
+            "1008C0010", "1008C0011", "1008C0012", "1008C0013", "1008C0014", "1008C0015",
+            "1008C0016", "1008C0017", "1008C0018", "1008C0019",
+            "1008S0001", "1008S0002", "1008S0003");
 
     @ExceptionHandler(ContractBizException.class)
     public ResponseEntity<ApiResult<Void>> onContractBizException(final ContractBizException ex) {
@@ -54,11 +58,13 @@ public class ContractExceptionHandler {
 
     private static HttpStatus statusOf(final String code) {
         return switch (code) {
-            case "1008C0002" -> HttpStatus.FORBIDDEN;
-            case "1008C0001", "1008C0003", "1008C0006" -> HttpStatus.NOT_FOUND;
-            case "1008C0005", "1008C0007", "1008C0009" -> HttpStatus.CONFLICT;
-            case "1008C0004", "1008C0008" -> HttpStatus.BAD_REQUEST;
-            default -> HttpStatus.SERVICE_UNAVAILABLE;   // 1008S0001
+            case "1008C0002", "1008C0011" -> HttpStatus.FORBIDDEN;
+            case "1008C0001", "1008C0003", "1008C0006", "1008C0010", "1008C0012" -> HttpStatus.NOT_FOUND;
+            case "1008C0005", "1008C0007", "1008C0009", "1008C0013", "1008C0017",
+                 "1008C0019" -> HttpStatus.CONFLICT;
+            case "1008C0004", "1008C0008", "1008C0014", "1008C0015", "1008C0016",
+                 "1008C0018" -> HttpStatus.BAD_REQUEST;
+            default -> HttpStatus.SERVICE_UNAVAILABLE;   // 1008S0001 / 1008S0002 / 1008S0003
         };
     }
 }

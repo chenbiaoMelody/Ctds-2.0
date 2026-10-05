@@ -161,3 +161,13 @@ C-1.2 分布式数字身份（DID）的第一个实施包（WBS-3.1.8）新建�
 - **依赖**：`services/did` 新增平台内部模块 `com.ctds:common-pagination`（ADR-005 §3.2 分页契约）；无新第三方坐标，前端零新增依赖。
 - **前端页面级角色头口径**：DID 管理面请求在 `frontend/src/api/did.ts` 内附 `X-Ctds-Roles: applicant,reviewer,admin`，**不动全局 `demoRolesHeader()`**（避免在 example-service 意外激活 `greeting.delete`，最小权限面）。
 - **诚实边界补充（沿 §2.7/§2.9 口径）**：演示签名入口开启期**签名能力可外借**（回环边界内无服务间鉴权）——生产禁用 + 演示机须为可信机器；解除条件同 §2.7（网关 HeaderStripFilter + 真实令牌 + 服务间鉴权，3.5.2/3.9.1 兑现项）。
+
+## 10. 变更补记（WBS-3.4.3 演示签名入口服务间消费与最小权限收敛，2026-10-05）
+
+> 编码契约 = `docs/designs/WBS-3.4.3-hifi.md`（Q5-A 采建议口径，编排师"都按建议"一次确认）。§6/§9 已登记的边界**全部不变**：配置门槛默认关闭（`CTDS_DID_DEMO_SIGNATURE_ENABLED`，生产禁用）、原文 ≤1024 字符、经 KMS 内部签名面私钥不出 KMS、原文与签名不入库不落日志、"签名能力可外借"诚实边界沿既有登记。
+
+**服务间消费登记（contract = 演示签名入口第 1 个服务间消费方）**：`contract-service` 电子签署（规格 C-4.2 行为 3）经 `DidClient`（JDK HttpClient 零新增依赖，沿 SubjectAdmissionClient 形态）调用本入口代签条款快照 SM3 哈希（签署内容 = 锁定版本内容哈希，≤1024 字符约束内）；解析 `GET /api/v1/did/{did}` 与验证 `POST /api/v1/did/{did}/verifications` 两公开端点同批接入（签署前归属/状态校验 + 验签三查——归属判定在 contract 侧以 document.controller 比对签署方主体）。
+
+**权限点收敛（最小权限）**：演示签名入口注解由 `did.admin` 收敛为**服务间专用权限点** `did.demo.signature`——admin 保持直调（双向持有）、`contract-internal` 仅持本签名专用点（不外借 did.admin 全量管理权限，防服务身份越权读取管理面读数端点）；`application.yml` 角色映射追加 2 行（admin 追加持有 + contract-internal 专用）。随卡测试：权限矩阵（contract-internal 过 / admin 过 / 业务角色拒）+ 既有开关默认关闭语义不变（1000C0003）。
+
+**did 侧改动边界**：仅该注解权限点 + yml 2 行；零新增错误码/库表/迁移；消费方不可达或入口关闭在 contract 侧以 `1008S0002` 承载（不冒充签署结论——UNAVAILABLE 语义，did 侧答复原样透传不转换）。

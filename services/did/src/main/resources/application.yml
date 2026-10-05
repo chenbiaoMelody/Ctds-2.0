@@ -32,7 +32,10 @@ ctds:
   # RBAC（WBS 2.4.5 模式 A）：运营管理员（吊销/重签/重试）需 did.admin 权限
   auth:
     permissions:
-      admin: did.admin
+      # 演示签名入口权限点收敛（WBS-3.4.3 Q5-A 最小权限，ADR-017 补记）：admin 保持直调；
+      # contract-internal 仅持签名专用点 did.demo.signature（不外借 did.admin 管理权限）。
+      admin: did.admin,did.demo.signature
+      contract-internal: did.demo.signature
   # DID → KMS 密钥对托管调用（内部回环，ADR-016 §2.7）；未配置则签发停留待签发
   did:
     kms:

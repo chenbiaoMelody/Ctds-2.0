@@ -25,6 +25,10 @@ public final class ContractErrorCodes {
     public static final String BROWSE_ADMISSION_REQUIRED_MESSAGE = "主体未入驻或不存在，无法浏览模板";
     /** 主体未入驻统一文案·维护场景（剧本 C-4.1 S3-2 判定面）。 */
     public static final String MAINTAIN_ADMISSION_REQUIRED_MESSAGE = "主体未入驻或不存在，无法维护模板";
+    /** 主体未入驻统一文案·发起场景（WBS-3.4.3 hifi §5.1 门槛链①）。 */
+    public static final String INITIATE_ADMISSION_REQUIRED_MESSAGE = "主体未入驻或不存在，无法发起合约";
+    /** 主体未入驻统一文案·合约操作场景（Q8-A 资格异常处置：每次业务写动作校验 fail-closed）。 */
+    public static final String DEAL_ADMISSION_REQUIRED_MESSAGE = "主体未入驻或不存在，无法进行该合约操作";
     /** 条款框架不符合模板规范（缺必填槽位/未知槽位键/结构非法/重复槽位，行为 1 规则 6 前置——
      * 条款一致性由模板框架保证；逐槽位明细入服务端日志、响应仅本常量文案（hifi V1.2 §3 补正⑥，
      * 对外不回显用户输入——章程 4.3）。→ 400 */
@@ -49,6 +53,48 @@ public final class ContractErrorCodes {
     /** 主体资格服务不可达/失败（UNAVAILABLE 统一文案，不冒充资格拒绝——沿 catalog 1007S0001 先例）。→ 503 */
     public static final ErrorCode SUBJECT_SERVICE_UNAVAILABLE = ErrorCode.of("1008S0001");
     public static final String SUBJECT_SERVICE_UNAVAILABLE_MESSAGE = "主体资格服务暂不可用，请稍后重试";
+
+    // ==== 以下为协商与签署段续延（WBS-3.4.3 hifi §3；1008C0001~C0009/S0001 原语义零变更）====
+
+    /** 产品不存在或未在架（不存在/未上架/已下架/已注销同码同文——防枚举，沿目录域 1007C0011 口径）。→ 404 */
+    public static final ErrorCode PRODUCT_NOT_AVAILABLE_FOR_DEAL = ErrorCode.of("1008C0010");
+    public static final String PRODUCT_NOT_AVAILABLE_FOR_DEAL_MESSAGE = "产品不存在或未在架，无法发起合约";
+    /** 无权操作该合约（治理越权等；+ 拒绝留痕 DENIED_ACCESS，reason 尾号 C0011）。→ 403 */
+    public static final ErrorCode CONTRACT_GOVERNANCE_FORBIDDEN = ErrorCode.of("1008C0011");
+    public static final String CONTRACT_GOVERNANCE_FORBIDDEN_MESSAGE = "无权操作该合约";
+    /** 合约不存在或不可见（不存在 / 非参与方读写同码同文逐字——防枚举；+ 越权留痕）。→ 404 */
+    public static final ErrorCode CONTRACT_NOT_VISIBLE = ErrorCode.of("1008C0012");
+    public static final String CONTRACT_NOT_VISIBLE_MESSAGE = "合约不存在或不可见";
+    /** 合约当前状态不允许该操作（状态门槛：重复确认/重复签署/终态/生效后单方动作等；+ 留痕）。→ 409 */
+    public static final ErrorCode CONTRACT_STATE_FORBIDDEN = ErrorCode.of("1008C0013");
+    public static final String CONTRACT_STATE_FORBIDDEN_MESSAGE = "合约当前状态不允许该操作";
+    /** 条款值与模板框架不符（缺必填槽位/未知槽位键/非字符串/超长——明细入服务端日志，响应仅常量文案）。→ 400 */
+    public static final ErrorCode CLAUSE_VALUES_INVALID = ErrorCode.of("1008C0014");
+    public static final String CLAUSE_VALUES_INVALID_MESSAGE = "条款值与模板框架不符";
+    /** 策略条款不符合使用控制约定（至少一项要素或显式"无使用限制"；基础取值非法——Q7-A）。→ 400 */
+    public static final ErrorCode POLICY_CLAUSE_INVALID = ErrorCode.of("1008C0015");
+    public static final String POLICY_CLAUSE_INVALID_MESSAGE = "策略条款不符合使用控制约定";
+    /** 合约双方须为不同主体（提供方本人发起拒绝——剧本 S1-6）。→ 400 */
+    public static final ErrorCode SELF_DEAL_FORBIDDEN = ErrorCode.of("1008C0016");
+    public static final String SELF_DEAL_FORBIDDEN_MESSAGE = "合约双方须为不同主体，不可对自己提供的产品发起合约";
+    /** 所选模板不可用于发起合约（不存在/已停用/版本无效出站统一，明细入日志——承接-1 兑现码）。→ 409 */
+    public static final ErrorCode TEMPLATE_NOT_AVAILABLE_FOR_INITIATION = ErrorCode.of("1008C0017");
+    public static final String TEMPLATE_NOT_AVAILABLE_FOR_INITIATION_MESSAGE = "所选模板不可用于发起合约";
+    /** 签署身份不可用（DID 未登记/已吊销/非签署方归属；同码双语境沿 1008C0003 先例——R9 异常留痕同码）。→ 400 */
+    public static final ErrorCode SIGNATURE_IDENTITY_UNAVAILABLE = ErrorCode.of("1008C0018");
+    public static final String SIGNATURE_IDENTITY_UNAVAILABLE_MESSAGE = "签署身份不可用，无法签署";
+    /** 合约正在被其他操作修改（并发兜底：uk_contract_no/uk_contract_version/uk_contract_party 撞键转译——换驱动回归清单 hifi §10-2）。→ 409 */
+    public static final ErrorCode CONTRACT_CONCURRENT_MODIFICATION = ErrorCode.of("1008C0019");
+    public static final String CONTRACT_CONCURRENT_MODIFICATION_MESSAGE = "合约正在被其他操作修改，请重试";
+    /** DID 服务暂不可用（解析/代签/验签不可达——不冒充签署结论，沿 S0001 不冒充口径）。→ 503 */
+    public static final ErrorCode DID_SERVICE_UNAVAILABLE = ErrorCode.of("1008S0002");
+    public static final String DID_SERVICE_UNAVAILABLE_MESSAGE = "DID 服务暂不可用，请稍后重试";
+    /** 目录服务暂不可用（产品事实不可达——不冒充产品状态）。→ 503 */
+    public static final ErrorCode CATALOG_SERVICE_UNAVAILABLE = ErrorCode.of("1008S0003");
+    public static final String CATALOG_SERVICE_UNAVAILABLE_MESSAGE = "目录服务暂不可用，请稍后重试";
+
+    /** 请求参数不合法（1008C0008 同码同文复用别名——不新增码位，hifi §3；治理理由缺失/超长等）。→ 400 */
+    public static final ErrorCode CONTRACT_PARAM_INVALID = ErrorCode.of("1008C0008");
     /**
      * 错误码尾号（contract_template_action_log.reason_code 口径，hifi §4：DENIED 时落错误码尾号，
      * 如 1008C0002 → C0002；服务端常量，不含用户输入）。

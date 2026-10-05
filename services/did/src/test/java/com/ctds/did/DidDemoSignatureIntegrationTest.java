@@ -159,6 +159,37 @@ class DidDemoSignatureIntegrationTest {
                 Integer.class, did)).isZero();
     }
 
+    @Test
+    void demoSignaturePermissionMatrixCarriesDedicatedServicePoint() throws Exception {
+        // WBS-3.4.3 随卡测试（Q5-A 最小权限收敛，ADR-017 补记）：contract-internal 专用权限点
+        // did.demo.signature 放行（服务间代签——合约签署通道）；admin 仍直调（双向持有）；
+        // 其他业务角色（未持专用点）→ 403。
+        final String subjectNo = "S20260925100204";
+        final String did = "did:ctds:" + subjectNo + ".1";
+        insertIdentity(subjectNo, 1, did, DidStatus.ACTIVE, "04" + "ab".repeat(64), "did-" + subjectNo + "-1");
+        doAnswer(invocation -> Base64.getEncoder().encodeToString(
+                "matrix-signature-stub".getBytes(StandardCharsets.UTF_8)))
+                .when(kmsClient).sign(anyString(), anyString());
+
+        // contract-internal（服务身份）→ 200
+        mockMvc.perform(post(BASE + "/" + did + "/demo-signatures")
+                        .header("X-Ctds-Subject", "contract-service")
+                        .header("X-Ctds-Roles", "contract-internal")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"data\":\"确认文本\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("0"));
+        // admin（直调保持）→ 200
+        mockMvc.perform(postAdmin(BASE + "/" + did + "/demo-signatures")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"data\":\"确认文本\"}"))
+                .andExpect(status().isOk());
+        // 其他角色（未持 did.demo.signature）→ 403
+        mockMvc.perform(post(BASE + "/" + did + "/demo-signatures")
+                        .header("X-Ctds-Subject", "S-provider")
+                        .header("X-Ctds-Roles", "provider")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"data\":\"确认文本\"}"))
+                .andExpect(status().isForbidden());
+    }
+
     private MockHttpServletRequestBuilder postAdmin(final String url) {
         return post(url).header("X-Ctds-Subject", ADMIN).header("X-Ctds-Roles", "admin");
     }

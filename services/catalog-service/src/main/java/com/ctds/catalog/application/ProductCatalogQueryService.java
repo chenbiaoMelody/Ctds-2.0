@@ -148,4 +148,18 @@ public class ProductCatalogQueryService {
     public PageResult<CatalogProductRow> subscriptions(final PageQuery page) {
         return subscriptionRepository.pageBySubject(guard.requireSubject(), page);
     }
+
+    /**
+     * 服务间内部只读（WBS-3.4.3 Q6-A 衔接，ADR-016 §6 第 6 消费方登记）：产品事实最小暴露
+     * 6 字段（id/名称/原始状态值/属主主体编号/定价档/定价数值——原始状态含非在架，供
+     * contract 发起门槛与定价快照判定）。权限点 catalog.internal.read 仅 contract-internal
+     * 持有（yml 1 行授权，业务角色均不持有——防状态枚举）；无资格门槛（服务身份调用）；
+     * 不存在 → 1007C0011 同形（与公开面防枚举口径同源）。
+     */
+    public ProviderProductRow internalProduct(final long productId) {
+        return dataProductRepository.findById(productId)
+                .orElseThrow(() -> new CatalogBizException(
+                        CatalogErrorCodes.PRODUCT_NOT_FOUND_OR_NOT_LISTED,
+                        CatalogErrorCodes.PRODUCT_NOT_FOUND_OR_NOT_LISTED_MESSAGE));
+    }
 }

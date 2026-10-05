@@ -68,6 +68,19 @@ spec:
             # Subject-service base URL for admission checks (WBS-3.4.2 hifi §9).
             - name: CTDS_CONTRACT_SUBJECT_BASEURL
               value: "http://ctds-subject-service:8080"
+            # Catalog/did base URLs for product facts and DID resolve/sign/verify
+            # (WBS-3.4.3 hifi §9; ports per each service yml: catalog 8084, did 8082).
+            # ACTIVATION NOTE (WBS-3.4.3, demo-phase prerequisites registered in the
+            # delivery note): (1) the SM4 key source env for L3 contract text
+            # (CTDS_SM4_KEY_FILE, or CTDS_CRYPTO_KMS_BASEURL for KMS hosting) must be
+            # injected at activation - key material never enters the repo (red line 7);
+            # (2) the did demo-signature entry must be enabled on the did side for the
+            # contract signing channel (CTDS_DID_DEMO_SIGNATURE_ENABLED=true, demo only -
+            # production keeps the default-off boundary per ADR-017).
+            - name: CTDS_CONTRACT_CATALOG_BASEURL
+              value: "http://ctds-catalog-service:8084"
+            - name: CTDS_CONTRACT_DID_BASEURL
+              value: "http://ctds-did-service:8082"
             # DB credentials are injected via secret/env at activation (2.5.x);
             # keys only, no real credentials in the repo (charter red line 7).
             - name: CTDS_DB_URL

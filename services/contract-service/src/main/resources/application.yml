@@ -24,21 +24,38 @@ logging:
       file: logstash
 
 ctds:
-  # RBAC（WBS 2.4.5 模式 A 配置映射；WBS-3.4.2 hifi §2 两权限点）：演示期提供方主体角色持
-  # contract.template.read（浏览读面 + 维护面功能第一道门槛——未认证 401 在注解层挡），
-  # admin 角色另持 contract.template.manage（运营读面 R1~R3 注解挡）；
-  # **模板维护权（规则 1"仅平台运营方"）的判定与拒绝留痕在应用服务单点承载**
+  # RBAC（WBS 2.4.5 模式 A 配置映射；WBS-3.4.2 hifi §2 + WBS-3.4.3 hifi §2.3 权限注）：
+  # provider 持 contract.template.read（模板浏览+维护面第一道门槛）/ contract.read（合约读面）/
+  # contract.deal（合约参与方写面 W5~W11）；admin 另持 contract.template.manage（模板运营读面）
+  # 与 contract.governance（治理面 W12/R10/R11——仅 admin 持，provider 在注解层 403 无留痕）；
+  # **模板维护权与合约可见性/参与方/状态机判定在应用服务单点承载**
   # （hifi V1.1 §2.1：注解层拒绝发生在控制器之前、无法写规格要求的 DENIED 留痕）。
   auth:
     permissions:
-      provider: contract.template.read
-      admin: contract.template.read,contract.template.manage
-  # 合约服务参数（WBS-3.4.2 hifi §9）
+      provider: contract.template.read,contract.read,contract.deal
+      admin: contract.template.read,contract.template.manage,contract.read,contract.deal,contract.governance
+  # 合约服务参数（WBS-3.4.2 hifi §9 + WBS-3.4.3 hifi §9）
   contract:
     # 主体服务衔接（资格判定只读通道，subject yml 已加 contract-internal 1 行授权）：
     # 未配置 = 资格判定不可用（1008S0001，不冒充"未入驻"防枚举）。
     subject:
       base-url: ${CTDS_CONTRACT_SUBJECT_BASEURL:}
+    # 目录服务衔接（产品事实只读通道，Q6-A 内部只读端点；catalog yml 已加 contract-internal
+    # 1 行授权 catalog.internal.read）：未配置 = 产品事实不可用（1008S0003，不冒充产品状态）。
+    catalog:
+      base-url: ${CTDS_CONTRACT_CATALOG_BASEURL:}
+    # DID 服务衔接（解析/代签/验签三能力，Q5-A）：解析与验签公开无鉴权、代签带服务身份头
+    # （did yml 已加 contract-internal 专用权限点 did.demo.signature）；未配置 = 签署能力不可用
+    # （1008S0002，不冒充签署结论）。
+    did:
+      base-url: ${CTDS_CONTRACT_DID_BASEURL:}
+    # 合约文本与签署记录 L3 加密 keyRef（common-crypto Sm4Service；密钥材料不入库——红线 7）
+    deal-key-ref: ${CTDS_CONTRACT_DEAL_KEY_REF:contract-deal-text}
+  # SM4 密钥源（CAT-04 L3 存储保密，ADR-006；沿 subject 先例——本地密钥文件或 KMS 托管二选一）：
+  # 未配置 = 加解密 fail-closed（1001S0001/S0002 组件原语义，服务可启动但加密操作不可用）。
+  crypto:
+    local:
+      key-file: ${CTDS_SM4_KEY_FILE:}
   # 模板新增/修订防重复提交（ADR-007 模式 B）：内存模式 = 零中间件依赖，演示/单测可执行；
   # 多实例生产部署须 mode=redis 并经 redisson-spring-boot-starter 提供 Redis 连接（WBS-2.4.7 hifi B8 边界）
   idempotency:
