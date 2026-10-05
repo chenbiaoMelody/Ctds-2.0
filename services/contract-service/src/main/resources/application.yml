@@ -1,0 +1,47 @@
+spring:
+  application:
+    name: contract-service
+  # 数据库迁移工具链（WBS 2.4.10 / ADR-009），沿 catalog-service 同款模式：**默认 profile 不可启动**——
+  # classpath 上有 spring-boot-starter-jdbc 会激活 DataSourceAutoConfiguration 并要求配置数据源，
+  # 且仓储实现构造器硬依赖 JdbcClient，默认 profile 无该 Bean（DB-24 同族口径，只增不减的安全默认）；
+  # 演示与服务一律 mysql profile（application-mysql.yml）。
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+
+server:
+  port: 8085
+  # 防御性回环（DB-24 同族口径）：默认 profile 亦显式绑定回环作配置级安全默认；
+  # 演示期安全边界 ADR-016 §2.7——服务仅本机可达，不得对外暴露；k8s 部署经清单环境变量放宽。
+  address: 127.0.0.1
+
+logging:
+  file:
+    name: logs/app.log
+  structured:
+    format:
+      console: logstash
+      file: logstash
+
+ctds:
+  # RBAC（WBS 2.4.5 模式 A 配置映射；WBS-3.4.2 hifi §2 两权限点）：演示期提供方主体角色持
+  # contract.template.read（浏览读面 + 维护面功能第一道门槛——未认证 401 在注解层挡），
+  # admin 角色另持 contract.template.manage（运营读面 R1~R3 注解挡）；
+  # **模板维护权（规则 1"仅平台运营方"）的判定与拒绝留痕在应用服务单点承载**
+  # （hifi V1.1 §2.1：注解层拒绝发生在控制器之前、无法写规格要求的 DENIED 留痕）。
+  auth:
+    permissions:
+      provider: contract.template.read
+      admin: contract.template.read,contract.template.manage
+  # 合约服务参数（WBS-3.4.2 hifi §9）
+  contract:
+    # 主体服务衔接（资格判定只读通道，subject yml 已加 contract-internal 1 行授权）：
+    # 未配置 = 资格判定不可用（1008S0001，不冒充"未入驻"防枚举）。
+    subject:
+      base-url: ${CTDS_CONTRACT_SUBJECT_BASEURL:}
+  # 模板新增/修订防重复提交（ADR-007 模式 B）：内存模式 = 零中间件依赖，演示/单测可执行；
+  # 多实例生产部署须 mode=redis 并经 redisson-spring-boot-starter 提供 Redis 连接（WBS-2.4.7 hifi B8 边界）
+  idempotency:
+    mode: memory
+  lock:
+    mode: memory

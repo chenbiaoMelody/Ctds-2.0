@@ -51,6 +51,8 @@ ctds:
       space-internal: subject.internal.read
       # 目录服务间只读衔接（WBS-3.3.2 hifi §1.2，ADR-016 §6 衔接契约补记）：同款 1 行授权
       catalog-internal: subject.internal.read
+      # 合约服务间只读衔接（WBS-3.4.2 hifi §9，ADR-016 §6 衔接契约第 5 消费方）：同款 1 行授权
+      contract-internal: subject.internal.read
   # L4 加密唯一入口（ADR-006）：密钥文件经环境变量注入（*.keys，密钥零入库）；
   # 运行期接 KMS（ADR-015）= 设环境变量 CTDS_CRYPTO_KMS_BASEURL（属性存在即启用并覆盖本地文件实现）
   crypto:
