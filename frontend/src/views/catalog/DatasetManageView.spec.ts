@@ -31,6 +31,7 @@ import {
  *   词表外 1007C0009 + 类目外 1007C0014 + 非成员拒 + 成功刷新；
  * - T12 变更/注销：请求体只含可变白名单字段 + 级别下调 1007C0004 原样且不乐观更新 +
  *   注销二次确认（取消 = 零请求）+ 引用保护 1007C0021 原样 + 已注销行无操作入口；
+ *   WBS-3.3.7 F1（3.3.6 评审④遗留 P3）：改后值确实进请求体且成功后表格回显为改后值；
  * - T13 留痕区：四要素 + from→to + 拒绝行渲染 + 空态 + 翻页。
  */
 vi.mock('../../api/catalog', () => ({
@@ -275,6 +276,24 @@ describe('变更与注销（T12）', () => {
     await wrapper.find('.update-submit').trigger('click')
     await flushPromises()
     expect(mockedUpdate).toHaveBeenCalledWith(9, { intro: '变更后的简介' })
+  })
+
+  // WBS-3.3.7 F1（3.3.6 评审④遗留 P3）：弹窗内改后值确实进请求体，成功后列表回显为改后值
+  it('变更弹窗改后确被提交：请求体含修改后 intro/申报类目；刷新后表格回显为改后值', async () => {
+    mockedUpdate.mockResolvedValue(dataset({ intro: '改后的简介', declareCategory: '交通' }))
+    // 成功后的刷新读到改后行：分类分级申报列回显"交通 / L2"
+    mockedDatasets.mockResolvedValueOnce(page([dataset()]))
+    mockedDatasets.mockResolvedValue(page([dataset({ intro: '改后的简介', declareCategory: '交通' })]))
+    const wrapper = await mountPage()
+    await wrapper.find('.update-btn').trigger('click')
+    await flushPromises()
+    await wrapper.find('.update-intro textarea').setValue('改后的简介')
+    await wrapper.findComponent('.update-category').setValue('交通')
+    await wrapper.find('.update-submit').trigger('click')
+    await flushPromises()
+    expect(mockedUpdate).toHaveBeenCalledWith(9, { intro: '改后的简介', declareCategory: '交通' })
+    expect(mockedDatasets).toHaveBeenCalledTimes(2)
+    expect(wrapper.text(), '刷新后分类分级申报列回显为改后值').toContain('交通')
   })
 
   it('级别下调尝试：以服务端判定为准，1007C0004 原样展示且表格数据不变（不乐观更新）', async () => {

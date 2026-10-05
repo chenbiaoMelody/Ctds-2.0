@@ -39,7 +39,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * keyword 命中名称与简介两字段、分页字段齐备翻页一致、排序 listed_at DESC（同秒按 id 倒序稳定锚）、
  * 详情同形双响应逐字对照（不存在/未上架/已下架/已注销——防枚举）、资格三态（401/403/未入驻统一文案
  * 且库内零留痕零副作用）、响应字段白名单显式锚定（无本体无敏感原文无个人信息）、keyword 超长与
- * 通配符字面化、categoryCode 非法拒绝。
+ * 通配符字面化、categoryCode 非法拒绝。WBS-3.3.7 补锚：R7 详情被拒零留痕（DB-37 落定口径反向锚）、
+ * R6 分页越界（pageNum=0 / pageSize=0/101 → 1000C0001，pageSize=100 → 200）。
  *
  * <p>真实 MySQL 8 容器实跑 Flyway V1+V2+V3；产品数据测试自造（写面归 3.3.5 未开工，
  * 沿任务卡走查偏差登记同口径）；跨服务判定端口 {@code @MockitoBean}；无 Docker 整类跳过。</p>
@@ -264,6 +265,60 @@ class CatalogProductSearchIntegrationTest {
         assertThat(interactionLogCount()).as("资格探针零留痕零副作用").isEqualTo(interactionLogsBefore);
     }
 
+    // ==== DB-37 落定口径反向锚（WBS-3.3.7 T3）：R7 详情被拒零留痕（动作/互动/资源三表不增）====
+
+    @Test
+    void detailRejectionWritesNoTraceOfAnyKind() throws Exception {
+        final long draftId = insertProduct("详情零留痕探针产品", "简介", "DRAFT", "transport", null);
+        final long actionLogsBefore = tableCount("product_action_log");
+        final long interactionLogsBefore = tableCount("product_interaction_log");
+        final long datasetLogsBefore = tableCount("dataset_action_log");
+
+        final MvcResult draft = mockMvc.perform(
+                auth(get(PRODUCTS + "/" + draftId), "reader-s8", PROVIDER)).andReturn();
+        assertThat(draft.getResponse().getStatus()).as("未上架详情同形 404").isEqualTo(404);
+        assertThat(codeOf(draft)).isEqualTo("1007C0011");
+        assertThat(root(draft).get("message").asText()).isEqualTo("产品不存在或未在架");
+        final MvcResult missing = mockMvc.perform(
+                auth(get(PRODUCTS + "/999999"), "reader-s8", PROVIDER)).andReturn();
+        assertThat(missing.getResponse().getStatus()).as("不存在详情同形 404").isEqualTo(404);
+        assertThat(codeOf(missing)).isEqualTo("1007C0011");
+
+        assertThat(tableCount("product_action_log")).as("R7 被拒不写产品动作留痕")
+                .isEqualTo(actionLogsBefore);
+        assertThat(tableCount("product_interaction_log")).as("R7 被拒不写互动留痕")
+                .isEqualTo(interactionLogsBefore);
+        assertThat(tableCount("dataset_action_log")).as("R7 被拒不写资源域留痕")
+                .isEqualTo(datasetLogsBefore);
+    }
+
+    // ==== R6 分页越界锚（WBS-3.3.7 T4；沿 R15/R16 同款公共分页 1000C0001 口径）====
+
+    @Test
+    void searchPaginationBoundsEnforcedWithCommonParamCode() throws Exception {
+        final MvcResult pageSizeOver = mockMvc.perform(auth(get(PRODUCTS), "reader-s9", PROVIDER)
+                .param("pageNum", "1").param("pageSize", "101")).andReturn();
+        assertThat(pageSizeOver.getResponse().getStatus()).as("pageSize=101 → 400").isEqualTo(400);
+        assertThat(codeOf(pageSizeOver)).isEqualTo("1000C0001");
+
+        final MvcResult pageNumZero = mockMvc.perform(auth(get(PRODUCTS), "reader-s9", PROVIDER)
+                .param("pageNum", "0").param("pageSize", "10")).andReturn();
+        assertThat(pageNumZero.getResponse().getStatus()).as("pageNum=0 → 400").isEqualTo(400);
+        assertThat(codeOf(pageNumZero)).isEqualTo("1000C0001");
+
+        final MvcResult pageSizeZero = mockMvc.perform(auth(get(PRODUCTS), "reader-s9", PROVIDER)
+                .param("pageNum", "1").param("pageSize", "0")).andReturn();
+        assertThat(pageSizeZero.getResponse().getStatus()).as("pageSize=0 → 400").isEqualTo(400);
+        assertThat(codeOf(pageSizeZero)).isEqualTo("1000C0001");
+
+        insertProduct("分页上限探针产品", "简介", "LISTED", "transport", LocalDateTime.now());
+        final MvcResult atLimit = mockMvc.perform(auth(get(PRODUCTS), "reader-s9", PROVIDER)
+                .param("pageNum", "1").param("pageSize", "100")).andReturn();
+        assertThat(atLimit.getResponse().getStatus()).as(body(atLimit)).isEqualTo(200);
+        assertThat(payload(atLimit).get("total").asLong())
+                .as("pageSize=100 通过且页数据正常").isEqualTo(1);
+    }
+
     // ==== 助手 ====
 
     private long insertProduct(final String productName, final String intro, final String status,
@@ -279,6 +334,11 @@ class CatalogProductSearchIntegrationTest {
 
     private long interactionLogCount() {
         final Long count = jdbc.queryForObject("SELECT COUNT(*) FROM product_interaction_log", Long.class);
+        return count == null ? 0 : count;
+    }
+
+    private long tableCount(final String table) {
+        final Long count = jdbc.queryForObject("SELECT COUNT(*) FROM " + table, Long.class);
         return count == null ? 0 : count;
     }
 

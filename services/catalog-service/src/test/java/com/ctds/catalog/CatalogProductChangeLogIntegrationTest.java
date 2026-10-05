@@ -33,7 +33,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * 订阅者可查产品变更留痕（product_action_log 测试自造行——写面归 3.3.5）、按 created_at 倒序、
  * 出站字段白名单（action/summary/operatorSubjectNo/createdAt——不含敏感原文）、非订阅者与产品
  * 不存在同形拒绝（1007C0011 同码同文案逐字对照，不暴露订阅关系与产品存在性）、订阅者但无留痕
- * = 200 空页（载体表空天然空页，非错误）。
+ * = 200 空页（载体表空天然空页，非错误）。WBS-3.3.7 补锚：R8 被拒零留痕（DB-37 落定口径反向锚——
+ * 非订阅者/不存在读法不产生任何动作/互动/资源域留痕）。
  *
  * <p>真实 MySQL 8 容器实跑 Flyway V1+V2+V3；资格端口 {@code @MockitoBean}；无 Docker 整类跳过。</p>
  */
@@ -142,6 +143,33 @@ class CatalogProductChangeLogIntegrationTest {
                 .isEqualTo("主体未入驻或不存在，无法使用统一目录服务");
     }
 
+    // ==== DB-37 落定口径反向锚（WBS-3.3.7 T3）：R8 非订阅者/不存在被拒零留痕 ====
+
+    @Test
+    void changeLogRejectionWritesNoTraceOfAnyKind() throws Exception {
+        final long productId = insertListedProduct("变更零留痕探针产品");
+        final long actionLogsBefore = tableCount("product_action_log");
+        final long interactionLogsBefore = tableCount("product_interaction_log");
+        final long datasetLogsBefore = tableCount("dataset_action_log");
+
+        final MvcResult nonSubscriber = mockMvc.perform(auth(get("/api/v1/data-products/" + productId
+                + "/change-logs"), "reader-c5", PROVIDER)).andReturn();
+        assertThat(nonSubscriber.getResponse().getStatus()).as("非订阅者同形 404").isEqualTo(404);
+        assertThat(codeOf(nonSubscriber)).isEqualTo("1007C0011");
+        assertThat(root(nonSubscriber).get("message").asText()).isEqualTo("产品不存在或未在架");
+        final MvcResult missing = mockMvc.perform(auth(get(
+                "/api/v1/data-products/999999/change-logs"), "reader-c5", PROVIDER)).andReturn();
+        assertThat(missing.getResponse().getStatus()).as("产品行不存在同形 404").isEqualTo(404);
+        assertThat(codeOf(missing)).isEqualTo("1007C0011");
+
+        assertThat(tableCount("product_action_log")).as("R8 被拒不写产品动作留痕")
+                .isEqualTo(actionLogsBefore);
+        assertThat(tableCount("product_interaction_log")).as("R8 被拒不写互动留痕")
+                .isEqualTo(interactionLogsBefore);
+        assertThat(tableCount("dataset_action_log")).as("R8 被拒不写资源域留痕")
+                .isEqualTo(datasetLogsBefore);
+    }
+
     // ==== 助手 ====
 
     private long insertListedProduct(final String productName) {
@@ -163,6 +191,11 @@ class CatalogProductChangeLogIntegrationTest {
         jdbc.update("INSERT INTO product_action_log (product_id, action, operator_subject_no, summary, "
                         + "created_at) VALUES (?, ?, ?, ?, ?)",
                 productId, action, operator, summary, Timestamp.valueOf(createdAt));
+    }
+
+    private long tableCount(final String table) {
+        final Long count = jdbc.queryForObject("SELECT COUNT(*) FROM " + table, Long.class);
+        return count == null ? 0 : count;
     }
 
     private static MockHttpServletRequestBuilder auth(final MockHttpServletRequestBuilder builder,

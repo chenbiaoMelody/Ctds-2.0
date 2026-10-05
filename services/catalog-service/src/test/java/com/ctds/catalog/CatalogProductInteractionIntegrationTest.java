@@ -37,6 +37,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * 状态联动（下架/注销后条目保留且 productStatus 读时计算）、新发起拒绝（非在架 W4/W6 → 1007C0011
  * 同形 + DENIED 留痕）、幂等先于状态门槛链序锚（下架前已收藏、下架后重放 = 成功且零新副作用——
  * 若链序回退为状态门槛先行本例必红）、退订成功、未入驻资格门槛（统一文案 + 零副作用）。
+ * WBS-3.3.7 补锚（DB-38 收尾与对称）：写面主体服务不可用 → 503 不冒充资格拒绝（零副作用）、
+ * 已注销产品新发起订阅 → 同形 1007C0011 + DENIED 留痕（收藏侧由治理类 T10 覆盖）。
  *
  * <p>真实 MySQL 8 容器实跑 Flyway V1+V2+V3；产品数据测试自造（写面归 3.3.5）；资格端口
  * {@code @MockitoBean}；无 Docker 整类跳过。</p>
@@ -230,6 +232,26 @@ class CatalogProductInteractionIntegrationTest {
         assertThat(logCount("owner-i8", delistedId, "SUBSCRIBE", "DENIED")).isEqualTo(1);
     }
 
+    // ==== DB-38 对称锚（WBS-3.3.7 T2）：已注销产品新发起订阅（收藏侧由治理类 T10 覆盖）====
+
+    @Test
+    void cancelledProductNewSubscriptionRejectedWithDeniedLog() throws Exception {
+        final long productId = insertListedProduct("注销新订阅探针产品");
+        jdbc.update("UPDATE data_product SET status = 'CANCELLED' WHERE id = ?", productId);
+
+        final MvcResult subscribeDenied = mockMvc.perform(
+                subscription("owner-ic", productId)).andReturn();
+        assertThat(subscribeDenied.getResponse().getStatus())
+                .as("已注销产品新发起订阅 → 同形 404（防枚举）").isEqualTo(404);
+        assertThat(codeOf(subscribeDenied)).isEqualTo("1007C0011");
+        assertThat(root(subscribeDenied).get("message").asText()).isEqualTo("产品不存在或未在架");
+        assertThat(logCount("owner-ic", productId, "SUBSCRIBE", "DENIED"))
+                .as("DENIED 留痕可取证（行为 7 规则 4）").isEqualTo(1);
+        assertThat(firstLog("owner-ic", productId, "SUBSCRIBE").get("denyReason").asText())
+                .as("留痕含拒绝理由").isEqualTo("C0011");
+        assertThat(subscriptionCount("owner-ic", productId)).as("订阅行不增").isZero();
+    }
+
     // ==== 链序锚：幂等重放先于状态门槛（下架前已收藏，下架后重放 = 成功且零新副作用）====
 
     @Test
@@ -277,6 +299,34 @@ class CatalogProductInteractionIntegrationTest {
         final MvcResult cancel = mockMvc.perform(unfavorite("owner-ia", productId)).andReturn();
         assertThat(cancel.getResponse().getStatus())
                 .as("W5 无 ADMITTED 门槛（hifi §1：条目产生于 ADMITTED 期）").isEqualTo(200);
+    }
+
+    // ==== DB-38 收尾锚（WBS-3.3.7 T1）：写面主体服务不可用 → 503 不冒充资格拒绝（零副作用）====
+
+    @Test
+    void writeFaceAdmissionUnavailableReturnsServiceUnavailableWithoutSideEffects() throws Exception {
+        final long productId = insertListedProduct("写面不可用探针产品");
+        final long logsBefore = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM product_interaction_log", Long.class);
+
+        given(admissionPort.check(any())).willReturn(SubjectAdmission.UNAVAILABLE);
+        final MvcResult favoriteUnavailable = mockMvc.perform(
+                favorite("owner-id", productId)).andReturn();
+        assertThat(favoriteUnavailable.getResponse().getStatus())
+                .as("写面资格门不可用 → 503").isEqualTo(503);
+        assertThat(codeOf(favoriteUnavailable)).isEqualTo("1007S0001");
+        assertThat(root(favoriteUnavailable).get("message").asText())
+                .as("不可用与资格拒绝文案不同形（不可用 ≠ 拒绝）")
+                .isEqualTo("主体服务暂不可用，请稍后重试");
+        final MvcResult subscribeUnavailable = mockMvc.perform(
+                subscription("owner-id", productId)).andReturn();
+        assertThat(subscribeUnavailable.getResponse().getStatus()).isEqualTo(503);
+        assertThat(codeOf(subscribeUnavailable)).isEqualTo("1007S0001");
+
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM product_interaction_log", Long.class))
+                .as("资格门不可用零留痕零副作用").isEqualTo(logsBefore);
+        assertThat(favoriteCount("owner-id", productId)).as("零写入").isZero();
+        assertThat(subscriptionCount("owner-id", productId)).isZero();
     }
 
     // ==== 行为 7 规则 1：服务端强制（无 catalog.interact 权限点 → 403）====
