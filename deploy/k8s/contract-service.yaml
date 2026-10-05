@@ -1,0 +1,17 @@
+# C-TDS contract-service Service (WBS-3.4.2, spec: docs/designs/WBS-3.4.2-hifi.md §9;
+# template follows backend-service.yaml per ADR-013, WBS-2.5.2 label conventions).
+apiVersion: v1
+kind: Service
+metadata:
+  name: ctds-contract-service
+  labels:
+    app.kubernetes.io/part-of: ctds
+    app.kubernetes.io/name: ctds-contract-service
+    app.kubernetes.io/component: backend
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: ctds-contract-service
+  ports:
+    - port: 8085
+      targetPort: 8085

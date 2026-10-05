@@ -33,6 +33,7 @@
     <module>services/did</module>
     <module>services/space-service</module>
     <module>services/catalog-service</module>
+    <module>services/contract-service</module>
   </modules>
 
   <properties>

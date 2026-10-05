@@ -12,3 +12,5 @@ resources:
   - space-service.yaml
   - catalog-deployment.yaml
   - catalog-service.yaml
+  - contract-deployment.yaml
+  - contract-service.yaml
