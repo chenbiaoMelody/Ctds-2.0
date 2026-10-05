@@ -35,6 +35,11 @@
       <groupId>com.ctds</groupId>
       <artifactId>common-pagination</artifactId>
     </dependency>
+    <!-- 幂等键框架稳定哈希走国密统一入口 Sm3Service（AGENTS §3 找到即复用；评审②修复项） -->
+    <dependency>
+      <groupId>com.ctds</groupId>
+      <artifactId>common-crypto</artifactId>
+    </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-web</artifactId>

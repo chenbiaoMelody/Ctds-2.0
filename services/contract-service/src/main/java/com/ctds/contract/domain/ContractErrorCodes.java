@@ -26,7 +26,8 @@ public final class ContractErrorCodes {
     /** 主体未入驻统一文案·维护场景（剧本 C-4.1 S3-2 判定面）。 */
     public static final String MAINTAIN_ADMISSION_REQUIRED_MESSAGE = "主体未入驻或不存在，无法维护模板";
     /** 条款框架不符合模板规范（缺必填槽位/未知槽位键/结构非法/重复槽位，行为 1 规则 6 前置——
-     * 条款一致性由模板框架保证；逐槽位违规明细随响应返回，hifi §3 1008C0004）。→ 400 */
+     * 条款一致性由模板框架保证；逐槽位明细入服务端日志、响应仅本常量文案（hifi V1.2 §3 补正⑥，
+     * 对外不回显用户输入——章程 4.3）。→ 400 */
     public static final ErrorCode CLAUSE_FRAMEWORK_INVALID = ErrorCode.of("1008C0004");
     public static final String CLAUSE_FRAMEWORK_INVALID_MESSAGE = "条款框架不符合模板规范";
     /** 同类型下已存在同名模板（归一化判定，uk_type_norm_name 兜底；并发命中转译本码）。→ 409 */
@@ -38,11 +39,11 @@ public final class ContractErrorCodes {
     /** 模板已处于目标状态（同态重复启停，状态机门槛——hifi §6；DENIED_MANAGE 留痕联动）。→ 409 */
     public static final ErrorCode TEMPLATE_STATE_FORBIDDEN = ErrorCode.of("1008C0007");
     public static final String TEMPLATE_STATE_FORBIDDEN_MESSAGE = "模板已处于目标状态";
-    /** 请求参数不合法（通用逐字段：名称缺失/超长等，hifi §3 1008C0008）。→ 400 */
+    /** 请求参数不合法（通用逐字段：名称/类型缺失、非法 type 绑定、超长等，hifi §3 1008C0008）。→ 400 */
     public static final ErrorCode TEMPLATE_PARAM_INVALID = ErrorCode.of("1008C0008");
     public static final String TEMPLATE_PARAM_INVALID_MESSAGE = "请求参数不合法";
     /** 模板正在被其他操作修改（并发修订撞 uk_template_version 唯一索引兜底转译，沿 catalog
-     * T15 并发兜底先例）。→ 409 */
+     * T15 并发兜底先例；新增并发撞 uk_template_no 编号冲突同码兜底——V1.2 补正⑨）。→ 409 */
     public static final ErrorCode TEMPLATE_CONCURRENT_MODIFICATION = ErrorCode.of("1008C0009");
     public static final String TEMPLATE_CONCURRENT_MODIFICATION_MESSAGE = "模板正在被其他操作修改，请重试";
     /** 主体资格服务不可达/失败（UNAVAILABLE 统一文案，不冒充资格拒绝——沿 catalog 1007S0001 先例）。→ 503 */

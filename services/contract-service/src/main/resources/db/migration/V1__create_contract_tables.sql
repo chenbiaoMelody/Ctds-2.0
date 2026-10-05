@@ -54,7 +54,7 @@ CREATE TABLE contract_template_version (
 CREATE TABLE contract_template_action_log (
     id               BIGINT        NOT NULL AUTO_INCREMENT COMMENT '技术主键',
     template_no      VARCHAR(32)   NULL COMMENT '模板编号（动作对象；模板定位前被拒〔如新增场景维护权拒绝〕时为 NULL——hifi V1.1 §4）',
-    version_no       INT           NULL COMMENT '动作涉及版本号（CREATE/REVISE 必有；启停/拒绝记动作时点当前版本）',
+    version_no       INT           NULL COMMENT '动作涉及版本号（CREATE/REVISE 必有；启停记动作时点当前版本；DENIED 同态拒绝记当时版本，模板定位前拒绝为 NULL——hifi V1.2 §4）',
     action           VARCHAR(32)   NOT NULL COMMENT '动作码：CREATE新增/REVISE修订/ENABLE启用/DISABLE停用/DENIED_MANAGE维护被拒（值域封闭枚举）',
     actor_subject_no VARCHAR(24)   NOT NULL COMMENT '操作者主体编号（DENIED 时 = 被拒者——四要素"谁"）',
     reason_code      VARCHAR(16)   NULL COMMENT '拒绝理由码（1008 码位尾号，如 C0002——直接存码位尾号不设第二套枚举，DB-31 口径）',
@@ -75,11 +75,12 @@ CREATE TABLE contract_template_no_seq (
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '模板编号序号表（全局 1 行原子自增；CT+6位序号）';
 
 -- ==== 预置三类模板种子（行为 1 规则 2；条款框架 = lofi §3 确认槽位集合）====
+-- 模板命名沿规格 C-4.1 §6-6 术语唯一裁决："合约模板"（不引入"合同"第二套术语——评审③修复项）。
 
 INSERT INTO contract_template (template_no, template_name, template_type, current_version, status, created_by)
-VALUES ('CT000001', '公共数据授权合同模板', 'PUBLIC_DATA_AUTHORIZATION', 1, 'ENABLED', 'platform-seed'),
-       ('CT000002', 'API调用服务合同模板', 'API_CALL', 1, 'ENABLED', 'platform-seed'),
-       ('CT000003', '隐私计算服务合同模板', 'PRIVACY_COMPUTING', 1, 'ENABLED', 'platform-seed');
+VALUES ('CT000001', '公共数据授权合约模板', 'PUBLIC_DATA_AUTHORIZATION', 1, 'ENABLED', 'platform-seed'),
+       ('CT000002', 'API调用服务合约模板', 'API_CALL', 1, 'ENABLED', 'platform-seed'),
+       ('CT000003', '隐私计算服务合约模板', 'PRIVACY_COMPUTING', 1, 'ENABLED', 'platform-seed');
 
 INSERT INTO contract_template_version (template_id, version_no, clause_framework, published_by) VALUES
 (1, 1, '{"slots":[{"key":"subject_matter","name":"授权标的","required":true,"guide":"授权的数据/服务是什么（对应目录产品，含标识与名称）"},{"key":"scope","name":"授权范围","required":true,"guide":"允许的使用方式（如：内部数据分析/对外服务集成/二次加工边界）"},{"key":"term","name":"授权期限","required":true,"guide":"起止时间或条件"},{"key":"purpose_and_restrictions","name":"使用目的与限制","required":true,"guide":"允许的使用目的清单+明确禁止项（含禁止再分发默认表述）"},{"key":"security_confidentiality","name":"安全与保密义务","required":true,"guide":"数据保护要求、泄露责任"},{"key":"liability","name":"违约责任","required":true,"guide":"违约情形与责任承担方式"},{"key":"dispute_resolution","name":"争议解决","required":true,"guide":"争议处理途径与适用规则"},{"key":"data_format_delivery","name":"数据格式与交付方式","required":true,"guide":"交付格式（如库表/文件/接口拉取）与交付渠道"},{"key":"data_update_obligation","name":"数据更新与维护义务","required":true,"guide":"更新频率、通知义务、中断处理"},{"key":"data_quality_commitment","name":"数据质量承诺","required":false,"guide":"准确性/完整性承诺口径"}]}', 'platform-seed'),

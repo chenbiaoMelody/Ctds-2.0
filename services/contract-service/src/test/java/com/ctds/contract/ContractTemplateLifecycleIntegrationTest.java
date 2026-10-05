@@ -7,12 +7,17 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 
 import com.ctds.contract.application.InitiationCheck;
 import com.ctds.contract.application.TemplateQueryService;
+import com.ctds.contract.domain.ContractTemplateRepository;
 import com.ctds.contract.domain.SubjectAdmission;
 import com.ctds.contract.domain.SubjectAdmissionPort;
 import com.ctds.contract.support.SharedMySqlContainer;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,13 +34,16 @@ import org.springframework.test.web.servlet.MvcResult;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
- * 合约模板库生命周期集成测试（WBS-3.4.2 hifi §7 T1~T10；规格 C-4.1~4.3 行为 1 七规则 + 五验收标准）：
- * T1 新增（幂等/同名 409）；T2 修订版本化（V2 产生、V1 保留、指针前移、from→to 留痕、幂等重放）；
- * T3 维护权矩阵（admin 过 / provider 与未入驻拒 + DENIED_MANAGE 留痕 / 未认证 401 / 直调同拒）；
- * T4 浏览边界防枚举（未入驻/不存在同文案、UNAVAILABLE 不冒充、停用与不存在同形逐字）；
- * T5 浏览列表与详情（仅启用中、字段集锚定）；T6 启停门槛（重复停用拒、恢复、QV1 联动）；
- * T7 版本历史与留痕查询（运营读面；manage 注解挡）；T8 快照不可变反向探针；
- * T9 条款框架校验（缺必填/未知槽位/对照组）；T10 发起侧校验方法（QV1 三条件反证 + QV2 全文）。
+ * 合约模板库生命周期集成测试（WBS-3.4.2 hifi §7 T1~T10 + V1.2 补正⑧⑨补齐腿；规格 C-4.1~4.3 行为 1
+ * 七规则 + 五验收标准）：T1 新增（幂等/同名 409/取号相异递增/并发取号相异）；
+ * T2 修订版本化（V2 产生、V1 保留、指针前移、from→to 留痕、幂等重放）；
+ * T3 维护权矩阵（admin 过 / provider 与未入驻拒 + DENIED_MANAGE 留痕 / 未认证 401 无留痕 /
+ * 普通档 403 无留痕 / 直调同拒）；T4 浏览边界防枚举（未入驻/不存在同文案、UNAVAILABLE 不冒充、
+ * 停用与不存在同形逐字）；T5 浏览列表与详情（仅启用中、字段集锚定）；
+ * T6 启停门槛（重复停用拒、恢复、QV1 联动、双向 from→to 留痕）；
+ * T7 版本历史与留痕查询（运营读面；manage 注解挡且无留痕）；T8 快照不可变反向探针；
+ * T9 条款框架校验（缺必填/未知槽位/结构非法/缺 type/非法 type → 1008C0008/明细不回显/对照组）；
+ * T10 发起侧校验方法（QV1 三条件反证 + QV2 全文）。
  *
  * <p>真实 MySQL 8 容器实跑 Flyway V1（预置三类模板种子随迁移落库）；资格判定端口 @MockitoBean
  * （沿 catalog 先例）；本机 Docker 未运行时整类跳过（门禁不红）。各用例名称带唯一后缀——
@@ -65,6 +73,8 @@ class ContractTemplateLifecycleIntegrationTest {
     private JdbcTemplate jdbcTemplate;
     @Autowired
     private TemplateQueryService queryService;
+    @Autowired
+    private ContractTemplateRepository repository;
     @MockitoBean
     private SubjectAdmissionPort subjectAdmissionPort;
 
@@ -142,6 +152,44 @@ class ContractTemplateLifecycleIntegrationTest {
         assertThat(second.getResponse().getStatus()).isEqualTo(409);
         assertThat(MAPPER.readTree(second.getResponse().getContentAsString()).path("code").asText())
                 .isEqualTo("1008C0005");
+    }
+
+    @Test
+    void t1_createdTemplateNosDistinctAndIncreasing() throws Exception {
+        // 取号正确性锚（hifi V1.2 补正⑨：LAST_INSERT_ID 连接绑定语义——读到 0 会生成重复
+        // CT000000 撞 uk_template_no，第二次 create 即 409，本用例必红）
+        final String first = adminCreate("取号相异一", "API_CALL", apiCallFramework());
+        final String second = adminCreate("取号相异二", "PUBLIC_DATA_AUTHORIZATION",
+                publicAuthFramework());
+        assertThat(second).isNotEqualTo(first);
+        assertThat(Integer.parseInt(second.substring(CT_PREFIX.length())))
+                .isGreaterThan(Integer.parseInt(first.substring(CT_PREFIX.length())));
+    }
+
+    @Test
+    void t1_concurrentSeqAllocationDistinct() throws Exception {
+        // 并发取号探针（hifi §7 取号并发单测承诺，随 V1.2 补正⑨交付）：4 线程各取一号，
+        // 事务未绑定连接时 LAST_INSERT_ID 可能读到 0 或互串 → 本用例必红
+        final ConcurrentLinkedQueue<Integer> seqs = new ConcurrentLinkedQueue<>();
+        final int threads = 4;
+        final var pool = Executors.newFixedThreadPool(threads);
+        final CountDownLatch done = new CountDownLatch(threads);
+        try {
+            for (int i = 0; i < threads; i++) {
+                pool.submit(() -> {
+                    try {
+                        seqs.add(repository.nextTemplateNoSeq());
+                    } finally {
+                        done.countDown();
+                    }
+                });
+            }
+            assertThat(done.await(30, TimeUnit.SECONDS)).as("并发取号须全部完成").isTrue();
+        } finally {
+            pool.shutdownNow();
+        }
+        assertThat(seqs).doesNotHaveDuplicates();
+        assertThat(seqs).allMatch(n -> n > 0);
     }
 
     // ==== T2 修订版本化 ====
@@ -271,11 +319,36 @@ class ContractTemplateLifecycleIntegrationTest {
 
     @Test
     void t3_unauthenticatedRequestRejectedAtAnnotationLayer() throws Exception {
+        // 注解层 401 无 action_log 留痕（hifi V1.2 补正⑧：未认证无主体编号，留痕表结构必然；
+        // 拒绝审计由 common-auth 认证通道承载）——以请求前后留痕零新增作可证伪反向断言
+        final Long maxIdBefore = jdbcTemplate.queryForObject(
+                "SELECT COALESCE(MAX(id), 0) FROM contract_template_action_log", Long.class);
         final MvcResult result = mockMvc.perform(post(BASE)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(createBody(unique("无头模板"), "API_CALL", apiCallFramework())))
                 .andReturn();
         assertThat(result.getResponse().getStatus()).isEqualTo(401);
+        final Long maxIdAfter = jdbcTemplate.queryForObject(
+                "SELECT COALESCE(MAX(id), 0) FROM contract_template_action_log", Long.class);
+        assertThat(maxIdAfter).isEqualTo(maxIdBefore);
+    }
+
+    @Test
+    void t3_plainRoleMaintainDeniedAtAnnotationLayerWithoutActionLog() throws Exception {
+        // 普通档腿（hifi §7 T3 矩阵补齐——规格规则 1 点名"需求方"）：已认证但无
+        // contract.template.read 权限角色 → 注解层 403、不进应用层、无 DENIED 留痕
+        // （hifi V1.2 补正⑧；审计由 common-auth rbac.check DENIED 事件承载）
+        given(subjectAdmissionPort.check("S-plain")).willReturn(SubjectAdmission.ADMITTED);
+        final MvcResult result = mockMvc.perform(post(BASE)
+                        .header("X-Ctds-Subject", "S-plain").header("X-Ctds-Roles", "applicant")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(createBody(unique("普通档模板"), "API_CALL", apiCallFramework())))
+                .andReturn();
+        assertThat(result.getResponse().getStatus()).isEqualTo(403);
+        final Integer denied = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM contract_template_action_log WHERE action = 'DENIED_MANAGE' "
+                        + "AND actor_subject_no = 'S-plain'", Integer.class);
+        assertThat(denied).as("注解层拒绝不落 action_log（V1.2 补正⑧口径）").isZero();
     }
 
     @Test
@@ -421,10 +494,11 @@ class ContractTemplateLifecycleIntegrationTest {
                 .andReturn();
         assertThat(restored.getResponse().getContentAsString()).contains(templateNo);
         assertThat(queryService.validateForInitiation(templateNo, 1).valid()).isTrue();
-        final Integer enableLog = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM contract_template_action_log WHERE template_no = ? "
-                        + "AND action = 'ENABLE'", Integer.class, templateNo);
-        assertThat(enableLog).isEqualTo(1);
+        final var enableLogRow = jdbcTemplate.queryForMap(
+                "SELECT from_value, to_value FROM contract_template_action_log "
+                        + "WHERE template_no = ? AND action = 'ENABLE'", templateNo);
+        assertThat(enableLogRow.get("from_value")).isEqualTo("DISABLED");
+        assertThat(enableLogRow.get("to_value")).isEqualTo("ENABLED");
     }
 
     // ==== T7 版本历史与留痕查询（行为 1 规则 3/7；剧本 S3-3）====
@@ -453,12 +527,17 @@ class ContractTemplateLifecycleIntegrationTest {
 
     @Test
     void t7_manageReadBlockedForProviderWithoutLog() throws Exception {
-        // R1~R3 运营读面 = manage 点（仅 admin 持有）注解挡；读面拒绝无规格留痕义务（hifi Q8-A）
-        given(subjectAdmissionPort.check("S-provider")).willReturn(SubjectAdmission.ADMITTED);
+        // R1~R3 运营读面 = manage 点（仅 admin 持有）注解挡；读面拒绝无规格留痕义务（hifi Q8-A）；
+        // 注解层拒绝不落 action_log（V1.2 补正⑧反向断言）
+        given(subjectAdmissionPort.check("S-reader")).willReturn(SubjectAdmission.ADMITTED);
         final MvcResult result = mockMvc.perform(get(MANAGE)
-                        .header("X-Ctds-Subject", "S-provider").header("X-Ctds-Roles", PROVIDER))
+                        .header("X-Ctds-Subject", "S-reader").header("X-Ctds-Roles", PROVIDER))
                 .andReturn();
         assertThat(result.getResponse().getStatus()).isEqualTo(403);
+        final Integer denied = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM contract_template_action_log WHERE action = 'DENIED_MANAGE' "
+                        + "AND actor_subject_no = 'S-reader'", Integer.class);
+        assertThat(denied).as("注解层拒绝不落 action_log（V1.2 补正⑧口径）").isZero();
     }
 
     @Test
@@ -522,6 +601,8 @@ class ContractTemplateLifecycleIntegrationTest {
         assertThat(missing.getResponse().getStatus()).isEqualTo(400);
         assertThat(MAPPER.readTree(missing.getResponse().getContentAsString()).path("code").asText())
                 .isEqualTo("1008C0004");
+        // 明细仅入服务端日志、响应不含用户输入回显（hifi V1.2 补正⑥——章程 4.3）
+        assertThat(missing.getResponse().getContentAsString()).doesNotContain("data_format_delivery");
         final String unknownKey = publicAuthFramework().replace("]}",
                 ",{\"key\":\"unknown_slot\",\"name\":\"未知\",\"required\":false,\"guide\":\"g\"}]}");
         final MvcResult unknown = mockMvc.perform(post(BASE)
@@ -532,6 +613,38 @@ class ContractTemplateLifecycleIntegrationTest {
         assertThat(unknown.getResponse().getStatus()).isEqualTo(400);
         assertThat(MAPPER.readTree(unknown.getResponse().getContentAsString()).path("code").asText())
                 .isEqualTo("1008C0004");
+        // 结构非法（非对象）HTTP 层直测（hifi §7 T9 三负向补齐）：400 + 1008C0004
+        final MvcResult malformed = mockMvc.perform(post(BASE)
+                        .header("X-Ctds-Subject", "S-admin").header("X-Ctds-Roles", ADMIN)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(createBody(unique("结构非法模板"), "PUBLIC_DATA_AUTHORIZATION", "[]")))
+                .andReturn();
+        assertThat(malformed.getResponse().getStatus()).isEqualTo(400);
+        assertThat(MAPPER.readTree(malformed.getResponse().getContentAsString()).path("code").asText())
+                .isEqualTo("1008C0004");
+    }
+
+    @Test
+    void t9_missingOrInvalidTypeRejectedWithParamInvalid() throws Exception {
+        // 缺 type（绑定后 null）与非法 type（枚举绑定失败）→ 1008C0008（hifi §3"缺 name/type"；
+        // V1.2 补正⑥：绑定层不可读统一由 ContractExceptionHandler 同码承载）
+        final String missingType = "{\"name\":\"" + unique("缺类型模板") + "\",\"clauseFramework\":"
+                + publicAuthFramework() + "}";
+        final MvcResult missing = mockMvc.perform(post(BASE)
+                        .header("X-Ctds-Subject", "S-admin").header("X-Ctds-Roles", ADMIN)
+                        .contentType(MediaType.APPLICATION_JSON).content(missingType))
+                .andReturn();
+        assertThat(missing.getResponse().getStatus()).isEqualTo(400);
+        assertThat(MAPPER.readTree(missing.getResponse().getContentAsString()).path("code").asText())
+                .isEqualTo("1008C0008");
+        final MvcResult invalid = mockMvc.perform(post(BASE)
+                        .header("X-Ctds-Subject", "S-admin").header("X-Ctds-Roles", ADMIN)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(createBody(unique("坏类型模板"), "NOT_A_TYPE", publicAuthFramework())))
+                .andReturn();
+        assertThat(invalid.getResponse().getStatus()).isEqualTo(400);
+        assertThat(MAPPER.readTree(invalid.getResponse().getContentAsString()).path("code").asText())
+                .isEqualTo("1008C0008");
     }
 
     // ==== T10 发起侧校验方法（QV1/QV2，供 3.4.3 同宿主直调）====

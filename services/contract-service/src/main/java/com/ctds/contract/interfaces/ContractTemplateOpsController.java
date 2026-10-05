@@ -25,7 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
  * 注解权限点 = contract.template.read（功能第一道门槛：未认证 401 在注解层挡——
  * **维护权唯一的判定与拒绝留痕在应用服务单点承载**，hifi V1.1 §2.1 补正口径：
  * 注解层拒绝发生在控制器之前、无法写行为 1 规则 1 要求的 DENIED 留痕）。
- * 写面幂等键为服务端派生（新增 = 操作者+类型+归一化名；修订 = 操作者+模板号+框架哈希）。
+ * 写面幂等键为服务端派生（新增 = 操作者+类型+原始名——hifi V1.1 补正②；修订 = 操作者+模板号+框架哈希）。
  */
 @RestController
 @RequestMapping("/api/v1")

@@ -3,11 +3,13 @@ package com.ctds.contract.interfaces;
 import com.ctds.common.api.ApiResult;
 import com.ctds.common.errorcode.BizException;
 import com.ctds.contract.domain.ContractBizException;
+import com.ctds.contract.domain.ContractErrorCodes;
 import java.util.Set;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -35,6 +37,19 @@ public class ContractExceptionHandler {
         }
         return ResponseEntity.status(statusOf(code))
                 .body(new ApiResult<>(code, ex.getMessage(), ApiResult.currentTraceId(), null));
+    }
+
+    /**
+     * 请求体不可读（JSON 语法错误 / 枚举绑定失败如非法 type）→ 1008C0008（hifi §3
+     * "缺 name/type"承载，V1.2 补正⑥）；文案为服务端常量，不回显解析细节（章程 4.3）。
+     */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ApiResult<Void>> onUnreadableRequestBody(
+            final HttpMessageNotReadableException ex) {
+        return ResponseEntity.badRequest()
+                .body(new ApiResult<>(ContractErrorCodes.TEMPLATE_PARAM_INVALID.value(),
+                        ContractErrorCodes.TEMPLATE_PARAM_INVALID_MESSAGE,
+                        ApiResult.currentTraceId(), null));
     }
 
     private static HttpStatus statusOf(final String code) {

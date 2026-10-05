@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 | --- | --- |
-| 版本 | **V1.1（编码契约·实现期补正，2026-10-05）**——V1.0 经编排师"都按建议"一次确认生效；本版为**实现期补正 4 处**（§2.1 维护权判定承载层 / §2.1 幂等键成分 / §4 留痕表 template_no 可空 / §2.1 W2 响应形态），均为实现约束下的口径细化、**零业务判定变更**（Q1~Q8 + D1 确认口径全部不变）；实现与本文逐条一致（章程 2.6.3 / AGENTS §5 自检项 1） |
+| 版本 | **V1.2（编码契约·实现期补正，2026-10-05）**——V1.0 经编排师"都按建议"一次确认生效；V1.1 实现期补正 4 处（§2.1 维护权判定承载层 / §2.1 幂等键成分 / §4 留痕表 template_no 可空 / §2.1 W2 响应形态）；V1.2 随 4 视角评审修复批补正 5 处（⑤ 动作码值域收敛 / ⑥ 1008C0004 明细出口与绑定层兜底 / ⑦ 幂等键哈希改国密 SM3 / ⑧ T3 矩阵注解层拒绝审计口径 / ⑨ 取号连接绑定与骨架勘误），均为实现约束下的口径细化或评审修复项落稿、**零业务判定变更**（Q1~Q8 + D1 确认口径全部不变）；实现与本文逐条一致（章程 2.6.3 / AGENTS §5 自检项 1） |
 | 低保真 | `docs/designs/WBS-3.4.2-lofi.md` V0.9（方向，同批确认） |
 | 规格锚点 | 规格 C-4.1~4.3 V1.0 行为 1（7 规则 5 验收标准）；错误码 1008 段（§7 Q8 预留） |
 | 技术栈 | JDK 17 + Spring Boot 3.5.x + `spring-boot-starter-jdbc` + Flyway + MySQL 8（ADR-001 冻结栈）；零新依赖（client = JDK HttpClient） |
@@ -87,12 +87,12 @@ services/contract-service/
 | `1008C0001` | 404 | `模板不存在或不可用`（统一防枚举文案） | R5：模板不存在 / 已停用（浏览者视角同形逐字） |
 | `1008C0002` | 403 | `无权进行模板维护操作`（+ 拒绝留痕） | W1~W4 / R1~R3 非 admin 档（规则 1 服务端强制） |
 | `1008C0003` | 404 | `主体未入驻或不存在，无法浏览模板`（统一防枚举文案，对齐 C-1.1 出站口径） | R4/R5 资格门槛拒绝（NOT_ADMITTED 与主体不存在同形） |
-| `1008C0004` | 400 | `条款框架不符合模板规范`（逐槽位明细随响应返回） | W1/W2：缺必填槽位 / 未知槽位键 / 结构非法 |
-| `1008C0005` | 409 | `同类型下模板名称已存在` | W1：（type+归一化名称）唯一约束 |
+| `1008C0004` | 400 | `条款框架不符合模板规范`（逐槽位明细入服务端日志、响应仅本常量文案——V1.2 补正⑥，对外不回显用户输入） | W1/W2：缺必填槽位 / 未知槽位键 / 结构非法 |
+| `1008C0005` | 409 | `同类型下模板名称已存在` | W1：（type+归一化名称）唯一约束（uk_type_norm_name 并发兜底） |
 | `1008C0006` | 404 | `模板不存在或不可用`（运营面视角） | R2/W2/W3/W4 运营面模板号不存在（运营面不防枚举，直述） |
 | `1008C0007` | 409 | `模板已处于目标状态` | W3/W4 同态重复启停（+ 留痕） |
-| `1008C0008` | 400 | `请求参数不合法`（逐字段） | 通用参数校验（缺 name/type/超长等） |
-| `1008C0009` | 409 | `模板正在被其他操作修改，请重试` | W2 并发修订撞（template_id, version_no）唯一索引兜底 |
+| `1008C0008` | 400 | `请求参数不合法`（逐字段） | 通用参数校验（缺 name/type/超长等）+ 请求体不可读/非法枚举绑定（ContractExceptionHandler 统一承载——V1.2 补正⑥） |
+| `1008C0009` | 409 | `模板正在被其他操作修改，请重试` | W2 并发修订撞（template_id, version_no）唯一索引兜底；W1 并发撞 uk_template_no 编号冲突同码兜底（V1.2 补正⑨） |
 | `1008S0001` | 503 | `主体资格服务暂不可用，请稍后重试`（UNAVAILABLE 统一文案，不冒充无权限/不存在） | SubjectAdmissionClient 不可达/超时（沿 3.3.2 三态先例） |
 
 > 拒绝留痕理由码复用上表码位常量（沿 catalog "留痕拒绝理由列"口径；DB-31 债务的分叉教训——本卡留痕 reason 列直接存 1008 码位字符串，不另设第二套理由枚举）。
@@ -130,8 +130,8 @@ CREATE TABLE contract_template_version (
 CREATE TABLE contract_template_action_log (
   id BIGINT PRIMARY KEY AUTO_INCREMENT,
   template_no   VARCHAR(32) NOT NULL,
-  version_no    INT         NULL COMMENT '动作涉及版本（CREATE/REVISE 必有；启停记当前版本）',
-  action        VARCHAR(32) NOT NULL COMMENT 'CREATE / REVISE / ENABLE / DISABLE / DENIED_MANAGE / DENIED_READ / DENIED_STATE',
+  version_no    INT         NULL COMMENT '动作涉及版本（CREATE/REVISE 必有；启停记动作时点当前版本；DENIED 同态拒绝记当时版本，模板定位前拒绝为 NULL——V1.2 补正⑨）',
+  action        VARCHAR(32) NOT NULL COMMENT 'CREATE / REVISE / ENABLE / DISABLE / DENIED_MANAGE（拒绝类统一 DENIED_MANAGE，理由差异由 reason_code 承载——V1.2 补正⑤）',
   actor_subject_no VARCHAR(24) NOT NULL,
   reason_code   VARCHAR(16) NULL COMMENT '拒绝类动作存 1008 码位（DB-31 口径：直接存码位，不设第二套枚举）',
   from_value    VARCHAR(64) NULL COMMENT 'REVISE: 旧版本号；启停: 旧状态',
@@ -161,7 +161,7 @@ CREATE TABLE contract_template_no_seq (
 | --- | --- | --- |
 | 新增（W1） | INSERT 主表（取号：序号表原子自增）+ INSERT 版本 V1 + INSERT 留痕 CREATE | 幂等键命中重放返回首次；uk_type_norm_name 兜底 → 1008C0005 |
 | 修订（W2） | SELECT 当前版本 → INSERT 版本 Vn+1 → UPDATE 主表 current_version → INSERT 留痕 REVISE（from Vn-1 to Vn） | 并发撞 uk_template_version → 1008C0009（沿 catalog T15 并发兜底先例）；幂等键命中重放返回首次 |
-| 启停（W3/W4） | UPDATE 主表 status → INSERT 留痕 ENABLE/DISABLE（from→to） | 同态操作前置校验拒绝 → 1008C0007 + DENIED_STATE 留痕 |
+| 启停（W3/W4） | UPDATE 主表 status → INSERT 留痕 ENABLE/DISABLE（from→to） | 同态操作前置校验拒绝 → 1008C0007 + DENIED_MANAGE 留痕（理由码 C0007——V1.2 补正⑤） |
 | 拒绝留痕 | 独立事务写 DENIED_* 行（主事务回滚不影响拒绝留痕，沿 catalog 先例） | — |
 
 - **版本行不可变**：仓储接口无 UPDATE version 方法（编译期保证）+ 修订后旧版本行内容逐字不变测试锚（§7 T8）；
@@ -174,16 +174,16 @@ CREATE TABLE contract_template_no_seq (
 | T0 迁移与种子探针 | 规则 2 | 4 表结构齐；三类模板各 1 条 + V1 版本行 + ENABLED；序号表初始 next_no=4 |
 | T1 新增 | 规则 1/7；W1 | admin 新增成功：CT 编号 + V1 + 留痕四要素；幂等重放返回首次、模板数不变；同类型同名 → 1008C0005 |
 | T2 修订与版本化 | 规则 3；W2 | 修订产生 V2、V1 保留可查（R2 历史含全文）、当前版本指针前移、留痕 from→to 逐字；幂等重放不产生 V3 |
-| T3 维护权矩阵 | 规则 1；剧本 S3-1 | admin 过；provider 档 / 普通档 / 无头 → 1008C0002 + DENIED_MANAGE 留痕；**直调接口变体同拒**（同矩阵复跑） |
+| T3 维护权矩阵 | 规则 1；剧本 S3-1 | admin 过；provider 档（持 read 无 manage）→ 1008C0002 + DENIED_MANAGE 留痕；普通档（无 read 权限角色）→ 注解层 403 无 action_log 行；无头 → 注解层 401 无 action_log 行（两者拒绝审计由 common-auth rbac.check DENIED 事件承载——V1.2 补正⑧）；**直调接口变体同拒**（同矩阵复跑） |
 | T4 浏览边界防枚举 | 规则 5；剧本 S1-3/S3-2 | 未入驻与主体不存在响应**逐字相同**（1008C0003）；client 不可达 → 1008S0001 不冒充；浏览者查停用模板 = 1008C0001 与不存在**逐字相同** |
 | T5 浏览列表与详情 | 规则 5；剧本 S1-1/S1-2 | 已入驻列表仅含启用中；详情返回当前版本条款框架；响应字段集显式锚定（无数据本体） |
 | T6 启停 | 规则 4；剧本 S2-4/S2-6 | 停用后：退出浏览列表（R4 不含）、QV1 返回"已停用"无效态、重复停用 1008C0007+留痕；重新启用恢复全部语义；启停留痕 from→to |
 | T7 版本历史与留痕查询 | 规则 3/7；剧本 S3-3 | R2 历史逐版本全文；R3 留痕四要素 + 无敏感原文（字段集锚定） |
 | T8 快照不可变反向探针 | 规则 3 | 修订 V2 后 V1 版本行内容逐字不变；仓储接口无 UPDATE version 方法（架构锚） |
-| T9 槽位框架校验 | 规则 6 前置 | 缺必填槽位 / 未知槽位键 / 结构非法 → 1008C0004 逐槽位明细；**对照组**：合法框架放行 |
+| T9 槽位框架校验 | 规则 6 前置 | 缺必填槽位 / 未知槽位键 / 结构非法 → 1008C0004（响应无用户输入回显锚——V1.2 补正⑥）；缺 type / 非法 type → 1008C0008；**对照组**：合法框架放行 |
 | T10 发起侧校验方法 | 规则 4/6；QV1/QV2 | 存在+版本有效+启用三条件逐项反证（不存在/版本不存在/已停用三态）；loadFramework 返回指定版本全文 |
 
-> 单元测试另覆盖：`ClauseFramework` 值对象校验、`TemplateNoGenerator` 序号原子自增与并发、枚举序列化；`SubjectAdmissionClient` 三态单测沿 catalog 双 client 单测先例。
+> 单元测试另覆盖：`ClauseFramework` 值对象校验（含 stableHash）、`SubjectAdmissionClient` 三态单测沿 catalog 双 client 单测先例；取号并发锚随 V1.2 补正⑨并入集成测试（`TemplateNoGenerator` 不再独立成类，见骨架勘误）；出站枚举序列化由 T1 的 status 断言间接锚定（V1.2 登记说明）。
 
 ## 8. 数据分级落级表（hifi 定稿 + 分级规范 §6.1 回写同步行）
 
@@ -192,7 +192,7 @@ CREATE TABLE contract_template_no_seq (
 | contract_template / contract_template_version / contract_template_no_seq | **L1** | 条款框架 = 业务配置文案，不含个人信息与业务数据本体 |
 | contract_template_action_log | **L3** | 含操作者主体编号（沿 catalog action_log = CAT-06 L3 先例） |
 
-> 回写分级规范 §6.1 补四行（同步动作非需求变更，沿 3.2.2 Q9 / 3.3.2 Q8 先例）。
+> 回写分级规范 §6.1 补四行（同步动作非需求变更，沿 3.2.2 Q9 / 3.3.2 Q8 先例）——**已于 V1.2 修复批回写完成**（contract_template / contract_template_version / contract_template_no_seq 各一行 L1 + contract_template_action_log 一行 L3）。
 
 ## 9. 配置与部署
 
@@ -220,3 +220,10 @@ CREATE TABLE contract_template_no_seq (
 > ② **§2.1 幂等键成分**：新增幂等键由"归一化名"改"原始名"——约束：幂等切面 SpEL 上下文为只读数据绑定（common-idempotency SpelKeyResolver，禁方法调用/T() 引用）；归一化判重口径单点在 DB 生成列（应用层预查 + uk_type_norm_name 兜底），语义不变；
 > ③ **§4 留痕表 template_no 改可空**：维护权拒绝发生在模板定位前（新增场景无模板号），拒绝留痕行 template_no = NULL（修订/启停场景拒绝仍带模板号）——"一律拒绝并留痕"义务的载体细化；
 > ④ **§2.1 W2 响应形态**：修订响应落为 `RevisionView{templateNo, versionNo, previousVersionNo}`（版本快照链路可读，与 §7 T2 断言一致）。
+
+> **V1.2 实现期补正留痕（2026-10-05 21:xx，4 视角评审修复批；承接 V1.1 补正先例，均零业务判定变更）**：
+> ⑤ **§4/§6 留痕动作码值域收敛**：action 值域由 7 值（含 DENIED_READ / DENIED_STATE）收敛为 **5 值**——拒绝类统一 `DENIED_MANAGE`，越权/未入驻/同态门槛的差异由 reason_code（1008 码位尾号）承载（DB-31 口径：不设第二套理由枚举）；§6 同态拒绝行同步为"DENIED_MANAGE（C0007）留痕"；迁移注释同口径；
+> ⑥ **§3 1008C0004 明细出口 + 1008C0008 绑定层兜底**：逐槽位违规明细**入服务端日志、响应仅服务端常量文案**（章程 4.3 对外不回显用户输入的立场，实现原比设计保守、经评审统一登记）；请求体不可读（非法 type 枚举绑定/JSON 语法错误）统一由 ContractExceptionHandler 出站 1008C0008（原落 1000 段兜底，属契约缺口）；W1 入口补 type 空值校验；T9 断言同步（响应无回显锚 + 缺/坏 type 两腿 + 结构非法 HTTP 腿）；
+> ⑦ **stableHash 摘要改国密 SM3**：修订幂等键哈希由 JDK SHA-256 改为 common-crypto `Sm3Service`（AGENTS §3"横切能力找到即复用"；pom 新增 common-crypto 平台组件依赖——非第三方新增；用途为幂等键内容指纹、非密码学安全承载，但统一走国密入口消除全仓首例业务代码直用 JDK 密码学原语——评审②修复项）；
+> ⑧ **§7 T3 矩阵注解层拒绝审计口径**：T3 行文字与 V1.1① 补正同步——无头 = 注解层 401、普通档（无 read 权限角色，含规格规则 1 点名的"需求方"）= 注解层 403，两者均**无 action_log 行**（注解拦截在控制器之前，且未认证无主体编号、留痕表 actor 列 NOT NULL 结构必然），拒绝审计由 common-auth `rbac.check` DENIED 事件承载；provider 档 = 应用层 1008C0002 + DENIED_MANAGE 留痕不变；补普通档腿用例与注解层"无留痕"反向断言（行为与 V1.1① 一致，本次为文字与测试锚同步）；
+> ⑨ **取号连接绑定 + 骨架勘误 + 拒绝留痕版本号**：(a) 仓储 `nextTemplateNoSeq` 补 `@Transactional`（LAST_INSERT_ID 为连接级，两条语句须事务绑定同一连接——沿 subject nextDailySeq / catalog dataset_no_seq 先例实文；评审①/③/④交叉印证的 S1 修复），补取号相异与并发取号测试锚；(b) create 撞 `uk_template_no`（取号编号冲突）按约束名区分转译 1008C0009（原一律误报 1008C0005）；(c) 同态启停拒绝留痕补 version_no = 动作时点当前版本（定位前拒绝仍 NULL）；(d) §1 骨架勘误：主类 `ContractApplication`、`TemplateNoGenerator` 并入仓储取号、`config/` 落为 `infrastructure.ContractBeanConfig`、仓储与 client 落 infrastructure 根包、迁移追加 `idx_type_status`、W1/W3/W4 响应为 `ManageTemplateView` 超集（含名称/类型/当前版本完整字段）、§6 修订留痕笔误勘正为"from Vn → to Vn+1"。

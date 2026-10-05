@@ -180,8 +180,10 @@ public class JdbcContractTemplateRepository implements ContractTemplateRepositor
     }
 
     @Override
+    @Transactional
     public int nextTemplateNoSeq() {
-        // 全局 1 行原子自增（LAST_INSERT_ID 连接级技巧，沿 subject nextDailySeq 先例）
+        // 全局 1 行原子自增（LAST_INSERT_ID 连接级技巧，沿 subject nextDailySeq 先例）；
+        // 事务绑定保证两条语句共用同一连接（LAST_INSERT_ID 为连接级，脱离事务则跨连接读到 0/残留值）
         jdbc.sql("UPDATE contract_template_no_seq SET next_no = LAST_INSERT_ID(next_no + 1) WHERE id = 1")
                 .update();
         return jdbc.sql("SELECT LAST_INSERT_ID()").query(Integer.class).single();

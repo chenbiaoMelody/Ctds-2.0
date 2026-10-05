@@ -75,6 +75,7 @@ public class ContractTemplateAppService {
     public ContractTemplate create(final CreateTemplateCommand cmd) {
         requireMaintainer(cmd.operatorNo(), null);
         requireName(cmd.name());
+        requireType(cmd.type());
         requireFramework(cmd.type(), cmd.clauseFrameworkJson());
         if (repository.existsByTypeAndNormalizedName(cmd.type(), TemplateNameNormalizer.normalize(cmd.name()))) {
             throw new ContractBizException(ContractErrorCodes.TEMPLATE_NAME_DUPLICATED,
@@ -91,8 +92,14 @@ public class ContractTemplateAppService {
         try {
             repository.create(template, version, logRow);
         } catch (final DuplicateKeyException e) {
-            // uk_type_norm_name 并发兜底（预查与写入窗口）——转译 1008C0005，沿 catalog 先例
-            log.warn("模板新增并发撞唯一索引: type={}, name={}", cmd.type(), cmd.name());
+            // 唯一索引并发兜底按约束名区分（V1.2 补正⑨）：uk_type_norm_name = 同名并发 → 1008C0005
+            // （沿 catalog 先例）；uk_template_no = 取号编号冲突（极小概率）→ 1008C0009 重试语义
+            if (String.valueOf(e.getMessage()).contains("uk_template_no")) {
+                log.warn("模板新增并发撞编号唯一索引(uk_template_no): type={}, name={}", cmd.type(), cmd.name());
+                throw new ContractBizException(ContractErrorCodes.TEMPLATE_CONCURRENT_MODIFICATION,
+                        ContractErrorCodes.TEMPLATE_CONCURRENT_MODIFICATION_MESSAGE);
+            }
+            log.warn("模板新增并发撞同名唯一索引(uk_type_norm_name): type={}, name={}", cmd.type(), cmd.name());
             throw new ContractBizException(ContractErrorCodes.TEMPLATE_NAME_DUPLICATED,
                     ContractErrorCodes.TEMPLATE_NAME_DUPLICATED_MESSAGE);
         }
@@ -144,7 +151,7 @@ public class ContractTemplateAppService {
     private void requireMaintainer(final String operatorNo, final String templateNo) {
         final SubjectAdmission admission = subjectAdmissionPort.check(operatorNo);
         if (admission == SubjectAdmission.NOT_ADMITTED) {
-            insertDenied(operatorNo, templateNo, ContractErrorCodes.ADMISSION_REQUIRED);
+            insertDenied(operatorNo, templateNo, null, ContractErrorCodes.ADMISSION_REQUIRED);
             throw new ContractBizException(ContractErrorCodes.ADMISSION_REQUIRED,
                     ContractErrorCodes.MAINTAIN_ADMISSION_REQUIRED_MESSAGE);
         }
@@ -153,7 +160,7 @@ public class ContractTemplateAppService {
                     ContractErrorCodes.SUBJECT_SERVICE_UNAVAILABLE_MESSAGE);
         }
         if (!AuthContext.roles().contains(ADMIN_ROLE)) {
-            insertDenied(operatorNo, templateNo, ContractErrorCodes.TEMPLATE_FORBIDDEN);
+            insertDenied(operatorNo, templateNo, null, ContractErrorCodes.TEMPLATE_FORBIDDEN);
             throw new ContractBizException(ContractErrorCodes.TEMPLATE_FORBIDDEN,
                     ContractErrorCodes.TEMPLATE_FORBIDDEN_MESSAGE);
         }
@@ -162,6 +169,14 @@ public class ContractTemplateAppService {
     /** 名称要素校验（1008C0008 逐字段：缺失/超长——hifi §3）。 */
     private void requireName(final String name) {
         if (name == null || name.isBlank() || name.length() > 128) {
+            throw new ContractBizException(ContractErrorCodes.TEMPLATE_PARAM_INVALID,
+                    ContractErrorCodes.TEMPLATE_PARAM_INVALID_MESSAGE);
+        }
+    }
+
+    /** 类型要素校验（1008C0008"缺 name/type"——hifi §3；非法枚举串在绑定层由出站处理器同码承载）。 */
+    private void requireType(final TemplateType type) {
+        if (type == null) {
             throw new ContractBizException(ContractErrorCodes.TEMPLATE_PARAM_INVALID,
                     ContractErrorCodes.TEMPLATE_PARAM_INVALID_MESSAGE);
         }
@@ -192,13 +207,14 @@ public class ContractTemplateAppService {
                         ContractErrorCodes.TEMPLATE_NOT_FOUND_MESSAGE));
     }
 
-    /** 启停（两写 + 同态拒绝留痕 DENIED_MANAGE/C0007；状态机门槛 hifi §6）。 */
+    /** 启停（两写 + 同态拒绝留痕 DENIED_MANAGE/C0007 记当时版本；状态机门槛 hifi §6）。 */
     private ContractTemplate changeStatus(final String operatorNo, final String templateNo,
             final TemplateStatus target) {
         requireMaintainer(operatorNo, templateNo);
         final ContractTemplate template = requireTemplate(templateNo);
         if (template.status() == target) {
-            insertDenied(operatorNo, templateNo, ContractErrorCodes.TEMPLATE_STATE_FORBIDDEN);
+            insertDenied(operatorNo, templateNo, template.currentVersion(),
+                    ContractErrorCodes.TEMPLATE_STATE_FORBIDDEN);
             throw new ContractBizException(ContractErrorCodes.TEMPLATE_STATE_FORBIDDEN,
                     ContractErrorCodes.TEMPLATE_STATE_FORBIDDEN_MESSAGE);
         }
@@ -211,11 +227,14 @@ public class ContractTemplateAppService {
         return repository.findByNo(templateNo).orElseThrow();
     }
 
-    /** 维护拒绝留痕（DENIED_MANAGE + 理由码尾号；模板定位前拒绝 = templateNo NULL——hifi V1.1 §4）。 */
+    /**
+     * 维护拒绝留痕（DENIED_MANAGE + 理由码尾号）：模板定位前拒绝 = templateNo/versionNo NULL
+     * （hifi V1.1 §4）；同态启停拒绝发生在定位后，versionNo 记动作时点当前版本（V1.2 补正⑨）。
+     */
     private void insertDenied(final String operatorNo, final String templateNo,
-            final ErrorCode reason) {
+            final Integer versionNo, final ErrorCode reason) {
         repository.insertLog(new TemplateActionLog(null,
-                templateNo, null, TemplateAction.DENIED_MANAGE, operatorNo,
+                templateNo, versionNo, TemplateAction.DENIED_MANAGE, operatorNo,
                 ContractErrorCodes.tailOf(reason), null, null, LocalDateTime.now(clock)));
     }
 }

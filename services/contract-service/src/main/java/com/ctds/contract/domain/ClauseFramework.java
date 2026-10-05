@@ -1,14 +1,13 @@
 package com.ctds.contract.domain;
 
+import com.ctds.common.crypto.Sm3Service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HexFormat;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -20,12 +19,16 @@ import java.util.Set;
  *
  * <p>框架 JSON 结构：{@code {"slots":[{"key","name","required","guide"}]}}——槽位 = 条款框架的
  * 填写骨架（发起合约时按槽位填写具体约定值），槽位本身不含任何真实数据；条款一致性由模板
- * 框架保证（行为 1 规则 6）。校验返回逐槽位违规明细（1008C0004 随响应返回）。</p>
+ * 框架保证（行为 1 规则 6）。校验返回逐槽位违规明细（1008C0004；明细入服务端日志、响应仅
+ * 服务端常量文案——V1.2 补正⑥）。</p>
  */
 public final class ClauseFramework {
 
     /** 共享 ObjectMapper（只读序列化/解析，无配置注入需求；沿 catalog SemanticTags 静态先例）。 */
     private static final ObjectMapper MAPPER = new ObjectMapper();
+
+    /** 国密 SM3 摘要统一入口（AGENTS §3 横切能力找到即复用；幂等键指纹，V1.2 补正⑦）。 */
+    private static final Sm3Service SM3 = new Sm3Service();
 
     /** 槽位键上限。 */
     public static final int MAX_KEY_LENGTH = 64;
@@ -132,9 +135,10 @@ public final class ClauseFramework {
     }
 
     /**
-     * 稳定哈希（修订幂等键成分，hifi §2.1 W2）：对 slots 按 key 排序后规范化再取 SHA-256
-     * （同内容不同键序/空白 → 同哈希，重放语义正确）；非法 JSON 返回固定值"invalid"
-     * （后续校验阶段必拒，不影响安全）。失败不抛异常（幂等键计算不得中断业务链）。
+     * 稳定哈希（修订幂等键成分，hifi §2.1 W2）：对 slots 按 key 排序后规范化再取 SM3 摘要
+     * （国密统一入口 Sm3Service——AGENTS §3 找到即复用，V1.2 补正⑦；同内容不同键序/空白 →
+     * 同哈希，重放语义正确）；非法 JSON 返回固定值"invalid"（后续校验阶段必拒，不影响安全）。
+     * 失败不抛异常（幂等键计算不得中断业务链）。
      */
     public static String stableHash(final String json) {
         try {
@@ -148,9 +152,8 @@ public final class ClauseFramework {
             final ObjectNode canonical = MAPPER.createObjectNode();
             final ArrayNode array = canonical.putArray("slots");
             sorted.forEach(array::add);
-            final MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            return HexFormat.of().formatHex(digest.digest(MAPPER.writeValueAsBytes(canonical)));
-        } catch (final NoSuchAlgorithmException | java.io.IOException | IllegalArgumentException e) {
+            return SM3.digestHex(MAPPER.writeValueAsBytes(canonical));
+        } catch (final IOException | IllegalArgumentException e) {
             return "invalid";
         }
     }
