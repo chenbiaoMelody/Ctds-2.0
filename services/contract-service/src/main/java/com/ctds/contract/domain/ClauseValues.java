@@ -1,5 +1,6 @@
 package com.ctds.contract.domain;
 
+import com.ctds.contract.domain.policy.UsagePolicyDslParser;
 import com.fasterxml.jackson.core.JacksonException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -16,7 +17,8 @@ import java.util.TreeMap;
  * 条款值值对象（WBS-3.4.3 hifi §6.3）：槽位值（按锁定模板版本槽位框架填写）+ 策略条款
  * （{@link UsageControlPolicy}，独立结构化字段承载）。槽位校验（1008C0014）：必填槽位齐备、
  * 无未知槽位键、值为字符串、单值 ≤2000 字符、总量 ≤32768 字节；策略校验（1008C0015）：
- * 提交时基础取值合法、确认锁定时至少一项启用或显式声明。槽位键排序承载存储与规范化形态
+ * 提交载荷委托校验单点 {@link com.ctds.contract.domain.policy.UsagePolicyDslParser}（R1~R7 全查），
+ * 密文回读走其容忍读（缺字段 = 禁用）。槽位键排序承载存储与规范化形态
  * （规范化不依赖用户键序，hifi §6.2）。
  */
 public record ClauseValues(Map<String, String> slots, UsageControlPolicy strategy) {
@@ -56,8 +58,8 @@ public record ClauseValues(Map<String, String> slots, UsageControlPolicy strateg
             slotsNode.fieldNames().forEachRemaining(name -> slots.put(name,
                     slotsNode.get(name).asText()));
         }
-        return new ClauseValues(slots,
-                UsageControlPolicy.fromJson(root == null ? null : root.get("strategy")));
+        return new ClauseValues(slots, UsagePolicyDslParser
+                .parseTolerant(root == null ? null : root.get("strategy")));
     }
 
     /**
@@ -94,12 +96,11 @@ public record ClauseValues(Map<String, String> slots, UsageControlPolicy strateg
             }
         }
         final JsonNode strategyNode = root.get("strategy");
-        final List<String> shapeViolations = UsageControlPolicy.shapeViolations(strategyNode);
-        strategyViolations.addAll(shapeViolations);
-        final UsageControlPolicy strategy = strategyViolations.isEmpty()
-                ? UsageControlPolicy.fromJson(strategyNode)
-                : UsageControlPolicy.empty();
-        final ClauseValues values = new ClauseValues(slots, strategy);
+        // 策略校验单点（R1~R7 全查：结构 / 取值 / 版本门槛 / 互斥 / 文本规范化 / 期限时点）
+        final UsagePolicyDslParser.ParseResult strategyResult =
+                UsagePolicyDslParser.parse(strategyNode);
+        strategyViolations.addAll(strategyResult.violations());
+        final ClauseValues values = new ClauseValues(slots, strategyResult.policy());
         if (storageByteSize(values) > MAX_TOTAL_BYTES) {
             slotViolations.add("条款值总量超限");
         }

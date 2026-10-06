@@ -48,11 +48,12 @@
 
 **行为 4 使用控制策略条款（C-4.3）——本卡承载面（规则 2/3/6；规则 1/4/5 已由 3.4.3 承载闭环，本卡零触碰）**
 
-| 规则 | 承载 | 关键测试（草案） |
+| 规则 | 承载 | 关键测试（实测锚——编码段回填） |
 | --- | --- | --- |
-| 规则 2 五要素 + 至少一项或显式声明 | PolicyElementCatalog 五要素注册（键集与规格五要素一一对应）+ 解析器互斥校验（Q4-②）+ 确认门槛迁入单点 | 目录键集断言（五要素一一对应 + 键命名规范）；互斥矛盾拒绝（新锚）；空策略且无声明确认拒绝（**既有 S1-4 锚回归**） |
-| 规则 3 模型对齐复用（形态对齐落点） | 同构模式契约（ADR-019）：单点权威注册表 + 键命名规范一致（"域.名词小写点分"）+ 封闭约束；目录键 ↔ 文档字段名映射表 | 键命名规范断言（目录键全匹配规范）；ADR-019 评审锚（评审①视角对照空间 PolicyCatalog 同构性） |
-| 规则 6 要素校验（提交时拒绝） | 解析器完整校验单点：结构 + 取值 + 版本门槛 + 互斥 + 文本规范化 + 期限时点（Q4 确认面） | 非法矩阵（次数为负 / 起止倒置 / 文本空白 / 未知版本 / 互斥矛盾 / 起始早于提交日）；**既有最小校验锚回归全绿**（S1-3 锚：次数为负拒绝） |
+| 规则 2 五要素 + 至少一项或显式声明 | PolicyElementCatalog 五要素注册（键集与规格五要素一一对应）+ 解析器互斥校验（Q4-②）+ 确认门槛迁入单点 | `PolicyElementCatalogTest.fiveElementKeysMatchSpecInDeclaredOrder`（键集一一对应 + 声明序）；`r7MutexContradictionRejected`（互斥矛盾拒绝）；`satisfiesConfirmGateBothArms`（R8 两臂）；空策略且无声明确认拒绝（**既有 S1-4 锚回归**：`t8_confirmWithoutPolicyOrDeclarationRejected`）；集成锚 `t9_dslEnhancedViolationsRejectedOnInitiate`（互斥拒绝 C0015） |
+| 规则 3 模型对齐复用（形态对齐落点） | 同构模式契约（ADR-019）：单点权威注册表 + 键命名规范一致（"域.名词小写点分"）+ 封闭约束；目录键 ↔ 文档字段名映射表 | `PolicyElementCatalogTest.keyNamingConventionHolds`（`usage\.[a-z0-9_]+` 全匹配）；`fieldsMapToDocumentFieldNames`（两层映射）；ADR-019 评审锚（评审①视角对照空间 PolicyCatalog 同构性） |
+| 规则 6 要素校验（提交时拒绝） | 解析器完整校验单点：结构 + 取值 + 版本门槛 + 互斥 + 文本规范化 + 期限时点（Q4 确认面） | 非法矩阵 `r2ShapeViolationsMigratedFromLegacyChecks` / `r2UnknownElementFieldRejectedByCatalogClosedSet` / `r3UnknownVersionRejected` / `r4QuotaValueMatrix` / `r5TermMatrix` / `r6TextTrimNormalizedIntoModel`；**既有最小校验锚回归全绿**（`t8_invalidPolicyBasicValuesRejectedOnSubmit`：次数为负/期限倒置/文本空）；集成锚 `t9_dslEnhancedViolationsRejectedOnInitiate` + `t9_dslEnhancedViolationsRejectedOnPropose`（写路径两路 C0015） |
+| 兼容映射（hifi §5） | 读路径容忍缺省 = 1.0 / 缺字段 = 禁用；写路径 trim 规范化落库 | `parseTolerantDefaultsMissingFieldsAndVersion` / `parseTolerantFailClosedOnUnknownVersion` / `parseTolerantDoesNotReplaySubmissionTimeChecks` / `parseAndTolerantReadRoundTrip`；集成锚 `t9_versionedPayloadStoredVersionlessAndReadTolerantly`（存量兼容读探针）+ `t9_paddedTextElementsNormalizedBeforePersistence`（trim 落库探针） |
 
 > **C-4.3 剧本判定面承载核对**：S1 幕（策略配置与生效）判定面由 3.4.3 承载、本卡**回归保护**（S1-3/S1-4 既有锚全绿 = 关闭条件⑤）；S2/S3 幕（策略生效正向 / 绕过被拒）= 3.4.5 引擎 + 3.4.6 模拟器 + 3.4.8 测试与集成承接（本卡纪律声明）；附录 B 五要素预置值 = DSL v1.0 首个合规样例素材（演示载荷构造口径随交付说明登记）。规格行为 4 六条验收标准中本卡承载面 3 条（规则 2/3/6 对应第 2/4/1+2 条标准映射）全覆盖，其余 3 条已随 3.4.3 验收闭环。
 
@@ -60,9 +61,10 @@
 
 | 项 | 内容 |
 | --- | --- |
-| 状态 | 🟡 **确认段闭环（2026-10-06 20:0x）**：编排师一次确认到达（"都按建议" = **Q1~Q5 均采建议口径 A + D1 不拆分**）——lofi/hifi 转 **V1.0（编码契约）** + 确认记录签署 + 确认批推送 origin（立卡批 `52bf6b4` + 确认批）；**下一步 = 编码段（测试先行，新会话冷启动）→ 4 视角评审 → 编排师验收**。**（2026-10-06 18:1x 立卡段，历史留痕）**：任务卡 + lofi/hifi V0.9 落盘，待编排师一次确认（Q1~Q5 + D1）；立卡批提交未推送（沿"确认后推送分支"先例） |
+| 状态 | 🟢 **编码段完成（2026-10-06 21:xx）**：测试先行（四类新规则 R3/R6-trim/R7/R5 **先红**：解析器 16 例 14 失败 + 目录 5 例 4 失败）→ 实现（解析器 R1~R8 单点 + 五要素目录注册 + DSL 常量）→ **绿**（21/21）→ 收敛（`UsageControlPolicy` 三件校验与 `fromJson` 移除、`ClauseValues` 提交解析与密文回读委托、`ContractCommandService` 三处调用点委托）→ 回归（contract **157 例 0 失败 0 跳过**，含既有锚断言零变更 + 集成锚四件）+ checkstyle **0 违规** + ADR-019 落稿；**下一步 = 全仓门禁 GREEN 后 → 4 视角评审（另会/子智能体，单发串行只读）→ 编排师验收**。**（2026-10-06 20:0x 确认段，历史留痕）**：编排师一次确认到达（"都按建议" = **Q1~Q5 均采建议口径 A + D1 不拆分**）——lofi/hifi 转 **V1.0（编码契约）** + 确认记录签署 + 确认批推送 origin（立卡批 `52bf6b4` + 确认批）。**（2026-10-06 18:1x 立卡段，历史留痕）**：任务卡 + lofi/hifi V0.9 落盘，待编排师一次确认（Q1~Q5 + D1）；立卡批提交未推送（沿"确认后推送分支"先例） |
 | 立卡段（本会话） | ① 冷启动读取链：`AGENTS.md` → 最新日志 `-1708`（3.4.3 合并段终章）→ 台账下一包行 → 3.4.3 任务卡/两级设计（§10-7 衔接义务）→ 规格 C-4.1~4.3 V1.0（行为 4/5 + §4 非目标 + §6 边界声明 + §7 Q6）→ 剧本 C-4.3（S1 判定面 + 附录 B）→ 空间规格行为 7 规则 6 + `PolicyCatalog`/`SpacePolicy` 代码踏勘 → contract-service 踏勘（`UsageControlPolicy`/`ClauseValues`/`CommandService` 调用点 150/265/548；`domain.policy` 包名空闲；1008 段码位现状 C0001~C0019+S0001~S0003）→ PRD 行 181/184；② 交付物：本任务卡 + `docs/designs/WBS-3.4.4-lofi.md`（V0.9）+ `docs/designs/WBS-3.4.4-hifi.md`（V0.9）；③ 台账更新（进行中 / 待编排师 / 下一包 / 事件行）；④ 本会话开发日志随批落盘 |
 | 确认段（本会话） | ① 编排师确认到达（"都按建议"）→ **Q1~Q5 均采建议口径 A + D1 不拆分**；② lofi/hifi V0.9 → **V1.0（编码契约）** + 确认记录签署（两文件末节）；③ 任务卡 §二 确认留痕 + §四 状态行回填；④ 台账四处更新（进行中 / 待编排师 / 下一包 / 事件行）；⑤ 确认批提交 + **推送 origin**（`feat/C-4.3-策略DSL定义与解析器`）；⑥ 本会话开发日志随批落盘 |
+| 编码段（本会话） | ① **测试先行（先红）**：新增 `UsagePolicyDslParserTest`（16 例：合法矩阵 4 + 非法矩阵 R2/R3/R4/R5/R6/R7 + R8 两臂 + 容忍读 3 + 回环）与 `PolicyElementCatalogTest`（5 例：键集/键命名规范/字段映射/封闭性/元数据），目标运行 **21 例 18 失败**（四类新规则 + 迁移面全红，红相证据留存）；② **实现**：`UsagePolicyDsl`（版本与字段名常量）+ `PolicyElementCatalog`（五要素注册表，hifi §2.2 表逐行）+ `UsagePolicyDslParser`（R1~R8 单点：`parse` 严格 / `parseTolerant` 容忍 / `satisfiesConfirmGate`），目标运行 **21/21 全绿**；③ **收敛**：`UsageControlPolicy` 移除 `shapeViolations`/`basicValueViolations`/`hasAnyRestrictionOrDeclared`/`fromJson`（保留纯数据 + `toJson`）；`ClauseValues.parse` 委托 `parse`、`fromStored` 委托 `parseTolerant`；`ContractCommandService` 发起 150 行 / 确认 265 行 / 提案 548 行三处委托（删除二次取值校验）；④ **回归**：`ContractDealDomainTest` 12 例**断言零变更**（仅委托调用改经解析器，期限夹具以固定提交日 `2026-01-01` 注入时点基准）全绿；⑤ **集成锚四件**（新增于 `ContractNegotiationLifecycleIntegrationTest`）：`t9_dslEnhancedViolationsRejectedOnInitiate`（四类增强拒 C0015 + 违规侧零落库）/ `t9_dslEnhancedViolationsRejectedOnPropose`（提案路径同拒 + 版本行不增）/ `t9_versionedPayloadStoredVersionlessAndReadTolerantly`（存量兼容读探针 + QC1 快照）/ `t9_paddedTextElementsNormalizedBeforePersistence`（trim 落库探针）；⑥ 门禁：contract **157 例 0 失败 0 跳过** + checkstyle **0 违规**（`-pl services/contract-service`）+ 全仓门禁复跑（报告见日志）；⑦ ADR-019 落稿 + 任务卡 §三 实测锚回填 |
 
 ## 五、移交与跟踪义务登记
 

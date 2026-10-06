@@ -22,6 +22,7 @@ import com.ctds.contract.domain.PartyRole;
 import com.ctds.contract.domain.SubjectAdmission;
 import com.ctds.contract.domain.SubjectAdmissionPort;
 import com.ctds.contract.domain.TerminationType;
+import com.ctds.contract.domain.policy.UsagePolicyDslParser;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.time.Clock;
 import java.time.LocalDateTime;
@@ -146,11 +147,10 @@ public class ContractCommandService {
             throw new ContractBizException(ContractErrorCodes.CLAUSE_VALUES_INVALID,
                     ContractErrorCodes.CLAUSE_VALUES_INVALID_MESSAGE);
         }
-        final List<String> policyViolations = new java.util.ArrayList<>(parsed.strategyViolations());
-        policyViolations.addAll(parsed.values().strategy().basicValueViolations());
-        if (!policyViolations.isEmpty()) {
+        // 策略校验单点全查（解析结果即违规清单——发起路径不再二次取值校验）
+        if (parsed.hasStrategyViolations()) {
             log.info("策略条款不符合使用控制约定: productId={}, violations={}", cmd.productId(),
-                    policyViolations);
+                    parsed.strategyViolations());
             throw new ContractBizException(ContractErrorCodes.POLICY_CLAUSE_INVALID,
                     ContractErrorCodes.POLICY_CLAUSE_INVALID_MESSAGE);
         }
@@ -262,7 +262,7 @@ public class ContractCommandService {
         }
         // 确认锁定门槛（行为 4 规则 2）：至少一项策略要素启用或显式"无使用限制"声明
         final ClauseValues values = storedClauseValues(current.clauseValuesCipher());
-        if (!values.strategy().hasAnyRestrictionOrDeclared()) {
+        if (!UsagePolicyDslParser.satisfiesConfirmGate(values.strategy())) {
             throw new ContractBizException(ContractErrorCodes.POLICY_CLAUSE_INVALID,
                     ContractErrorCodes.POLICY_CLAUSE_INVALID_MESSAGE);
         }
@@ -544,11 +544,10 @@ public class ContractCommandService {
             throw new ContractBizException(ContractErrorCodes.CLAUSE_VALUES_INVALID,
                     ContractErrorCodes.CLAUSE_VALUES_INVALID_MESSAGE);
         }
-        final List<String> policyViolations = new java.util.ArrayList<>(parsed.strategyViolations());
-        policyViolations.addAll(parsed.values().strategy().basicValueViolations());
-        if (!policyViolations.isEmpty()) {
+        // 策略校验单点全查（解析结果即违规清单——提案路径不再二次取值校验）
+        if (parsed.hasStrategyViolations()) {
             log.info("策略条款不符合使用控制约定: contractNo={}, violations={}", contract.contractNo(),
-                    policyViolations);
+                    parsed.strategyViolations());
             throw new ContractBizException(ContractErrorCodes.POLICY_CLAUSE_INVALID,
                     ContractErrorCodes.POLICY_CLAUSE_INVALID_MESSAGE);
         }
