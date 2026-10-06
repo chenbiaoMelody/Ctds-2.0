@@ -25,8 +25,10 @@ class ContractExceptionHandlerCodeConsistencyTest {
                 declared.add(((ErrorCode) field.get(null)).value());
             }
         }
-        assertThat(declared).as("1008 段码表应登记 9 个 C 码 + 1 个 S 码（WBS-3.4.2 hifi §3）")
-                .hasSize(10);
+        assertThat(declared).as("1008 段码表应登记 19 个 C 码 + 3 个 S 码"
+                        + "（WBS-3.4.2 hifi §3 + WBS-3.4.3 hifi §3 续延；CONTRACT_PARAM_INVALID"
+                        + " 与 TEMPLATE_PARAM_INVALID 同码 1008C0008 复用别名不重复计数）")
+                .hasSize(22);
         assertThat(new TreeSet<>(ContractExceptionHandler.MAPPED_CODES))
                 .as("处理器映射集与码表必须逐项一致（不得漂移）")
                 .isEqualTo(declared);
