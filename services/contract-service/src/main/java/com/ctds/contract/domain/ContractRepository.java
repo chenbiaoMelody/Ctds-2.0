@@ -10,8 +10,9 @@ import java.util.Optional;
  * 合约协商与签署仓储端口（WBS-3.4.3 hifi §5 事务口径；实现 = infrastructure.JdbcContractRepository，
  * 多写事务边界在本端口实现方法）。版本行不可变：无任何改写条款内容（条款值/变更明细）的方法
  * ——编译期保证快照不可变（锁定写入的规范化原文/哈希与逐方确认列 = 确认动作承载，非内容修订）。
- * 并发口径：确认/签署/终止/解除一律先 FOR UPDATE 读合约行再条件更新（影响行数判定），
- * 并发撞唯一索引按约束名转译 1008C0019（换驱动回归清单 hifi §10-2）。
+ * 并发口径：确认/签署/终止/解除一律先 FOR UPDATE 读合约行（状态 + 当前版本指针）再条件更新
+ * （影响行数判定），并发撞唯一索引按 DuplicateKeyException 异常类型转译 1008C0019
+ * （不解析驱动消息——勘误⑤，换驱动回归清单 hifi §10-2）。
  */
 public interface ContractRepository {
 
@@ -26,8 +27,6 @@ public interface ContractRepository {
     // ==== 读取 ====
 
     Optional<Contract> findByNo(String contractNo);
-
-    Optional<Contract> findById(long contractId);
 
     Optional<ContractClauseVersion> findVersion(long contractId, int versionNo);
 
@@ -71,7 +70,12 @@ public interface ContractRepository {
     /** W11 合意解除（同事务：FOR UPDATE 复判 → 条件确认列 → 双方齐条件转 COMPLETED + ended_at → 留痕）。 */
     ReleaseOutcome releaseConsent(ReleaseCommand command);
 
-    /** 独立留痕写入（拒绝/异常/治理查看——主链回滚不影响留痕，沿 3.4.2 先例）。 */
+    /**
+     * 独立留痕写入（拒绝/异常/治理查看——主链回滚不影响留痕，沿 3.4.2 先例）。
+     * 调用契约（应用层无事务硬约束——hifi 勘误⑧登记）：拒绝类留痕仅在应用层**无事务**上下文
+     * 调用（独立 auto-commit 落库，主链回滚不影响）；仓储主链内的调用随主链事务提交——
+     * 禁止在应用层开启事务后经由本方法承载"回滚不影响"语义。
+     */
     void insertLog(ContractActionLog log);
 
     // ==== 事务命令与结局载体 ====

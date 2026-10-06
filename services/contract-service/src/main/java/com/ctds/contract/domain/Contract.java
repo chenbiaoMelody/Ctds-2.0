@@ -27,9 +27,4 @@ public record Contract(Long id, String contractNo, long productId, String produc
         }
         return null;
     }
-
-    /** 合意解除·本角色确认列时间（W11 条件更新的复查口径）。 */
-    public LocalDateTime releaseConsentAt(final PartyRole role) {
-        return role == PartyRole.PROVIDER ? releaseConsentProviderAt : releaseConsentRequesterAt;
-    }
 }

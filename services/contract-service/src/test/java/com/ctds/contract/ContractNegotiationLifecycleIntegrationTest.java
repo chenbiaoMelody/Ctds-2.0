@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.then;
+import static org.mockito.Mockito.clearInvocations;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
@@ -23,9 +25,13 @@ import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -78,6 +84,12 @@ class ContractNegotiationLifecycleIntegrationTest {
     /** CT000001 公共数据授权模板（V1 迁移种子，9 必填 + 1 选填槽位）。 */
     private static final String TEMPLATE_NO = "CT000001";
     private static final String DEFAULT_STRATEGY = "{\"noRestrictionDeclared\":true}";
+    /** C-4.3 五要素同时启用（合法取值）——策略生效侧端到端锚。 */
+    private static final String ALL_ELEMENTS_STRATEGY = "{\"quota\":{\"enabled\":true,\"maxCount\":3},"
+            + "\"term\":{\"enabled\":true,\"startDate\":\"2027-01-01\",\"endDate\":\"2027-12-31\"},"
+            + "\"purpose\":{\"enabled\":true,\"text\":\"政策研究，禁止再分发\"},"
+            + "\"territory\":{\"enabled\":true,\"text\":\"中华人民共和国境内\"},"
+            + "\"noRedistribution\":{\"enabled\":true},\"noRestrictionDeclared\":false}";
     /** 演示签名桩返回的 SM2 签名（Base64——密文探针反查标记）。 */
     private static final String PROVIDER_SIGNATURE = "c2lnLXByb3ZpZGVyLXN0dWI=";
 
@@ -903,6 +915,105 @@ class ContractNegotiationLifecycleIntegrationTest {
         assertThat(attestations).isEqualTo(1);
     }
 
+    /**
+     * 确认×提案真并发交错（latch 确定性交错；评审循环 2 P0——修复前"确认停在资格窗口内 +
+     * 对方先确认 V1 再提案 V2"可锁定陈旧版本，产生"待签署 + 当前版本未锁定"的不可签死状态）：
+     * 需求方确认线程停在资格桩内（requireAdmitted 窗口——合约陈旧读已发生、确认事务未开始），
+     * 提供方在其窗口内先确认 V1、再提案 V2 提交；放行后确认以陈旧 V1 版本号进入事务。
+     * 期望：锁下版本指针复判不等 → 1008C0013 + 拒绝留痕，合约保持协商中、两版本行均未锁定；
+     * 随后按当前版本 V2 逐方确认可正常锁定（不可签死状态未固化）。
+     */
+    @Test
+    void t10_confirmParkedInAdmissionWindowThenProposeCommitsIsRejectedNotLockingStaleVersion()
+            throws Exception {
+        final String contractNo = initiateOk(unique("确认提案交错"));
+        // 提供方先确认 V1（单方确认，未锁定）
+        assertThat(confirm(contractNo, PROV).getResponse().getStatus()).isEqualTo(200);
+        // 需求方确认线程停在资格桩内（确认事务前的窗口——合约陈旧读已发生）
+        final CountDownLatch entered = new CountDownLatch(1);
+        final CountDownLatch release = new CountDownLatch(1);
+        given(subjectAdmissionPort.check(REQ)).willAnswer(invocation -> {
+            entered.countDown();
+            release.await(10, TimeUnit.SECONDS);
+            return SubjectAdmission.ADMITTED;
+        });
+        final ExecutorService pool = Executors.newSingleThreadExecutor();
+        final Future<MvcResult> parked = pool.submit(() -> confirm(contractNo, REQ));
+        assertThat(entered.await(10, TimeUnit.SECONDS)).isTrue();
+        // 交错动作：提供方在窗口内提案 V2 并提交（指针前移至 2）
+        assertThat(propose(contractNo, PROV, slotsJson(unique("交错-V2")))
+                .getResponse().getStatus()).isEqualTo(201);
+        assertThat(currentVersion(contractNo)).isEqualTo(2);
+        // 放行确认线程：以陈旧 V1 版本号进入确认事务
+        release.countDown();
+        final MvcResult staleConfirm = parked.get(15, TimeUnit.SECONDS);
+        pool.shutdownNow();
+        // 确认被拒（C0013 + 拒绝留痕）——不得出现"待签署 + 当前版本未锁定"死状态
+        assertThat(staleConfirm.getResponse().getStatus())
+                .as("陈旧版本确认应答: %s", readBody(staleConfirm)).isEqualTo(409);
+        assertThat(codeOf(staleConfirm)).isEqualTo("1008C0013");
+        assertThat(statusOf(contractNo)).isEqualTo("NEGOTIATING");
+        assertThat(hashOf(contractNo, 1)).isNull();
+        assertThat(hashOf(contractNo, 2)).isNull();
+        final Integer staleDenials = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM contract_action_log WHERE contract_no = ? "
+                        + "AND action = 'CONFIRM' AND reason_code = 'C0013'",
+                Integer.class, contractNo);
+        assertThat(staleDenials).isEqualTo(1);
+        // 恢复性：按当前版本 V2 重新逐方确认 → 正常锁定转待签署（死锁解除）
+        assertThat(confirm(contractNo, REQ).getResponse().getStatus()).isEqualTo(200);
+        assertThat(confirm(contractNo, PROV).getResponse().getStatus()).isEqualTo(200);
+        assertThat(statusOf(contractNo)).isEqualTo("PENDING_SIGNATURE");
+        assertThat(hashOf(contractNo, 2)).isNotNull();
+        assertThat(hashOf(contractNo, 1)).isNull();
+    }
+
+    /**
+     * 提案指针前置守卫杀手（评审循环 2 P2——并发提案败者此前仅死于 uk_contract_version
+     * 唯一索引，指针/状态条件更新未命中腿无测试触达）：提案线程停在资格桩内，窗口内双方确认
+     * V1 齐 → 锁定转待签署；放行后提案以陈旧"协商中"读进入事务——指针条件更新未命中
+     * （状态 ≠ NEGOTIATING）→ 版本行插入随事务回滚 → 1008C0019，合约保持待签署不受扰动。
+     */
+    @Test
+    void t10_proposeAfterInterleavedLockMissesPointerGuardAndRollsBackWithC0019() throws Exception {
+        final String contractNo = initiateOk(unique("提案守卫杀手"));
+        final CountDownLatch entered = new CountDownLatch(1);
+        final CountDownLatch release = new CountDownLatch(1);
+        final AtomicInteger provAdmissions = new AtomicInteger();
+        // 提供方第 1 次资格调用（= 提案）停在桩内；后续调用（= 确认）直放——窗口内可完成双方确认
+        given(subjectAdmissionPort.check(PROV)).willAnswer(invocation -> {
+            if (provAdmissions.incrementAndGet() == 1) {
+                entered.countDown();
+                release.await(10, TimeUnit.SECONDS);
+            }
+            return SubjectAdmission.ADMITTED;
+        });
+        final ExecutorService pool = Executors.newSingleThreadExecutor();
+        final Future<MvcResult> parked = pool.submit(() -> propose(contractNo, PROV,
+                slotsJson(unique("杀手-V2"))));
+        assertThat(entered.await(10, TimeUnit.SECONDS)).isTrue();
+        // 窗口内：双方确认 V1 齐 → 锁定转待签署（指针仍为 1，状态已非协商中）
+        assertThat(confirm(contractNo, REQ).getResponse().getStatus()).isEqualTo(200);
+        assertThat(confirm(contractNo, PROV).getResponse().getStatus()).isEqualTo(200);
+        assertThat(statusOf(contractNo)).isEqualTo("PENDING_SIGNATURE");
+        // 放行提案线程：状态/指针条件更新未命中 → 事务回滚 + C0019
+        release.countDown();
+        final MvcResult loser = parked.get(15, TimeUnit.SECONDS);
+        pool.shutdownNow();
+        assertThat(loser.getResponse().getStatus()).as("败者提案应答: %s", readBody(loser))
+                .isEqualTo(409);
+        assertThat(codeOf(loser)).isEqualTo("1008C0019");
+        // 合约未被扰动：仍待签署 + V1 锁定 + 版本行仅 1（V2 插入已随事务回滚）
+        assertThat(statusOf(contractNo)).isEqualTo("PENDING_SIGNATURE");
+        assertThat(currentVersion(contractNo)).isEqualTo(1);
+        assertThat(hashOf(contractNo, 1)).isNotNull();
+        final Integer versionRows = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM contract_clause_version WHERE contract_id = "
+                        + "(SELECT id FROM contract WHERE contract_no = ?)", Integer.class,
+                contractNo);
+        assertThat(versionRows).isEqualTo(1);
+    }
+
     // ==== T11 读面与字段集（行为 7 规则 4；剧本 S2-3）====
 
     @Test
@@ -1050,7 +1161,312 @@ class ContractNegotiationLifecycleIntegrationTest {
         }
     }
 
+    // ==== T10 并发兜底补腿（hifi §5 W6/W7 跨动作交错 + §5 锁定/签署口径实证）====
+
+    /**
+     * 确认与提案跨动作交错守卫（V1 已被需求方确认、提供方随后提案 V2 的交错序列）：确认对象恒为
+     * **当前版本**（W7 无版本入参——口径实证），且锁定对象必须与当前版本指针一致：
+     * ① 交错确认落在 V2（不回写 V1）；② V1 保持不可变、不得被锁定（其哈希与 canonical 恒为空）；
+     * ③ 双方对 V2 确认齐 → 恰好锁定 V2 并转待签署 → 可签署生效；④ 生效后对 V1 的重复签署被拒。
+     * 即：不存在"status=待签署而当前版本未锁定"的不可签死状态（hifi §5 W7 / §6.4）。
+     */
+    @Test
+    void t10_confirmationFollowsCurrentVersionAndLocksExactlyThatVersion() throws Exception {
+        final String contractNo = initiateOk(unique("版本交错守卫"));
+        // 需求方确认 → 落在当前版本 V1
+        assertThat(confirm(contractNo, REQ).getResponse().getStatus()).isEqualTo(200);
+        assertThat(currentVersion(contractNo)).isEqualTo(1);
+        assertThat(confirmedRequesterAt(contractNo, 1)).isNotNull();
+        assertThat(confirmedProviderAt(contractNo, 1)).isNull();
+        // 提供方提案 → 指针前移至 V2（V1 不可变）
+        assertThat(propose(contractNo, PROV, slotsJson(unique("守卫-V2"))).getResponse().getStatus())
+                .isEqualTo(201);
+        assertThat(currentVersion(contractNo)).isEqualTo(2);
+        // 交错点：需求方再确认 → 只能作用于当前版本 V2；V1 的确认列在现场保持不变（不回写）
+        final MvcResult interleaved = confirm(contractNo, REQ);
+        assertThat(interleaved.getResponse().getStatus())
+                .as("交错确认应答: %s", readBody(interleaved)).isEqualTo(200);
+        assertThat(confirmedRequesterAt(contractNo, 2))
+                .as("确认必须落在当前版本 V2（v1Req=%s v2Req=%s ptr=%s）",
+                        confirmedRequesterAt(contractNo, 1), confirmedRequesterAt(contractNo, 2),
+                        currentVersion(contractNo)).isNotNull();
+        assertThat(confirmedProviderAt(contractNo, 2)).isNull();
+        assertThat(confirmedRequesterAt(contractNo, 1)).isNotNull();
+        assertThat(confirmedProviderAt(contractNo, 1)).isNull();
+        // V1 不得被锁定（无 canonical / 无哈希）；V2 未齐 → 未锁定、未转态
+        assertThat(canonicalCipher(contractNo, 1)).isNull();
+        assertThat(hashOf(contractNo, 1)).isNull();
+        assertThat(hashOf(contractNo, 2)).isNull();
+        assertThat(readBody(getDetail(contractNo, REQ)).path("data").path("status").asText())
+                .isEqualTo("NEGOTIATING");
+        // 提供方确认 V2 → 双方齐 → 恰好锁定 V2 并转待签署（恰在这一步锁定）
+        assertThat(confirm(contractNo, PROV).getResponse().getStatus()).isEqualTo(200);
+        assertThat(readBody(getDetail(contractNo, REQ)).path("data").path("status").asText())
+                .isEqualTo("PENDING_SIGNATURE");
+        // 锁定对象 = 当前版本 V2（哈希落 V2；V1 无哈希、无规范化原文）
+        assertThat(hashOf(contractNo, 2)).isNotNull();
+        assertThat(hashOf(contractNo, 1)).isNull();
+        assertThat(canonicalCipher(contractNo, 1)).isNull();
+        // 锁定后需求方重复确认 → 状态门槛拒绝（幂等语义）
+        final MvcResult repeatAfterLock = confirm(contractNo, REQ);
+        assertThat(repeatAfterLock.getResponse().getStatus()).isEqualTo(409);
+        assertThat(codeOf(repeatAfterLock)).isEqualTo("1008C0013");
+        // 签署可用（生效）——交错不产生不可签死状态
+        assertThat(sign(contractNo, PROV, PROVIDER_DID).getResponse().getStatus()).isEqualTo(201);
+        final MvcResult effective = sign(contractNo, REQ, REQUESTER_DID);
+        assertThat(effective.getResponse().getStatus()).isEqualTo(201);
+        assertThat(readBody(effective).path("data").path("status").asText()).isEqualTo("EFFECTIVE");
+        // 生效后对旧版本 V1 的重复签署 → 状态门槛拒绝，合约态不变（终局一致性）
+        final MvcResult replayOnV1 = sign(contractNo, PROV, PROVIDER_DID);
+        assertThat(replayOnV1.getResponse().getStatus()).isEqualTo(409);
+        assertThat(codeOf(replayOnV1)).isEqualTo("1008C0013");
+        assertThat(readBody(getDetail(contractNo, REQ)).path("data").path("status").asText())
+                .isEqualTo("EFFECTIVE");
+    }
+
+    /**
+     * 锁定哈希"恰一次固化"（hifi §5 W7：`content_hash IS NULL` 条件封口）——锁定时固化的规范化原文
+     * 与内容哈希**不得被后续确认改写**：锁定后以对方重复确认触发，落库 canonical/哈希逐字不变，
+     * 且数据库存哈希 == 按落库密文独立重算的 SM3（锁定值自洽）。
+     */
+    @Test
+    void t10_lockedHashIsImmutableOnRepeatedConfirmation() throws Exception {
+        final String contractNo = toPending(unique("锁定固化守卫"));
+        final byte[] lockedCanonical = canonicalCipher(contractNo, 1);
+        final String lockedHash = hashOf(contractNo, 1);
+        assertThat(lockedCanonical).isNotNull();
+        assertThat(lockedHash).isNotNull();
+        // 对方在已锁定状态重复确认 → 状态门槛拒绝（幂等语义不变）
+        final MvcResult repeated = confirm(contractNo, PROV);
+        assertThat(repeated.getResponse().getStatus()).isEqualTo(409);
+        assertThat(codeOf(repeated)).isEqualTo("1008C0013");
+        // 落库锁定值逐字不变（哈希不得被覆盖为第二次确认的候选值）
+        assertThat(hashOf(contractNo, 1)).isEqualTo(lockedHash);
+        assertThat(canonicalCipher(contractNo, 1)).isEqualTo(lockedCanonical);
+        // 数据库存哈希 == 独立重算（按落库规范化原文密文解密后 SM3）
+        assertThat(sm3Service.digestHex(dealTextCipher.decrypt(canonicalCipher(contractNo, 1))))
+                .isEqualTo(lockedHash);
+    }
+
+    /**
+     * 签署内容 = 锁定版本规范化原文（hifi §6.4 ③、§6.2"链上/库内一致性"）——以 did 桩**捕获**
+     * 代签入参并与锁定 canonical 的 SM3 逐字比对：排除"所签内容与锁定快照脱钩"。
+     */
+    @Test
+    void t10_signedPayloadEqualsLockedCanonicalHash() throws Exception {
+        final String contractNo = toPending(unique("签署输入锚"));
+        final AtomicReference<String> signedPayload = new AtomicReference<>();
+        // 桩先捕获入参，再返回与所签内容一致的签名值（固定桩无法证伪"内容脱钩"）
+        given(didPort.sign(eq(PROVIDER_DID), anyString())).willAnswer(invocation -> {
+            final String payload = invocation.getArgument(1, String.class);
+            signedPayload.set(payload);
+            return DidPort.DidSignResult.signed("c2ln" + sm3Service.digestHex(payload));
+        });
+        final MvcResult signed = sign(contractNo, PROV, PROVIDER_DID);
+        assertThat(signed.getResponse().getStatus()).isEqualTo(201);
+        final String lockedHash = hashOf(contractNo, 1);
+        assertThat(signedPayload.get())
+                .as("代签入参必须等于锁定版本内容哈希（=%s）", lockedHash).isEqualTo(lockedHash);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT content_hash FROM contract_signature WHERE contract_no = ? "
+                        + "AND party_role = 'PROVIDER'", String.class, contractNo))
+                .isEqualTo(lockedHash);
+        // 与落库规范化原文独立重算一致（锁定快照即代签输入）
+        assertThat(sm3Service.digestHex(dealTextCipher.decrypt(canonicalCipher(contractNo, 1))))
+                .isEqualTo(lockedHash);
+    }
+
+    /**
+     * 资格失效 fail-closed 六写语境（规格 Q8-A：每次业务写动作校验操作者 ADMITTED；hifi §5.1 口径
+     * 延展）——需求方在中途变为未入驻后，对既有合约的六类写动作（提案/确认/签署/拒签终止/协商终止/
+     * 合意解除）一律 fail-closed（1008C0003 合约操作语境文案）+ 拒绝留痕（尾号 C0003），
+     * 且**不得产生任何状态转移**（合约态、版本指针、签署数均不变）。
+     */
+    @Test
+    void t2_dealAdmissionFailClosedAcrossAllSixWriteContexts() throws Exception {
+        // 先在各真实状态上建好载体（此时需求方为已入驻）
+        final String negotiating = initiateOk(unique("资格-协商"));
+        final String pending = toPending(unique("资格-待签"));
+        final String partially = initiateOk(unique("资格-部分签"));
+        assertThat(confirm(partially, REQ).getResponse().getStatus()).isEqualTo(200);
+        assertThat(confirm(partially, PROV).getResponse().getStatus()).isEqualTo(200);
+        assertThat(sign(partially, PROV, PROVIDER_DID).getResponse().getStatus()).isEqualTo(201);
+        final String effective = toEffective(unique("资格-已生效"));
+        // 需求方资格失效
+        given(subjectAdmissionPort.check(REQ)).willReturn(SubjectAdmission.NOT_ADMITTED);
+        // ① 提案（协商中）
+        assertDealAdmissionRejected(propose(negotiating, REQ, slotsJson(unique("资格-V2"))));
+        // ② 确认（协商中；同伴已确认版本存在时同拒）
+        assertDealAdmissionRejected(confirm(negotiating, REQ));
+        // ③ 签署（部分签署态：本方未签）
+        assertDealAdmissionRejected(sign(partially, REQ, REQUESTER_DID));
+        // ④ 拒签终止（待签署态）
+        assertDealAdmissionRejected(mockMvc.perform(post(
+                        BASE + "/" + pending + "/signature-refusals")
+                .header("X-Ctds-Subject", REQ).header("X-Ctds-Roles", "provider")).andReturn());
+        // ⑤ 协商终止（协商中）
+        assertDealAdmissionRejected(mockMvc.perform(post(
+                        BASE + "/" + negotiating + "/negotiation-terminations")
+                .header("X-Ctds-Subject", REQ).header("X-Ctds-Roles", "provider")).andReturn());
+        // ⑥ 合意解除（已生效）
+        assertDealAdmissionRejected(mockMvc.perform(post(
+                        BASE + "/" + effective + "/release-consents")
+                .header("X-Ctds-Subject", REQ).header("X-Ctds-Roles", "provider")).andReturn());
+        // 零状态转移：三份载体状态与版本指针不变、签署行数不变
+        assertThat(statusOf(negotiating)).isEqualTo("NEGOTIATING");
+        assertThat(currentVersion(negotiating)).isEqualTo(1);
+        assertThat(statusOf(pending)).isEqualTo("PENDING_SIGNATURE");
+        assertThat(statusOf(partially)).isEqualTo("PARTIALLY_SIGNED");
+        assertThat(signCount(partially)).isEqualTo(1);
+        assertThat(statusOf(effective)).isEqualTo("EFFECTIVE");
+        assertThat(signCount(effective)).isEqualTo(2);
+        // 六次拒绝均留痕（reason 尾号 C0003）；六语境合约均已定位——contract_no 必传
+        // （DDL"定位前拒绝/不存在场景为 NULL"语义收口，评审循环 2 勘正）
+        final Integer denied = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM contract_action_log WHERE action = 'DENIED_ACCESS' "
+                        + "AND reason_code = 'C0003'", Integer.class);
+        assertThat(denied).isGreaterThanOrEqualTo(6);
+        final Integer located = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM contract_action_log WHERE action = 'DENIED_ACCESS' "
+                        + "AND reason_code = 'C0003' AND actor_subject_no = ? "
+                        + "AND contract_no IS NOT NULL", Integer.class, REQ);
+        assertThat(located).isGreaterThanOrEqualTo(6);
+    }
+
+    /**
+     * 剧本 C-4.1 S2-5 / C-4.2 S3-6：产品下架后既有已生效合约效力不变、零联动（hifi §5.1
+     * "下架不联动——既有合约零副作用路径"）——以需求方视角回读合约仍为已生效；且整个"下架"过程
+     * 合约服务**不产生任何目录写调用**（无产品状态回写路径——结构性成立；零目录交互腿 =
+     * 端到端锚 + 回归哨兵〔读面零 catalog 引用〕——评审循环 2 定位改述）。
+     */
+    @Test
+    void t3_delistedProductDoesNotAffectEffectiveContractAndTriggersNoCatalogWrite()
+            throws Exception {
+        final String contractNo = toEffective(unique("下架不联动"));
+        final JsonNode before = readBody(getDetail(contractNo, REQ)).path("data");
+        assertThat(before.path("status").asText()).isEqualTo("EFFECTIVE");
+        final String hashBefore = hashOf(contractNo, 1);
+        // 产品在目录侧下架（合约服务视角的目录事实变更）
+        given(catalogProductPort.fetch(PRODUCT_ID)).willReturn(
+                CatalogProductPort.CatalogProductResult.found(
+                        new CatalogProductPort.CatalogProduct(PRODUCT_ID, "城市餐饮单位经营数据集",
+                                "DELISTED", PROV, "PER_CALL", new BigDecimal("1.50"))));
+        clearInvocations(catalogProductPort);
+        // 既有合约效力不变（状态与锁定哈希逐字不变）
+        final JsonNode after = readBody(getDetail(contractNo, REQ)).path("data");
+        assertThat(after.path("status").asText()).isEqualTo("EFFECTIVE");
+        assertThat(after.path("effectiveAt").asText())
+                .isEqualTo(before.path("effectiveAt").asText());
+        assertThat(hashOf(contractNo, 1)).isEqualTo(hashBefore);
+        // 零目录写调用（合约域无产品状态回写路径）：下架事实不影响既有合约的任何读写副作用
+        then(catalogProductPort).shouldHaveNoInteractions();
+        // 下架后新发起被拒（同码同文防枚举）——门槛侧与效力侧同一事实
+        final MvcResult newInitiation = initiate(REQ, initiateBody(unique("下架后发起")));
+        assertThat(newInitiation.getResponse().getStatus()).isEqualTo(404);
+        assertThat(codeOf(newInitiation)).isEqualTo("1008C0010");
+    }
+
+    /**
+     * C-4.3 S1-2/S1-3/S1-4 策略双向锚（② 合规侧）：**五要素同时启用**的完整策略可发起 → 可确认
+     * → 可锁定 → 可签署生效，且策略全文双方可查（生效侧）；对照组"违规策略被拒"由
+     * {@link #t8_invalidPolicyBasicValuesRejectedOnSubmit()} 与
+     * {@code t8_confirmWithoutPolicyOrDeclarationRejected}（确认时门槛）承载。
+     */
+    @Test
+    void t8_allFivePolicyElementsEnabledCanLockAndBeVisibleToBothParties() throws Exception {
+        final String contractNo = initiateOk(unique("五要素全启用"), ALL_ELEMENTS_STRATEGY);
+        // 生效侧①：双方确认齐 → 锁定转待签署
+        assertThat(confirm(contractNo, REQ).getResponse().getStatus()).isEqualTo(200);
+        final MvcResult lock = confirm(contractNo, PROV);
+        assertThat(lock.getResponse().getStatus()).isEqualTo(200);
+        assertThat(readBody(lock).path("data").path("status").asText())
+                .isEqualTo("PENDING_SIGNATURE");
+        // 生效侧②：策略全文双方可查（剧本 S1-2 策略视图承载——五要素逐项出站）
+        final JsonNode strategy = readBody(getDetail(contractNo, REQ)).path("data")
+                .path("clauseValues").path("strategy");
+        assertThat(strategy.path("quota").path("enabled").asBoolean()).isTrue();
+        assertThat(strategy.path("quota").path("maxCount").asInt()).isEqualTo(3);
+        assertThat(strategy.path("term").path("startDate").asText()).isEqualTo("2027-01-01");
+        assertThat(strategy.path("term").path("endDate").asText()).isEqualTo("2027-12-31");
+        assertThat(strategy.path("purpose").path("text").asText()).contains("政策研究");
+        assertThat(strategy.path("territory").path("text").asText()).contains("境内");
+        assertThat(strategy.path("noRedistribution").path("enabled").asBoolean()).isTrue();
+        assertThat(readBody(getDetail(contractNo, PROV)).path("data").path("clauseValues")
+                .path("strategy").path("quota").path("maxCount").asInt()).isEqualTo(3);
+        // 生效侧③：可签署生效（策略不影响签署链路）
+        assertThat(sign(contractNo, PROV, PROVIDER_DID).getResponse().getStatus()).isEqualTo(201);
+        assertThat(sign(contractNo, REQ, REQUESTER_DID).getResponse().getStatus()).isEqualTo(201);
+        assertThat(hashOf(contractNo, 1)).isNotNull();
+    }
+
+    /** C-4.3 S1-3 策略双向锚（① 违规侧）：基础取值非法（次数非正 / 期限倒置 / 要素文本空）→ 提交即拒 C0015。 */
+    @Test
+    void t8_invalidPolicyBasicValuesRejectedOnSubmit() throws Exception {
+        // 违规侧零落库：以拒绝前后合约行数不变断言（原断言为共享库下恒真——评审循环 2 勘正）
+        final Integer contractsBefore = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM contract WHERE requester_subject_no = ?", Integer.class, REQ);
+        // 次数非正整数
+        assertThat(codeOf(initiate(REQ, initiateBody(unique("次数非法"), TEMPLATE_NO, 1,
+                "{\"quota\":{\"enabled\":true,\"maxCount\":0},\"noRestrictionDeclared\":false}"))))
+                .isEqualTo("1008C0015");
+        // 期限倒置
+        assertThat(codeOf(initiate(REQ, initiateBody(unique("期限倒置"), TEMPLATE_NO, 1,
+                termStrategy("2028-01-01", "2027-01-01"))))).isEqualTo("1008C0015");
+        // 启用要素文本空
+        assertThat(codeOf(initiate(REQ, initiateBody(unique("用途空文本"), TEMPLATE_NO, 1,
+                "{\"purpose\":{\"enabled\":true,\"text\":\"  \"},"
+                        + "\"noRestrictionDeclared\":false}")))).isEqualTo("1008C0015");
+        // 违规侧无副作用：三次拒绝前后合约行数不变（未产生任何合约行）
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM contract WHERE requester_subject_no = ?", Integer.class, REQ))
+                .isEqualTo(contractsBefore);
+    }
+
     // ==== 支撑（请求/断言助手）====
+
+    /** 资格失效断言（Q8-A：合约操作语境 C0003 + 留痕尾号 C0003）。 */
+    private void assertDealAdmissionRejected(final MvcResult result) {
+        assertThat(result.getResponse().getStatus()).as("资格失效应答: %s", readBody(result))
+                .isEqualTo(404);
+        assertThat(codeOf(result)).isEqualTo("1008C0003");
+    }
+
+    /** 合约现态（读库）。 */
+    private String statusOf(final String contractNo) {
+        return jdbcTemplate.queryForObject(
+                "SELECT status FROM contract WHERE contract_no = ?", String.class, contractNo);
+    }
+
+    /** 指定版本的提供方确认时间（未确认 = null）。 */
+    private LocalDateTime confirmedProviderAt(final String contractNo, final int versionNo) {
+        return jdbcTemplate.queryForObject(
+                "SELECT confirmed_provider_at FROM contract_clause_version WHERE contract_id = "
+                        + "(SELECT id FROM contract WHERE contract_no = ?) AND version_no = ?",
+                (rs, rowNum) -> rs.getTimestamp(1) == null ? null
+                        : rs.getTimestamp(1).toLocalDateTime(), contractNo, versionNo);
+    }
+
+    /** 指定版本的需求方确认时间（未确认 = null）。 */
+    private LocalDateTime confirmedRequesterAt(final String contractNo, final int versionNo) {
+        return jdbcTemplate.queryForObject(
+                "SELECT confirmed_requester_at FROM contract_clause_version WHERE contract_id = "
+                        + "(SELECT id FROM contract WHERE contract_no = ?) AND version_no = ?",
+                (rs, rowNum) -> rs.getTimestamp(1) == null ? null
+                        : rs.getTimestamp(1).toLocalDateTime(), contractNo, versionNo);
+    }
+
+    /** 指定版本的规范化原文密文（未锁定 = null）。 */
+    private byte[] canonicalCipher(final String contractNo, final int versionNo) {
+        return versionCipher(contractNo, versionNo, "canonical_cipher");
+    }
+
+    /** 指定版本的内容哈希（未锁定 = null）。 */
+    private String hashOf(final String contractNo, final int versionNo) {
+        return jdbcTemplate.queryForObject(
+                "SELECT content_hash FROM contract_clause_version WHERE contract_id = "
+                        + "(SELECT id FROM contract WHERE contract_no = ?) AND version_no = ?",
+                String.class, contractNo, versionNo);
+    }
 
     private MvcResult initiate(final String operator, final String body) throws Exception {
         return mockMvc.perform(post(BASE)
@@ -1254,6 +1670,7 @@ class ContractNegotiationLifecycleIntegrationTest {
                         + "AND party_role = ?", byte[].class, contractNo, role);
     }
 
+    /** 当前版本（指针所指）的内容哈希；读面/存证对照用。 */
     private String contentHash(final String contractNo) {
         return jdbcTemplate.queryForObject(
                 "SELECT content_hash FROM contract_clause_version WHERE contract_id = "

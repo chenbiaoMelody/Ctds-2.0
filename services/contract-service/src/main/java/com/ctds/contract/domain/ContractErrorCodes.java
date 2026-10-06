@@ -83,7 +83,11 @@ public final class ContractErrorCodes {
     /** 签署身份不可用（DID 未登记/已吊销/非签署方归属；同码双语境沿 1008C0003 先例——R9 异常留痕同码）。→ 400 */
     public static final ErrorCode SIGNATURE_IDENTITY_UNAVAILABLE = ErrorCode.of("1008C0018");
     public static final String SIGNATURE_IDENTITY_UNAVAILABLE_MESSAGE = "签署身份不可用，无法签署";
-    /** 合约正在被其他操作修改（并发兜底：uk_contract_no/uk_contract_version/uk_contract_party 撞键转译——换驱动回归清单 hifi §10-2）。→ 409 */
+    /**
+     * 合约正在被其他操作修改（并发兜底：uk_contract_no/uk_contract_version 撞键 + 提案指针条件
+     * 更新未命中，按 DuplicateKeyException 异常类型/影响行数转译、不解析驱动消息；
+     * uk_contract_party 腿行锁串行化下不可达不转译——勘误⑤；换驱动回归清单 hifi §10-2）。→ 409
+     */
     public static final ErrorCode CONTRACT_CONCURRENT_MODIFICATION = ErrorCode.of("1008C0019");
     public static final String CONTRACT_CONCURRENT_MODIFICATION_MESSAGE = "合约正在被其他操作修改，请重试";
     /** DID 服务暂不可用（解析/代签/验签不可达——不冒充签署结论，沿 S0001 不冒充口径）。→ 503 */

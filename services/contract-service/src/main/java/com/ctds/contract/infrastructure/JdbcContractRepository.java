@@ -25,8 +25,9 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * 合约协商与签署仓储（JdbcClient，ADR-009 迁移规范建表 V2；沿 JdbcContractTemplateRepository
  * 先例）。多写事务口径（hifi §5）：create = 取号外三写、propose = 三写、confirm/sign/terminate/
- * releaseConsent = FOR UPDATE 复判 + 条件更新（影响行数判定，行级互斥恰一次转移）+ 留痕，
- * 事务边界在本仓储方法（@Transactional）；insertLog 为独立写入（拒绝留痕，主链回滚不影响）。
+ * releaseConsent = FOR UPDATE 复判（状态 + 当前版本指针一并读回）+ 条件更新（影响行数判定，
+ * 行级互斥恰一次转移）+ 留痕，事务边界在本仓储方法（@Transactional）；insertLog 在主链内随主链
+ * 事务提交，被应用层在无事务上下文调用时为独立写入（拒绝留痕，主链回滚不影响——调用契约见端口）。
  * <b>无任何更新条款内容（条款值/变更明细）的方法</b>——版本行不可变（编译期保证，hifi §4 注）。
  */
 @Repository
@@ -93,14 +94,6 @@ public class JdbcContractRepository implements ContractRepository {
     public Optional<Contract> findByNo(final String contractNo) {
         return jdbc.sql("SELECT " + CONTRACT_COLUMNS + " FROM contract WHERE contract_no = ?")
                 .param(contractNo)
-                .query((rs, rowNum) -> mapContract(rs))
-                .optional();
-    }
-
-    @Override
-    public Optional<Contract> findById(final long contractId) {
-        return jdbc.sql("SELECT " + CONTRACT_COLUMNS + " FROM contract WHERE id = ?")
-                .param(contractId)
                 .query((rs, rowNum) -> mapContract(rs))
                 .optional();
     }
@@ -192,17 +185,29 @@ public class JdbcContractRepository implements ContractRepository {
                 newVersion.canonicalCipher(), newVersion.contentHash(), newVersion.proposedBy(),
                 newVersion.proposedAt(), newVersion.confirmedProviderAt(),
                 newVersion.confirmedRequesterAt()));
-        jdbc.sql("UPDATE contract SET current_clause_version = ? WHERE id = ?")
-                .param(newVersion.versionNo()).param(contractId).update();
+        final int moved = jdbc.sql("UPDATE contract SET current_clause_version = ? WHERE id = ? "
+                        + "AND status = ? AND current_clause_version = ?")
+                .param(newVersion.versionNo()).param(contractId)
+                .param(ContractStatus.NEGOTIATING.name())
+                .param(newVersion.versionNo() - 1)
+                .update();
+        if (moved != 1) {
+            // 指针前移未命中：状态或当前版本已被并发变更——回滚本条版本行（抛出让事务回滚）
+            throw new IllegalStateException("提案版本指针更新未命中: contractId=" + contractId
+                    + ", 目标版本=" + newVersion.versionNo());
+        }
         insertLog(log);
     }
 
     @Override
     @Transactional
     public ConfirmOutcome confirm(final ConfirmCommand command) {
-        // ① FOR UPDATE 读合约行：同合约全部写事务在此串行化（后到者按行锁读回最新状态）
-        final ContractStatus status = readStatusForUpdate(command.contractId());
-        if (status != ContractStatus.NEGOTIATING) {
+        // ① FOR UPDATE 读合约行：同合约全部写事务在此串行化（后到者按行锁读回最新状态与当前版本）；
+        // 版本指针复判（评审循环 2 P0）：确认命令携带的版本 ≠ 锁下当前指针 = 版本已被并发提案
+        // 前移——按陈旧版本确认将产生"待签署 + 当前版本未锁定"死状态，与状态冲突同口径拒绝
+        final LockedContractState locked = readContractForUpdate(command.contractId());
+        if (locked.status() != ContractStatus.NEGOTIATING
+                || locked.currentClauseVersion() != command.versionNo()) {
             return ConfirmOutcome.STATE_CONFLICT;
         }
         // ② 条件更新本方确认列（影响行数 = 1 才算本次确认——重复确认天然互斥）
@@ -217,15 +222,25 @@ public class JdbcContractRepository implements ContractRepository {
         }
         final ContractClauseVersion version = readVersionForUpdate(command.contractId(),
                 command.versionNo());
-        // ③ 双方齐 → 恰一次锁定（content_hash IS NULL 条件封口）+ 状态转移 + 留痕
+        // ③ 双方齐 → 恰一次锁定（content_hash IS NULL 条件封口）+ 状态转移（带版本指针前置——
+        // 纵深防御）+ 留痕；两句均在行锁串行化下执行，影响行数 ≠ 1 为不可达断言腿（回滚 fail-stop）
         if (version.bothConfirmed()) {
-            jdbc.sql("UPDATE contract SET status = ? WHERE id = ? AND status = ?")
+            final int moved = jdbc.sql("UPDATE contract SET status = ? WHERE id = ? AND status = ? "
+                            + "AND current_clause_version = ?")
                     .param(ContractStatus.PENDING_SIGNATURE.name()).param(command.contractId())
-                    .param(ContractStatus.NEGOTIATING.name()).update();
-            jdbc.sql("UPDATE contract_clause_version SET canonical_cipher = ?, content_hash = ? "
-                            + "WHERE id = ? AND content_hash IS NULL")
+                    .param(ContractStatus.NEGOTIATING.name()).param(command.versionNo()).update();
+            if (moved != 1) {
+                throw new IllegalStateException("确认锁定状态转移未命中: contractId="
+                        + command.contractId() + ", 版本=" + command.versionNo());
+            }
+            final int lockedRows = jdbc.sql("UPDATE contract_clause_version SET canonical_cipher = ?,"
+                            + " content_hash = ? WHERE id = ? AND content_hash IS NULL")
                     .param(command.canonicalCipher()).param(command.contentHash())
                     .param(version.id()).update();
+            if (lockedRows != 1) {
+                throw new IllegalStateException("确认锁定版本行未命中: contractId="
+                        + command.contractId() + ", 版本=" + command.versionNo());
+            }
             insertLog(command.log());
             return ConfirmOutcome.LOCKED;
         }
@@ -235,7 +250,7 @@ public class JdbcContractRepository implements ContractRepository {
     @Override
     @Transactional
     public SignOutcome sign(final SignCommand command) {
-        final ContractStatus status = readStatusForUpdate(command.contractId());
+        final ContractStatus status = readContractForUpdate(command.contractId()).status();
         if (status != ContractStatus.PENDING_SIGNATURE && status != ContractStatus.PARTIALLY_SIGNED) {
             return SignOutcome.STATE_CONFLICT;
         }
@@ -253,13 +268,20 @@ public class JdbcContractRepository implements ContractRepository {
         final boolean effective = status == ContractStatus.PARTIALLY_SIGNED;
         final ContractStatus target = effective
                 ? ContractStatus.EFFECTIVE : ContractStatus.PARTIALLY_SIGNED;
+        final int moved;
         if (effective) {
-            jdbc.sql("UPDATE contract SET status = ?, effective_at = ? WHERE id = ? AND status = ?")
+            moved = jdbc.sql("UPDATE contract SET status = ?, effective_at = ? "
+                            + "WHERE id = ? AND status = ?")
                     .param(target.name()).param(command.signedAt()).param(command.contractId())
                     .param(status.name()).update();
         } else {
-            jdbc.sql("UPDATE contract SET status = ? WHERE id = ? AND status = ?")
+            moved = jdbc.sql("UPDATE contract SET status = ? WHERE id = ? AND status = ?")
                     .param(target.name()).param(command.contractId()).param(status.name()).update();
+        }
+        if (moved != 1) {
+            // 条件更新影响行数 = 1 才算本次状态转移（hifi §5 W9）；未命中 → 整事务回滚（签名行不残留）
+            throw new IllegalStateException("签署状态转移未命中: contractId=" + command.contractId()
+                    + ", 期望状态=" + status + ", 角色=" + command.role());
         }
         insertLog(withToValue(command.signLog(), target.name()));
         if (effective) {
@@ -272,15 +294,21 @@ public class JdbcContractRepository implements ContractRepository {
     @Override
     @Transactional
     public TerminateOutcome terminate(final TerminateCommand command) {
-        final ContractStatus status = readStatusForUpdate(command.contractId());
+        final ContractStatus status = readContractForUpdate(command.contractId()).status();
         if (!command.fromStates().contains(status)) {
             return TerminateOutcome.STATE_CONFLICT;
         }
-        jdbc.sql("UPDATE contract SET status = ?, termination_type = ?, termination_reason = ?, "
-                        + "terminated_by = ?, ended_at = ? WHERE id = ? AND status = ?")
+        final int moved = jdbc.sql("UPDATE contract SET status = ?, termination_type = ?, "
+                        + "termination_reason = ?, terminated_by = ?, ended_at = ? "
+                        + "WHERE id = ? AND status = ?")
                 .param(ContractStatus.TERMINATED.name()).param(command.terminationType().name())
                 .param(command.reason()).param(command.terminatedBy()).param(command.at())
                 .param(command.contractId()).param(status.name()).update();
+        if (moved != 1) {
+            // 条件更新影响行数 = 1（hifi §5 W8/W10/W12）；未命中 → 整事务回滚（不得留痕成功转移）
+            throw new IllegalStateException("终止状态转移未命中: contractId=" + command.contractId()
+                    + ", 期望状态=" + status);
+        }
         insertLog(withToValue(command.log(), ContractStatus.TERMINATED.name()));
         return TerminateOutcome.TERMINATED;
     }
@@ -288,7 +316,7 @@ public class JdbcContractRepository implements ContractRepository {
     @Override
     @Transactional
     public ReleaseOutcome releaseConsent(final ReleaseCommand command) {
-        final ContractStatus status = readStatusForUpdate(command.contractId());
+        final ContractStatus status = readContractForUpdate(command.contractId()).status();
         if (status != ContractStatus.EFFECTIVE) {
             return ReleaseOutcome.STATE_CONFLICT;
         }
@@ -308,9 +336,15 @@ public class JdbcContractRepository implements ContractRepository {
         final boolean both = contract.releaseConsentProviderAt() != null
                 && contract.releaseConsentRequesterAt() != null;
         if (both) {
-            jdbc.sql("UPDATE contract SET status = ?, ended_at = ? WHERE id = ? AND status = ?")
+            // 条件更新影响行数 = 1（行锁串行化下不可达断言腿——hifi 勘误⑧）：未命中 → 整事务回滚
+            final int completed = jdbc.sql("UPDATE contract SET status = ?, ended_at = ? "
+                            + "WHERE id = ? AND status = ?")
                     .param(ContractStatus.COMPLETED.name()).param(command.at())
                     .param(command.contractId()).param(ContractStatus.EFFECTIVE.name()).update();
+            if (completed != 1) {
+                throw new IllegalStateException("合意解除完结转移未命中: contractId="
+                        + command.contractId());
+            }
         }
         insertLog(withToValue(command.log(), both
                 ? ContractStatus.COMPLETED.name() : ContractStatus.EFFECTIVE.name()));
@@ -329,11 +363,20 @@ public class JdbcContractRepository implements ContractRepository {
 
     // ==== 内部：行锁读 / 版本行写入 / 分页 / 映射 ====
 
-    /** FOR UPDATE 读合约状态（同合约写事务串行化点——hifi §5 W7 后到者读回口径）。 */
-    private ContractStatus readStatusForUpdate(final long contractId) {
-        return jdbc.sql("SELECT status FROM contract WHERE id = ? FOR UPDATE")
+    /** FOR UPDATE 读回的合约行状态（行级锁串行化点——hifi §5 W7 后到者读回口径）。 */
+    private record LockedContractState(ContractStatus status, int currentClauseVersion) {
+    }
+
+    /**
+     * FOR UPDATE 读合约行：同合约全部写事务在此串行化；状态与当前版本指针一并读回
+     * （确认侧复判依据——评审循环 2 P0：锁下只读状态不足以防"确认陈旧版本"交错）。
+     */
+    private LockedContractState readContractForUpdate(final long contractId) {
+        return jdbc.sql("SELECT status, current_clause_version FROM contract "
+                        + "WHERE id = ? FOR UPDATE")
                 .param(contractId)
-                .query((rs, rowNum) -> ContractStatus.valueOf(rs.getString(1)))
+                .query((rs, rowNum) -> new LockedContractState(
+                        ContractStatus.valueOf(rs.getString(1)), rs.getInt(2)))
                 .optional()
                 .orElseThrow(() -> new IllegalStateException("合约不存在: id=" + contractId));
     }

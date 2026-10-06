@@ -43,8 +43,8 @@ import org.springframework.stereotype.Service;
  *
  * <p>事务口径（hifi §5）：did 调用在事务外先行（W9 解析 → 归属/状态校验 → 代签）；多写事务
  * 边界在仓储（FOR UPDATE 复判 + 条件更新恰一次转移）；拒绝留痕独立写入（主链回滚不影响）。
- * 并发兜底：撞 uk_contract_no / uk_contract_version 按约束名转译 1008C0019（换驱动回归
- * 清单 hifi §10-2）。</p>
+ * 并发兜底：撞唯一索引按 {@link DuplicateKeyException} 异常类型转译 1008C0019 + 提案版本指针
+ * 条件更新未命中同码（不解析驱动消息——勘误⑤，换驱动回归清单 hifi §10-2）。</p>
  *
  * <p>L3 承载（hifi §6）：条款值 / 变更明细 / 规范化原文 / 签名值经 {@link DealTextCipher}
  * （common-crypto Sm4Service 唯一入口）密文落库；内容哈希 = 规范化 JSON 的 SM3 摘要
@@ -103,7 +103,8 @@ public class ContractCommandService {
     @Idempotent(key = "'DEAL:' + #cmd.requesterNo + ':' + #cmd.productId + ':' + #cmd.templateNo "
             + "+ ':' + #cmd.templateVersionNo + ':' + #cmd.requestFingerprint")
     public InitiateResult initiate(final InitiateCommand cmd) {
-        requireAdmitted(cmd.requesterNo(), ContractErrorCodes.INITIATE_ADMISSION_REQUIRED_MESSAGE);
+        requireAdmitted(cmd.requesterNo(), null,
+                ContractErrorCodes.INITIATE_ADMISSION_REQUIRED_MESSAGE);
         // ② 产品事实三态（1008C0010 同码同文防枚举 / 1008S0003 不冒充）
         final CatalogProductPort.CatalogProductResult productResult =
                 catalogProductPort.fetch(cmd.productId());
@@ -196,7 +197,8 @@ public class ContractCommandService {
     public ProposeResult propose(final String contractNo, final JsonNode clauseValues,
             final String operatorNo) {
         final Contract contract = requireVisibleForWrite(contractNo, operatorNo);
-        requireAdmitted(operatorNo, ContractErrorCodes.DEAL_ADMISSION_REQUIRED_MESSAGE);
+        requireAdmitted(operatorNo, contractNo,
+                ContractErrorCodes.DEAL_ADMISSION_REQUIRED_MESSAGE);
         final ContractClauseVersion current = repository
                 .findVersion(contract.id(), contract.currentClauseVersion()).orElseThrow();
         if (!requireState(contract, LifecycleAction.PROPOSE, operatorNo)) {
@@ -230,6 +232,12 @@ public class ContractCommandService {
                     contractNo, nextVersionNo);
             throw new ContractBizException(ContractErrorCodes.CONTRACT_CONCURRENT_MODIFICATION,
                     ContractErrorCodes.CONTRACT_CONCURRENT_MODIFICATION_MESSAGE);
+        } catch (final IllegalStateException e) {
+            // 指针条件更新未命中：状态或当前版本已被并发变更（对方提案/确认/终止先行提交）
+            log.warn("合约提案并发指针更新未命中(状态或当前版本已变): contractNo={}, 目标版本{}",
+                    contractNo, nextVersionNo);
+            throw new ContractBizException(ContractErrorCodes.CONTRACT_CONCURRENT_MODIFICATION,
+                    ContractErrorCodes.CONTRACT_CONCURRENT_MODIFICATION_MESSAGE);
         }
         return new ProposeResult(contractNo, nextVersionNo, contract.currentClauseVersion());
     }
@@ -239,7 +247,8 @@ public class ContractCommandService {
     /** 确认当前条款版本：每方一次（重复确认 C0013 + 留痕）；双方齐 → 规范化原文与哈希固化。 */
     public ConfirmResult confirm(final String contractNo, final String operatorNo) {
         final Contract contract = requireVisibleForWrite(contractNo, operatorNo);
-        requireAdmitted(operatorNo, ContractErrorCodes.DEAL_ADMISSION_REQUIRED_MESSAGE);
+        requireAdmitted(operatorNo, contractNo,
+                ContractErrorCodes.DEAL_ADMISSION_REQUIRED_MESSAGE);
         if (!requireState(contract, LifecycleAction.CONFIRM, operatorNo)) {
             throw stateForbidden(operatorNo, contract, contract.currentClauseVersion(),
                     ContractAction.CONFIRM);
@@ -305,7 +314,8 @@ public class ContractCommandService {
         final Contract contract = action == ContractAction.FORCE_TERMINATE
                 ? requireExistingForGovernance(contractNo, operatorNo)
                 : requireVisibleForWrite(contractNo, operatorNo);
-        requireAdmitted(operatorNo, ContractErrorCodes.DEAL_ADMISSION_REQUIRED_MESSAGE);
+        requireAdmitted(operatorNo, contractNo,
+                ContractErrorCodes.DEAL_ADMISSION_REQUIRED_MESSAGE);
         final LifecycleAction lifecycleAction = action == ContractAction.TERMINATE_NEGOTIATION
                 ? LifecycleAction.NEGOTIATION_TERMINATE
                 : action == ContractAction.REFUSE_SIGN
@@ -335,7 +345,8 @@ public class ContractCommandService {
      */
     public SignResult sign(final String contractNo, final String did, final String operatorNo) {
         final Contract contract = requireVisibleForWrite(contractNo, operatorNo);
-        requireAdmitted(operatorNo, ContractErrorCodes.DEAL_ADMISSION_REQUIRED_MESSAGE);
+        requireAdmitted(operatorNo, contractNo,
+                ContractErrorCodes.DEAL_ADMISSION_REQUIRED_MESSAGE);
         final PartyRole role = contract.roleOf(operatorNo);
         if (!requireState(contract, LifecycleAction.SIGN, operatorNo)) {
             throw stateForbidden(operatorNo, contract, contract.currentClauseVersion(),
@@ -394,7 +405,8 @@ public class ContractCommandService {
 
     public ReleaseResult releaseConsent(final String contractNo, final String operatorNo) {
         final Contract contract = requireVisibleForWrite(contractNo, operatorNo);
-        requireAdmitted(operatorNo, ContractErrorCodes.DEAL_ADMISSION_REQUIRED_MESSAGE);
+        requireAdmitted(operatorNo, contractNo,
+                ContractErrorCodes.DEAL_ADMISSION_REQUIRED_MESSAGE);
         final PartyRole role = contract.roleOf(operatorNo);
         final LocalDateTime now = LocalDateTime.now(clock);
         final ContractActionLog logRow = new ContractActionLog(null, contractNo,
@@ -462,10 +474,20 @@ public class ContractCommandService {
 
     // ==== 内部：门槛单点 ====
 
-    /** 资格三态（Q8-A fail-closed；统一文案按语境分——沿 C0003 同码多文案先例）。 */
-    private void requireAdmitted(final String subjectNo, final String message) {
+    /**
+     * 资格三态（Q8-A fail-closed；统一文案按语境分——沿 C0003 同码多文案先例）。
+     * 资格失效 = 交易准入被拒：落 DENIED_ACCESS 留痕（reason 尾号 C0003，沿可见性拒绝留痕口径；
+     * 留痕为独立写入，主链无状态转移）。contractNo = 已定位合约语境必传（留痕表"定位前拒绝/
+     * 不存在场景为 NULL"语义收口——评审循环 2 勘正）；发起场景合约尚不存在，传 NULL。
+     */
+    private void requireAdmitted(final String subjectNo, final String contractNo,
+            final String message) {
         final SubjectAdmission admission = subjectAdmissionPort.check(subjectNo);
         if (admission == SubjectAdmission.NOT_ADMITTED) {
+            repository.insertLog(new ContractActionLog(null, contractNo, null,
+                    ContractAction.DENIED_ACCESS, subjectNo,
+                    ContractErrorCodes.tailOf(ContractErrorCodes.ADMISSION_REQUIRED), null, null,
+                    LocalDateTime.now(clock)));
             throw new ContractBizException(ContractErrorCodes.ADMISSION_REQUIRED, message);
         }
         if (admission == SubjectAdmission.UNAVAILABLE) {
