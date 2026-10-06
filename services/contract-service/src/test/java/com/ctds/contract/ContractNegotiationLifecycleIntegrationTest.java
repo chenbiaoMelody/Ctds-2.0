@@ -411,11 +411,23 @@ class ContractNegotiationLifecycleIntegrationTest {
         final MvcResult repeated = confirm(contractNo, REQ);
         assertThat(repeated.getResponse().getStatus()).isEqualTo(409);
         assertThat(codeOf(repeated)).isEqualTo("1008C0013");
+        // 单方成功确认亦落 CONFIRM 留痕（规格行为 2 规则 6 / 剧本 S1-3"确认动作均留痕"——
+        // 勘误⑨：验收走查实证单方腿缺失后补齐；原实现仅双方齐锁定腿落日志）
+        final Integer firstConfirmLogs = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM contract_action_log WHERE contract_no = ? "
+                        + "AND action = 'CONFIRM' AND actor_subject_no = ? AND reason_code IS NULL",
+                Integer.class, contractNo, REQ);
+        assertThat(firstConfirmLogs).isEqualTo(1);
         // 提供方确认 → 双方齐锁定：规范化原文与内容哈希固化、状态转待签署
         final MvcResult second = confirm(contractNo, PROV);
         assertThat(second.getResponse().getStatus()).isEqualTo(200);
         assertThat(readBody(second).path("data").path("status").asText())
                 .isEqualTo("PENDING_SIGNATURE");
+        // 双方确认各留痕一行（成功腿；重复确认的拒绝行 reason_code = C0013 不计入）
+        final Integer successConfirmLogs = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM contract_action_log WHERE contract_no = ? "
+                        + "AND action = 'CONFIRM' AND reason_code IS NULL", Integer.class, contractNo);
+        assertThat(successConfirmLogs).isEqualTo(2);
         final Map<String, Object> version = jdbcTemplate.queryForMap(
                 "SELECT canonical_cipher, content_hash FROM contract_clause_version "
                         + "WHERE contract_id = (SELECT id FROM contract WHERE contract_no = ?) "

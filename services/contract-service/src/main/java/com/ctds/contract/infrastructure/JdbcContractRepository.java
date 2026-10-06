@@ -244,6 +244,9 @@ public class JdbcContractRepository implements ContractRepository {
             insertLog(command.log());
             return ConfirmOutcome.LOCKED;
         }
+        // 单方确认成功同落 CONFIRM 留痕（规格行为 2 规则 6"确认全留痕"——勘误⑨：验收走查
+        // 实证单方腿缺失后补齐；锁定腿与单方腿互斥，同一命令日志行两分支各写一次不重复）
+        insertLog(command.log());
         return ConfirmOutcome.CONFIRMED;
     }
 
