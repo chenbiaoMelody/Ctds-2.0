@@ -90,6 +90,16 @@ public final class ContractErrorCodes {
      */
     public static final ErrorCode CONTRACT_CONCURRENT_MODIFICATION = ErrorCode.of("1008C0019");
     public static final String CONTRACT_CONCURRENT_MODIFICATION_MESSAGE = "合约正在被其他操作修改，请重试";
+
+    // ==== 以下为策略执行段续延（WBS-3.4.5 hifi §8；1008C0001~C0019/S0001~S0003 原语义零变更）====
+
+    /**
+     * 越界使用被拒绝（策略执行五类拦截统一一码：次数耗尽/期限届满/用途不符/域外使用/再分发动作；
+     * 触发要素全查明细入拒绝留痕与服务端日志——沿 C0015"常量文案 + 明细入日志"先例；
+     * Q6-A 裁决口径）。→ 403
+     */
+    public static final ErrorCode POLICY_USAGE_DENIED = ErrorCode.of("1008C0020");
+    public static final String POLICY_USAGE_DENIED_MESSAGE = "越界使用被拒绝，触发要素见留痕";
     /** DID 服务暂不可用（解析/代签/验签不可达——不冒充签署结论，沿 S0001 不冒充口径）。→ 503 */
     public static final ErrorCode DID_SERVICE_UNAVAILABLE = ErrorCode.of("1008S0002");
     public static final String DID_SERVICE_UNAVAILABLE_MESSAGE = "DID 服务暂不可用，请稍后重试";

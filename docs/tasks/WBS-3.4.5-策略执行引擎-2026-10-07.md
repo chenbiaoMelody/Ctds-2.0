@@ -48,7 +48,7 @@
 
 **行为 5 策略执行与绕过拒绝（C-4.3）——本卡承载面（规则 1/2/3/5/6；规则 4 双向用例的剧本级验证归 3.4.6/3.4.8，本卡以测试矩阵承载等价判定）**
 
-| 规则 | 承载 | 关键测试（实测锚——编码段回填） |
+| 规则 | 承载 | 关键测试（实测锚——回填明细见表后"实测锚回填"块） |
 | --- | --- | --- |
 | 规则 1 执行点（调用链路上执行，归 3.4.5） | `PolicyExecutionService.check` 应用层判定入口（Q1/Q2-A）；ADR-020 集成契约供 3.5.2/C-5.x | `checkEntryIsApplicationLayerMethod`（结构锚：无新 HTTP 端点、判定在服务端）；集成锚 `t11_effectiveContractUseAllowedAndCounted`（生效合约放行 + 计数可查） |
 | 规则 2 五类拦截（一律服务端拒绝 + 拒绝留痕） | 判定顺序表 + 要素判定：次数耗尽（判检一体）/ 期限届满（注入 Clock 日期比较）/ 用途不符（精确等值）/ 域外使用（精确等值）/ 再分发动作（actionType = 再分发 + noRedistribution.enabled）→ 统一 C0020 + `contract_usage_log` 拒绝留痕（含触发要素） | 五类各"生效放行 + 越界拒绝"**双向锚**：`t12_quotaExhaustedAtLimitPlusOne`（N 次放行 + 第 N+1 次拒绝且留痕含触发要素——验收标准 1 直译）/ `t13_termBoundary`（期限内放行 + 期外拒绝）/ `t14_purposeMismatch` / `t15_territoryMismatch` / `t16_redistributionBlocked`（再分发动作拒绝 + 留痕——验收标准 5） |
@@ -59,14 +59,38 @@
 | QC1 消费 + 终止/完结 → 策略失效（**移交-5 承接**，剧本 C-4.3 S3-7 联动） | 判定第一步消费 `loadEffectiveStrategy`：未生效/已终止/已完结 → C0013 拦截（策略同步失效） | `t19_terminatedContractStrategyIneffective`（强制终止后使用 → 拒绝 C0013 + 留痕）；`t20_notYetEffectiveContractRejected`（未生效合约 → 拒绝） |
 | 四项未定义项落定（**移交-1 承接**） | Q3（计数口径）+ Q5（用途/域精确等值、相对期限不做）——ADR-020 登记闭环 | 等值判定锚（`t14`/`t15` 含 trim 后等值比较）；不做项 = 登记断言（设计文档 + ADR-020 落笔，无对应实现面） |
 
+> **实测锚回填（编码段 2026-10-07）**：本卡新增 **37 例**（`PolicyJudgeTest` 10 + `PolicyExecutionServiceTest` 12 + `PolicyEngineStructureTest` 2 + `ContractPolicyExecutionIntegrationTest` 13），contract 模块合计 **195 例 0 失败 0 跳过**、行覆盖率 **93.45%**、checkstyle **0 违规**。计划锚 → 实测锚对应：
+>
+> | 计划锚（立卡草案） | 实测锚（测试方法 / 文件） |
+> | --- | --- |
+> | `checkEntryIsApplicationLayerMethod` | `PolicyEngineStructureTest.checkEntryIsApplicationLayerMethodWithoutHttpEndpoint`（非控制器 + 零 HTTP 映射 + `check` 入口签名） |
+> | `noClientSideJudgmentPath` | `PolicyEngineStructureTest.judgeIsStatelessPureFunctionWithoutIo`（`PolicyJudge` final + 零字段 + 静态纯函数 = 判定单点在服务端） |
+> | `t11_effectiveContractUseAllowedAndCounted` | `ContractPolicyExecutionIntegrationTest.t11_effectiveContractUseAllowedCountedAndVisibleInSummary`（第 1~100 次放行 + 计数 + R12 摘要 + 记录行零请求原文） |
+> | `t12_quotaExhaustedAtLimitPlusOne` | 同 `t11_...` 第 101 次拒绝腿（C0020 + `QUOTA_EXHAUSTED` 留痕 + 计数不变）+ `t22_concurrentQuotaLimitPlusOneExactlyOneDenied` |
+> | `t13_termBoundary` | `t13_termWithinRangeAllowedOutsideRangeRejectedWithTermExpired`（期内放行 / 未到起始日拒绝）+ `PolicyJudgeTest.termWithinRangeIncludingBothBoundaryDaysPasses` · `termOutsideRangeOnDayBeforeStartOrAfterEndTriggersTermExpired`（首末日边界） |
+> | `t14_purposeMismatch` | `t14_purposeMismatchRejectedAndAgreedPurposeAllowed` + `PolicyJudgeTest.purposeExactMatchPassesAndMismatchOrAbsentTriggers` · `purposeComparisonTrimsRequestSideAndIsCaseSensitive` |
+> | `t15_territoryMismatch` | `t15_territoryMismatchRejectedAndInTerritoryAllowed` + `PolicyJudgeTest.territoryExactMatchPassesAndMismatchOrAbsentTriggers` · `territoryComparisonTrimsRequestSide` |
+> | `t16_redistributionBlocked` | `t16_redistributionBlockedWithDeniedLogAndUseAllowed` + `t16_allFiveElementsEnabledContractDecidesByEachElement`（多要素全查明细）+ `PolicyJudgeTest.fullScanReportsAllTriggeredViolationsInJudgmentOrder` |
+> | `t17_usageSummaryVisibility` | `t17_usageSummaryVisibilityMatrix`（参与方双方过 / 治理过 / 非参与方与不存在同码同文 + DENIED_ACCESS 留痕） |
+> | `t18_rejectedAttemptDoesNotConsumeQuota` | `t18_rejectedAttemptDoesNotConsumeQuota`（拒绝后计数 0 → 正确用途连续放行） |
+> | `t19_terminatedContractStrategyIneffective` | `t19_terminatedContractStrategyIneffective`（终止 → C0013 + 留痕 + 记录仍可查、quota 视图转 null） |
+> | `t20_notYetEffectiveContractRejected` | `t20_notYetEffectiveContractRejected` |
+> | （空策略 / 显式无限制放行不计数） | `PolicyExecutionServiceTest.emptyStrategyAllowedWithoutCounting` · `explicitNoRestrictionDeclarationAllowedWithoutCounting` + `t21_explicitNoRestrictionDeclarationAllowedWithoutCounting`（零计数行） |
+> | （编排层门槛 / 耗尽 / 偏移钟） | `PolicyExecutionServiceTest.notExistingContractThrowsC0012WithoutAnySideEffect` · `notYetEffectiveContractThrowsC0013WithDeniedLog` · `terminated-` · `completed-` · `purposeMismatchThrowsC0020WithViolationAndWithoutTouchingCounter` · `quotaExhaustedThrowsC0020WithQuotaExhaustedViolationAndCurrentCount` · `offsetClockAcrossTermBoundaryDecidesByInjectedDate` |
+> | （禁用要素不参与判定） | `PolicyJudgeTest.disabledElementsDoNotParticipateInJudgment` · `redistributionNotBlockedWhenDisabledOrActionIsUse` |
+>
 > **C-4.3 剧本判定面承载核对**：S1 幕（策略配置与生效）判定面 3.4.3/3.4.4 已闭环（本卡零触碰，回归保护）；S2/S3 幕（策略生效正向 / 绕过被拒）判定面 = 本卡引擎承载**判定能力**、3.4.6 模拟器承载**演示入口**、3.4.8 承载**测试与联调集成**——本卡交付后 S2/S3 的服务端判定链路即具备，剧本演示待 3.4.6 界面/入口交付后执行；S3-7（强制终止 → 策略失效）= 本卡 `t19` 承载。规格行为 5 六条验收标准全覆盖（映射见规则 2/5/6 行）。
 
 ## 四、执行记录
 
 | 项 | 内容 |
 | --- | --- |
-| 状态 | 🟡 **确认段完成（2026-10-07）**——两级设计一次确认闭环（编排师"都按建议" = Q1~Q7 均采建议口径 A + D1 不拆分）；lofi/hifi 转 **V1.0（编码契约）** + 确认记录签署（两文件末节）；确认批提交并**推送 origin**（立卡批 `bef5e0a` + 确认批）；**下一步 = 编码段（测试先行，待新会话冷启动——第一动作 = 判定矩阵单测先红）**。**（2026-10-07 立卡段，历史留痕）**：任务卡 + lofi/hifi V0.9 落盘，待编排师一次确认（Q1~Q7 + D1）；立卡批提交未推送（沿"确认后推送分支"先例）；分支 `feat/C-4.3-策略执行引擎` 自 `aca3aca` |
+| 状态 | 🟡 **编码段完成（2026-10-07）**——测试先行（红 22 例 → 绿）→ 绿相实现（V3 两表 + `domain.policy` 六件 + 判定服务 + 两仓储 + R12 读面 + 错误码 C0020）→ 并发两口径 + 超卖红相验证 → 全链集成 13 例 + 结构锚 2 例；**contract 195 例 0 失败 0 跳过、行覆盖 93.45%、checkstyle 0**；零改动承诺 diff 为空；ADR-020 + 分级规范 §6.1 回写随批；**全仓门禁复跑 GREEN**（`scripts/gates/reports/gate-report-20261007-184650.md`：PASS=14 / FAIL=0 / SKIP=2 / ERROR=0 / PENDING=6，ExitCode 0；coverage overall line 94.2%〔7870/8355〕、core〔auth 92.02% / crypto 89.74% / did 96.22%〕、mutation 68.18%〔90/132〕、sast 0 findings）——**首跑红灯闭合经**：14:07 后台首跑报告 `-142749` 为 RED（仅 `coverage` 段 `mvn coverage exit 1`，明细仅捕获 stderr 末 5 行 JVM 警告＝度量段完整输出未落盘的运行器证据缺口，见跟踪-15）；根因不可回溯（产物被覆盖），以"同命令隔离复跑 exit 0〔`build-output/w345-coverage-isolated-20261007-1705.log`，14 模块全 SUCCESS / contract 195 例 0 失败〕+ **单发干净全仓复跑 GREEN**"判定**环境性红灯**（沿 3.3.7 口径；隔离复跑产物 provenance 存疑，见跟踪-16，本节结论以本卡 GREEN 报告为准）。**（历史留痕·确认段 2026-10-07）**——两级设计一次确认闭环（编排师"都按建议" = Q1~Q7 均采建议口径 A + D1 不拆分）；lofi/hifi 转 **V1.0（编码契约）** + 确认记录签署（两文件末节）；确认批提交并**推送 origin**（立卡批 `bef5e0a` + 确认批）；**下一步 = 编码段（测试先行，待新会话冷启动——第一动作 = 判定矩阵单测先红）**。**（2026-10-07 立卡段，历史留痕）**：任务卡 + lofi/hifi V0.9 落盘，待编排师一次确认（Q1~Q7 + D1）；立卡批提交未推送（沿"确认后推送分支"先例）；分支 `feat/C-4.3-策略执行引擎` 自 `aca3aca` |
 | 立卡段（本会话） | ① 冷启动读取链：`AGENTS.md` → 最新日志 `-1105`（3.4.4 合并段终章）→ 台账下一包/待编排师行 → 3.4.4 任务卡（移交-1 原文）+ 3.4.4 hifi（要素目录判定语义标注 + ADR-019 大纲）→ 3.4.3 任务卡（移交-5 原文）+ 3.4.3 hifi §2.4（QC1 契约）→ 规格 C-4.1~4.3 V1.0（行为 5 全文 + §4 非目标 + §6 边界声明 1/4 + §7 Q7 + 尾注未定义项）→ contract-service 代码踏勘（`loadEffectiveStrategy:187` / `UsagePolicyDslParser` / 1008 段码位 C0001~C0019+S0001~S0003 / 迁移 V1/V2 现状 → V3 可用 / `ContractActionLog` 留痕先例）；② 交付物：本任务卡 + `docs/designs/WBS-3.4.5-lofi.md`（V0.9）+ `docs/designs/WBS-3.4.5-hifi.md`（V0.9）；③ 台账四处更新（进行中 / 待编排师 / 下一包 / 事件行）；④ 本会话开发日志随批落盘 |
+
+| 编码段（2026-10-07） | ① 冷启动复述续点（编码契约 = hifi V1.0）→ **红相**：引擎件骨架 + 判定矩阵单测（`PolicyJudgeTest` 10 + `PolicyExecutionServiceTest` 12）先红（22 例全失败），红相证据归档 `build-output/w345-red-phase-20261007-1210.txt`（gitignored）；② **绿相实现**：迁移 `V3__create_policy_execution_tables.sql`（两表 DDL 按 hifi §5）+ `domain/policy` 六件（`UsageRequest`/`UsageActionType`/`UsageVerdict`/`PolicyViolation`/`PolicyJudge`/`UsageLogEntry`）+ `PolicyExecutionService`（判定顺序步 1~10）+ `UsageCounterStore`/`JdbcUsageCounterStore` + `UsageLogRepository`/`JdbcUsageLogRepository`（拒绝留痕 REQUIRES_NEW / 放行记录 REQUIRED）+ `UsageQueryService` + `ContractUsageController` + `dto.UsageViews` + 错误码 `1008C0020`（`ContractErrorCodes` 新增 + `ContractExceptionHandler` 映射与状态同步 + 一致性测试计数 22→23）；③ **两处实测缺陷修复**（均被测试捕获，非事后发现）：并发首用 `INSERT IGNORE` 共享锁与条件 UPDATE 排他锁形成 S→X 升级**死锁**（`CannotAcquireLockException`）→ 行初始化改 no-op upsert（排他锁路径，同合约并发串行排队）；`ApiResult` 成功码非 `"OK"` → t17 断言改 HTTP 200 + 数据锚；④ **超卖红相验证**（hifi §9 ②）：临时改"先查后增"→ 上限 5 并发 6 实测放行 6 次（超卖 1），证据 `build-output/w345-concurrency-oversell-20261007-1310.txt`，验证后**立即还原**判检一体实现并复跑全绿；⑤ 验证：`mvn -B -ntp -pl services/contract-service … test jacoco:report checkstyle:check` → 195 例 0 失败 0 跳过 + checkstyle 0 + BUILD SUCCESS + 行覆盖 93.45%（证据 `build-output/w345-final-verify-20261007-1420.txt`）；⑥ **零改动承诺 diff 为空**（QC1/解析器/值对象/要素目录/既有控制器，对基线 `aca3aca`）；⑦ ADR-020《策略执行引擎契约》落稿 + 分级规范 §6.1 回写两行（V3 两表 L1，含与含主体编号先例 L2 的口径提示供评审①复核）；⑧ 全仓门禁复跑单发后台（`build-output/w345-gates-out-20261007-1430.log`） |
+
+| 门禁闭合段（2026-10-07 18:2x） | ① 冷启动复述续点 → 取首跑门禁报告：`gate-report-20261007-142749.md` **RED**（`coverage` 段 `mvn coverage exit 1`；PASS=13 / FAIL=1 / SKIP=1 / ERROR=0 / PENDING=6）；② **根因定位**：度量段（coverage/mutationTest/sast）失败时运行器**不落盘完整输出**（`Invoke-MetricProcess` 仅返回字符串、报告仅取末 5 行；且该 5 行来自 stderr＝JVM 警告，真正原因在 stdout 被截断）→ 原跑输出不可回溯（surefire/jacoco 产物已被后续运行覆盖）；③ **隔离复跑核验**：同命令（jacoco 0.8.12 prepare-agent test report）隔离复跑 exit 0 / BUILD SUCCESS / 14 模块全 SUCCESS / contract 195 例 0 失败（`build-output/w345-coverage-isolated-20261007-1705.log`，17:03→17:11 共 8:44）；④ **单发干净全仓复跑 → GREEN**（`gate-report-20261007-184650.md`：PASS=14 / FAIL=0 / SKIP=2 / ERROR=0 / PENDING=6，ExitCode 0，18:27:15→18:46:50 共 19.6 分钟；coverage overall 94.2%、core〔auth 92.02% / crypto 89.74% / did 96.22%〕、mutation 68.18%、sast 0）；⑤ 复跑前核验**无并发 maven/npm 进程**（仅演示环境 6 个 java 进程，10:43 起，`main` 零触碰）、复跑全程**单发不重试叠加**（3.3.7 教训）；⑥ 两项发现登记跟踪（跟踪-15 运行器证据缺口 / 跟踪-16 无日志隔离复跑产物 provenance）；⑦ 首跑残留 `SKIP=1`→复跑 `SKIP=2` 差异 = 首跑时 `build-output/` 尚无 ≥1MB 产物（保密扫描 oversized 腿），非门禁强度变化（`ConfigSha256` 两次一致 `f7e0aed2…`） |
 
 ## 五、移交与跟踪义务登记
 
@@ -82,6 +106,8 @@
 | 跟踪-12 | **剧本同步建议**：C-4.3 S2/S3 幕判定点在引擎交付后服务端链路已具备、演示入口待 3.4.6——随交付说明给业务语言文本，经 PO 批准落笔（本卡不擅自改剧本） | 本卡交付说明（PO 裁决） |
 | 跟踪-13 | 3.4.4 沿续跟踪项沿台账登记：跟踪-9（C-4.3 附录 B DSL 形态标注，PO 裁决）/ 跟踪-10 全组（移交-6 界面核对修订归 3.4.7 / 跟踪-3 变更流程深化 / 跟踪-4 O1/O2 / 跟踪-6 换驱动回归清单 / 跟踪-7 client 副本计数 / 跟踪-8 contract SharedContainerGuardTest / 跟踪-11 PIT 报告）/ 复审-1 三项 P3 / 处置-3 两项（#3 日志消形 / #8 边界补测——其中 #8 边界补测若与引擎判定边界重叠，本卡测试矩阵可顺带覆盖，**以登记不夹带为原则**，确有覆盖则随编码段登记）——**均不在本卡范围** | 各归属卡（台账沿续） |
 | 跟踪-14 | 演示数据留置沿续：CO000008~10 + 2 条误触留痕（3.4.4 走查留置）+ 本卡走查将新增（生效合约 + 使用计数/记录）——下次演示/走查前统一清理 | 台账沿续登记 |
+| 跟踪-15 | **门禁运行器证据缺口（门禁本体，非本卡代码）**：`run-gates.ps1` 度量段（`coverage` / `mutationTest` / `sast`）经 `Invoke-MetricProcess` 只取回输出字符串、失败时不落盘完整日志（对比 maven/npm 段在失败时写 `%TEMP%\ctds-gate-<阶段>-out.log`），报告仅取"末 5 行且 stdout 先于 stderr 拼接"→ 末 5 行恒为 stderr 的 JVM 警告，**红灯原因不进入报告**，人工无法复核"为什么红"（本次 14:27 RED 即因此不可回溯）。修复 = 给度量段补"失败时落盘完整输出 + 报告取 stdout 末尾关键行"——**属门禁变更（红线 3：不绕过/不修改门禁配置，配置与运行器变更须走门禁变更流程留痕）**，本卡**不自行修改**，仅登记+建议 | 门禁增强（独立卡，走门禁变更流程；建议随下次门禁变更一并落地） |
+| 跟踪-16 | **无日志隔离复跑产物（流程留痕缺口）**：`build-output/w345-coverage-isolated-20261007-1705.{log,exit}`（17:03→17:11，exit=0）存在于 14:21（`-1415` 日志落盘）之后，但该时段**无任何开发日志/文档记录**（`docs/logs` 与任务卡 mtime 均止于 14:2x）；按会话纪律"未写入日志与仓库文件的信息一律视为不存在"，该产物**不作为交付证据**（本卡门禁结论只认 `gate-report-20261007-184650.md`），仅登记 provenance 存疑；教训 = 长任务诊断过程亦须即时落盘，禁止"跑了不留痕" | 本卡交付说明 + 台账沿续登记 |
 
 ---
 
