@@ -10,7 +10,8 @@ import java.util.Objects;
  * 判定纯函数（WBS-3.4.5 hifi §3 判定顺序表步 4~7）：期限/用途/域/再分发四要素全查——
  * 一次请求触犯多项全部报告（无短路；配额判检一体的次数要素归步 9 仓储层，不在本函数）。
  *
- * <p>判定语义唯一权威 = {@link PolicyElementCatalog#judgmentSemantics()}（3.4.4 交付的
+ * <p>判定语义唯一权威 = {@link PolicyElementCatalog.ElementDefinition#judgmentSemantics()}
+ * （3.4.4 交付的
  * 契约面——引擎消费不复制，禁止两处并行定义）：期限 = 区间含首末日；用途/域 = 精确等值
  * （大小写敏感，策略侧文本已由 3.4.4 trim 规范化，请求侧同样 trim 后比较——口径对称）；
  * 再分发 = 启用即拦 REDISTRIBUTE 动作。无 IO、无时钟直取（当前日期由调用方注入）。</p>

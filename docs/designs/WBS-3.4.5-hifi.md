@@ -10,11 +10,12 @@
 ```
 services/contract-service/src/main/java/com/ctds/contract/
 ├── domain/policy/
-│   ├── UsageRequest.java            // 使用请求值对象（contractNo/requesterNo/actionType/purpose/territory）
+│   ├── UsageRequest.java            // 使用请求值对象（requesterNo/actionType/purpose/territory；contractNo 为 check() 入参）
 │   ├── UsageActionType.java         // 枚举：USE（使用）/ REDISTRIBUTE（再分发动作）
 │   ├── UsageVerdict.java            // 判定结果（allowed + 触发要素明细 + 拒绝原因码）
 │   ├── PolicyViolation.java         // 触发要素枚举（QUOTA_EXHAUSTED/TERM_EXPIRED/PURPOSE_MISMATCH/TERRITORY_MISMATCH/REDISTRIBUTION_FORBIDDEN）
-│   └── PolicyJudge.java             // 判定纯函数（期限/用途/域/再分发——只消费 PolicyElementCatalog 语义与 UsageControlPolicy 值，无 IO）
+│   ├── PolicyJudge.java             // 判定纯函数（期限/用途/域/再分发——只消费 PolicyElementCatalog 语义与 UsageControlPolicy 值，无 IO）
+│   └── UsageLogEntry.java           // 执行记录值对象（留痕四要素 + 触发要素码 + 计数快照，不含请求原文）
 ├── application/
 │   ├── PolicyExecutionService.java  // 判定入口（编排：QC1 消费 → 状态门槛 → 空策略 → PolicyJudge 全查 → 配额判检一体 → 记录）
 │   └── UsageQueryService.java       // R12 摘要与记录查询（参与方 + 治理可见性）
@@ -23,7 +24,8 @@ services/contract-service/src/main/java/com/ctds/contract/
 │   ├── UsageCounterStore.java       // 端口 + Jdbc 实现（判检一体原子递增 + 计数读取）
 │   └── UsageLogRepository.java      // 端口 + Jdbc 实现（执行记录写入 + 分页查询）
 └── interfaces/
-    └── ContractUsageController.java // R12 读端点（GET /api/contracts/{contractNo}/usage-summary）
+    ├── ContractUsageController.java // R12 读端点（GET /api/v1/contracts/{contractNo}/usage-summary）
+    └── dto/UsageViews.java          // R12 出站视图（summary/quota/records 分页载荷）
 ```
 
 - **既有代码零改动**（QC1/解析器/值对象/目录 = 上游已验收面）；全部新增件；包名与类名编码段踏勘占用后如有冲突以实测为准（冲突则换名并回填本表）。
@@ -32,7 +34,8 @@ services/contract-service/src/main/java/com/ctds/contract/
 ## 2. 判定入口契约（Q2-A：应用层方法，无 HTTP 端点）
 
 ```java
-public final class PolicyExecutionService {
+@Service
+public class PolicyExecutionService {
     /**
      * 使用判定入口（唯一权威——服务端强制，规格行为 5 规则 3）。
      * 放行：递增计数 + 写放行记录；拒绝：写拒绝留痕（含触发要素），零计数、零计数副作用。
@@ -75,7 +78,7 @@ public final class PolicyExecutionService {
 | 9 | 配额判检一体（`usage.quota` 启用时） | `UPDATE contract_usage_counter SET used_count = used_count + 1, last_used_at = ? WHERE contract_no = ? AND used_count < ?` | 影响行数 = 0 → **C0020**（`QUOTA_EXHAUSTED`）+ 拒绝留痕；quota 未启用 → 不计数直接放行 | 放行：计数 +1（原子） |
 | 10 | 放行 | — | — | 放行记录（requesterNo/时点/合约/动作/usedCount） |
 
-> **判定语义唯一权威**：步 4~7 的语义逐条来自 `PolicyElementCatalog.judgmentSemantics()`（3.4.4 交付的契约面）——引擎**消费不复制**（评审锚：grep 引擎件不得出现第二套五要素语义定义）。
+> **判定语义唯一权威**：步 4~7 的语义逐条来自 `PolicyElementCatalog` 要素定义的 `judgmentSemantics` 语义标注（3.4.4 交付的契约面）——引擎**消费不复制**（评审锚：grep 引擎件不得出现第二套五要素语义定义）。
 > **时钟口径**（两把钟教训）：判定日期/时点、记录写入时点统一取注入 `Clock`（bean `systemDefaultZone`，生产行为与系统时钟一致；测试可注入偏移钟）——禁止直取 `LocalDate.now()`/`LocalDateTime.now()`。
 
 ## 4. 五类拦截判定表（规格行为 5 规则 2 ↔ 判定步映射）
@@ -124,7 +127,7 @@ CREATE TABLE contract_usage_log (
 
 | 项 | 契约 |
 | --- | --- |
-| 路由 | `GET /api/contracts/{contractNo}/usage-summary`（分页参数沿合约域既有分页口径） |
+| 路由 | `GET /api/v1/contracts/{contractNo}/usage-summary`（分页参数沿合约域既有分页口径） |
 | 可见性 | 合约参与方（提供方/需求方）+ 治理（admin 角色头）——沿 R6~R11 权限口径；**非参与方与不存在同码同文 C0012 逐字**（防枚举） |
 | 响应 | `{contractNo, quota: {limit, used} \| null, allowedCount, deniedCount, records: [{requesterNo, actionType, outcome, reasonCode, violations, usedCount, occurredAt}] 分页}` |
 | 权限点 | 复用合约域既有权限点（参与方可见性判定沿 3.4.3 读面实现，不新增权限点面） |
@@ -133,7 +136,7 @@ CREATE TABLE contract_usage_log (
 ## 7. 并发与事务口径
 
 1. **配额判检一体**（Q4-A）：单条条件 UPDATE 的数据库单语句原子性——两个并发"第 N 次"只有一方影响行数 = 1；无 SELECT FOR UPDATE、无应用层锁（准热路径，锁粒度最小化）。
-2. **记录写入与判定同事务**：放行记录/拒绝留痕与计数递增同一事务提交（拒绝腿事务内只有插入 log——计数零变化由"步 9 之前不触碰 counter"结构性保证）。
+2. **记录写入与判定同事务**：放行记录与计数递增同一事务提交（REQUIRED）；**拒绝留痕独立事务（REQUIRES_NEW）**——超越拒绝异常的外层回滚存活（拒绝腿事务内只有插入 log——计数零变化由"步 9 之前不触碰 counter"结构性保证）。
 3. **真并发测试口径**（沿 3.4.3 R2 先例）：并发 N 线程对上限 N 的合约各发起一次使用 → 断言恰好放行 N 次、拒绝 0 次、used_count = N；并发 N+1 线程对上限 N → 放行 N + 拒绝 1 + used_count = N（红相验证判检一体的必要性：如先查后增，超卖可复现）。
 4. **幂等口径（登记不做）**：判定入口**不设幂等键**——"按调用计数"语义下，调用方重试即新的一次调用（计数口径 Q3-A 的直接推论）；消费方（C-5.x/3.4.6）需要请求级幂等由其在调用侧承接——ADR-020 登记，避免双处语义分叉。
 
@@ -150,7 +153,7 @@ CREATE TABLE contract_usage_log (
 | 面 | 内容 | 锚（编码段回填实测名） |
 | --- | --- | --- |
 | ① 判定矩阵单测（`PolicyJudgeTest` / `PolicyExecutionServiceTest`） | 五要素 × 生效/越界**双向**；边界：期限首末日有效/期外首日拒绝、第 N/N+1 次、显式无限制放行不计数、空策略放行不计数、拒绝不烧次数（用途不符后计数不变）、全查明细（一次请求触犯期限+用途 → violations 含两项）、请求侧 trim 对称、注入偏移钟跨期限边界 | `t12`~`t18` 族（映射表 §三） |
-| ② 真并发配额 | §7-3 两口径（N/N 与 N+1/N）；红相验证（临时改先查后增复现超卖 → 还原） | `concurrentQuotaNoOversell` / `concurrentQuotaLimitPlusOne` |
+| ② 真并发配额 | §7-3 两口径（N/N 与 N+1/N）；红相验证（临时改先查后增复现超卖 → 还原） | `t22_concurrentQuotaExactlyNLimitAllAllowed` / `t22_concurrentQuotaLimitPlusOneExactlyOneDenied`（编码段实测名回填） |
 | ③ 全链集成（`ContractPolicyExecutionIntegrationTest`，沿既有容器基座） | 发起→确认→双签→生效→放行计数可查（R12）→耗尽拒绝留痕四要素断言；终止→失效（S3-7）；再分发拦截；未生效拒绝；R12 权限矩阵（参与方过/治理过/非参与方 C0012 同形）；QC1/解析器既有锚零回归 | `t11` / `t16` / `t19` / `t20` / `t17` |
 | ④ 回归 | contract 既有 158 例全绿（上游已验收面零触碰——QC1/解析器/值对象 diff 应为空，评审①锚） | 既有锚断言零变更 |
 
@@ -164,7 +167,7 @@ CREATE TABLE contract_usage_log (
 4. 未定义项落定登记：用途/域精确等值（词表化·多值·编码化不做）/ 相对期限不做（Q5-A）——出现真实需求走变更；
 5. 集成面契约（供 3.5.2/C-5.x）：同步判定语义 / 放行时点语义（无放行凭证）/ 网络级控制不承担 / 接入口径由消费方设计定；
 6. 诚实边界：应用层拦截覆盖（规格 §6-1/§6-4 原文引注）；
-7. 与 ADR-019 的衔接：引擎消费目录判定语义（禁止两处并行定义的沿伸——判定语义不复制）；迁移触发条件沿 ADR-019 §5。
+7. 与 ADR-019 的衔接：引擎消费目录判定语义（禁止两处并行定义的沿伸——判定语义不复制）；迁移触发条件沿 ADR-019 §2.3。
 
 ## 11. 备忘（设计与实现对照义务）
 
@@ -183,3 +186,5 @@ CREATE TABLE contract_usage_log (
 > **确认留痕（2026-10-07，编排师会话回复"**都按建议**"）**：**Q1~Q7 均采建议口径 A + D1 不拆分**——本文件转 **V1.0（编码契约）**（正文口径全部生效：落点 = contract-service 同宿主 / 判定入口 = 应用层方法 + 集成契约 ADR-020 / 计数口径 = 按调用〔放行才计数、拒绝不烧次数〕/ V3 counter 表判检一体原子递增 / 用途·域精确等值 + 相对期限不做 / 错误码新占 C0020 + 状态失效复用 C0013 / V3 usage_log + R12 摘要端点 / 不拆分），lofi 同批转 V1.0（方向定稿）；实现进入编码阶段（测试先行，新会话冷启动——第一动作 = 判定矩阵单测先红，红相即时归档 `build-output/w345-red-phase-*.txt`）。
 
 > **草案留痕（2026-10-07 立卡批 `bef5e0a`）**：V0.9 随立卡批提交；踏勘口径（QC1 `loadEffectiveStrategy:187` 现状 / 1008 段下一空位 = C0020 / 迁移 V3 可用 / `domain.policy` 引擎件类名占用待编码段复核）已并入正文。
+
+> **修订留痕（2026-10-07 评审修复批，编排师裁定"都按建议"）**：§1 骨架对齐实现（`UsageRequest` 注释去 `contractNo`〔为 check() 入参〕+ 补 `UsageLogEntry` 与 `dto/UsageViews` 两行）+ §2 判定服务骨架去 `final`（`@Service` + `@Transactional` 走 CGLIB 代理，final 类不可代理）+ §1/§6 路由补 `/v1`（对齐实现与 ADR-020 §2.6 及合约域既有控制器惯例）+ §3 判定语义权威表述对齐目录 `ElementDefinition.judgmentSemantics` 组件 + §7-2 事务口径显式化（放行 REQUIRED / 拒绝留痕 REQUIRES_NEW）+ §9 ② 并发锚回填实测名 + §10-7 ADR-019 节号勘正（§5 → §2.3）——均为文档字面与实现/ADR 对齐，**零业务判定与契约变更**（评审①③④ findings 处置）。

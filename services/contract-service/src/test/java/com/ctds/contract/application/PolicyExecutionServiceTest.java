@@ -93,8 +93,12 @@ class PolicyExecutionServiceTest {
     @Test
     void terminatedContractThrowsC0013WithDeniedLog() {
         stubSnapshot("TERMINATED", null);
+        // 历史用量 3 次（计数行已存在）——拒绝留痕须落当前不变计数快照（hifi §5 used_count 口径）
+        given(counterStore.currentCount(CONTRACT_NO)).willReturn(3);
         assertThrowsC0013();
-        assertThat(capturedDenial().reasonCode()).isEqualTo("C0013");
+        final UsageLogEntry denial = capturedDenial();
+        assertThat(denial.reasonCode()).isEqualTo("C0013");
+        assertThat(denial.usedCount()).as("状态门槛腿留痕 = 当前不变计数快照").isEqualTo(3);
     }
 
     @Test

@@ -75,11 +75,12 @@ public class PolicyExecutionService {
             throw new ContractBizException(ContractErrorCodes.CONTRACT_NOT_VISIBLE,
                     ContractErrorCodes.CONTRACT_NOT_VISIBLE_MESSAGE);
         }
-        // 步 2 状态门槛（未生效/已终止/已完结 → 策略同步失效 C0013 + 拒绝留痕——移交-5 承接 S3-7）
+        // 步 2 状态门槛（未生效/已终止/已完结 → 策略同步失效 C0013 + 拒绝留痕——移交-5 承接 S3-7；
+        // 留痕 usedCount = 当前不变计数快照，与 hifi §5 / ADR-020 §2.6 "DENIED 时 = 当前不变值"同口径）
         if (!ContractStatus.EFFECTIVE.name().equals(snapshot.status())) {
             logRepository.insertDenied(denial(contractNo, request,
                     ContractErrorCodes.tailOf(ContractErrorCodes.CONTRACT_STATE_FORBIDDEN),
-                    UsageVerdict.denied(0, List.of(), now)));
+                    UsageVerdict.denied(counterStore.currentCount(contractNo), List.of(), now)));
             log.warn("合约状态不允许使用: contractNo={}, status={}", contractNo, snapshot.status());
             throw new ContractBizException(ContractErrorCodes.CONTRACT_STATE_FORBIDDEN,
                     ContractErrorCodes.CONTRACT_STATE_FORBIDDEN_MESSAGE);

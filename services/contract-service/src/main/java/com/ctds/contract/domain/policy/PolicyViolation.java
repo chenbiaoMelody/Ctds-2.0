@@ -4,7 +4,8 @@ package com.ctds.contract.domain.policy;
  * 策略触发要素枚举（WBS-3.4.5 hifi §2 / §4 五类拦截判定表）：拒绝留痕与 R12 记录承载的
  * 机器可读要素码（枚举名落库，非用户文本——留痕四要素纪律，不含请求原文）。
  *
- * <p>判定语义唯一权威 = {@link PolicyElementCatalog#judgmentSemantics()}（3.4.4 交付的
+ * <p>判定语义唯一权威 = {@link PolicyElementCatalog.ElementDefinition#judgmentSemantics()}
+ * （3.4.4 交付的
  * 契约面）——本枚举只承载触发标识，不复制要素语义定义。</p>
  */
 public enum PolicyViolation {

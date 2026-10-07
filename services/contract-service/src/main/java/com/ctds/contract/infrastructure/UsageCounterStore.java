@@ -10,7 +10,9 @@ import java.time.LocalDateTime;
 public interface UsageCounterStore {
 
     /**
-     * 判检一体原子递增（hifi §3 步 9）：行初始化（INSERT IGNORE，幂等）+ 条件 UPDATE
+     * 判检一体原子递增（hifi §3 步 9）：行初始化（no-op upsert
+     * {@code ON DUPLICATE KEY UPDATE used_count = used_count}，幂等——刻意不用 INSERT IGNORE，
+     * 见 ADR-020 §2.5 并发首用死锁规避）+ 条件 UPDATE
      * {@code SET used_count = used_count + 1, last_used_at = ? WHERE contract_no = ? AND
      * used_count < ?}——数据库单语句原子性防"先查后增"竞态超卖，无应用层锁。
      *

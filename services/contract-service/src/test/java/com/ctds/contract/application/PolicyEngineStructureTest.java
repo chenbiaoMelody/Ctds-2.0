@@ -11,8 +11,11 @@ import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -32,6 +35,9 @@ class PolicyEngineStructureTest {
         final boolean anyHttpMapping = Arrays.stream(PolicyExecutionService.class.getDeclaredMethods())
                 .anyMatch(method -> method.isAnnotationPresent(GetMapping.class)
                         || method.isAnnotationPresent(PostMapping.class)
+                        || method.isAnnotationPresent(PutMapping.class)
+                        || method.isAnnotationPresent(DeleteMapping.class)
+                        || method.isAnnotationPresent(PatchMapping.class)
                         || method.isAnnotationPresent(RequestMapping.class));
         assertThat(anyHttpMapping).as("判定入口不得暴露 HTTP 端点").isFalse();
         // 唯一权威入口签名（同宿主直调）

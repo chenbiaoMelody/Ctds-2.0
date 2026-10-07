@@ -24,7 +24,9 @@ import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Clock;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CyclicBarrier;
@@ -40,6 +42,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
@@ -80,8 +85,25 @@ class ContractPolicyExecutionIntegrationTest {
     private static final String C0020 = "1008C0020";
     private static final String PURPOSE_TEXT = "风控建模";
     private static final String TERRITORY_TEXT = "本市域";
+    /** 测试固定钟判定日（两把钟教训——期限造数与引擎判定同源同钟，消除跨午夜竞态窗口）。 */
+    private static final LocalDate FIXED_TODAY = LocalDate.of(2027, 6, 15);
 
     private static Path keyFile;
+
+    /**
+     * 测试固定钟（覆盖应用注入 Clock bean）：期限造数与引擎判定共用同一时钟源；幂等组件
+     * 内部走系统钟（System.currentTimeMillis），不受本覆盖影响。
+     */
+    @TestConfiguration
+    static class FixedEngineClockConfig {
+
+        @Bean
+        @Primary
+        Clock fixedEngineClock() {
+            return Clock.fixed(FIXED_TODAY.atStartOfDay(ZoneId.systemDefault()).toInstant(),
+                    ZoneId.systemDefault());
+        }
+    }
 
     @DynamicPropertySource
     static void sharedMySqlDatasource(final DynamicPropertyRegistry registry) {
@@ -137,9 +159,11 @@ class ContractPolicyExecutionIntegrationTest {
     void t11_effectiveContractUseAllowedCountedAndVisibleInSummary() throws Exception {
         final int limit = 100;
         final String contractNo = toEffective(unique("放行计数"), quotaStrategy(limit));
-        // 第 1~100 次合规使用全部放行且计数递增可查（规格验收标准 1 直译）
+        // 第 1~100 次合规使用全部放行且计数递增可查（规格验收标准 1 直译；每次均携带用途
+        // 原文——策略无用途要素不影响放行，供行末"请求原文不出站"断言真实生效）
         for (int i = 1; i <= limit; i++) {
-            final UsageVerdict verdict = policyExecutionService.check(contractNo, use(null, null));
+            final UsageVerdict verdict = policyExecutionService.check(contractNo,
+                    use(PURPOSE_TEXT, null));
             assertThat(verdict.allowed()).as("第 %s 次使用应放行", i).isTrue();
             assertThat(verdict.usedCount()).isEqualTo(i);
         }
@@ -171,7 +195,7 @@ class ContractPolicyExecutionIntegrationTest {
                 .isEqualTo("DENIED");
         assertThat(data.path("records").path("list").get(0).path("violations").asText())
                 .isEqualTo("QUOTA_EXHAUSTED");
-        // 记录行不含请求原文（留痕四要素纪律——请求侧任意用途文本不出站）
+        // 记录行不含请求原文（留痕四要素纪律——上方 100 次请求均携带用途原文，记录行仍不含）
         assertThat(data.path("records").toString()).doesNotContain(PURPOSE_TEXT);
     }
 
@@ -179,12 +203,12 @@ class ContractPolicyExecutionIntegrationTest {
 
     @Test
     void t13_termWithinRangeAllowedOutsideRangeRejectedWithTermExpired() throws Exception {
-        // 期内（起 = 提交日当天，含首日）→ 放行；未到起始日（期外）→ 拒绝 TERM_EXPIRED
-        final String inTerm = toEffective(unique("期限内"), termStrategy(LocalDate.now(),
-                LocalDate.now().plusYears(1)));
+        // 期内（起 = 固定钟判定日当天，含首日）→ 放行；未到起始日（期外）→ 拒绝 TERM_EXPIRED
+        final String inTerm = toEffective(unique("期限内"), termStrategy(FIXED_TODAY,
+                FIXED_TODAY.plusYears(1)));
         assertThat(policyExecutionService.check(inTerm, use(null, null)).allowed()).isTrue();
         final String outOfTerm = toEffective(unique("期限外"), termStrategy(
-                LocalDate.now().plusDays(1), LocalDate.now().plusYears(1)));
+                FIXED_TODAY.plusDays(1), FIXED_TODAY.plusYears(1)));
         assertThatThrownBy(() -> policyExecutionService.check(outOfTerm, use(null, null)))
                 .isInstanceOf(ContractBizException.class)
                 .extracting(ContractPolicyExecutionIntegrationTest::codeOf).isEqualTo(C0020);
@@ -231,7 +255,7 @@ class ContractPolicyExecutionIntegrationTest {
     @Test
     void t16_allFiveElementsEnabledContractDecidesByEachElement() throws Exception {
         final String contractNo = toEffective(unique("五要素全启用"), allElementsStrategy(5,
-                LocalDate.now(), LocalDate.now().plusYears(1)));
+                FIXED_TODAY, FIXED_TODAY.plusYears(1)));
         // 全要素匹配 + USE + 配额未耗尽 → 放行且计数
         final UsageVerdict allowed = policyExecutionService.check(contractNo,
                 use(PURPOSE_TEXT, TERRITORY_TEXT));
@@ -313,7 +337,11 @@ class ContractPolicyExecutionIntegrationTest {
                 .isInstanceOf(ContractBizException.class)
                 .extracting(ContractPolicyExecutionIntegrationTest::codeOf).isEqualTo(C0013);
         assertThat(deniedReasonCode(contractNo)).isEqualTo("C0013");
-        assertThat(counterOf(contractNo)).as("状态失效拒绝不布副作用（计数不变）").isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT used_count FROM contract_usage_log WHERE contract_no = ? AND outcome = "
+                        + "'DENIED'", Integer.class, contractNo))
+                .as("拒绝留痕计数快照 = 当前不变值（hifi §5 used_count 口径）").isEqualTo(1);
+        assertThat(counterOf(contractNo)).as("状态失效拒绝零副作用（计数不变）").isEqualTo(1);
         // 终止后执行记录仍可查（R12 摘要：quota 视图随策略失效转 null，流水保留——移交-5 可追溯口径）
         final JsonNode terminatedSummary = readBody(summary(contractNo, REQ, "provider")).path("data");
         assertThat(terminatedSummary.path("quota").isNull()).isTrue();
@@ -388,6 +416,19 @@ class ContractPolicyExecutionIntegrationTest {
         assertThat(allowedCountOf(contractNo)).isEqualTo(limit);
         assertThat(deniedCountOf(contractNo)).isEqualTo(1);
         assertThat(deniedViolations(contractNo)).isEqualTo("QUOTA_EXHAUSTED");
+    }
+
+    // ==== t23 R12 摘要配额视图（quota 要素未启用 → null——契约"无生效配额口径"腿）====
+
+    @Test
+    void t23_summaryQuotaNullWhenQuotaElementNotEnabled() throws Exception {
+        final String contractNo = toEffective(unique("无配额摘要"), purposeStrategy(PURPOSE_TEXT));
+        assertThat(policyExecutionService.check(contractNo, use(PURPOSE_TEXT, null)).allowed())
+                .isTrue();
+        final JsonNode data = readBody(summary(contractNo, REQ, "provider")).path("data");
+        assertThat(data.path("quota").isNull()).as("quota 未启用 → 配额视图 null").isTrue();
+        assertThat(data.path("allowedCount").asLong()).isEqualTo(1);
+        assertThat(data.path("deniedCount").asLong()).isZero();
     }
 
     // ==== 支撑（链路捷径 / 请求助手 / 探针）====
