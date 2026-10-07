@@ -158,6 +158,21 @@ class UsagePolicyDslParserTest {
                 + "\"endDate\":\"2026-11-05\"}}").violations()).isEmpty();
     }
 
+    @Test
+    void r5TermBlankOrMissingOneSideRejected() throws Exception {
+        // 空白起始（textual 空串）→ 取值判定"不能为空"
+        assertThat(parse("{\"term\":{\"enabled\":true,\"startDate\":\"\","
+                + "\"endDate\":\"2026-11-05\"}}").violations())
+                .anyMatch(v -> v.contains("期限起始不能为空"));
+        // 纯空白截止 → 同口径
+        assertThat(parse("{\"term\":{\"enabled\":true,\"startDate\":\"2026-10-07\","
+                + "\"endDate\":\"   \"}}").violations())
+                .anyMatch(v -> v.contains("期限截止不能为空"));
+        // 仅一端（缺截止字段）= 结构违规（起止须成对）
+        assertThat(parse("{\"term\":{\"enabled\":true,\"startDate\":\"2026-10-07\"}}")
+                .violations()).anyMatch(v -> v.contains("term 起止须为字符串日期"));
+    }
+
     // ==== 非法矩阵：R6 文本取值与 trim 规范化（trim 为新，Q4-③）====
 
     @Test

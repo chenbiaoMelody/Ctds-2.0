@@ -41,13 +41,13 @@ com.ctds.contract.domain
 
 ### 2.2 要素目录表（DSL v1.0 五要素权威定稿——规格行为 4 规则 2"字段归 3.4.4"的落点）
 
-| 目录键（对齐空间命名规范） | 文档字段名（兼容层） | 显示名 | 值类型 | 约束 | 判定语义标注（供 3.4.5，本卡只标注不实现） |
+| 目录键（对齐空间命名规范） | 文档字段名（兼容层 = 目录 `field()` 回填口径） | 显示名 | 值类型 | 约束 | 判定语义标注（供 3.4.5，本卡只标注不实现） |
 | --- | --- | --- | --- | --- | --- |
-| `usage.quota` | `quota.maxCount` | 使用次数上限 | integer | ≥ 1 | 使用次数上限；计数口径（按调用/按交付）= 3.4.5 未定义项 |
-| `usage.term` | `term.startDate` / `term.endDate` | 使用期限 | date-range（ISO 本地日期） | 起止有序；**起始日 ≥ 提交日**（Q4-④） | 期限内有效；相对期限（自生效起 N 天）自动换算 = 3.4.5 未定义项，演示载荷由技术侧按绝对日期构造 |
-| `usage.purpose` | `purpose.text` | 用途限定 | text | trim 后非空 | 精确等值匹配（约定外用途拒绝）；词表化/多值 = 3.4.5 未定义项 |
-| `usage.territory` | `territory.text` | 域内使用 | text | trim 后非空 | 精确等值匹配（域外拒绝）；地域编码化 = 3.4.5 未定义项 |
-| `usage.no_redistribution` | `noRedistribution.enabled` | 禁止再分发 | boolean | `enabled=true` 即禁止 | 再分发动作（转授/转售/对外提供）拦截 |
+| `usage.quota` | `quota`（值在 `quota.maxCount`） | 使用次数上限 | integer | ≥ 1 | 使用次数上限；计数口径（按调用/按交付）= 3.4.5 未定义项 |
+| `usage.term` | `term`（值在 `term.startDate` / `term.endDate`） | 使用期限 | date-range（ISO 本地日期） | 起止有序；**起始日 ≥ 提交日**（Q4-④） | 期限内有效；相对期限（自生效起 N 天）自动换算 = 3.4.5 未定义项，演示载荷由技术侧按绝对日期构造 |
+| `usage.purpose` | `purpose`（值在 `purpose.text`） | 用途限定 | text | trim 后非空 | 精确等值匹配（约定外用途拒绝）；词表化/多值 = 3.4.5 未定义项 |
+| `usage.territory` | `territory`（值在 `territory.text`） | 域内使用 | text | trim 后非空 | 精确等值匹配（域外拒绝）；地域编码化 = 3.4.5 未定义项 |
+| `usage.no_redistribution` | `noRedistribution` | 禁止再分发 | boolean | `enabled=true` 即禁止 | 再分发动作（转授/转售/对外提供）拦截 |
 
 > **两层命名分离**：目录键 = 对齐空间"域.名词小写点分"规范的模型层标识（治理/渲染/语义标注用）；文档字段名 = 载荷兼容层（3.4.3 已验收固定字段序，**不动**）。映射表如上，ADR-019 留痕。**"至少一项启用或显式声明"门槛与互斥校验**作用于文档层字段（见 §4 规则表 R6/R7）。
 
@@ -75,8 +75,10 @@ public final class PolicyElementCatalog {
 
 ```java
 public final class UsagePolicyDslParser {
-    /** 提交路径：严格解析（版本门槛 / 未知键 / 结构 / 取值 / 互斥 / 规范化 / 时点全查）。 */
+    /** 提交路径：严格解析（版本门槛 / 未知键 / 结构 / 取值 / 互斥 / 规范化 / 时点全查；时点基准 = 当日）。 */
     public static ParseResult parse(final JsonNode document);
+    /** 提交路径重载：R5 时点基准显式注入（时点判定的可测单点，消除系统时钟脆性；对外契约与 parse 一致）。 */
+    public static ParseResult parse(final JsonNode document, final LocalDate submissionDate);
     /** 读路径：容忍解析（密文回读 / 引擎判定——缺省版本 = 1.0，缺字段 = 禁用；不做提交时点校验）。 */
     public static UsageControlPolicy parseTolerant(final JsonNode document);
     /** 确认锁定门槛（行为 4 规则 2——3.4.3 hasAnyRestrictionOrDeclared 迁入单点）。 */
@@ -128,8 +130,8 @@ public final class UsagePolicyDslParser {
 | --- | --- |
 | 解析器单测（新，`UsagePolicyDslParserTest`） | 合法矩阵：五要素全启用（附录 B 预置值同构）/ 部分启用 / 显式无限制 + 全禁用 / 无策略节点 / 带版本；非法矩阵：R2 未知字段名 / R3 未知版本 / R4 次数 0 与负 / R5 起止倒置与起始早于提交日 / R6 纯空白文本 / R7 互斥矛盾；`satisfiesConfirmGate` 两臂；trim 规范化落模断言 |
 | 目录单测（新，`PolicyElementCatalogTest`） | 五要素键集与规格一一对应；键命名规范匹配（`usage.` 前缀点分）；`fields()` 与文档字段名映射一致；封闭性判定 |
-| 收敛回归（既有锚**断言零变更**） | 3.4.3 领域单测 12 例中策略两道校验矩阵（T8 族）——调用改为委托后全绿；contract 全模块 + catalog/did/subject 回归 |
-| 集成锚（新增少量，入既有生命周期集成测试类或新增策略专项类） | W5 提交非法策略被拒（C0015 + 留痕四要素）/ W7 互斥矛盾确认拒绝 / 存量兼容读探针（无版本密文回读成功）/ trim 后值落库探针 |
+| 收敛回归（既有锚**期望值与语义零变更**） | 3.4.3 领域单测 12 例中策略两道校验矩阵（T8 族）——调用改为委托后全绿（方法主体改线、期望值与语义不变）；contract 全模块 + catalog/did/subject 回归 |
+| 集成锚（新增少量，入既有生命周期集成测试类或新增策略专项类） | W5 发起/提案提交非法策略被拒（C0015 + 违规侧零落库）/ 互斥矛盾于**提交时点**拒绝（R7 属提交路径校验，确认态不可达——由发起路径锚覆盖）/ 存量兼容读探针（无版本密文回读成功）/ trim 后值落库探针 |
 | 门禁 | `mvn -B -ntp compile` / `test` / `checkstyle:check`——contract 全绿 + 全仓既有模块回归（Skipped 0 口径） |
 
 ## 7. ADR-019《策略 DSL 契约》大纲（随编码批落稿；决策内容 = 本卡 §二 确认口径）
@@ -163,3 +165,5 @@ public final class UsagePolicyDslParser {
 > **确认留痕（2026-10-06 20:0x，编排师会话回复"**都按建议**"）**：**Q1~Q5 均采建议口径 A + D1 不拆分**——本文件转 **V1.0（编码契约）**（正文口径全部生效：§2.2 要素目录表 / §3 目录契约 / §4.2 校验规则表 R1~R8 / §4.3 调用点收敛清单 / §5 兼容映射矩阵为编码契约面），lofi 同批转 V1.0；实现进入编码阶段（测试先行，新会话冷启动——第一动作 = 解析器单测矩阵先红）。
 
 > **草案留痕（2026-10-06 18:1x，立卡批）**：V0.9 随立卡批提交；踏勘口径（`UsageControlPolicy` 承载现状与三件校验调用点 150/265/548 / 空间 `PolicyCatalog` 同构对照面 / `domain.policy` 包名空闲 / 1008 段码位现状 / C-4.6 草稿载体定位）已并入正文与 Q1~Q5。**待编排师一次确认（Q1~Q5 + D1）后转 V1.0 编码契约。**
+
+> **修复批文本口径修订留痕（2026-10-06 23:xx，评审循环 1 轻量修复批 · 编排师"都按建议"确认口径）**：V1.0 编码契约的**文本口径修订**（不改变对外行为与实现）：§2.2"文档字段名"列对齐目录 `field()` 的顶层字段名口径（#6，值在叶子字段的说明保留）；§4.1 补记 `parse(JsonNode, LocalDate)` 重载（#1，**对外契约不变**，时点判定可测单点）；§6 收敛回归措辞纠正为"期望值与语义零变更"（#9）+ 集成锚"互斥矛盾"条目修正为**提交时点**拒绝（R7 属提交路径校验、确认态不可达，#10）。**修订范围以编排师确认口径为限，编码侧零扩大。**

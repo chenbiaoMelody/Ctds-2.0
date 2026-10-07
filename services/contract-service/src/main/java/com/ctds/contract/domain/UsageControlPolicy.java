@@ -1,5 +1,6 @@
 package com.ctds.contract.domain;
 
+import com.ctds.contract.domain.policy.UsagePolicyDsl;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
@@ -60,33 +61,34 @@ public record UsageControlPolicy(Element quota, Element term, Element purpose, E
     /** 固定字段序紧凑 JSON（存储与规范化共用形态；禁用要素仅落 enabled）。 */
     public ObjectNode toJson() {
         final ObjectNode root = JsonNodeFactory.instance.objectNode();
-        root.set("quota", elementJson(quota, true, false));
-        root.set("term", elementJson(term, false, true));
-        root.set("purpose", elementJson(purpose, false, false));
-        root.set("territory", elementJson(territory, false, false));
-        root.set("noRedistribution", elementJson(noRedistribution, false, false));
-        root.put("noRestrictionDeclared", noRestrictionDeclared);
+        root.set(UsagePolicyDsl.FIELD_QUOTA, elementJson(quota, true, false));
+        root.set(UsagePolicyDsl.FIELD_TERM, elementJson(term, false, true));
+        root.set(UsagePolicyDsl.FIELD_PURPOSE, elementJson(purpose, false, false));
+        root.set(UsagePolicyDsl.FIELD_TERRITORY, elementJson(territory, false, false));
+        root.set(UsagePolicyDsl.FIELD_NO_REDISTRIBUTION,
+                elementJson(noRedistribution, false, false));
+        root.put(UsagePolicyDsl.FIELD_NO_RESTRICTION_DECLARED, noRestrictionDeclared);
         return root;
     }
 
     private static ObjectNode elementJson(final Element element, final boolean withCount,
             final boolean withTerm) {
         final ObjectNode node = JsonNodeFactory.instance.objectNode();
-        node.put("enabled", element.enabled());
+        node.put(UsagePolicyDsl.FIELD_ENABLED, element.enabled());
         if (element.enabled()) {
             if (withCount && element.maxCount() != null) {
-                node.put("maxCount", element.maxCount());
+                node.put(UsagePolicyDsl.FIELD_MAX_COUNT, element.maxCount());
             }
             if (withTerm) {
                 if (element.startDate() != null) {
-                    node.put("startDate", element.startDate());
+                    node.put(UsagePolicyDsl.FIELD_START_DATE, element.startDate());
                 }
                 if (element.endDate() != null) {
-                    node.put("endDate", element.endDate());
+                    node.put(UsagePolicyDsl.FIELD_END_DATE, element.endDate());
                 }
             }
             if (!withCount && !withTerm && element.text() != null) {
-                node.put("text", element.text());
+                node.put(UsagePolicyDsl.FIELD_TEXT, element.text());
             }
         }
         return node;
