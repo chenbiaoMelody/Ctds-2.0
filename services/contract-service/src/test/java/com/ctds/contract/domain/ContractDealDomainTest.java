@@ -3,9 +3,12 @@ package com.ctds.contract.domain;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.ctds.common.crypto.Sm3Service;
+import com.ctds.contract.domain.policy.UsagePolicyDslParser;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -19,6 +22,8 @@ class ContractDealDomainTest {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final Sm3Service SM3 = new Sm3Service();
+    /** 提交时点基准（固定注入——3.4.4 起时点校验归解析器单点，测试不以系统时钟为据）。 */
+    private static final LocalDate SUBMISSION_DAY = LocalDate.of(2026, 1, 1);
 
     // ==== 状态机全转移表（行为 6 规则 1/2）====
 
@@ -81,43 +86,71 @@ class ContractDealDomainTest {
         assertThat(quotaPolicy(UsageControlPolicy.Element.ofCount(false, -5))).isEmpty();
     }
 
+    /** 单要素策略文档 → 解析器单点违规清单（WBS-3.4.4 起校验职责收敛至解析器）。 */
     private List<String> quotaPolicy(final UsageControlPolicy.Element quota) {
-        return new UsageControlPolicy(quota, UsageControlPolicy.Element.flag(false),
-                UsageControlPolicy.Element.flag(false), UsageControlPolicy.Element.flag(false),
-                UsageControlPolicy.Element.flag(false), false).basicValueViolations();
+        return strategyViolationsOf("quota", quota);
     }
 
     private List<String> termPolicy(final UsageControlPolicy.Element term) {
-        return new UsageControlPolicy(UsageControlPolicy.Element.flag(false), term,
-                UsageControlPolicy.Element.flag(false), UsageControlPolicy.Element.flag(false),
-                UsageControlPolicy.Element.flag(false), false).basicValueViolations();
+        return strategyViolationsOf("term", term);
     }
 
     private List<String> textPolicy(final UsageControlPolicy.Element purpose) {
-        return new UsageControlPolicy(UsageControlPolicy.Element.flag(false),
-                UsageControlPolicy.Element.flag(false), purpose,
-                UsageControlPolicy.Element.flag(false), UsageControlPolicy.Element.flag(false),
-                false).basicValueViolations();
+        return strategyViolationsOf("purpose", purpose);
+    }
+
+    private List<String> strategyViolationsOf(final String field,
+            final UsageControlPolicy.Element element) {
+        final ObjectNode strategy = MAPPER.createObjectNode();
+        strategy.set(field, elementJson(element));
+        return UsagePolicyDslParser.parse(strategy, SUBMISSION_DAY).violations();
+    }
+
+    private static ObjectNode elementJson(final UsageControlPolicy.Element element) {
+        final ObjectNode node = MAPPER.createObjectNode();
+        node.put("enabled", element.enabled());
+        if (element.enabled()) {
+            if (element.maxCount() != null) {
+                node.put("maxCount", element.maxCount());
+            }
+            if (element.startDate() != null) {
+                node.put("startDate", element.startDate());
+            }
+            if (element.endDate() != null) {
+                node.put("endDate", element.endDate());
+            }
+            if (element.text() != null) {
+                node.put("text", element.text());
+            }
+        }
+        return node;
     }
 
     // ==== 策略条款：确认锁定门槛（行为 4 规则 2）====
 
     @Test
     void confirmationGateRequiresAnyElementOrExplicitDeclaration() {
-        assertThat(UsageControlPolicy.empty().hasAnyRestrictionOrDeclared()).isFalse();
-        assertThat(new UsageControlPolicy(UsageControlPolicy.Element.flag(false),
-                UsageControlPolicy.Element.flag(false), UsageControlPolicy.Element.flag(false),
-                UsageControlPolicy.Element.flag(false), UsageControlPolicy.Element.flag(false),
-                true).hasAnyRestrictionOrDeclared()).isTrue();
+        assertThat(UsagePolicyDslParser
+                .satisfiesConfirmGate(UsageControlPolicy.empty())).isFalse();
+        assertThat(UsagePolicyDslParser.satisfiesConfirmGate(
+                new UsageControlPolicy(UsageControlPolicy.Element.flag(false),
+                        UsageControlPolicy.Element.flag(false),
+                        UsageControlPolicy.Element.flag(false),
+                        UsageControlPolicy.Element.flag(false),
+                        UsageControlPolicy.Element.flag(false), true))).isTrue();
         assertThat(quotaPolicy(UsageControlPolicy.Element.ofCount(true, 100)).size()).isEqualTo(0);
-        assertThat(new UsageControlPolicy(UsageControlPolicy.Element.ofCount(true, 100),
-                UsageControlPolicy.Element.flag(false), UsageControlPolicy.Element.flag(false),
-                UsageControlPolicy.Element.flag(false), UsageControlPolicy.Element.flag(false),
-                false).hasAnyRestrictionOrDeclared()).isTrue();
-        assertThat(new UsageControlPolicy(UsageControlPolicy.Element.flag(false),
-                UsageControlPolicy.Element.flag(false), UsageControlPolicy.Element.flag(false),
-                UsageControlPolicy.Element.flag(false), UsageControlPolicy.Element.flag(true),
-                false).hasAnyRestrictionOrDeclared()).isTrue();
+        assertThat(UsagePolicyDslParser.satisfiesConfirmGate(
+                new UsageControlPolicy(UsageControlPolicy.Element.ofCount(true, 100),
+                        UsageControlPolicy.Element.flag(false),
+                        UsageControlPolicy.Element.flag(false),
+                        UsageControlPolicy.Element.flag(false),
+                        UsageControlPolicy.Element.flag(false), false))).isTrue();
+        assertThat(UsagePolicyDslParser.satisfiesConfirmGate(
+                new UsageControlPolicy(UsageControlPolicy.Element.flag(false),
+                        UsageControlPolicy.Element.flag(false),
+                        UsageControlPolicy.Element.flag(false),
+                        UsageControlPolicy.Element.flag(false),
+                        UsageControlPolicy.Element.flag(true), false))).isTrue();
     }
 
     @Test
@@ -135,10 +168,10 @@ class ContractDealDomainTest {
                 + "\"purpose\":{\"enabled\":true,\"text\":\"城市交通分析\"},"
                 + "\"territory\":{\"enabled\":false},"
                 + "\"noRedistribution\":{\"enabled\":true},\"noRestrictionDeclared\":false}");
-        final UsageControlPolicy back = UsageControlPolicy.fromJson(MAPPER.readTree(json));
+        final UsageControlPolicy back = UsagePolicyDslParser.parseTolerant(MAPPER.readTree(json));
         assertThat(back).isEqualTo(origin);
         // 缺字段容忍读 = 禁用/空值
-        assertThat(UsageControlPolicy.fromJson(null)).isEqualTo(UsageControlPolicy.empty());
+        assertThat(UsagePolicyDslParser.parseTolerant(null)).isEqualTo(UsageControlPolicy.empty());
     }
 
     // ==== 条款值解析与框架校验（1008C0014 / 1008C0015 两桶）====

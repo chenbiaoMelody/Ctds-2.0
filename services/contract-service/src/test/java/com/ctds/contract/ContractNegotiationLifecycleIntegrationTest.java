@@ -1434,6 +1434,92 @@ class ContractNegotiationLifecycleIntegrationTest {
                 .isEqualTo(contractsBefore);
     }
 
+    /**
+     * C-4.3 写路径校验增强集成锚（WBS-3.4.4 hifi §6 集成锚一）：四类新增拒绝面（R3 版本门槛 /
+     * R7 互斥 / R5 时点 / R2 目录封闭集）在**发起路径**（W5）即拒 1008C0015——响应仅常量文案，
+     * 明细入服务端日志（沿 C0004/C0015 先例）；违规侧零副作用（前后合约行数不变）。
+     */
+    @Test
+    void t9_dslEnhancedViolationsRejectedOnInitiate() throws Exception {
+        final Integer contractsBefore = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM contract WHERE requester_subject_no = ?", Integer.class, REQ);
+        // R3 未知版本 fail-closed（"2.0" 未支持）
+        assertThat(codeOf(initiate(REQ, initiateBody(unique("未知版本"), TEMPLATE_NO, 1,
+                "{\"dslVersion\":\"2.0\",\"quota\":{\"enabled\":true,\"maxCount\":3},"
+                        + "\"noRestrictionDeclared\":false}")))).isEqualTo("1008C0015");
+        // R7 互斥："无使用限制"声明与启用要素并存 = 语义矛盾
+        assertThat(codeOf(initiate(REQ, initiateBody(unique("互斥矛盾"), TEMPLATE_NO, 1,
+                "{\"quota\":{\"enabled\":true,\"maxCount\":3},\"noRestrictionDeclared\":true}"))))
+                .isEqualTo("1008C0015");
+        // R5 时点：期限起始早于提交日（规格"期限早于生效日"提交时点可判定形态）
+        assertThat(codeOf(initiate(REQ, initiateBody(unique("过期期限"), TEMPLATE_NO, 1,
+                termStrategy("2020-01-01", "2027-01-01"))))).isEqualTo("1008C0015");
+        // R2 未知要素字段名（目录封闭集）
+        assertThat(codeOf(initiate(REQ, initiateBody(unique("未知要素"), TEMPLATE_NO, 1,
+                "{\"unlimited\":{\"enabled\":true},\"noRestrictionDeclared\":false}"))))
+                .isEqualTo("1008C0015");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM contract WHERE requester_subject_no = ?", Integer.class, REQ))
+                .isEqualTo(contractsBefore);
+    }
+
+    /**
+     * 写路径校验增强集成锚（hifi §6 集成锚二）：**提案路径**（W6/W7 链路）同样单点全查——
+     * 互斥矛盾与未知版本提案被拒 C0015，且版本行不增（违规侧零落库）。
+     */
+    @Test
+    void t9_dslEnhancedViolationsRejectedOnPropose() throws Exception {
+        final String contractNo = initiateOk(unique("提案校验"),
+                "{\"quota\":{\"enabled\":true,\"maxCount\":3},\"noRestrictionDeclared\":false}");
+        final MvcResult mutex = propose(contractNo, PROV, clauseValuesJson(unique("提案互斥"),
+                "{\"quota\":{\"enabled\":true,\"maxCount\":3},\"noRestrictionDeclared\":true}"));
+        assertThat(mutex.getResponse().getStatus()).isEqualTo(400);
+        assertThat(codeOf(mutex)).isEqualTo("1008C0015");
+        assertThat(codeOf(propose(contractNo, PROV, clauseValuesJson(unique("提案版本"),
+                "{\"dslVersion\":\"2.0\",\"quota\":{\"enabled\":true,\"maxCount\":3}}"))))
+                .isEqualTo("1008C0015");
+        assertThat(clauseVersions(contractNo, REQ)).hasSize(1);
+    }
+
+    /**
+     * 存量兼容读探针（hifi §6 集成锚三）：显式携版本（"1.0"）的载荷提交后，存储形态收敛为
+     * 无版本位的固定字段序文档——读路径缺省容忍 = 1.0（零迁移、零 DDL），QC1 快照与详情视图
+     * 均可正常回读策略模型。
+     */
+    @Test
+    void t9_versionedPayloadStoredVersionlessAndReadTolerantly() throws Exception {
+        final String contractNo = initiateOk(unique("版本探针"),
+                "{\"dslVersion\":\"1.0\",\"quota\":{\"enabled\":true,\"maxCount\":3},"
+                        + "\"noRestrictionDeclared\":false}");
+        assertThat(confirm(contractNo, REQ).getResponse().getStatus()).isEqualTo(200);
+        assertThat(confirm(contractNo, PROV).getResponse().getStatus()).isEqualTo(200);
+        assertThat(sign(contractNo, PROV, PROVIDER_DID).getResponse().getStatus()).isEqualTo(201);
+        assertThat(sign(contractNo, REQ, REQUESTER_DID).getResponse().getStatus()).isEqualTo(201);
+        final var snapshot = queryService.loadEffectiveStrategy(contractNo);
+        assertThat(snapshot.status()).isEqualTo(ContractStatus.EFFECTIVE.name());
+        assertThat(snapshot.strategy().quota().enabled()).isTrue();
+        assertThat(snapshot.strategy().quota().maxCount()).isEqualTo(3);
+        // 存量形态收敛：存储文档无版本位（读路径缺省 = "1.0"）
+        assertThat(readBody(getDetail(contractNo, REQ)).path("data").path("clauseValues")
+                .path("strategy").has("dslVersion")).isFalse();
+    }
+
+    /**
+     * trim 落库探针（hifi §6 集成锚四）：文本要素首尾空白在**写入时**即规范化——回读值与
+     * 判定值同源（防 3.4.5 引擎按"␣风控建模␣"漏拦）。
+     */
+    @Test
+    void t9_paddedTextElementsNormalizedBeforePersistence() throws Exception {
+        final String contractNo = initiateOk(unique("trim探针"),
+                "{\"purpose\":{\"enabled\":true,\"text\":\"  风控建模  \"},"
+                        + "\"territory\":{\"enabled\":true,\"text\":\" 本市域 \"},"
+                        + "\"noRestrictionDeclared\":false}");
+        final JsonNode strategy = readBody(getDetail(contractNo, REQ)).path("data")
+                .path("clauseValues").path("strategy");
+        assertThat(strategy.path("purpose").path("text").asText()).isEqualTo("风控建模");
+        assertThat(strategy.path("territory").path("text").asText()).isEqualTo("本市域");
+    }
+
     // ==== 支撑（请求/断言助手）====
 
     /** 资格失效断言（Q8-A：合约操作语境 C0003 + 留痕尾号 C0003）。 */
