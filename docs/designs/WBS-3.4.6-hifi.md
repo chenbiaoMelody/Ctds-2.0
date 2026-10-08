@@ -224,3 +224,16 @@ public void requireParticipant(String contractNo, ContractSnapshot snapshot, Str
 ## 确认记录
 
 > **确认留痕（2026-10-08，编排师会话回复"Q1~Q7 + D1 均按建议"）**：**Q1~Q7 均采建议口径 A + D1 不拆分**——本文件转 **V1.0（编码契约）**（实现与设计逐条一致，评审①锚）；`docs/designs/WBS-3.4.6-lofi.md` 同批转 **V1.0（方向定稿）**（确认记录亦落其末节）；随后进入编码段（测试先行，新会话冷启动——第一动作 = 模拟判定矩阵单测 + 三端点契约测试先红，红相即时归档 `build-output/w346-red-phase-*.txt`〔3.4.4 教训-1〕）。V0.9 草案随立卡批 `66297f9` 落盘。
+
+---
+
+## 编码段实现登记（2026-10-08，随编码批；设计语义零变更）
+
+> 沿 3.4.5"字面对齐 + 末节修订留痕"先例：仅登记实现与原设计**用词/口径**的落地差异，**不新增设计、不改动 Q1~Q7 决策语义**；决策级说明见 `docs/adr/ADR-021-策略模拟器与测试台契约.md` §6「编码段实现登记」。
+
+1. **§1 文件职责落地**：`application.PolicySimulationService` 承载三端点编排——模拟试算 / 测试台（只读零副作用）+ **受控执行编排**（可见性守卫「仅参与方」→ `PolicyExecutionService.check` 委托）。文件清单与包骨架不变（**零新增文件**；受控执行不新建服务类，保持控制器薄与分层纪律）。
+2. **§6 守卫签名收敛**：落地为 `ContractVisibilityGuard.requireReadable(String contractNo, String operatorNo)` / `requireParticipant(String contractNo, String operatorNo)`（**返回加载的 `Contract` 聚合**，消费方免二次查询）。设计用语 `ContractSnapshot` / `actionCode` 在既有实现中无对应概念（R12 既有实现以 `Contract` + `tailOf(C0012)` 留痕），故按既有域类型收敛；**错误码 / 文案 / 留痕动作逐字不变**（R12 行为零变更由既有可见性矩阵锚回归保护）。
+3. **§8 事务口径修订（实测登记）**：三方法**均不加 `@Transactional`**，替代原文"模拟试算/测试台 `@Transactional(readOnly = true)`"。实测证据：`readOnly = true` 连接下可见性守卫的 `DENIED_ACCESS` 留痕写库被拒（`TransientDataAccessResourceException: Connection is read-only`，用例 t11 首跑红）；改可写事务则拒绝异常的**回滚会吞掉留痕**（留痕必须超越拒绝异常存活）。故沿 R12 `UsageQueryService.summary` 既有口径（无事务标注、留痕自提交）；受控执行腿的事务语义仍由 3.4.5 `check` 与仓储传播口径承载（零改动）。**零副作用**改由结构性保证 + 集成锚钉死（不调 `counterStore.tryIncrement`、不写 `contract_usage_log`）。
+4. **§3 报告形态落地**：`scenarios[]` 的 `actual{allowed, violations[]}` 按设计**嵌套**实现（`SimulationViews.TestbenchReport.Scenario.Actual`）；`interfaces.dto.SimulationViews` **单文件承载请求 + 视图**（`SimulationRequest` / `ExecutionRequest` / `Simulation` / `TestbenchReport` / `Execution`）。
+5. **§3 三态规则 1 落地口径**：场景计划项带 `applicable` 标志（要素未启用 / 空策略场景前提不成立 → `SKIPPED`）；`U11`（空策略/显式无限制）的适用前提 = **无启用要素或显式 `noRestrictionDeclared`**——故"五要素齐全"时 `U11 = SKIPPED`、"空策略"时 `U1~U10 = SKIPPED` + `U11 = PASS`（与 §3 规则 4 一致）。
+6. **§9 验证实测**：contract 模块 **225 例 0 失败 0 错误 0 跳过**（既有 196 例零回归 + 新增 29 例：`PolicyJudgeQuotaTest` 4 + `PolicySimulationServiceTest` 9 + `PolicySimulatorStructureTest` 3 + `ContractPolicySimulatorIntegrationTest` 13）；行覆盖 **93.94%**（2140/2278，≥80% 核心阈值）；全仓 `checkstyle:check` **0 违规**；全仓门禁报告随编码批（`scripts/gates/reports/gate-report-*.md`）。
