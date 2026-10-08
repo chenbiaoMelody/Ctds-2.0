@@ -29,7 +29,7 @@ public class ContractExceptionHandler {
     static final Set<String> MAPPED_CODES = Set.of("1008C0001", "1008C0002", "1008C0003", "1008C0004",
             "1008C0005", "1008C0006", "1008C0007", "1008C0008", "1008C0009",
             "1008C0010", "1008C0011", "1008C0012", "1008C0013", "1008C0014", "1008C0015",
-            "1008C0016", "1008C0017", "1008C0018", "1008C0019",
+            "1008C0016", "1008C0017", "1008C0018", "1008C0019", "1008C0020",
             "1008S0001", "1008S0002", "1008S0003");
 
     @ExceptionHandler(ContractBizException.class)
@@ -58,7 +58,7 @@ public class ContractExceptionHandler {
 
     private static HttpStatus statusOf(final String code) {
         return switch (code) {
-            case "1008C0002", "1008C0011" -> HttpStatus.FORBIDDEN;
+            case "1008C0002", "1008C0011", "1008C0020" -> HttpStatus.FORBIDDEN;
             case "1008C0001", "1008C0003", "1008C0006", "1008C0010", "1008C0012" -> HttpStatus.NOT_FOUND;
             case "1008C0005", "1008C0007", "1008C0009", "1008C0013", "1008C0017",
                  "1008C0019" -> HttpStatus.CONFLICT;
