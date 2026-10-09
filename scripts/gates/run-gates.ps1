@@ -292,12 +292,19 @@ foreach ($stageName in @("compile", "lint", "unitTest")) {
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true
     $psi.WorkingDirectory = $RepoRoot
+    # V1.5 (2026-10-09, WBS-3.4.6 跟踪-23 处置, 编排师裁决 A): mvn 阶段超时可经 stages.<name>.timeoutSeconds
+    # 覆盖（与 coverage/mutationTest/sast 同一配置键），未配置时默认 600s 不变（compile/lint 未设值 = 行为零变化）。
+    # 留痕: gates-config.json changeLog V1.5 + docs/tasks/WBS-3.4.6-策略模拟器与测试台-2026-10-08.md §五 跟踪-23。
+    $stageTimeoutSec = 600
+    if ($s.PSObject.Properties['timeoutSeconds'] -and $s.timeoutSeconds) {
+        $stageTimeoutSec = [int]$s.timeoutSeconds
+    }
     $proc = [System.Diagnostics.Process]::Start($psi)
     $outTask = $proc.StandardOutput.ReadToEndAsync()
     $errTask = $proc.StandardError.ReadToEndAsync()
-    if (-not $proc.WaitForExit(600000)) {
+    if (-not $proc.WaitForExit($stageTimeoutSec * 1000)) {
         try { $proc.Kill() } catch { }
-        Add-Result $stageName "FAIL" ("mvn " + $s.goals + " timed out after 600s")
+        Add-Result $stageName "FAIL" ("mvn " + $s.goals + " timed out after " + $stageTimeoutSec + "s")
     } elseif ($proc.ExitCode -eq 0) {
         Add-Result $stageName "PASS" ("mvn " + $s.goals + " exit 0")
     } else {
