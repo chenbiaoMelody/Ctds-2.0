@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>WBS-3.4.7 线框原型 · 合约工作台界面（低保真）</title>
+<style>
+  /* 低保真线框：只表达信息架构与操作流，不做视觉定稿（高保真阶段定稿） */
+  body { font-family: sans-serif; margin: 0; background: #f5f5f5; }
+  .frame { border: 2px dashed #999; margin: 16px; padding: 12px; }
+  .frame h2 { margin-top: 0; }
+  .layout { display: flex; gap: 12px; }
+  .side { width: 190px; border: 1px dashed #999; padding: 8px; min-height: 260px; }
+  .main { flex: 1; border: 1px dashed #999; padding: 8px; }
+  table { border-collapse: collapse; width: 100%; background: #fff; }
+  th, td { border: 1px solid #bbb; padding: 6px 8px; font-size: 13px; text-align: left; }
+  th { background: #eee; }
+  .btn { display: inline-block; border: 1px solid #666; padding: 3px 10px; margin: 2px; font-size: 13px; background: #fff; text-decoration: none; color: #000; }
+  .btn-danger { border-color: #a00; color: #a00; }
+  .note { color: #888; font-size: 12px; }
+  .field { margin: 4px 0; font-size: 13px; }
+  .label { display: inline-block; width: 170px; color: #555; }
+  .section { border: 1px dashed #aaa; padding: 6px; margin: 6px 0; background: #fff; }
+  .placeholder { color: #aaa; font-style: italic; }
+  .modal { border: 2px solid #666; background: #fff; padding: 10px; margin: 8px 0; width: 720px; }
+  .modal h3 { margin: 0 0 6px 0; font-size: 15px; }
+  .warn { color: #a00; font-weight: bold; }
+  .tabs span { display: inline-block; border: 1px solid #666; border-bottom: none; padding: 4px 12px; margin-right: 4px; font-size: 13px; background: #fff; }
+  .tabs span.on { background: #eee; font-weight: bold; }
+  .topbar { border: 1px solid #666; background: #fff; padding: 6px 10px; font-size: 13px; margin-bottom: 10px; }
+  .tag { border: 1px solid #888; border-radius: 8px; padding: 1px 8px; font-size: 12px; }
+  .tag-warn { border-color: #a00; color: #a00; }
+  .tag-ok { border-color: #2a7; color: #2a7; }
+  .tag-info { border-color: #26a; color: #26a; }
+</style>
+</head>
+<body>
+
+<div class="frame">
+  <h2>画面 0：全局布局（侧边菜单 + 顶栏"演示身份"控件）</h2>
+  <div class="topbar">
+    <b>顶栏</b>：折叠按钮 ｜ 面包屑：合约工作台 / 合约详情 ｜ 右侧：<b>[ 演示身份 ]</b>
+    主体编号 <span class="placeholder">[ S20260914000001 ]</span>
+    档位 <span class="placeholder">[ 普通主体 ▾ ｜ 平台运营方 ]</span> <a class="btn" href="#">保存</a>
+    ｜ 演示模式标识 ｜ 角色切换（user/admin） ｜ 退出
+    <div class="note">演示期专用（沿用 3.2.6 顶栏控件，零新增）：主体编号写入 ctds-demo-subject；档位写入 ctds-demo-actor-mode。
+      <b>合约域角色头（本卡新增）：普通档 = provider；运营档 = admin</b>（服务端 provider 三点 / admin 五点映射）。
+      <b>硬约束：普通档不得携带 admin</b>——否则模板维护类与"越权被拒"类剧本步骤会被服务端放行。主体编号必填（为空 = 未认证，前端拦零请求）。
+      跨域例外：发起弹窗"检索产品"走目录域（目录角色头），两套页面级头互不污染。</div>
+  </div>
+  <div class="layout">
+    <div class="side">
+      <div class="field"><b>侧边菜单</b>（按权限显隐）</div>
+      <div class="field">工作台 / 标准能力 / 数据目录</div>
+      <div class="field">仅管理员可见 / 主体入驻 / 主体审核 / 入驻进度查询 / DID 管理</div>
+      <div class="field">逻辑空间 / 平台策略治理 / 资源登记 / 产品上架 / 目录治理</div>
+      <div class="field"><b>合约模板</b> ◀（menuOrder 14；权限点 contract.template）</div>
+      <div class="field"><b>合约工作台</b> ◀（menuOrder 15；权限点 contract.deal）</div>
+      <div class="field"><b>合约治理</b> ◀（menuOrder 16；权限点 contract.governance）</div>
+      <div class="note">菜单计数：admin 13 → 16；普通角色仍 5（三个新菜单均带权限点 → e2e 登录冒烟零改动）。
+        路由 meta 权限点 = 演示角色体验层；服务端判定以"档位角色头"为准（两套机制独立，沿目录域先例）。</div>
+    </div>
+    <div class="main">
+      <div class="note">本区为页面承载区（画面 1~8 分别为各路由内容）。</div>
+    </div>
+  </div>
+</div>
+
+<div class="frame" id="templates">
+  <h2>画面 1：合约模板页 · 浏览区（/contracts/templates，所有已入驻主体）</h2>
+  <div class="tabs"><span class="on">模板浏览</span><span>运营维护（仅运营档）</span></div>
+  <div class="section"><b>模板列表</b>（R4，分页；<b>仅启用中</b>）
+    <div class="field">类型 <span class="placeholder">[ 全部 ▾ ｜ 公共数据授权 ｜ API 调用 ｜ 隐私计算 ]</span> <a class="btn" href="#">查询</a><a class="btn" href="#">重置</a></div>
+    <table>
+      <tr><th>模板编号</th><th>名称</th><th>类型</th><th>当前版本</th><th>操作</th></tr>
+      <tr><td>CT000001</td><td>公共数据授权合约模板</td><td>公共数据授权</td><td>V1</td><td><a class="btn" href="#template-detail">查看详情</a></td></tr>
+      <tr><td>CT000002</td><td>API调用服务合约模板</td><td>API 调用</td><td><span class="on">V2</span></td><td><a class="btn" href="#template-detail">查看详情</a></td></tr>
+      <tr><td>CT000003</td><td>隐私计算服务合约模板</td><td>隐私计算</td><td>V1</td><td><a class="btn" href="#template-detail">查看详情</a></td></tr>
+    </table>
+    <div class="field note">空态（非报错）：暂无启用中的模板；未入驻（C 主体打开）→ 统一业务文案「主体未入驻或不存在，无法浏览模板」原样展示（防枚举）</div>
+  </div>
+  <div class="section" id="template-detail"><b>模板详情（抽屉，R5）</b>
+    <div class="field"><span class="label">模板编号 / 名称 / 类型</span> CT000002 / API调用服务合约模板 / API 调用　版本 <span class="tag tag-ok">V2</span>　发布时间 2026-10-1x</div>
+    <div class="field"><b>条款框架</b>（逐槽位：名称 / 必填 / 填写说明；<b>页面不含任何数据本体与敏感原文</b>）</div>
+    <table>
+      <tr><th>槽位名称</th><th>必填</th><th>填写说明</th></tr>
+      <tr><td>授权标的</td><td><span class="tag tag-warn">必填</span></td><td>授权的数据/服务是什么（对应目录产品，含标识与名称）</td></tr>
+      <tr><td>授权范围</td><td><span class="tag tag-warn">必填</span></td><td>允许的使用方式（如：内部数据分析/对外服务集成/二次加工边界）</td></tr>
+      <tr><td>…（接口范围与调用方式 / 调用频次上限 等）</td><td>必填</td><td>…</td></tr>
+      <tr><td>服务可用性承诺</td><td><span class="tag">可选</span></td><td>可用率口径与补偿方式（V2 修订新增的可选条款项——C-4.1 S2-1）</td></tr>
+    </table>
+    <div class="field note">停用 / 不存在 → <b>同一条</b>提示「模板不存在或不可用」（1008C0001，不区分"不存在 / 已停用"）</div>
+  </div>
+</div>
+
+<div class="frame" id="template-manage">
+  <h2>画面 2：合约模板页 · 运营维护区（页内页签；仅运营档）</h2>
+  <div class="tabs"><span>模板浏览</span><span class="on">运营维护（仅运营档）</span></div>
+  <div class="section"><b>运营列表</b>（R1，分页；<b>含停用</b>）
+    <div class="field">状态 <span class="placeholder">[ 全部 ▾ ｜ 启用中 ｜ 已停用 ]</span>　类型 <span class="placeholder">[ 全部 ▾ ]</span>　<a class="btn" href="#template-create">新增模板</a></div>
+    <table>
+      <tr><th>编号</th><th>名称</th><th>类型</th><th>版本</th><th>状态</th><th>创建者</th><th>更新时间</th><th>操作</th></tr>
+      <tr><td>CT000002</td><td>API调用服务合约模板</td><td>API 调用</td><td>V2</td><td><span class="tag tag-ok">启用中</span></td><td>S20260914000003</td><td>2026-10-1x</td><td><a class="btn" href="#template-revise">修订</a><a class="btn btn-danger" href="#">停用</a><a class="btn" href="#">版本历史</a></td></tr>
+      <tr><td>CT000003</td><td>隐私计算服务合约模板</td><td>隐私计算</td><td>V1</td><td><span class="tag tag-warn">已停用</span></td><td>platform-seed</td><td>2026-10-1x</td><td><a class="btn" href="#">启用</a><a class="btn" href="#">版本历史</a></td></tr>
+    </table>
+    <div class="field note">普通档打开：本页签隐藏（体验层）；（技术侧直调写面）→「无权进行模板维护操作」（1008C0002）原样展示</div>
+  </div>
+  <div class="section"><b>维护留痕</b>（R3，分页）
+    <table>
+      <tr><th>动作</th><th>模板编号</th><th>版本号</th><th>操作者</th><th>时间</th><th>从何值→到何值</th><th>拒绝码</th></tr>
+      <tr><td>新增</td><td>CT000004</td><td>V1</td><td>S20260914000003</td><td>2026-10-1x</td><td>—</td><td>—</td></tr>
+      <tr><td>修订</td><td>CT000002</td><td>V2</td><td>S20260914000003</td><td>2026-10-1x</td><td>V1 → V2</td><td>—</td></tr>
+      <tr><td>停用</td><td>CT000003</td><td>V1</td><td>S20260914000003</td><td>2026-10-1x</td><td>ENABLED → DISABLED</td><td>—</td></tr>
+      <tr><td>维护被拒（越权）</td><td>CT000002</td><td>V2</td><td>S20260914000002（B 主体）</td><td>2026-10-1x</td><td>—</td><td>C0002（模板维护仅限平台运营方）</td></tr>
+    </table>
+    <div class="note">四要素（谁/何时/哪个模板+版本/动作）+ 从何值→到何值 + 拒绝码（DENIED_MANAGE 行）；不含敏感原文与框架全文（框架全文按版本号在版本历史可查）</div>
+  </div>
+  <div class="modal" id="template-create">
+    <h3>新增模板（W1）/ 修订模板（W2）—— 运营档</h3>
+    <div class="field"><span class="label">模板名称 *</span> <span class="placeholder">[ ≤128；同类型下归一化判重 → 1008C0005 ]</span></div>
+    <div class="field"><span class="label">模板类型 *</span> <span class="placeholder">[ 公共数据授权 ▾ ｜ API 调用 ｜ 隐私计算 ]</span>（修订时只读）</div>
+    <div class="field"><b>条款框架（槽位行编辑器）</b>——行：键〔英文标识〕+ 名称 + 必填勾选 + 填写说明 <a class="btn" href="#">＋ 新增行</a></div>
+    <table>
+      <tr><th>键</th><th>名称</th><th>必填</th><th>填写说明</th><th>操作</th></tr>
+      <tr><td>subject_matter</td><td>授权标的</td><td>☑</td><td>授权的数据/服务是什么</td><td><a class="btn" href="#">删除</a></td></tr>
+      <tr><td>availability_commitment</td><td>服务可用性承诺</td><td>☐</td><td><span class="on">可用率口径与补偿方式（C-4.1 S2-1 新增可选条款项示范）</span></td><td><a class="btn" href="#">删除</a></td></tr>
+    </table>
+    <div class="field"><a class="btn" href="#">发布（修订 = 出新版本，旧版本保留）</a> <span class="note">空框架/名称或类型缺失 = 前置拦截（零请求）；框架非法 → 1008C0004 原样；同态重复启停 → 1008C0007 原样</span></div>
+  </div>
+</div>
+
+<div class="frame" id="workbench">
+  <h2>画面 3：合约工作台（/contracts/workbench）—— 我的合约 + 发起</h2>
+  <div class="section"><b>我的合约</b>（R6，分页；恒仅本主体参与）
+    <div class="field">状态 <span class="placeholder">[ 全部 ▾ ｜ 协商中 ｜ 待签署 ｜ 部分签署 ｜ 已生效 ｜ 已完结 ｜ 已终止 ]</span>　我的角色 <span class="placeholder">[ 全部 ▾ ｜ 提供方 ｜ 需求方 ]</span>　<a class="btn" href="#">查询</a><a class="btn" href="#initiate">发起合约</a></div>
+    <table>
+      <tr><th>合约编号</th><th>产品名称</th><th>对方主体编号</th><th>我的角色</th><th>状态</th><th>当前版本</th><th>生效时间</th><th>更新时间</th><th>操作</th></tr>
+      <tr><td>CO000013</td><td>普惠金融数据服务</td><td>S20260914000002</td><td>需求方</td><td><span class="tag tag-ok">已生效</span></td><td>V3</td><td>2026-10-0x</td><td>2026-10-0x</td><td><a class="btn" href="#detail">查看详情</a></td></tr>
+      <tr><td>CO000016</td><td>普惠金融数据服务</td><td>S20260914000002</td><td>需求方</td><td><span class="tag tag-info">协商中</span></td><td>V1</td><td>—</td><td>2026-10-1x</td><td><a class="btn" href="#detail">查看详情</a></td></tr>
+    </table>
+    <div class="field note">空态："暂无合约"；未入驻（C 主体打开）→ 发起语境统一业务文案原样展示</div>
+  </div>
+  <div class="modal" id="initiate">
+    <h3>发起合约（W5）—— 需求方</h3>
+    <div class="field"><span class="label">产品编号 *</span> <span class="placeholder">[ 4 ]</span> <a class="btn" href="#">检索产品</a>
+      <span class="note">（检索 = 目录域只读复用〔关键词搜索 → 点选回填〕；<b>可直填</b>——已下架/未上架产品由服务端拒 1008C0010，界面不拦截提交；对本人产品发起 → 1008C0016 原样）</span></div>
+    <div class="field"><span class="label">合约模板 *</span> <span class="placeholder">[ API调用服务合约模板 ▾（仅启用中，R4）]</span> 锁定版本 <span class="placeholder">[ V2（当前版本自动锁定）]</span>
+      <span class="note">停用模板不在下拉中（体验层；技术侧直调 → 1008C0017 原样）</span></div>
+    <div class="field"><b>条款内容</b>（按模板框架逐槽位渲染；必填标记 + 填写说明；单值 ≤2000 字符）</div>
+    <div class="field"><span class="label">授权标的 *</span> <span class="placeholder">[ 普惠金融数据服务（产品 4）]</span></div>
+    <div class="field"><span class="label">授权范围 *</span> <span class="placeholder">[ 对外服务集成，不得二次加工 ]</span></div>
+    <div class="field"><span class="label">…（其余槽位）</span> <span class="placeholder">[ … ]</span></div>
+    <div class="field"><b>使用控制策略</b>（至少启用一项，或勾选"无使用限制"——服务端判定 1008C0015）</div>
+    <div class="field">☑ 次数上限 <span class="placeholder">[ 100 ]</span>　☑ 期限 <span class="placeholder">[ 2026-10-11 ~ 2026-11-10 ]</span>　☑ 用途 <span class="placeholder">[ 风控建模 ]</span></div>
+    <div class="field">☑ 域内使用 <span class="placeholder">[ 本市域 ]</span>　☑ 禁止再分发　☐ 无使用限制（显式声明）</div>
+    <div class="field note"><b>非法取值可提交</b>（如次数填负数 → 服务端 1008C0015 原样展示——C-4.3 S1-3 步骤屏幕可执行）；必填留空 = 前置拦截（零请求）</div>
+    <div class="field"><a class="btn" href="#detail">提交发起</a> <span class="note">成功 → 跳转合约详情（协商中）</span></div>
+  </div>
+</div>
+
+<div class="frame" id="detail">
+  <h2>画面 4：合约详情 · 总览与条款版本链（/contracts/workbench/:contractNo，深链）</h2>
+  <div class="section"><b>总览</b>
+    <div class="field">合约编号 CO000013　状态 <span class="tag tag-ok">已生效</span>　我的角色：需求方</div>
+    <div class="field"><span class="label">产品 / 定价快照</span> 普惠金融数据服务（产品 4）/ 包月 / 99.00</div>
+    <div class="field"><span class="label">双方</span> 提供方 S20260914000001 ｜ 需求方 S20260914000002</div>
+    <div class="field"><span class="label">模板引用（版本快照）</span> CT000002 · <b>V1</b>（<span class="note">C-4.1 S2-3 核对面：模板后续修订 V2 不影响本合约快照</span>）</div>
+    <div class="field"><span class="label">生效时间 / 内容哈希</span> 2026-10-0x 14:3x ｜ 3f2a…（SM3）</div>
+  </div>
+  <div class="section"><b>当前条款全文</b>（R7；槽位渲染；无数据本体段落）
+    <div class="field"><span class="label">授权标的</span> 普惠金融数据服务（产品 4）　<span class="label">授权范围</span> 对外服务集成…</div>
+    <div class="field"><span class="label">接口范围与调用方式</span> QPS≤5，鉴权用平台令牌…（逐槽位全文）</div>
+  </div>
+  <div class="section"><b>条款版本链</b>（R8）
+    <table>
+      <tr><th>版本</th><th>提案方</th><th>提案时间</th><th>双方确认时间</th><th>变更明细（从何值 → 到何值）</th></tr>
+      <tr><td>V3</td><td>S20260914000002</td><td>2026-10-0x</td><td>供 10-0x / 需 10-0x</td><td>rate_limit：QPS≤10 → QPS≤5；strategy：次数 300 → 100</td></tr>
+      <tr><td>V2</td><td>S20260914000001</td><td>2026-10-0x</td><td>供 10-0x / 需 —</td><td>…</td></tr>
+      <tr><td>V1（发起首版）</td><td>S20260914000002</td><td>2026-10-0x</td><td>—</td><td><span class="placeholder">—（无上一版）</span></td></tr>
+    </table>
+    <div class="field note">动作条（按状态+角色显隐）：协商中 →「提案」「确认」「终止协商」；待签署/部分签署 →「拒签终止」；已生效 →「合意解除」；<b>已生效无"单方撤回签署"入口</b>（服务端强制）</div>
+  </div>
+</div>
+
+<div class="frame" id="sign">
+  <h2>画面 5：合约详情 · 协商与签署（动作条 + 签署与存证区）</h2>
+  <div class="section"><b>签署与存证</b>（R7）
+    <table>
+      <tr><th>签署方</th><th>主体编号</th><th>DID</th><th>签署时间</th></tr>
+      <tr><td>提供方</td><td>S20260914000001</td><td>did:ctds:S20260914000001.1</td><td>2026-10-0x 14:1x</td></tr>
+      <tr><td>需求方</td><td>S20260914000002</td><td>did:ctds:S20260914000002.1</td><td>2026-10-0x 14:3x</td></tr>
+    </table>
+    <div class="field note">签署状态 = <b>部分签署</b>（一方已签）/ <b>已生效</b>（双签，生效时间 = 最后一签时间）；签名值不出站（无展示）；</div>
+    <div class="field"><b>存证事件</b>：内容哈希 3f2a… ｜ 双方 DID 与签署时间 ｜ 存证时间 2026-10-0x 14:3x（链上对接归 3.8.x）</div>
+    <div class="field"><a class="btn" href="#sign-modal">签署</a> <a class="btn" href="#">验签核验</a> <a class="btn btn-danger" href="#">拒签终止</a>
+      <span class="note">验签结果逐方展示（PASS / FAIL / UNAVAILABLE 原样）；无签署时按钮在无待办状态下隐藏（体验层）</span></div>
+    <table>
+      <tr><th>验签方</th><th>DID</th><th>结果</th><th>原因 / 核验时间</th></tr>
+      <tr><td>提供方</td><td>did:ctds:S20260914000001.1</td><td><span class="tag tag-ok">PASS</span></td><td>— / 2026-10-0x 15:0x</td></tr>
+      <tr><td>需求方</td><td>did:ctds:S20260914000002.1</td><td><span class="tag tag-ok">PASS</span></td><td>— / 2026-10-0x 15:0x</td></tr>
+    </table>
+  </div>
+  <div class="modal" id="sign-modal">
+    <h3>电子签署（W9）</h3>
+    <div class="field"><span class="label">签署 DID *</span> <span class="placeholder">[ did:ctds:S20260914000002.1 ]</span>
+      <span class="note">取值路径：可在「DID 管理」页查询双方 DID（手输，不代查不预填——DID 归属由服务端校验 1008C0018）</span></div>
+    <div class="field"><a class="btn" href="#">确认签署</a> <span class="note">后签 → 合约已生效 + 存证事件登记；已生效后不可单方撤回（技术侧直调 → 1008C0013）</span></div>
+  </div>
+</div>
+
+<div class="frame" id="policy">
+  <h2>画面 6：合约详情 · 策略与使用（策略视图 + 模拟试算 + 测试台 + 发起使用 + 使用摘要）—— 3.4.6 移交-1 界面承载</h2>
+  <div class="section"><b>策略视图</b>（R7 条款值 strategy 全文；仅合约双方与治理查看）
+    <table>
+      <tr><th>要素</th><th>状态</th><th>取值</th></tr>
+      <tr><td>使用次数上限</td><td><span class="tag tag-ok">已启用</span></td><td>100 次</td></tr>
+      <tr><td>使用期限</td><td><span class="tag tag-ok">已启用</span></td><td>2026-10-11 ~ 2026-11-10</td></tr>
+      <tr><td>用途限定</td><td><span class="tag tag-ok">已启用</span></td><td>风控建模（精确匹配）</td></tr>
+      <tr><td>域内使用</td><td><span class="tag tag-ok">已启用</span></td><td>本市域（精确匹配）</td></tr>
+      <tr><td>禁止再分发</td><td><span class="tag tag-ok">已启用</span></td><td>再分发动作一律拦截</td></tr>
+      <tr><td>无使用限制声明</td><td><span class="tag">未声明</span></td><td>—（有要素启用时不可并存）</td></tr>
+    </table>
+    <div class="field note"><b>诚实边界（常驻）</b>：「模拟结论不是放行承诺；正式放行以真实执行通道为准」「受控执行为演示期受控入口，正式交付链接入后同判定面」</div>
+  </div>
+  <div class="section"><b>模拟试算 / 测试台 / 发起使用</b>
+    <div class="field"><a class="btn" href="#sim-modal">模拟试算</a> <a class="btn" href="#bench">测试台（一键双向报告）</a> <a class="btn" href="#exec-modal">发起使用（受控执行）</a>
+      <span class="note">发起使用<b>仅参与方</b>可见（治理页无此入口）；每次提交计一次使用（无幂等键，界面如实提示）</span></div>
+  </div>
+  <div class="modal" id="sim-modal">
+    <h3>模拟试算（假想上下文；<b>零副作用</b>——不消耗次数、不产生记录）</h3>
+    <div class="field">动作类型 <span class="placeholder">[ 使用 ▾ ｜ 再分发 ]</span>　用途 <span class="placeholder">[ 风控建模 ]</span>　地域 <span class="placeholder">[ 本市域 ]</span></div>
+    <div class="field">假想已用次数 <span class="placeholder">[ 100 ]</span>（缺省 = 真实计数）　假想日期 <span class="placeholder">[ 2026-11-11 ]</span>（缺省 = 今天）　☐ 使用策略草稿（不勾 = 用当前合约生效策略）</div>
+    <div class="field"><a class="btn" href="#">试算</a></div>
+    <div class="section">结果（<b>拒绝以数据展示——不弹错误</b>）：<span class="tag tag-warn">未放行</span> 触发要素：次数耗尽　策略来源：生效策略　假想上下文回显：已用 100 / 日期 2026-11-11
+      <div class="note">策略快照回显（五要素表）；草稿非法 → 1008C0015 原样（表单错误提示）</div>
+    </div>
+  </div>
+  <div class="modal" id="bench">
+    <h3>测试台报告（一键执行；双向场景集 11 条；<b>零落库</b>）</h3>
+    <table>
+      <tr><th>场景</th><th>要素</th><th>方向</th><th>期望</th><th>结果</th><th>实际结论</th></tr>
+      <tr><td>U1</td><td>次数</td><td>生效放行</td><td>放行</td><td><span class="tag tag-ok">PASS</span></td><td>allowed=true</td></tr>
+      <tr><td>U2</td><td>次数</td><td>越界拦截</td><td>拒绝（次数耗尽）</td><td><span class="tag tag-ok">PASS</span></td><td>violations=[QUOTA_EXHAUSTED]</td></tr>
+      <tr><td>…</td><td>期限/用途/域/再分发</td><td>双向</td><td>…</td><td>…</td><td>…</td></tr>
+      <tr><td>U11</td><td>空策略</td><td>生效放行</td><td>放行</td><td><span class="tag tag-info">SKIPPED</span></td><td>—（要素未启用，如实不假绿）</td></tr>
+    </table>
+    <div class="field note">汇总：总数 11 ｜ PASS 10 ｜ FAIL 0 ｜ SKIPPED 1　运行时间 2026-10-1x 15:0x　报告零落库（归档需求归 3.8.3）</div>
+  </div>
+  <div class="modal" id="exec-modal">
+    <h3>发起使用（受控执行；真实计数与留痕）</h3>
+    <div class="field">动作类型 <span class="placeholder">[ 使用 ▾ ｜ 再分发 ]</span>　用途 * <span class="placeholder">[ 风控建模 ]</span>　地域 * <span class="placeholder">[ 本市域 ]</span></div>
+    <div class="field"><a class="btn" href="#">提交使用</a>
+      <span class="note">放行 → 提示 + 已用次数（递增后）显示 + 摘要刷新；越界 → 1008C0020 原样「越界使用被拒绝，触发要素见留痕」；状态失效 → 1008C0013 原样；<b>每次提交计一次使用</b></span></div>
+  </div>
+  <div class="section"><b>使用摘要</b>（R12）
+    <div class="field">已用次数 <b>3</b> / 上限 100　放行 <b>3</b>　拒绝 <b>2</b></div>
+    <table>
+      <tr><th>操作者</th><th>动作</th><th>结果</th><th>触发要素</th><th>已用计数</th><th>时间</th></tr>
+      <tr><td>S20260914000002</td><td>使用</td><td><span class="tag tag-ok">放行</span></td><td>—</td><td>3</td><td>2026-10-1x 15:0x</td></tr>
+      <tr><td>S20260914000002</td><td>使用</td><td><span class="tag tag-warn">拒绝</span></td><td>PURPOSE_MISMATCH（用途不符）</td><td>—</td><td>2026-10-1x 15:1x</td></tr>
+    </table>
+    <div class="field note">记录行只含要素码与结果（不含条款原文与请求文本）；quota 为空时显示"无生效配额口径"</div>
+  </div>
+</div>
+
+<div class="frame" id="logs">
+  <h2>画面 7：合约详情 · 合约留痕区（R13，Q2-A；参与方 + 治理）</h2>
+  <div class="section"><b>合约留痕</b>（分页；四要素 + 版本号 + from→to + 拒绝码；<b>不含敏感原文</b>）
+    <table>
+      <tr><th>动作</th><th>版本</th><th>操作者</th><th>时间</th><th>从何值→到何值</th><th>拒绝码</th></tr>
+      <tr><td>发起</td><td>V1</td><td>S20260914000002</td><td>2026-10-0x</td><td>—</td><td>—</td></tr>
+      <tr><td>提案</td><td>V2</td><td>S20260914000001</td><td>2026-10-0x</td><td>V1 → V2</td><td>—</td></tr>
+      <tr><td>确认</td><td>V3</td><td>S20260914000002</td><td>2026-10-0x</td><td>—</td><td>—</td></tr>
+      <tr><td>签署</td><td>V3</td><td>S20260914000001</td><td>2026-10-0x</td><td>PENDING_SIGNATURE → PARTIALLY_SIGNED</td><td>—</td></tr>
+      <tr><td>存证</td><td>V3</td><td>S20260914000002</td><td>2026-10-0x</td><td>EFFECTIVE</td><td>—</td></tr>
+      <tr><td>治理查看</td><td>—</td><td>S20260914000003（运营方）</td><td>2026-10-1x</td><td>—</td><td>—</td></tr>
+      <tr><td>越权拒绝</td><td>—</td><td>S20260914000004（第三人）</td><td>2026-10-1x</td><td>—</td><td>C0012（合约不存在或不可见）</td></tr>
+    </table>
+    <div class="field note">空态"暂无记录"；<b>本区即"留痕判定面屏幕可核对"的落点</b>（C-4.2 S1-1/S2-1/S3-1/S3-2/S3-4）</div>
+  </div>
+</div>
+
+<div class="frame" id="governance">
+  <h2>画面 8：合约治理页（/contracts/governance，运营档）</h2>
+  <div class="section"><b>全量列表</b>（R10，分页；含协商中/已终止；<b>每次查看写治理查看留痕</b>）
+    <div class="field">状态 <span class="placeholder">[ 全部 ▾ ｜ 协商中 ｜ 已生效 ｜ 已终止 ｜ … ]</span> <a class="btn" href="#">查询</a></div>
+    <table>
+      <tr><th>合约编号</th><th>产品名称</th><th>提供方</th><th>需求方</th><th>状态</th><th>终止类型</th><th>当前版本</th><th>更新时间</th><th>操作</th></tr>
+      <tr><td>CO000014</td><td>普惠金融数据服务</td><td>S20260914000001</td><td>S20260914000002</td><td><span class="tag tag-warn">已终止</span></td><td>运营方强制终止</td><td>V2</td><td>2026-10-1x</td><td><a class="btn" href="#gov-detail">查看治理详情</a></td></tr>
+      <tr><td>CO000016</td><td>普惠金融数据服务</td><td>S20260914000001</td><td>S20260914000002</td><td><span class="tag tag-info">协商中</span></td><td>—</td><td>V1</td><td>2026-10-1x</td><td><a class="btn" href="#gov-detail">查看治理详情</a></td></tr>
+    </table>
+  </div>
+  <div class="section" id="gov-detail"><b>治理详情（R11：详情 + 协商过程版本链 + 留痕区；只读，无参与方动作条）</b>
+    <div class="field">（复用详情各分区只读渲染：总览 / 条款全文 / 版本链 / 策略视图 / 留痕区）</div>
+    <div class="field">终止信息：终止类型 <span class="tag tag-warn">运营方强制终止</span>　理由全文：违规转售核查属实…　操作者 S20260914000003</div>
+    <div class="field"><a class="btn btn-danger" href="#force">强制终止</a> <span class="note">仅"已生效"合约可强制终止</span></div>
+    <div class="field note">每次查看（列表加载 / 直查）写 `GOVERNANCE_VIEW`；合约双方在详情留痕区（R13）可核对；非运营档访问 → 403 原样展示</div>
+  </div>
+  <div class="modal" id="force">
+    <h3>强制终止（W12）</h3>
+    <div class="field"><span class="label">理由 *</span> <span class="placeholder">[ 1~512 字 ]</span> <span class="note">留空 = 前置拦截（零请求）；成功 → 状态已终止 + 理由全文 + 留痕行（含理由与操作者）；该合约下策略同步失效（C-4.3 S3-7 联动）</span></div>
+  </div>
+</div>
+
+<div class="frame" id="rules">
+  <h2>画面 9：口径板（同形提示 / 角色头 / 错误展示纪律）</h2>
+  <div class="section">
+    <div class="field">① 模板不存在 / 已停用：<b>同一条</b>提示「模板不存在或不可用」（1008C0001）——不区分差异</div>
+    <div class="field">② 合约不存在 / 非参与方：<b>同一条</b>提示「合约不存在或不可见」（1008C0012）——防枚举（含治理直查对象缺失）</div>
+    <div class="field">③ 未入驻（浏览 / 发起 / 维护三语境）：后端统一业务文案原样展示（不提示"主体不存在"）</div>
+    <div class="field">④ 模板维护越权「无权进行模板维护操作」（1008C0002）/ 产品不可发起「产品不存在或未在架，无法发起合约」（1008C0010）/ 模板不可发起「所选模板不可用于发起合约」（1008C0017）——一律原样展示</div>
+    <div class="field">⑤ 一切写动作<b>不做乐观更新</b>：被拒后界面状态不变，一律以响应为准刷新；错误文案原样展示（不吞、不改写）</div>
+    <div class="field">⑥ 模拟"拒绝"是<b>数据</b>不是错误（不弹错误提示，结果面板展示）；模拟零副作用——界面不本地增减计数</div>
+    <div class="field">⑦ 危险动作（终止协商 / 拒签终止 / 合意解除 / 启停 / 强制终止）二次确认；取消 = 零请求；必填留空 = 前置拦截（零请求）</div>
+    <div class="field">⑧ 认证失效（1000C0002）→ 提示后端文案 → 清登录态 → 回登录页（复用共享 authGuide）</div>
+    <div class="field">⑨ 角色头：普通档 = provider（<b>不含 admin</b>，硬约束）；运营档 = admin；跨域产品检索走目录角色头；两套页面级头互不污染</div>
+    <div class="field">⑩ 诚实边界常驻：模拟结论不是放行承诺 / 受控执行为演示期形态；受控执行每次提交计一次使用（无幂等键，如实提示）</div>
+  </div>
+</div>
+
+</body>
+</html>
