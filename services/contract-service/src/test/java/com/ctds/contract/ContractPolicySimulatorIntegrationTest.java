@@ -23,10 +23,12 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -53,9 +55,9 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  *
  * <p>用例承载：模拟结论以数据返回（200 + allowed=false）；零副作用锚（模拟与测试台后 counter /
  * usage_log 零变化）；对照一致性锚（假想上下文 = 真实状态时模拟结论 ≡ 真实执行结论，含 100/101
- * 边界与各要素越界腿）；测试台报告三态（全要素 / 部分要素 SKIPPED / 空策略 / 非生效合约失效
- * 预期）；受控执行五腿（放行计数可查 / 耗尽拒绝留痕 / 终止 C0013 / 非参与方同码同文防枚举 /
- * 治理不发起使用）。</p>
+ * 边界与各要素越界腿——期限届满腿以"生效后推进判定日越过策略截止日"构造，见 t14）；测试台报告三态
+ * （全要素 / 部分要素 SKIPPED / 空策略 / 非生效合约失效预期）；受控执行五腿（放行计数可查 /
+ * 耗尽拒绝留痕 / 终止 C0013 / 非参与方同码同文防枚举 / 治理不发起使用）。</p>
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 @AutoConfigureMockMvc
@@ -87,16 +89,38 @@ class ContractPolicySimulatorIntegrationTest {
     private static final LocalDate TERM_END = LocalDate.of(2027, 12, 31);
 
     private static Path keyFile;
+    /**
+     * 测试判定日（缺省 = 固定钟 2027-06-15）；t14（期限届满真实腿）临时推进以越过策略截止日，用毕复位。
+     */
+    private static final AtomicReference<LocalDate> ENGINE_TODAY = new AtomicReference<>(FIXED_TODAY);
 
-    /** 测试固定钟（覆盖应用注入 Clock bean——判定与假想日期缺省共用同一时钟源）。 */
+    /** 测试钟（覆盖应用注入 Clock bean——判定与假想日期缺省共用同一时钟源；判定日可推进）。 */
     @TestConfiguration
-    static class FixedEngineClockConfig {
+    static class MutableEngineClockConfig {
 
         @Bean
         @Primary
-        Clock fixedEngineClock() {
-            return Clock.fixed(FIXED_TODAY.atStartOfDay(ZoneId.systemDefault()).toInstant(),
-                    ZoneId.systemDefault());
+        Clock engineClock() {
+            return new EngineClock();
+        }
+    }
+
+    /** 委托 {@link #ENGINE_TODAY} 的时钟（{@code LocalDate.now(clock)} 与 {@code LocalDateTime.now(clock)} 同源）。 */
+    private static final class EngineClock extends Clock {
+
+        @Override
+        public ZoneId getZone() {
+            return ZoneId.systemDefault();
+        }
+
+        @Override
+        public Clock withZone(final ZoneId zone) {
+            return this;
+        }
+
+        @Override
+        public Instant instant() {
+            return ENGINE_TODAY.get().atStartOfDay(ZoneId.systemDefault()).toInstant();
         }
     }
 
@@ -133,6 +157,7 @@ class ContractPolicySimulatorIntegrationTest {
 
     @BeforeEach
     void stubPorts() {
+        ENGINE_TODAY.set(FIXED_TODAY);
         for (final String subject : List.of(REQ, PROV, OTHER, ADMIN)) {
             given(subjectAdmissionPort.check(subject)).willReturn(SubjectAdmission.ADMITTED);
         }
@@ -406,11 +431,42 @@ class ContractPolicySimulatorIntegrationTest {
         assertThat(counterOf(contractNo)).isZero();
     }
 
+    // ==== t14 对照一致性锚：期限届满腿的真实执行腿（推进判定日越过策略截止日）====
+
+    @Test
+    void t14_simulationMatchesRealExecutionForExpiredTermOnRealLeg() throws Exception {
+        // 策略期限 = 固定钟窗口（TERM_START~TERM_END，沿用既有生效夹具）；生效后推进判定日至截止日次日，
+        // 使真实执行腿（既有链路、零改动）真实触发期限届满——补齐"各要素越界腿逐项一致"的期限面。
+        final String contractNo = toEffective(unique("对照期限真实腿"),
+                allElementsStrategy(100, TERM_START, TERM_END));
+        assertThat(counterOf(contractNo)).isZero();
+        final LocalDate expiredToday = TERM_END.plusDays(1);
+        try {
+            ENGINE_TODAY.set(expiredToday);
+            assertSimulationMatchesRealExecution(contractNo, "USE", PURPOSE_TEXT, TERRITORY_TEXT,
+                    expiredToday);
+            assertThat(lastDeniedViolations(contractNo)).as("真实执行腿触发要素 = 期限届满")
+                    .isEqualTo("TERM_EXPIRED");
+            assertThat(deniedReasonCode(contractNo)).as("五类拦截统一出口 = 1008C0020（留痕记码尾号）")
+                    .isEqualTo("C0020");
+            assertThat(counterOf(contractNo)).as("期限届满拒绝零副作用（不计数）").isZero();
+        } finally {
+            ENGINE_TODAY.set(FIXED_TODAY);
+        }
+    }
+
     // ==== 对照锚助手 ====
 
-    /** 模拟（假想 = 真实状态）与真实执行逐项对照（结论 + 触发要素集合）。 */
+    /** 模拟（假想 = 真实状态）与真实执行逐项对照（结论 + 触发要素集合；判定日 = 固定钟）。 */
     private void assertSimulationMatchesRealExecution(final String contractNo, final String actionType,
             final String purpose, final String territory) throws Exception {
+        assertSimulationMatchesRealExecution(contractNo, actionType, purpose, territory, FIXED_TODAY);
+    }
+
+    /** 同上；{@code expectedAssumedDate} = 本次判定日（t14 推进判定日后不等于固定钟）。 */
+    private void assertSimulationMatchesRealExecution(final String contractNo, final String actionType,
+            final String purpose, final String territory, final LocalDate expectedAssumedDate)
+            throws Exception {
         final int realCount = counterOf(contractNo);
         final JsonNode simulation = readBody(simulate(contractNo, actionType, purpose, territory, null,
                 null, REQ, "provider")).path("data");
@@ -435,7 +491,7 @@ class ContractPolicySimulatorIntegrationTest {
             assertThat(String.join(",", violationsOf(simulation))).as("触发要素集合逐项一致")
                     .isEqualTo(realViolations);
         }
-        assertThat(simulation.path("assumedDate").asText()).isEqualTo(FIXED_TODAY.toString());
+        assertThat(simulation.path("assumedDate").asText()).isEqualTo(expectedAssumedDate.toString());
     }
 
     // ==== 用例夹具（沿 ContractPolicyExecutionIntegrationTest 先例）====

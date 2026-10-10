@@ -41,7 +41,7 @@ class PolicySimulatorStructureTest {
     void testbenchScenariosCoverEveryCatalogElement() {
         final List<PolicyTestbenchScenarios.PlannedScenario> plans =
                 PolicyTestbenchScenarios.plan(allElementsPolicy(), TODAY);
-        // 场景表逐条钉死（hifi §3：六要素声明序 × 双向 + 空策略一条；再分发要素先 DENY 后 ALLOW）
+        // 场景表逐条钉死（hifi §3：目录五要素声明序 × 双向 + 空策略一条；再分发要素先 DENY 后 ALLOW）
         assertThat(plans).extracting(plan -> plan.code() + " " + plan.elementKey() + " "
                         + plan.direction())
                 .containsExactly("U1 usage.quota ALLOW", "U2 usage.quota DENY",

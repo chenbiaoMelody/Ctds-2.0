@@ -14,7 +14,7 @@ services/contract-service/src/main/java/com/ctds/contract/
 │   ├── SimulationContext.java        // 【新】假想上下文值对象（assumedUsedCount / assumedDate + 缺省填充工厂）
 │   └──（零改动：UsageRequest / UsageActionType / UsageVerdict / PolicyViolation / UsageLogEntry / UsagePolicyDslParser / PolicyElementCatalog）
 ├── application/
-│   ├── PolicySimulationService.java  // 【新】模拟试算 + 测试台编排（只读事务；可见性 → QC1 → 草稿解析(可选) → 判定镜像 → 装配视图）
+│   ├── PolicySimulationService.java  // 【新】模拟试算 + 测试台 + 受控执行编排（事务口径见 §8 与末节「编码段实现登记」；可见性 → QC1 → 草稿解析(可选) → 判定镜像 → 装配视图）
 │   ├── PolicyTestbenchScenarios.java // 【新】内置场景集定义（目录驱动 11 条；场景构造与预期）
 │   ├── ContractVisibilityGuard.java  // 【新】可见性守卫（参与方 / 参与方+治理 两种口径 + DENIED_ACCESS 留痕单点）
 │   ├── UsageQueryService.java        // 【改·等价重构】R12 改用共享守卫（行为零变更，回归保护）
@@ -137,7 +137,7 @@ services/contract-service/src/main/java/com/ctds/contract/
 // domain/policy/PolicyJudge.java（只增；既有 judge(...) 零改动）
 /**
  * 配额纯判定（模拟通道与对照锚使用；不触库、无副作用）。
- * 语义 = 限值来源（策略 quota.limit）+ 耗尽判据（assumedUsedCount >= limit），
+ * 语义 = 限值来源（策略 quota.maxCount〔策略值对象字段名〕）+ 耗尽判据（assumedUsedCount >= limit），
  * 与真实执行腿 UsageCounterStore.tryIncrement 的条件 UPDATE 同源（ADR-021 登记）。
  */
 public static List<PolicyViolation> judgeQuota(UsageControlPolicy policy, int assumedUsedCount);
@@ -156,8 +156,9 @@ public static List<PolicyViolation> judgeQuota(UsageControlPolicy policy, int as
 ```java
 // application/ContractVisibilityGuard.java（新）
 // 以 UsageQueryService（R12）既有可见性 + 拒绝留痕形态为基准抽取；错误码/文案/留痕动作逐字一致
-public void requireReadable(String contractNo, ContractSnapshot snapshot, String operatorNo, String actionCode);
-public void requireParticipant(String contractNo, ContractSnapshot snapshot, String operatorNo, String actionCode);
+// 落地口径（签名收敛为既有域类型，见末节「编码段实现登记」§2）：
+public Contract requireReadable(String contractNo, String operatorNo);
+public Contract requireParticipant(String contractNo, String operatorNo);
 ```
 
 - `requireReadable`：**参与方 + 治理（admin 角色头）** 通过；否则 `1008C0012`（与"合约不存在"**同码同文**）+ `DENIED_ACCESS` 留痕——R12 / 模拟试算 / 测试台使用；
@@ -183,8 +184,8 @@ public void requireParticipant(String contractNo, ContractSnapshot snapshot, Str
 
 | 项 | 口径 |
 | --- | --- |
-| 模拟试算 | `@Transactional(readOnly = true)`；只读计数（`UsageCounterStore.currentCount`）——**不调** `tryIncrement`；不写 log |
-| 测试台 | 同上（11 条场景共用只读事务）；不写 log / counter；报告不落库 |
+| 模拟试算 | **不加 `@Transactional`**（落地口径，见末节「编码段实现登记」§3——替代初稿"`@Transactional(readOnly = true)`"：只读连接下守卫 `DENIED_ACCESS` 留痕写库被拒，改可写事务则拒绝异常回滚会吞留痕）；只读计数（`UsageCounterStore.currentCount`）——**不调** `tryIncrement`；不写 log |
+| 测试台 | 同上（11 条场景共用同口径、无事务标注）；不写 log / counter；报告不落库 |
 | 受控执行 | `check` 自带事务语义（放行腿计数 + 记录同事务；拒绝留痕独立事务 REQUIRES_NEW）——**零改动** |
 | 时钟 | 假想日期缺省 = `LocalDate.now(clock)`；`runAt` / `occurredAt` = `LocalDateTime.now(clock)`；**禁止直取 `LocalDate.now()`**（DB-09 / DB-22 两把钟教训）；模拟通道的假想日期为**显式假设口径**（不影响真实执行腿的注入 Clock） |
 | 幂等 | 模拟 / 测试台零副作用（无需幂等）；受控执行**不设幂等键**（ADR-020 §2.7 登记） |
@@ -195,9 +196,9 @@ public void requireParticipant(String contractNo, ContractSnapshot snapshot, Str
 
 | 面 | 计划锚（方法名，编码段允许按实测微调并回填任务卡 §三） |
 | --- | --- |
-| ① 模拟判定矩阵（单测） | `simulationFiveElementsBidirectionalMatrix`（五要素 × 双向）；`simulationQuotaBoundaryAtLimitMinusOneLimitAndLimitPlusOne`；`simulationTermBoundaryStartDayEndDayAndBeyond`；`simulationPurposeAndTerritoryExactEquality`；`simulationDraftStrategyValidAndInvalidRejectedC0015`；`simulationEmptyOrExplicitNoRestrictionAllowed`；`simulationAssumedCountOutOfRangeRejectedC0008`；`simulationNonEffectiveContractReportsStrategyIneffective` |
+| ① 模拟判定矩阵（单测，落地 9 例——含 `simulationAssumedContextDefaultsToRealCountAndToday`） | `simulationFiveElementsBidirectionalMatrix`（五要素 × 双向）；`simulationQuotaBoundaryAtLimitMinusOneLimitAndLimitPlusOne`；`simulationTermBoundaryStartDayEndDayAndBeyond`；`simulationPurposeAndTerritoryExactEquality`；`simulationDraftStrategyValidAndInvalidRejectedC0015`；`simulationEmptyOrExplicitNoRestrictionAllowed`；`simulationAssumedContextDefaultsToRealCountAndToday`；`simulationAssumedCountOutOfRangeRejectedC0008`；`simulationNonEffectiveContractReportsStrategyIneffective` |
 | ② 零副作用锚（集成） | `simulationAndTestbenchLeaveCounterAndUsageLogUntouched`（执行前后 counter 值与 usage_log 行数**零变化**） |
-| ③ 对照一致性锚（集成） | `simulationMatchesRealExecutionForAllowedAndDeniedPaths`（假想上下文 = 真实状态；含 100/101 与各要素越界；结论 + 触发要素集合逐项一致） |
+| ③ 对照一致性锚（集成） | `simulationMatchesRealExecutionForAllowedAndDeniedPaths`（假想上下文 = 真实状态；含 100/101 与用途/域/再分发越界；结论 + 触发要素集合逐项一致）+ `simulationMatchesRealExecutionForExpiredTermOnRealLeg`（**期限届满腿的真实执行腿**——策略生效后推进判定日越过截止日，真实腿真实触发 `TERM_EXPIRED`/`C0020` 并与模拟腿逐项一致；评审循环 1 ④#2 补强，2026-10-10） |
 | ④ 测试台报告（集成 + 结构锚） | `testbenchAllElementsEnabledAllScenariosPass`（五要素齐全：U1~U10 全 PASS + U11 SKIPPED）；`testbenchPartialElementsSkippedForDisabled`；`testbenchEmptyStrategyOnlyU11Pass`；`testbenchNonEffectiveContractAllScenariosStateDenied`；结构锚 `testbenchScenariosCoverEveryCatalogElement`（目录 ↔ 场景覆盖一致）；结构锚 `endpointsExposeNoBypassParameter`（三端点无跳过判定入参） |
 | ⑤ 受控执行（集成） | `usageExecutionAllowedThenCountedAndVisibleInSummary`；`usageExecutionQuotaExhaustedRejectedWithDeniedLog`；`usageExecutionTerminatedContractRejectedC0013`；`usageExecutionNonParticipantRejectedWithEnumerationSafeCode`（与"不存在"同码同文）；`usageExecutionGovernanceRoleCannotExecute`（治理不发起使用） |
 | 回归 | 既有 **196 例零回归**（含 R12 可见性矩阵、t11~t23、结构锚、真并发用例）+ `checkstyle:check` **0 违规**；contract 行覆盖保持 ≥80%（预期 ≥93%，以编码段实测为准） |
@@ -237,3 +238,15 @@ public void requireParticipant(String contractNo, ContractSnapshot snapshot, Str
 4. **§3 报告形态落地**：`scenarios[]` 的 `actual{allowed, violations[]}` 按设计**嵌套**实现（`SimulationViews.TestbenchReport.Scenario.Actual`）；`interfaces.dto.SimulationViews` **单文件承载请求 + 视图**（`SimulationRequest` / `ExecutionRequest` / `Simulation` / `TestbenchReport` / `Execution`）。
 5. **§3 三态规则 1 落地口径**：场景计划项带 `applicable` 标志（要素未启用 / 空策略场景前提不成立 → `SKIPPED`）；`U11`（空策略/显式无限制）的适用前提 = **无启用要素或显式 `noRestrictionDeclared`**——故"五要素齐全"时 `U11 = SKIPPED`、"空策略"时 `U1~U10 = SKIPPED` + `U11 = PASS`（与 §3 规则 4 一致）。
 6. **§9 验证实测**：contract 模块 **225 例 0 失败 0 错误 0 跳过**（既有 196 例零回归 + 新增 29 例：`PolicyJudgeQuotaTest` 4 + `PolicySimulationServiceTest` 9 + `PolicySimulatorStructureTest` 3 + `ContractPolicySimulatorIntegrationTest` 13）；行覆盖 **93.94%**（2140/2278，≥80% 核心阈值）；全仓 `checkstyle:check` **0 违规**；全仓门禁报告随编码批（`scripts/gates/reports/gate-report-*.md`）。
+
+---
+
+## 评审修复批登记（2026-10-10，4 视角评审循环 1 处置）
+
+> 依据：评审段日志 `docs/logs/Ctds-项目开发日志-26-10-10-2004.md`（4×PASS / 零打回；去重 findings 13 项）+ 编排师裁定"**按建议执行**"（= 路径 A 轻量修复批 + #2 采 A：补期限届满真实腿用例）。**仅口径对齐与测试锚补强，不改动 Q1~Q7 决策语义、不改判定行为与 HTTP 契约**（版本仍 V1.0）。
+
+1. **§1 包骨架注释**："（只读事务…）"→ 落地口径（事务标注见 §8 与本文末节登记 §3）。
+2. **§5 配额限值来源字段名**：`quota.limit` → `quota.maxCount`（策略值对象字段名与 `PolicyJudge.judgeQuota` 实现一致；`limit` 为 R12 摘要视图字段名——同义不同名，逐字区分）。
+3. **§6 守卫签名**：正文改为落地口径 `Contract requireReadable(String contractNo, String operatorNo)` / `Contract requireParticipant(String contractNo, String operatorNo)`（初稿 `ContractSnapshot` / `actionCode` 用语沿用末节登记 §2 的收敛理由）。
+4. **§8 事务口径**：模拟试算 / 测试台两行显式写"**不加 `@Transactional`**"（原 `@Transactional(readOnly = true)` 为初稿口径，已由末节登记 §3 修订）。
+5. **§9 测试计划**：① 补齐 9 例落地锚（补遗 `simulationAssumedContextDefaultsToRealCountAndToday`）；③ 新增 `simulationMatchesRealExecutionForExpiredTermOnRealLeg`——**期限届满腿的真实执行腿**（策略截止日次日推进判定日 → 真实腿真实触发 `TERM_EXPIRED` + 留痕码尾号 `C0020` + 零计数），使"各要素越界腿逐项一致"对期限要素也成为可执行事实（评审 ④#2，测试先行 + 反向探针`build-output/w346-t14-anchor-probe-20261010.txt`）。
