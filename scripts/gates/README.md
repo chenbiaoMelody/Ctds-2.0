@@ -96,7 +96,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gates\selftest.ps1
 
 ## 工具链
 
-Maven 阶段需要 JDK 17 与 Maven 3.9+：脚本优先读环境变量 `JAVA_HOME`，缺省回退到 `gates-config.json` 的 `toolchain.javaHome`（当前本机 `C:\Program Files\Java\jdk-17`）；`mavenBin`/`mavenArgs` 同理可覆盖。依赖解析走用户级 `%USERPROFILE%\.m2\settings.xml`（阿里云镜像）。单阶段超时：Java 阶段 600 秒 / 前端阶段 300 秒 / 质量度量段独立预算（coverage 900 秒 / mutationTest 1800 秒 / sast 900 秒，config `timeoutSeconds` 可覆盖，ADR-018）。前端阶段（WBS 2.4.12 接入）在 `frontend/` 目录执行 npm 命令（workdir 可按阶段在 gates-config.json 配置）。
+Maven 阶段需要 JDK 17 与 Maven 3.9+：脚本优先读环境变量 `JAVA_HOME`，缺省回退到 `gates-config.json` 的 `toolchain.javaHome`（当前本机 `C:\Program Files\Java\jdk-17`）；`mavenBin`/`mavenArgs` 同理可覆盖。依赖解析走用户级 `%USERPROFILE%\.m2\settings.xml`（阿里云镜像）。单阶段超时：Java 阶段默认 600 秒（config `timeoutSeconds` 可覆盖，V1.6 起 `unitTest` 设为 1200 秒——全仓实测波动 850~900+ 秒，跟踪-23/编排师裁决 A→A2）；前端阶段 300 秒 / 质量度量段独立预算（coverage 900 秒 / mutationTest 1800 秒 / sast 900 秒，ADR-018）。前端阶段（WBS 2.4.12 接入）在 `frontend/` 目录执行 npm 命令（workdir 可按阶段在 gates-config.json 配置）。
 
 **工具前置探测（V1.2 起）**：`mvn` / `npm` 不在 PATH 时记 `ERROR`（退出码 2）而不是让阶段以"命令不存在"的失败面目出现——工具缺失是环境问题，不是代码结论。配置值含非法字符时**整个阶段跳过、不执行任何命令**（不得"检出后仍启动命令"）。
 

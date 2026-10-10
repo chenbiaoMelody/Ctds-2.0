@@ -58,6 +58,31 @@ public final class PolicyJudge {
         return violations;
     }
 
+    /**
+     * 配额纯判定（WBS-3.4.6 hifi §5；模拟通道与对照一致性锚使用，不触库、无副作用）。
+     *
+     * <p>语义 = 限值来源（策略 {@code quota.maxCount}）+ 耗尽判据（{@code assumedUsedCount >=
+     * limit}），与真实执行腿 {@code UsageCounterStore.tryIncrement} 的条件 UPDATE 同源（两腿
+     * 同源声明落 ADR-021；禁止第二套限值来源或第二套耗尽判据）。要素未启用/策略为空 → 空列表；
+     * 入参合法性（0 ≤ 值 ≤ 上限）由应用层校验（hifi §5）。</p>
+     *
+     * @param policy           策略值对象（配额要素未启用 = 不判）
+     * @param assumedUsedCount 假想已用次数（应用层已校验边界）
+     */
+    public static List<PolicyViolation> judgeQuota(final UsageControlPolicy policy,
+            final int assumedUsedCount) {
+        if (policy == null || policy.noRestrictionDeclared()) {
+            return List.of();
+        }
+        final UsageControlPolicy.Element quota = policy.quota();
+        if (quota == null || !quota.enabled() || quota.maxCount() == null) {
+            return List.of();
+        }
+        // 耗尽判据 = 已用 ≥ 限值（与 tryIncrement 条件 UPDATE "used_count < limit" 同源）
+        return assumedUsedCount >= quota.maxCount()
+                ? List.of(PolicyViolation.QUOTA_EXHAUSTED) : List.of();
+    }
+
     private static boolean enabled(final UsageControlPolicy.Element element) {
         return element != null && element.enabled();
     }
