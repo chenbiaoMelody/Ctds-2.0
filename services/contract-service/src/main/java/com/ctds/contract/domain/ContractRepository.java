@@ -78,6 +78,9 @@ public interface ContractRepository {
      */
     void insertLog(ContractActionLog log);
 
+    /** R13 合约统一留痕只读分页（WBS-3.4.7 hifi §5；稳定序 created_at DESC, id DESC）。 */
+    PageResult<ContractActionLog> pageActionLogs(String contractNo, PageQuery page);
+
     // ==== 事务命令与结局载体 ====
 
     /** W7 命令（canonicalCipher/contentHash 由应用服务按锁定值预计算——确定性，双方计算一致）。 */

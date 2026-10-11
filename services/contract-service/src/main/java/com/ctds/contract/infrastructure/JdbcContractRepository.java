@@ -3,6 +3,7 @@ package com.ctds.contract.infrastructure;
 import com.ctds.common.pagination.PageQuery;
 import com.ctds.common.pagination.PageResult;
 import com.ctds.contract.domain.Contract;
+import com.ctds.contract.domain.ContractAction;
 import com.ctds.contract.domain.ContractActionLog;
 import com.ctds.contract.domain.ContractAttestation;
 import com.ctds.contract.domain.ContractClauseVersion;
@@ -362,6 +363,32 @@ public class JdbcContractRepository implements ContractRepository {
                 .param(log.contractNo()).param(log.versionNo()).param(log.action().name())
                 .param(log.actorSubjectNo()).param(log.reasonCode())
                 .param(log.fromValue()).param(log.toValue()).update();
+    }
+
+    @Override
+    public PageResult<ContractActionLog> pageActionLogs(final String contractNo,
+            final PageQuery page) {
+        final long total = jdbc.sql("SELECT COUNT(*) FROM contract_action_log "
+                        + "WHERE contract_no = ?")
+                .param(contractNo).query(Long.class).single();
+        final List<ContractActionLog> list = jdbc.sql(
+                        "SELECT id, contract_no, version_no, action, actor_subject_no, "
+                                + "reason_code, from_value, to_value, created_at "
+                                + "FROM contract_action_log WHERE contract_no = ? "
+                                + "ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?")
+                .param(contractNo).param(page.pageSize()).param(page.offset())
+                .query((rs, rowNum) -> mapActionLog(rs))
+                .list();
+        return PageResult.of(list, total, page);
+    }
+
+    private ContractActionLog mapActionLog(final ResultSet rs) throws SQLException {
+        return new ContractActionLog(rs.getLong("id"), rs.getString("contract_no"),
+                (Integer) rs.getObject("version_no"),
+                ContractAction.valueOf(rs.getString("action")),
+                rs.getString("actor_subject_no"), rs.getString("reason_code"),
+                rs.getString("from_value"), rs.getString("to_value"),
+                toLocalDateTime(rs, "created_at"));
     }
 
     // ==== 内部：行锁读 / 版本行写入 / 分页 / 映射 ====

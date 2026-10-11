@@ -12,6 +12,10 @@
  * WBS-3.3.6 缺陷修复批（走查登记 F1，hifi §12 E3）：新增演示身份变更信号 `demoIdentityRevision`
  * ——保存身份且值确有变化时自增，顶栏所属布局以它为当前页面 key：身份变更 = 页面整体重挂并按
  * 新身份重拉数据（服务端行级过滤仍为判定源；刷新自愈的缺陷根因即组件态未随身份变化失效）。
+ * WBS-3.4.7 扩展（hifi §4）：合约域页面级角色头 `contractRolesHeader()`——普通档 `provider`
+ * （持 contract.template.read/contract.read/contract.deal）/ 运营档 `admin`（另持
+ * contract.template.manage/contract.governance，服务端 ctds.auth.permissions 两行实测映射）；
+ * 硬约束（T18）：**普通档不得携带 `admin`**。
  */
 import { ref } from 'vue'
 
@@ -55,5 +59,10 @@ export function spaceRolesHeader(): string {
 
 /** 目录域页面级角色头（WBS-3.3.6；覆盖 `apiJson` 的全局演示角色头，与空间域互不污染）。 */
 export function catalogRolesHeader(): string {
+  return getActorMode() === 'operator' ? 'admin' : 'provider'
+}
+
+/** 合约域页面级角色头（WBS-3.4.7；覆盖 `apiJson` 的全局演示角色头，与其他域互不污染）。 */
+export function contractRolesHeader(): string {
   return getActorMode() === 'operator' ? 'admin' : 'provider'
 }

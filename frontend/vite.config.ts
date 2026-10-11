@@ -40,6 +40,16 @@ export default defineConfig({
         target: 'http://localhost:8084',
         changeOrigin: true,
       },
+      // WBS-3.4.7 合约域（8085）：界面走查经 5173 访问合约服务（开发期转发，不改服务契约与
+      // 门禁配置）。两键须位于下方通用 '/api' 前缀键之前（键序先行）。
+      '/api/v1/contracts': {
+        target: 'http://localhost:8085',
+        changeOrigin: true,
+      },
+      '/api/v1/contract-templates': {
+        target: 'http://localhost:8085',
+        changeOrigin: true,
+      },
       // WBS-3.2.6 空间域（8083）：界面走查经 5173 访问空间服务（开发期转发，不改服务契约与门禁配置）。
       '/api/v1/data-spaces': {
         target: 'http://localhost:8083',

@@ -48,13 +48,16 @@ public class ContractQueryService {
     private final DealTextCipher dealTextCipher;
     private final DidPort didPort;
     private final Clock clock;
+    private final ContractVisibilityGuard visibilityGuard;
 
     public ContractQueryService(final ContractRepository repository,
-            final DealTextCipher dealTextCipher, final DidPort didPort, final Clock clock) {
+            final DealTextCipher dealTextCipher, final DidPort didPort, final Clock clock,
+            final ContractVisibilityGuard visibilityGuard) {
         this.repository = repository;
         this.dealTextCipher = dealTextCipher;
         this.didPort = didPort;
         this.clock = clock;
+        this.visibilityGuard = visibilityGuard;
     }
 
     // ==== R6 我的合约分页（恒仅本主体参与；status/role 可选过滤）====
@@ -81,6 +84,19 @@ public class ContractQueryService {
                     myRole, contract.status().name(), contract.currentClauseVersion(),
                     contract.effectiveAt(), contract.updatedAt());
         }
+    }
+
+    // ==== R13 合约统一留痕分页（WBS-3.4.7；参与方 + 治理例外走共享守卫单点——第 4 消费方）====
+
+    /**
+     * R13 只读留痕分页：可见性经 {@link ContractVisibilityGuard#requireReadable} 单点
+     * （非参与方与"不存在"同码同文 {@code 1008C0012} 防枚举 + 既有 {@code DENIED_ACCESS}
+     * 留痕）；治理档 / 参与方读取零新增留痕（§1.2 口径——避免"看留痕产生留痕"递归）。
+     */
+    public PageResult<ContractActionLog> actionLogs(final String contractNo,
+            final String operatorNo, final PageQuery page) {
+        visibilityGuard.requireReadable(contractNo, operatorNo);
+        return repository.pageActionLogs(contractNo, page);
     }
 
     // ==== R7 合约详情（当前条款 + 策略全文 + 签署状态；响应字段集显式锚定——无数据本体）====
