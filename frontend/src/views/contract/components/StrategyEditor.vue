@@ -82,6 +82,42 @@ const territoryText = ref('')
 const noRedistributionEnabled = ref(false)
 const noRestrictionDeclared = ref(false)
 
+/** 挂载时回显传入初值（提案场景：当前合约策略不得被默认值覆盖——评审③ P1 修复）。 */
+function syncFromModel(value: Record<string, unknown> | null | undefined): void {
+  if (!value) {
+    return
+  }
+  const quota = value.quota as { enabled?: boolean; maxCount?: number | null } | undefined
+  if (quota) {
+    quotaEnabled.value = !!quota.enabled
+    quotaMaxCount.value = quota.maxCount == null ? '' : String(quota.maxCount)
+  }
+  const term = value.term as { enabled?: boolean; startDate?: string | null; endDate?: string | null } | undefined
+  if (term) {
+    termEnabled.value = !!term.enabled
+    termRange.value = term.startDate || term.endDate ? [term.startDate ?? '', term.endDate ?? ''] : termRange.value
+  }
+  const purpose = value.purpose as { enabled?: boolean; text?: string | null } | undefined
+  if (purpose) {
+    purposeEnabled.value = !!purpose.enabled
+    purposeText.value = purpose.text ?? ''
+  }
+  const territory = value.territory as { enabled?: boolean; text?: string | null } | undefined
+  if (territory) {
+    territoryEnabled.value = !!territory.enabled
+    territoryText.value = territory.text ?? ''
+  }
+  const noRedistribution = value.noRedistribution as { enabled?: boolean } | undefined
+  if (noRedistribution) {
+    noRedistributionEnabled.value = !!noRedistribution.enabled
+  }
+  if (typeof value.noRestrictionDeclared === 'boolean') {
+    noRestrictionDeclared.value = value.noRestrictionDeclared
+  }
+}
+
+syncFromModel(props.modelValue)
+
 function toIntOrNull(raw: string): number | null {
   if (raw.trim() === '') {
     return null

@@ -15,7 +15,13 @@ import {
 import { searchProducts, type CatalogProduct } from '../../api/catalog'
 import { ApiError, setDemoSubject } from '../../api/client'
 import { setActorMode } from '../../stores/demoIdentity'
-import { PRODUCT_NOT_DEALABLE_TIP, ADMISSION_REQUIRED_INITIATE_TIP } from '../../constants/contract'
+import {
+  PRODUCT_NOT_DEALABLE_TIP,
+  ADMISSION_REQUIRED_INITIATE_TIP,
+  TEMPLATE_NOT_INITIABLE_TIP,
+  OPERATOR_MODE_PARTICIPANT_TIP,
+  CONTRACT_STATUS_LABELS,
+} from '../../constants/contract'
 
 /**
  * 合约工作台测试（WBS-3.4.7 hifi §6.3 + §7 T7/T8）：
@@ -160,6 +166,16 @@ describe('我的合约列表（T7 / R6）', () => {
     await mountPage()
     expect(document.body.textContent).toContain('主体未入驻或不存在，无法发起合约')
   })
+
+  it('六态渲染锚定表格状态列 tag（T7：六态逐一挂载——复审④ P3 修正为可证伪断言）', async () => {
+    for (const [code, label] of Object.entries(CONTRACT_STATUS_LABELS)) {
+      mockedMine.mockResolvedValue(page([mine({ status: code })]))
+      const wrapper = await mountPage()
+      const tag = wrapper.find('.el-table .el-tag')
+      expect(tag.exists(), `状态 ${code} 应在表格状态列渲染 tag`).toBe(true)
+      expect(tag.text(), `状态 ${code} 列 tag 文案应经 constants 映射`).toBe(label)
+    }
+  })
 })
 
 describe('发起合约弹窗（T8 / W5）', () => {
@@ -258,7 +274,7 @@ describe('发起合约弹窗（T8 / W5）', () => {
     expect(router.currentRoute.value.name).toBe('contract-detail')
   })
 
-  it('产品不可发 C0010 / 模板不可发起 C0017 原样展示且状态不变（不做乐观更新）', async () => {
+  it('产品不可发 C0010 原样展示且状态不变（不做乐观更新）', async () => {
     mockedTemplates.mockResolvedValue(page([template()]))
     mockedTemplate.mockResolvedValue(templateDetail())
     mockedInitiate.mockRejectedValue(new ApiError('1008C0010', PRODUCT_NOT_DEALABLE_TIP))
@@ -288,5 +304,104 @@ describe('发起合约弹窗（T8 / W5）', () => {
     expect(document.body.textContent).toContain(PRODUCT_NOT_DEALABLE_TIP)
     // 被拒后弹窗仍打开（状态不变，以响应为准）
     expect(wrapper.find('.initiate-form, .el-dialog').exists()).toBe(true)
+  })
+
+  /** 发起弹窗填单助手：产品编号 + 模板选择 + 必填槽位（C0016/C0017 原样展示用例共用）。 */
+  async function fillInitiateForm(wrapper: ReturnType<typeof mount>, no: string): Promise<void> {
+    await button(wrapper, '发起合约')!.trigger('click')
+    await flushPromises()
+    await wrapper.find('input[placeholder*="产品编号"]').setValue(no)
+    const nativeSelect = wrapper.find('.initiate-form select')
+    if (nativeSelect.exists()) {
+      await nativeSelect.setValue('CT000001')
+    } else {
+      await wrapper.find('.initiate-form .el-select').trigger('click')
+      await flushPromises()
+      const option = [...document.body.querySelectorAll('.el-select-dropdown__item')]
+        .find((o) => o.textContent?.includes('CT000001'))
+      expect(option).toBeTruthy()
+      await new DOMWrapper(option as HTMLElement).trigger('click')
+    }
+    await flushPromises()
+    const slotInput = wrapper.find('.clause-slot-row input, .clause-form input')
+    if (slotInput.exists()) {
+      await slotInput.setValue('x')
+    }
+    await flushPromises()
+  }
+
+  it('模板不可发起 C0017 原样展示（T8 锚点补全——评审④ P2）', async () => {
+    mockedTemplates.mockResolvedValue(page([template()]))
+    mockedTemplate.mockResolvedValue(templateDetail())
+    mockedInitiate.mockRejectedValue(new ApiError('1008C0017', TEMPLATE_NOT_INITIABLE_TIP))
+    const wrapper = await mountPage()
+    await fillInitiateForm(wrapper, '999')
+    await button(wrapper, '确定')!.trigger('click')
+    await flushPromises()
+    expect(document.body.textContent).toContain(TEMPLATE_NOT_INITIABLE_TIP)
+    expect(mockedInitiate).toHaveBeenCalled()
+  })
+
+  it('双方同主体 C0016 原样展示（T8 锚点补全——评审④ P2）', async () => {
+    mockedTemplates.mockResolvedValue(page([template()]))
+    mockedTemplate.mockResolvedValue(templateDetail())
+    mockedInitiate.mockRejectedValue(
+      new ApiError('1008C0016', '合约双方须为不同主体，不可对自己提供的产品发起合约'))
+    const wrapper = await mountPage()
+    await fillInitiateForm(wrapper, '7')
+    await button(wrapper, '确定')!.trigger('click')
+    await flushPromises()
+    expect(document.body.textContent).toContain('合约双方须为不同主体，不可对自己提供的产品发起合约')
+  })
+
+  it('策略条款非法 C0015 发起腿原样展示（T8 锚点补全——复审① P3）', async () => {
+    mockedTemplates.mockResolvedValue(page([template()]))
+    mockedTemplate.mockResolvedValue(templateDetail())
+    mockedInitiate.mockRejectedValue(new ApiError('1008C0015', '策略条款不符合使用控制约定'))
+    const wrapper = await mountPage()
+    await fillInitiateForm(wrapper, '7')
+    await button(wrapper, '确定')!.trigger('click')
+    await flushPromises()
+    expect(document.body.textContent).toContain('策略条款不符合使用控制约定')
+    expect(mockedInitiate).toHaveBeenCalled()
+  })
+
+  it('必填槽位留空：前置拦截零请求（hifi §8-1——评审① P2，非法取值仍可提交）', async () => {
+    mockedTemplates.mockResolvedValue(page([template()]))
+    mockedTemplate.mockResolvedValue(templateDetail()) // subject_matter 必填槽位
+    const wrapper = await mountPage()
+    await button(wrapper, '发起合约')!.trigger('click')
+    await flushPromises()
+    await wrapper.find('input[placeholder*="产品编号"]').setValue('7')
+    const nativeSelect = wrapper.find('.initiate-form select')
+    if (nativeSelect.exists()) {
+      await nativeSelect.setValue('CT000001')
+    } else {
+      await wrapper.find('.initiate-form .el-select').trigger('click')
+      await flushPromises()
+      const option = [...document.body.querySelectorAll('.el-select-dropdown__item')]
+        .find((o) => o.textContent?.includes('CT000001'))
+      expect(option).toBeTruthy()
+      await new DOMWrapper(option as HTMLElement).trigger('click')
+    }
+    await flushPromises()
+    // 不填必填槽位直接提交 → 零请求
+    await button(wrapper, '确定')!.trigger('click')
+    await flushPromises()
+    expect(mockedInitiate).not.toHaveBeenCalled()
+  })
+
+  it('运营档发起被拒：原样展示 + 体验层切档提示（hifi §4/§8-7——评审① P2）', async () => {
+    setActorMode('operator')
+    mockedTemplates.mockResolvedValue(page([template()]))
+    mockedTemplate.mockResolvedValue(templateDetail())
+    mockedInitiate.mockRejectedValue(
+      new ApiError('1008C0016', '合约双方须为不同主体，不可对自己提供的产品发起合约'))
+    const wrapper = await mountPage()
+    await fillInitiateForm(wrapper, '7')
+    await button(wrapper, '确定')!.trigger('click')
+    await flushPromises()
+    expect(document.body.textContent).toContain('合约双方须为不同主体，不可对自己提供的产品发起合约')
+    expect(document.body.textContent).toContain(OPERATOR_MODE_PARTICIPANT_TIP)
   })
 })

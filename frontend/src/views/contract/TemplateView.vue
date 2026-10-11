@@ -52,6 +52,16 @@
       <div class="operation-bar">
         <el-button type="primary" @click="openCreate">新增模板</el-button>
       </div>
+      <div class="filter-bar">
+        <el-select v-model="manageStatus" clearable placeholder="状态" class="type-select">
+          <el-option v-for="(label, code) in TEMPLATE_STATUS_LABELS" :key="code" :label="label" :value="code" />
+        </el-select>
+        <el-select v-model="manageType" clearable placeholder="类型" class="type-select">
+          <el-option v-for="opt in TEMPLATE_TYPE_OPTIONS" :key="opt.value" :label="opt.label" :value="opt.value" />
+        </el-select>
+        <el-button type="primary" @click="searchManage">查询</el-button>
+        <el-button @click="resetManage">重置</el-button>
+      </div>
       <el-table v-loading="manageLoading" :data="manageList" :empty-text="'暂无模板'">
         <el-table-column prop="templateNo" label="模板编号" width="140" />
         <el-table-column prop="name" label="名称" min-width="180" />
@@ -200,7 +210,7 @@
  * `ElMessage.error(err.message)` 原样（§6.6-2）；同形拒绝共用一条提示常量；
  * 写动作不做乐观更新（一律以响应为准刷新）。
  */
-import { ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   listTemplates,
@@ -227,7 +237,8 @@ import {
   TEMPLATE_NOT_ACCESSIBLE_TIP,
 } from '../../constants/contract'
 
-const isOperator = getActorMode() === 'operator'
+// 档位为体验层显隐（与既有目录域三视图同款 computed 写法；服务端判定为准）
+const isOperator = computed(() => getActorMode() === 'operator')
 const pageSize = 10
 
 const activeTab = ref<'browse' | 'manage' | 'logs'>('browse')
@@ -265,11 +276,44 @@ function resetBrowse(): void {
   void loadBrowse()
 }
 
-// 类型选择即查询（筛选即时生效；重置清空后按无条件口径重查）
-watch(browseType, () => {
-  browsePage.value = 1
-  void loadBrowse()
-})
+// ==== 运营区（R1/W1~W4） ====
+
+const manageStatus = ref<string | undefined>(undefined)
+const manageType = ref<string | undefined>(undefined)
+const managePage = ref(1)
+const manageTotal = ref(0)
+const manageLoading = ref(false)
+const manageList = ref<ManageTemplate[]>([])
+
+async function loadManage(): Promise<void> {
+  manageLoading.value = true
+  try {
+    const result = await listManageTemplates({
+      pageNum: managePage.value,
+      pageSize,
+      status: manageStatus.value,
+      type: manageType.value,
+    })
+    manageList.value = result.list
+    manageTotal.value = result.total
+  } catch (err) {
+    ElMessage.error((err as Error).message)
+  } finally {
+    manageLoading.value = false
+  }
+}
+
+function searchManage(): void {
+  managePage.value = 1
+  void loadManage()
+}
+
+function resetManage(): void {
+  manageStatus.value = undefined
+  manageType.value = undefined
+  managePage.value = 1
+  void loadManage()
+}
 
 const detailVisible = ref(false)
 const detail = ref<TemplateDetail | null>(null)
@@ -281,26 +325,6 @@ async function openDetail(templateNo: string): Promise<void> {
   } catch (err) {
     // 同形拒绝（1008C0001）：原样展示后端文案；后端文案缺失时以同一条常量兜底（防探测口径一致）
     ElMessage.error((err as Error).message || TEMPLATE_NOT_ACCESSIBLE_TIP)
-  }
-}
-
-// ==== 运营区（R1/W1~W4） ====
-
-const managePage = ref(1)
-const manageTotal = ref(0)
-const manageLoading = ref(false)
-const manageList = ref<ManageTemplate[]>([])
-
-async function loadManage(): Promise<void> {
-  manageLoading.value = true
-  try {
-    const result = await listManageTemplates({ pageNum: managePage.value, pageSize })
-    manageList.value = result.list
-    manageTotal.value = result.total
-  } catch (err) {
-    ElMessage.error((err as Error).message)
-  } finally {
-    manageLoading.value = false
   }
 }
 

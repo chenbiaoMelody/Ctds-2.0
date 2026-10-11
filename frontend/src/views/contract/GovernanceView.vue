@@ -7,7 +7,14 @@
       :closable="false"
     />
 
-    <!-- A 全量列表（R10；含协商中/已终止） -->
+    <!-- A 全量列表（R10；含协商中/已终止；状态过滤 + 分页） -->
+    <div class="filter-bar">
+      <el-select v-model="statusFilter" clearable placeholder="状态" class="status-select">
+        <el-option v-for="(label, code) in CONTRACT_STATUS_LABELS" :key="code" :label="label" :value="code" />
+      </el-select>
+      <el-button type="primary" @click="searchList">查询</el-button>
+      <el-button @click="resetFilter">重置</el-button>
+    </div>
     <el-table v-loading="loading" :data="list" :empty-text="'暂无合约'">
       <el-table-column prop="contractNo" label="合约编号" width="140" />
       <el-table-column prop="productName" label="产品名称" min-width="170" />
@@ -70,7 +77,11 @@
             {{ detail.detail.templateNo }}（V{{ detail.detail.templateVersionNo }}）
           </el-descriptions-item>
           <el-descriptions-item label="当前版本">V{{ detail.detail.currentClauseVersion }}</el-descriptions-item>
-          <el-descriptions-item label="内容哈希">{{ detail.detail.contentHash }}</el-descriptions-item>
+          <el-descriptions-item label="内容哈希">
+            <el-tooltip :content="CONTENT_HASH_HINT" placement="top">
+              <span class="hash-cell">{{ detail.detail.contentHash }}</span>
+            </el-tooltip>
+          </el-descriptions-item>
           <el-descriptions-item label="生效 / 完结">
             {{ detail.detail.effectiveAt ?? '—' }} / {{ detail.detail.endedAt ?? '—' }}
           </el-descriptions-item>
@@ -103,6 +114,16 @@
 
         <h4>条款版本链</h4>
         <el-table :data="detail.clauseVersions" size="small" :empty-text="'（仅初始版本）'">
+          <el-table-column type="expand">
+            <template #default="scope">
+              <div class="expand-slots">
+                <div v-for="(value, key) in scope.row.clauseValues.slots" :key="key" class="expand-slot-line">
+                  {{ key }}：{{ value }}
+                </div>
+                <span v-if="!Object.keys(scope.row.clauseValues.slots ?? {}).length">—</span>
+              </div>
+            </template>
+          </el-table-column>
           <el-table-column label="版本号" width="80">
             <template #default="scope">V{{ scope.row.versionNo }}</template>
           </el-table-column>
@@ -139,6 +160,13 @@
             <template #default="scope">{{ scope.row.reasonCode ?? '—' }}</template>
           </el-table-column>
         </el-table>
+        <el-pagination
+          v-model:current-page="drawerLogsPage"
+          layout="prev, pager, next"
+          :total="drawerLogsTotal"
+          :page-size="drawerLogsPageSize"
+          @current-change="loadLogs"
+        />
 
         <!-- 治理动作：强制终止（W12；治理页不提供参与方动作与"发起使用"入口——t12 口径） -->
         <div class="governance-actions">
@@ -195,6 +223,7 @@ import {
   TERMINATION_TYPE_LABELS,
   ACTION_LOG_ACTION_LABELS,
   MY_ROLE_LABELS,
+  CONTENT_HASH_HINT,
 } from '../../constants/contract'
 
 const pageSize = 10
@@ -205,11 +234,16 @@ const list = ref<GovernanceContract[]>([])
 const total = ref(0)
 const page = ref(1)
 const loading = ref(false)
+const statusFilter = ref<string | undefined>(undefined)
 
 async function loadList(): Promise<void> {
   loading.value = true
   try {
-    const result = await listGovernanceContracts({ pageNum: page.value, pageSize })
+    const result = await listGovernanceContracts({
+      pageNum: page.value,
+      pageSize,
+      status: statusFilter.value,
+    })
     list.value = result.list
     total.value = result.total
   } catch (err) {
@@ -219,6 +253,17 @@ async function loadList(): Promise<void> {
   }
 }
 
+function searchList(): void {
+  page.value = 1
+  void loadList()
+}
+
+function resetFilter(): void {
+  statusFilter.value = undefined
+  page.value = 1
+  void loadList()
+}
+
 // ==== 直查详情（R11） ====
 
 const detailVisible = ref(false)
@@ -226,6 +271,9 @@ const detail = ref<GovernanceDetail | null>(null)
 const detailNo = ref('')
 const actionLogs = ref<ContractActionLogItem[]>([])
 const logsLoading = ref(false)
+const drawerLogsPage = ref(1)
+const drawerLogsTotal = ref(0)
+const drawerLogsPageSize = 20
 
 async function openDetail(contractNo: string): Promise<void> {
   try {
@@ -236,14 +284,20 @@ async function openDetail(contractNo: string): Promise<void> {
     ElMessage.error((err as Error).message)
     return
   }
+  drawerLogsPage.value = 1
   await loadLogs()
 }
 
 async function loadLogs(): Promise<void> {
   logsLoading.value = true
   try {
-    const result = await listContractActionLogs({ contractNo: detailNo.value, pageNum: 1, pageSize: 20 })
+    const result = await listContractActionLogs({
+      contractNo: detailNo.value,
+      pageNum: drawerLogsPage.value,
+      pageSize: drawerLogsPageSize,
+    })
     actionLogs.value = result.list
+    drawerLogsTotal.value = result.total
   } catch (err) {
     ElMessage.error((err as Error).message)
   } finally {
@@ -301,6 +355,15 @@ void loadList()
   gap: 16px;
 }
 
+.filter-bar {
+  display: flex;
+  gap: 8px;
+}
+
+.status-select {
+  width: 160px;
+}
+
 .governance-actions {
   margin-top: 16px;
   display: flex;
@@ -311,5 +374,14 @@ void loadList()
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.hash-cell {
+  cursor: help;
+}
+
+.expand-slot-line {
+  padding: 2px 0;
+  font-size: 13px;
 }
 </style>

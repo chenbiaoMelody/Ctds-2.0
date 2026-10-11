@@ -77,4 +77,24 @@ describe('StrategyEditor 五要素与输出形态（T9）', () => {
     expect(term.enabled).toBe(true)
     expect(Object.keys(term)).toEqual(expect.arrayContaining(['startDate', 'endDate']))
   })
+
+  it('传入初值回显：modelValue 各要素映射到本地状态（提案弹窗不丢当前策略——评审③ P1）', () => {
+    const wrapper = mountEditor({
+      quota: { enabled: true, maxCount: 100 },
+      term: { enabled: true, startDate: '2026-10-08', endDate: '2026-11-07' },
+      purpose: { enabled: true, text: '风控建模' },
+      territory: { enabled: true, text: '本市域' },
+      noRedistribution: { enabled: true },
+      noRestrictionDeclared: true,
+    })
+    const emitted = lastEmitted(wrapper)
+    expect((emitted.quota as Record<string, unknown>).enabled).toBe(true)
+    expect((emitted.quota as Record<string, unknown>).maxCount).toBe(100)
+    expect((emitted.term as Record<string, unknown>).startDate).toBe('2026-10-08')
+    expect((emitted.term as Record<string, unknown>).endDate).toBe('2026-11-07')
+    expect((emitted.purpose as Record<string, unknown>).text).toBe('风控建模')
+    expect((emitted.territory as Record<string, unknown>).text).toBe('本市域')
+    expect((emitted.noRedistribution as Record<string, unknown>).enabled).toBe(true)
+    expect(emitted.noRestrictionDeclared).toBe(true)
+  })
 })

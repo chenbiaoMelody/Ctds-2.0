@@ -146,8 +146,11 @@ class ContractActionLogIntegrationTest {
             assertThat(row.has("fromValue")).as("从何值键存在").isTrue();
             assertThat(row.has("toValue")).as("到何值键存在").isTrue();
             final String createdAt = row.path("createdAt").asText();
-            if (previousCreatedAt != null && createdAt.equals(previousCreatedAt)) {
-                assertThat(row.path("id").asLong()).as("同秒行按 id 倒序").isLessThan(previousId);
+            if (previousCreatedAt != null) {
+                assertThat(createdAt).as("created_at 非增").isLessThanOrEqualTo(previousCreatedAt);
+                if (createdAt.equals(previousCreatedAt)) {
+                    assertThat(row.path("id").asLong()).as("同秒行按 id 倒序").isLessThan(previousId);
+                }
             }
             previousId = row.path("id").asLong();
             previousCreatedAt = createdAt;
@@ -165,6 +168,10 @@ class ContractActionLogIntegrationTest {
         assertThat(denied.path("message").asText()).isEqualTo(NOT_VISIBLE_MESSAGE);
         assertThat(deniedRows(contractNo)).as("非参与方命中恰写一行 DENIED_ACCESS")
                 .isEqualTo(deniedBefore + 1);
+        final String deniedReason = jdbcTemplate.queryForObject(
+                "SELECT reason_code FROM contract_action_log WHERE contract_no = ? AND action = "
+                        + "'DENIED_ACCESS'", String.class, contractNo);
+        assertThat(deniedReason).as("拒绝码 = 码位尾号（DB-31 口径——hifi §7 T2）").isEqualTo("C0012");
         final JsonNode missing = readBody(getLogs("CO-BADNOTEXIST", OTHER, "provider", 404));
         assertThat(missing.path("code").asText()).as("不存在与不可见同码").isEqualTo(C0012);
         assertThat(missing.path("message").asText()).as("不存在与不可见同文（防枚举）")
@@ -174,7 +181,7 @@ class ContractActionLogIntegrationTest {
     // ==== t3（T1）治理档读：200 且零新增留痕（R13 治理读取不另写留痕——§1.2 口径）====
 
     @Test
-    void t3GovernanceReadSucceedsWithoutExtraLogRows() throws Exception {
+    void t3_governanceReadSucceedsWithoutExtraLogRows() throws Exception {
         final String contractNo = toEffective("治理读");
         final long allBefore = totalLogRows();
         final JsonNode data = readBody(getLogs(contractNo, ADMIN, "admin", 200)).path("data");
@@ -186,7 +193,7 @@ class ContractActionLogIntegrationTest {
     // ==== t4（T1）未认证 401 / 无权限 403 / 分页越界 1000C0001 ====
 
     @Test
-    void t4authAndPaginationGuardrails() throws Exception {
+    void t4_authAndPaginationGuardrails() throws Exception {
         final String contractNo = toEffective("护栏");
         final int unauthenticated = mockMvc.perform(get(BASE + "/" + contractNo + "/action-logs"))
                 .andReturn().getResponse().getStatus();
@@ -206,7 +213,7 @@ class ContractActionLogIntegrationTest {
     // ==== t5（T2）12 动作码值域覆盖（全部经真实写链路产生）====
 
     @Test
-    void t5allTwelveActionCodeValuesServedThroughRealWritePaths() throws Exception {
+    void t5_allTwelveActionCodeValuesServedThroughRealWritePaths() throws Exception {
         final List<String> served = new ArrayList<>();
         final String effective = toEffective("值域-生效");
         // 生效链路五码 + 验签异常 + 越权拒绝 + 治理查看
@@ -246,13 +253,16 @@ class ContractActionLogIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"reason\":\"治理演示：违规使用\"}")).andReturn();
         collect(served, forced, REQ);
-        assertThat(served.stream().distinct().count()).as("12 动作码行齐备").isEqualTo(12);
+        assertThat(served.stream().distinct().toList()).as("12 动作码行齐备（显式值域断言）")
+                .containsExactlyInAnyOrder("CREATE", "PROPOSE", "CONFIRM", "TERMINATE_NEGOTIATION",
+                        "SIGN", "REFUSE_SIGN", "ATTEST", "RELEASE_CONSENT", "FORCE_TERMINATE",
+                        "GOVERNANCE_VIEW", "VERIFY_SIGNATURE_FAILED", "DENIED_ACCESS");
     }
 
     // ==== t6（T2）字段白名单：出站键集恰九字段；无签名值、无条款明文出站 ====
 
     @Test
-    void t6outboundFieldWhitelistContainsNoSensitiveMaterial() throws Exception {
+    void t6_outboundFieldWhitelistContainsNoSensitiveMaterial() throws Exception {
         final String marker = "白名单" + Long.toHexString(System.nanoTime());
         final String contractNo = toEffective("白名单");
         final JsonNode rows = readBody(getLogs(contractNo, REQ, "provider", 200))
@@ -263,9 +273,13 @@ class ContractActionLogIntegrationTest {
                 .toIterable()
                 .containsExactlyInAnyOrder("id", "contractNo", "versionNo", "action",
                         "actorSubjectNo", "reasonCode", "fromValue", "toValue", "createdAt");
-        assertThat(first).as("签名值零出站").doesNotContain("c2ln");
-        assertThat(first).as("条款明文零出站").doesNotContain(marker);
-        assertThat(first).as("策略文档零出站").doesNotContain("maxCount");
+        // 敏感材料反查覆盖全部出站行（不只首行——评审④ P3 收紧）
+        final List<String> allRows = new ArrayList<>();
+        rows.forEach(row -> allRows.add(row.toString()));
+        final String outbound = String.join("\n", allRows);
+        assertThat(outbound).as("签名值零出站（全行）").doesNotContain("c2ln");
+        assertThat(outbound).as("条款明文零出站（全行）").doesNotContain(marker);
+        assertThat(outbound).as("策略文档零出站（全行）").doesNotContain("maxCount");
     }
 
     // ==== 造数与断言助手（全部经真实写链路）====

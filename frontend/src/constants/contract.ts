@@ -98,6 +98,15 @@ export const POLICY_ELEMENT_LABELS: Record<string, string> = {
   noRedistribution: '禁止再分发',
 }
 
+/** 模拟结论"策略来源"显示名（值域 EFFECTIVE / DRAFT——后端 PolicySimulationService）。 */
+export const SIMULATION_SOURCE_LABELS: Record<string, string> = {
+  EFFECTIVE: '生效策略',
+  DRAFT: '策略草稿',
+}
+
+/** 内容哈希工具提示（hifi §6.4-B"对齐工具提示"的实施文案——勘误 E1）。 */
+export const CONTENT_HASH_HINT = '内容哈希与存证摘要一致，即表明合约文本未被篡改'
+
 // ==== 统一提示文案（与后端错误文案逐字一致；页面禁止散写——T20 反向探针） ====
 
 export const TEMPLATE_NOT_ACCESSIBLE_TIP = '模板不存在或不可用'

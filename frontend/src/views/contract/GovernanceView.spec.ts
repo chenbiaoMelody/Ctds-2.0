@@ -175,6 +175,27 @@ describe('治理列表（T17 / R10）', () => {
     await mountPage()
     expect(document.body.textContent).toContain('无权访问该资源')
   })
+
+  it('状态过滤传参：选择状态后点击查询按 status 传参，重置清空（hifi §6.5-A——评审① P2）', async () => {
+    mockedGovernance.mockResolvedValue(page([governanceItem()]))
+    const wrapper = await mountPage()
+    mockedGovernance.mockClear()
+    const select = wrapper.find('.filter-bar .el-select')
+    expect(select.exists(), '治理列表必须提供状态过滤控件').toBe(true)
+    await select.trigger('click')
+    await flushPromises()
+    const option = [...document.body.querySelectorAll('.el-select-dropdown__item')]
+      .find((o) => o.textContent?.includes('协商中'))
+    expect(option).toBeTruthy()
+    await new DOMWrapper(option as HTMLElement).trigger('click')
+    await flushPromises()
+    await button(wrapper, '查询')!.trigger('click')
+    await flushPromises()
+    expect(mockedGovernance).toHaveBeenCalledWith(expect.objectContaining({ status: 'NEGOTIATING' }))
+    await button(wrapper, '重置')!.trigger('click')
+    await flushPromises()
+    expect(mockedGovernance).toHaveBeenLastCalledWith(expect.objectContaining({ status: undefined }))
+  })
 })
 
 describe('治理直查详情（T17 / R11）', () => {
@@ -200,6 +221,21 @@ describe('治理直查详情（T17 / R11）', () => {
     await button(wrapper, '查看治理详情')!.trigger('click')
     await flushPromises()
     expect(document.body.textContent).toContain('合约不存在或不可见')
+  })
+
+  it('直查留痕区分页：下一页按 pageNum=2 传参（hifi §6.5-B 复用 §6.4-H——评审③ P3）', async () => {
+    mockedGovernanceDetail.mockResolvedValue(governanceDetail())
+    mockedLogs.mockResolvedValue(page([actionLog()], 25))
+    const wrapper = await mountPage()
+    await button(wrapper, '查看治理详情')!.trigger('click')
+    await flushPromises()
+    expect(mockedLogs).toHaveBeenCalledWith(expect.objectContaining({ contractNo: 'CO000013', pageNum: 1 }))
+    mockedLogs.mockClear()
+    const nextBtn = wrapper.find('.el-drawer .btn-next')
+    expect(nextBtn.exists(), '治理直查留痕区必须提供分页').toBe(true)
+    await nextBtn.trigger('click')
+    await flushPromises()
+    expect(mockedLogs).toHaveBeenCalledWith(expect.objectContaining({ pageNum: 2 }))
   })
 })
 

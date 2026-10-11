@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises, DOMWrapper } from '@vue/test-utils'
-import ElementPlus from 'element-plus'
+import ElementPlus, { ElMessage } from 'element-plus'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import ContractDetailView from './ContractDetailView.vue'
 import {
@@ -19,6 +19,7 @@ import {
   executeUsage,
   listContractActionLogs,
   type ContractDetail,
+  type ClauseVersionItem,
   type VerificationReport,
   type UsageSummary,
   type SimulationResult,
@@ -28,7 +29,7 @@ import {
 } from '../../api/contract'
 import { ApiError, setDemoSubject } from '../../api/client'
 import { setActorMode } from '../../stores/demoIdentity'
-import { CONTRACT_NOT_ACCESSIBLE_TIP } from '../../constants/contract'
+import { CONTRACT_NOT_ACCESSIBLE_TIP, OPERATOR_MODE_PARTICIPANT_TIP } from '../../constants/contract'
 
 /**
  * 合约详情页测试（WBS-3.4.7 hifi §6.4 + §7 T10~T16/T21）：
@@ -37,7 +38,8 @@ import { CONTRACT_NOT_ACCESSIBLE_TIP } from '../../constants/contract'
  * - T11 签署与验签：DID 前置（空=零请求）/ 部分签署渲染 / 生效时间 / 存证摘要 / 拒签终止 /
  *   验签逐方（PASS/FAIL 原样）/ C0018 原样 / **已生效无"单方撤回"按钮**（反向探针）；
  * - T12 策略视图 + 模拟：五要素全文（含"未启用"与无限制声明）/ 模拟提交形态 / **拒绝=数据展示
- *   （不触发错误提示）** / 草稿 C0015 原样；
+ *   （结果面板独有数据锚定：放行/拒绝 tag + 触发要素 + 策略来源 + 策略快照 + 假想上下文；
+ *   不触发错误提示）** / 草稿 C0015 原样 / 运营档参与方动作被拒 = 原样 + 切档提示；
  * - T13 测试台：一键报告三态 + summary + runAt；
  * - T14 受控执行：提交形态逐字 / 放行含 usedCount / 越界 C0020 原样 + 刷新摘要；
  * - T15 使用摘要（R12）：quota / 计数 / 拒绝行触发要素 / 空态 / quota=null；
@@ -223,6 +225,39 @@ describe('同形与深链（T21）', () => {
   })
 })
 
+describe('条款版本链（T16 / R8）', () => {
+  it('逐版渲染：版本号 / 提案方 / 提案时间 / 确认时间 / 变更明细 from→to（V1 无明细显示"—"）', async () => {
+    const versions: ClauseVersionItem[] = [
+      {
+        versionNo: 1,
+        clauseValues: { slots: { subject_matter: '初始标的' }, strategy: ALL_ELEMENTS_STRATEGY },
+        changes: null,
+        proposedBy: null,
+        proposedAt: null,
+        confirmedProviderAt: '2026-10-05T22:00:00',
+        confirmedRequesterAt: '2026-10-05T22:00:01',
+      },
+      {
+        versionNo: 2,
+        clauseValues: { slots: { subject_matter: '变更后标的' }, strategy: ALL_ELEMENTS_STRATEGY },
+        changes: [{ slot: 'subject_matter', from: '初始标的', to: '变更后标的' }],
+        proposedBy: 'S20260922000001',
+        proposedAt: '2026-10-11T09:00:00',
+        confirmedProviderAt: null,
+        confirmedRequesterAt: null,
+      },
+    ]
+    mockedVersions.mockResolvedValue(versions)
+    await mountPage()
+    const text = document.body.textContent
+    expect(text).toContain('V2')
+    expect(text).toContain('S20260922000001')
+    expect(text).toContain('2026-10-11T09:00:00')
+    expect(text).toContain('2026-10-05T22:00:00')
+    expect(text).toContain('subject_matter：初始标的 → 变更后标的')
+  })
+})
+
 describe('协商动作（T10）', () => {
   function negotiatingDetail(): ContractDetail {
     return detail({
@@ -243,7 +278,8 @@ describe('协商动作（T10）', () => {
     await clickBodyButton('确定')
     await flushPromises()
     expect(mockedPropose).toHaveBeenCalledWith('CO000013', expect.anything())
-    expect(document.body.textContent).toContain('2')
+    // 版本 +1 提示锚定独有文案（单字符断言会被无关数字垫绿——评审④ P3 修正）
+    expect(document.body.textContent).toContain('条款版本 V2（原 V1）')
   })
 
   it('确认双齐 → 待签署展示（以响应刷新，无乐观更新）', async () => {
@@ -298,10 +334,18 @@ describe('签署与验签（T11）', () => {
     expect(mockedSign).toHaveBeenCalledWith('CO000013', { did: 'did:ctds:S20260922000001.1' })
   })
 
-  it('部分签署状态 + 存证摘要 + 生效时间（= 最后一签）渲染', async () => {
+  it('部分签署状态渲染（PARTIALLY_SIGNED 经 constants）+ 存证摘要与生效时间（已生效态）', async () => {
+    mockedDetail.mockResolvedValue(detail({
+      status: 'PARTIALLY_SIGNED',
+      signatures: [detail().signatures[0]],
+      attestation: null,
+    }))
+    await mountPage()
+    expect(document.body.textContent).toContain('部分签署')
+    expect(document.body.textContent).toContain('did:ctds:S1.1')
+    // 已生效态：存证摘要渲染 + 生效时间（= 最后一签）
     await mountPage()
     const text = document.body.textContent
-    expect(text).toContain('did:ctds:S1.1')
     expect(text).toContain('hash-abc123')
     expect(text).toContain('2026-10-06T10:00:00')
   })
@@ -390,28 +434,57 @@ describe('策略视图与模拟试算（T12）', () => {
     expect(text).toContain('无使用限制')
   })
 
-  it('模拟试算：假想上下文提交形态逐字；拒绝 = 数据展示（不触发错误提示）', async () => {
+  it('模拟试算：假想上下文提交形态逐字；拒绝 = 结果面板数据展示（不触发错误提示）', async () => {
+    // 隔离垫绿源：使用摘要 mock 不含拒绝行——断言只能由模拟结果面板满足（评审④ P0 修正）
+    const errorSpy = vi.spyOn(ElMessage, 'error')
+    mockedSummary.mockResolvedValue(usageSummary({
+      deniedCount: 0,
+      records: page([{ requesterNo: 'S20260922000001', actionType: 'USE', outcome: 'ALLOWED',
+        reasonCode: null, violations: null, usedCount: 1, occurredAt: '2026-10-06T10:30:00' }]),
+    }))
     mockedSimulate.mockResolvedValue({
       contractNo: 'CO000013', contractStatus: 'EFFECTIVE', strategySource: 'EFFECTIVE',
       strategyEffective: true, allowed: false, violations: ['QUOTA_EXHAUSTED'],
-      assumedUsedCount: 999999, assumedDate: '2026-10-11', policySnapshot: { 'usage.quota': '100' },
+      assumedUsedCount: 999999, assumedDate: '2026-10-11', policySnapshot: { 'snapshot.anchor': 'SIM-ANCHOR-42' },
     } satisfies SimulationResult)
     const wrapper = await mountPage()
     await button(wrapper, '模拟试算')!.trigger('click')
     await flushPromises()
     const numberInput = wrapper.find('input[type="number"]')
-    if (numberInput.exists()) {
-      await numberInput.setValue('999999')
-    }
+    expect(numberInput.exists(), '假想已用次数输入必须存在（提交形态锚定——复审④ P3）').toBe(true)
+    await numberInput.setValue('999999')
     await button(wrapper, '开始试算')!.trigger('click')
     await flushPromises()
     expect(mockedSimulate).toHaveBeenCalledWith('CO000013', expect.objectContaining({
       actionType: 'USE',
+      assumedUsedCount: 999999,
     }))
-    // 拒绝以数据展示（结果面板），不弹错误
-    expect(document.body.textContent).toContain('拒绝')
-    expect(document.body.textContent).toContain('QUOTA_EXHAUSTED')
-    expect(document.body.textContent).toContain('模拟结论不是放行承诺')
+    // 结果面板（hifi §6.7-D）：放行/拒绝 tag + 触发要素 + 策略来源 + 策略快照 + 假想上下文
+    const panel = wrapper.find('.simulate-result')
+    expect(panel.exists(), '模拟结果面板必须渲染（hifi §6.7-D）').toBe(true)
+    const panelText = panel.text()
+    expect(panelText).toContain('拒绝')
+    expect(panelText).toContain('QUOTA_EXHAUSTED')
+    expect(panelText).toContain('生效策略')
+    expect(panelText).toContain('999999')
+    expect(panelText).toContain('2026-10-11')
+    expect(panelText).toContain('SIM-ANCHOR-42')
+    // 拒绝是数据不是错误：不触发错误提示（ADR-021 §2.2 语义）
+    expect(errorSpy).not.toHaveBeenCalled()
+  })
+
+  it('运营档发起参与方动作被拒：原样展示 + 体验层切档提示（hifi §4/§8-7）', async () => {
+    setActorMode('operator')
+    mockedExecute.mockRejectedValue(new ApiError('1008C0012', CONTRACT_NOT_ACCESSIBLE_TIP))
+    const wrapper = await mountPage()
+    await button(wrapper, '发起使用')!.trigger('click')
+    await flushPromises()
+    await wrapper.find('input[placeholder*="用途"]').setValue('风控建模')
+    await wrapper.find('input[placeholder*="地域"]').setValue('本市域')
+    await clickBodyButton('确定')
+    await flushPromises()
+    expect(document.body.textContent).toContain('合约不存在或不可见')
+    expect(document.body.textContent).toContain(OPERATOR_MODE_PARTICIPANT_TIP)
   })
 
   it('草稿策略非法 C0015 原样展示（表单错误提示）', async () => {
@@ -469,7 +542,7 @@ describe('受控执行与使用摘要（T14/T15 / R12）', () => {
     expect(mockedExecute).toHaveBeenCalledWith('CO000013', expect.objectContaining({
       actionType: 'USE', purpose: '风控建模', territory: '本市域',
     }))
-    expect(document.body.textContent).toContain('4')
+    expect(document.body.textContent).toContain('已用 4 次')
   })
 
   it('越界 C0020 原样 + 提交后刷新摘要（拒绝行出现）', async () => {
@@ -489,8 +562,7 @@ describe('受控执行与使用摘要（T14/T15 / R12）', () => {
   it('使用摘要：quota 已用/上限 + 放行/拒绝计数 + 拒绝行触发要素', async () => {
     await mountPage()
     const text = document.body.textContent
-    expect(text).toContain('3')
-    expect(text).toContain('100')
+    expect(text).toContain('3 / 100')
     expect(text).toContain('QUOTA_EXHAUSTED')
   })
 
@@ -529,6 +601,20 @@ describe('合约留痕区（T16 / R13）', () => {
     await mountPage()
     expect(document.body.textContent).toContain('暂无记录')
     expect(mockedLogs).toHaveBeenCalledWith(expect.objectContaining({ contractNo: 'CO000013', pageNum: 1 }))
+  })
+
+  it('留痕区翻页交互：下一页按 pageNum=2 传参（页码以响应为准）', async () => {
+    mockedLogs.mockResolvedValue(page([actionLog()], 25))
+    const wrapper = await mountPage()
+    mockedLogs.mockClear()
+    // 详情页两个分页器（使用摘要 + 留痕区），取最后一个 = 留痕区
+    const nextBtn = wrapper.findAll('.btn-next').at(-1)
+    expect(nextBtn).toBeTruthy()
+    await nextBtn!.trigger('click')
+    await flushPromises()
+    expect(mockedLogs).toHaveBeenCalledWith(expect.objectContaining({
+      contractNo: 'CO000013', pageNum: 2,
+    }))
   })
 })
 

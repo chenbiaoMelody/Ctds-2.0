@@ -17,7 +17,11 @@
         <el-descriptions-item label="模板引用">{{ detail.templateNo }}（版本快照 V{{ detail.templateVersionNo }}）</el-descriptions-item>
         <el-descriptions-item :label="MY_ROLE_LABELS.PROVIDER">{{ detail.providerSubjectNo }}</el-descriptions-item>
         <el-descriptions-item :label="MY_ROLE_LABELS.REQUESTER">{{ detail.requesterSubjectNo }}</el-descriptions-item>
-        <el-descriptions-item label="内容哈希">{{ detail.contentHash }}</el-descriptions-item>
+        <el-descriptions-item label="内容哈希">
+          <el-tooltip :content="CONTENT_HASH_HINT" placement="top">
+            <span class="hash-cell">{{ detail.contentHash }}</span>
+          </el-tooltip>
+        </el-descriptions-item>
         <el-descriptions-item label="生效时间">{{ detail.effectiveAt ?? '—' }}</el-descriptions-item>
         <el-descriptions-item label="完结时间">{{ detail.endedAt ?? '—' }}</el-descriptions-item>
         <el-descriptions-item label="创建 / 更新">{{ detail.createdAt }} / {{ detail.updatedAt }}</el-descriptions-item>
@@ -30,8 +34,8 @@
         :title="`${TERMINATION_TYPE_LABELS[detail.terminationType] ?? detail.terminationType} — 终止理由：${detail.terminationReason ?? '—'}（操作者：${detail.terminatedBy ?? '—'}）`"
       />
 
-      <!-- 协商动作条（按状态显隐；已生效无"单方撤回签署"入口——服务端强制） -->
-      <div class="action-bar">
+      <!-- 协商动作条（按状态 + 我的角色显隐——非参与方治理档查看无动作条；已生效无"单方撤回签署"入口） -->
+      <div v-if="isParticipant" class="action-bar">
         <template v-if="detail.status === 'NEGOTIATING'">
           <el-button type="primary" @click="openPropose">提案</el-button>
           <el-button type="success" @click="confirmClausesAction">确认</el-button>
@@ -77,10 +81,20 @@
         </el-descriptions>
       </el-card>
 
-      <!-- C 条款版本链（R8） -->
+      <!-- C 条款版本链（R8）：逐版 + 可展开条款全文 -->
       <el-card shadow="never">
         <template #header>条款版本链</template>
         <el-table :data="clauseVersions" :empty-text="'（仅初始版本）'">
+          <el-table-column type="expand">
+            <template #default="scope">
+              <div class="expand-slots">
+                <div v-for="(value, key) in scope.row.clauseValues.slots" :key="key" class="expand-slot-line">
+                  {{ key }}：{{ value }}
+                </div>
+                <span v-if="!Object.keys(scope.row.clauseValues.slots ?? {}).length">—</span>
+              </div>
+            </template>
+          </el-table-column>
           <el-table-column label="版本号" width="80">
             <template #default="scope">V{{ scope.row.versionNo }}</template>
           </el-table-column>
@@ -160,7 +174,8 @@
             <el-descriptions-item label="放行次数">{{ summary.allowedCount }}</el-descriptions-item>
             <el-descriptions-item label="拒绝次数">{{ summary.deniedCount }}</el-descriptions-item>
           </el-descriptions>
-          <el-table :data="summary.records.list" size="small" :empty-text="'暂无执行记录'">
+          <el-table :data="summary.records.list" size="small" :empty-text="'暂无执行记录'"
+            :row-class-name="usageRowClass">
             <el-table-column prop="requesterNo" label="操作者" min-width="160" />
             <el-table-column prop="actionType" label="动作" width="120" />
             <el-table-column label="结果" width="100">
@@ -215,8 +230,8 @@
       </el-card>
     </template>
 
-    <!-- 提案弹窗（W6）：全量条款编辑（值可改 + 增删槽位行）+ 策略编辑器 -->
-    <el-dialog v-model="proposeVisible" title="提交提案" width="680px">
+    <!-- 提案弹窗（W6）：全量条款编辑（值可改 + 增删槽位行）+ 策略编辑器；每次打开重挂以回显当前策略 -->
+    <el-dialog v-model="proposeVisible" title="提交提案" width="680px" destroy-on-close>
       <div class="propose-form" v-if="detail">
         <ClauseEditor mode="values" v-model="proposeSlots" />
         <StrategyEditor v-model="proposeStrategy" />
@@ -239,8 +254,8 @@
       </template>
     </el-dialog>
 
-    <!-- 模拟试算弹窗（假想上下文 + 可选策略草稿；拒绝以数据展示） -->
-    <el-dialog v-model="simulateVisible" title="模拟试算" width="640px">
+    <!-- 模拟试算弹窗（假想上下文 + 可选策略草稿；拒绝以数据展示——结果面板 hifi §6.7-D） -->
+    <el-dialog v-model="simulateVisible" title="模拟试算" width="640px" destroy-on-close>
       <div class="simulate-form">
         <el-select v-model="simulateActionType" class="simulate-select">
           <el-option label="使用" value="USE" />
@@ -252,6 +267,36 @@
         <el-date-picker v-model="simulateDate" type="date" value-format="YYYY-MM-DD" placeholder="假想日期（可选；缺省 = 今天）" />
         <el-checkbox v-model="useDraft">使用策略草稿（不勾选 = 按当前合约策略）</el-checkbox>
         <StrategyEditor v-if="useDraft" v-model="draftStrategy" />
+      </div>
+      <!-- 结果面板：放行/拒绝 tag + 触发要素 + 策略来源 + 策略快照回显 + 假想上下文回显 + 诚实边界 -->
+      <div v-if="simulation" class="simulate-result">
+        <el-descriptions title="模拟结论" :column="2" border size="small">
+          <el-descriptions-item label="结论">
+            <el-tag :type="simulation.allowed ? 'success' : 'danger'">
+              {{ simulation.allowed ? '放行' : '拒绝' }}
+            </el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="策略来源">
+            {{ SIMULATION_SOURCE_LABELS[simulation.strategySource] ?? simulation.strategySource }}
+          </el-descriptions-item>
+          <el-descriptions-item label="触发要素" :span="2">
+            <template v-if="simulation.violations.length">
+              <el-tag v-for="item in simulation.violations" :key="item" type="danger" size="small" class="violation-tag">
+                {{ item }}
+              </el-tag>
+            </template>
+            <span v-else>—</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="假想已用次数">
+            {{ simulation.assumedUsedCount ?? '未指定（按真实计数）' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="假想日期">
+            {{ simulation.assumedDate ?? '未指定（按今天）' }}
+          </el-descriptions-item>
+        </el-descriptions>
+        <div class="snapshot-label">策略快照</div>
+        <pre class="snapshot-body">{{ policySnapshotText }}</pre>
+        <el-alert :title="SIMULATION_HONESTY_TIP" type="info" :closable="false" />
       </div>
       <template #footer>
         <el-button @click="simulateVisible = false">取消</el-button>
@@ -349,6 +394,7 @@ import {
   type ClauseFramework,
 } from '../../api/contract'
 import { getDemoSubject } from '../../api/client'
+import { getActorMode } from '../../stores/demoIdentity'
 import {
   POLICY_ELEMENT_LABELS,
   CONTRACT_STATUS_LABELS,
@@ -359,6 +405,9 @@ import {
   CONTRACT_NOT_ACCESSIBLE_TIP,
   SIMULATION_HONESTY_TIP,
   EXECUTION_DEMO_TIP,
+  OPERATOR_MODE_PARTICIPANT_TIP,
+  SIMULATION_SOURCE_LABELS,
+  CONTENT_HASH_HINT,
 } from '../../constants/contract'
 import ClauseEditor from './components/ClauseEditor.vue'
 import StrategyEditor from './components/StrategyEditor.vue'
@@ -380,6 +429,14 @@ const isParticipant = computed(() => {
 function slotName(key: string): string {
   const slot = framework.value?.slots.find((item) => item.key === key)
   return slot ? `${slot.name}（${key}）` : key
+}
+
+/** 参与方动作被拒统一出口：后端文案原样展示（不吞不改写）+ 运营档追加体验层切档提示（hifi §4/§8-7）。 */
+function notifyActionRejected(err: unknown): void {
+  ElMessage.error((err as Error).message)
+  if (getActorMode() === 'operator') {
+    ElMessage.warning(OPERATOR_MODE_PARTICIPANT_TIP)
+  }
 }
 
 function strategyLine(element: 'quota' | 'term' | 'purpose' | 'territory'): string {
@@ -445,7 +502,7 @@ async function submitPropose(): Promise<void> {
     proposeVisible.value = false
     await loadAll()
   } catch (err) {
-    ElMessage.error((err as Error).message)
+    notifyActionRejected(err)
   }
 }
 
@@ -455,7 +512,7 @@ async function confirmClausesAction(): Promise<void> {
     ElMessage.success('确认成功')
     await loadAll()
   } catch (err) {
-    ElMessage.error((err as Error).message)
+    notifyActionRejected(err)
   }
 }
 
@@ -475,7 +532,7 @@ async function confirmTerminate(action: 'terminateNegotiation' | 'refuseSignatur
     ElMessage.success(CONTRACT_STATUS_LABELS.TERMINATED)
     await loadAll()
   } catch (err) {
-    ElMessage.error((err as Error).message)
+    notifyActionRejected(err)
   }
 }
 
@@ -495,7 +552,7 @@ async function confirmRelease(): Promise<void> {
     }
     await loadAll()
   } catch (err) {
-    ElMessage.error((err as Error).message)
+    notifyActionRejected(err)
   }
 }
 
@@ -524,7 +581,7 @@ async function submitSign(): Promise<void> {
     signVisible.value = false
     await loadAll()
   } catch (err) {
-    ElMessage.error((err as Error).message)
+    notifyActionRejected(err)
   }
 }
 
@@ -565,6 +622,20 @@ const simulateDate = ref<string | null>(null)
 const useDraft = ref(false)
 const draftStrategy = ref<Record<string, unknown>>({})
 const simulation = ref<SimulationResult | null>(null)
+
+/** 策略快照回显文本（键值逐行；空快照显示"—"）。 */
+const policySnapshotText = computed(() => {
+  const snapshot = simulation.value?.policySnapshot
+  if (!snapshot || Object.keys(snapshot).length === 0) {
+    return '—'
+  }
+  return Object.entries(snapshot).map(([key, value]) => `${key}: ${value}`).join('\n')
+})
+
+/** 使用记录拒绝行高亮（hifi §6.4-G④）。 */
+function usageRowClass({ row }: { row: { outcome: string } }): string {
+  return row.outcome === 'ALLOWED' ? '' : 'denied-row'
+}
 
 function openSimulate(): void {
   simulation.value = null
@@ -633,7 +704,7 @@ async function submitExecute(): Promise<void> {
     await loadLogs()
   } catch (err) {
     // 越界 1008C0020 / 状态失效 1008C0013 原样展示 + 刷新摘要（拒绝行出现）
-    ElMessage.error((err as Error).message)
+    notifyActionRejected(err)
     await loadSummary()
     await loadLogs()
   }
@@ -714,6 +785,46 @@ onMounted(() => {
 
 .simulate-select {
   max-width: 200px;
+}
+
+.simulate-result {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.violation-tag {
+  margin-right: 6px;
+}
+
+.snapshot-label {
+  font-size: 13px;
+  color: var(--el-text-color-regular);
+}
+
+.snapshot-body {
+  margin: 0;
+  padding: 8px 12px;
+  background: var(--el-fill-color-light);
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.hash-cell {
+  cursor: help;
+}
+
+.expand-slot-line {
+  padding: 2px 0;
+  font-size: 13px;
+}
+
+:deep(.denied-row) {
+  background: var(--el-color-danger-light-9);
 }
 
 .testbench-body {

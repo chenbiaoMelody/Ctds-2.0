@@ -75,12 +75,12 @@ function templateDetail(over: Partial<TemplateDetail> = {}): TemplateDetail {
     name: '公共数据授权合约模板',
     type: { code: 'PUBLIC_DATA_AUTHORIZATION', displayName: '公共数据授权' },
     currentVersion: 1,
-    clauseFramework: {
-      slots: [
-        { key: 'subject_matter', name: '标的', required: true, guide: '授权数据范围的描述' },
-        { key: 'delivery_mode', name: '交付方式', required: false, guide: '可选填写' },
-      ],
-    },
+      clauseFramework: {
+        slots: [
+          { key: 'subject_matter', name: '标的', required: true, guide: '授权数据范围的描述' },
+          { key: 'delivery_mode', name: '交付方式', required: false, guide: '自由填写' },
+        ],
+      },
     publishedAt: '2026-10-05T21:44:11',
     ...over,
   }
@@ -172,15 +172,17 @@ beforeEach(() => {
 })
 
 describe('模板浏览（T3）', () => {
-  it('列表渲染模板三要素并只来自 R4（启用中由服务端保障，界面不造过滤）', async () => {
+  it('列表渲染模板三要素并只来自 R4（启用中由服务端保障，界面不造过滤）；类型列独立渲染', async () => {
+    // 名称不含类型字样——"公共数据授权"只能来自类型列 displayName（防子串垫绿——评审④ P3）
+    mockedTemplates.mockResolvedValue(page([template({ name: '城市数据集模板' })]))
     await mountPage()
     expect(document.body.textContent).toContain('CT000001')
-    expect(document.body.textContent).toContain('公共数据授权合约模板')
+    expect(document.body.textContent).toContain('城市数据集模板')
     expect(document.body.textContent).toContain('公共数据授权')
     expect(mockedTemplates).toHaveBeenCalledWith(expect.objectContaining({ pageNum: 1, pageSize: 10 }))
   })
 
-  it('类型过滤传参：选择类型后查询按 type 传参，重置清空', async () => {
+  it('类型过滤传参：选择类型后点击查询按 type 传参，重置清空', async () => {
     const wrapper = await mountPage()
     mockedTemplates.mockClear()
     const select = wrapper.find('.filter-bar .el-select')
@@ -191,6 +193,9 @@ describe('模板浏览（T3）', () => {
         .find((o) => o.textContent?.includes('API调用'))
       expect(option).toBeTruthy()
       await new DOMWrapper(option as HTMLElement).trigger('click')
+      await flushPromises()
+      // 查询按钮触发（hifi §6.2-A：过滤条 +「查询」「重置」；选择不自动查询——评审① P3）
+      await button(wrapper, '查询')!.trigger('click')
       await flushPromises()
       expect(mockedTemplates).toHaveBeenCalledWith(expect.objectContaining({ type: 'API_CALL' }))
       await button(wrapper, '重置')!.trigger('click')
@@ -262,6 +267,44 @@ describe('模板运营（T5）', () => {
     expect(button(wrapper, '新增模板')).toBeTruthy()
   })
 
+  it('运营区状态/类型可选过滤传参（hifi §6.2-E——评审① P2）', async () => {
+    setActorMode('operator')
+    mockedManage.mockResolvedValue(page([manageTemplate()]))
+    const wrapper = await mountPage()
+    await button(wrapper, '运营维护')!.trigger('click')
+    await flushPromises()
+    mockedManage.mockClear()
+    const select = wrapper.find('.filter-bar .el-select')
+    expect(select.exists(), '运营区必须提供状态/类型过滤控件').toBe(true)
+    await select.trigger('click')
+    await flushPromises()
+    const option = [...document.body.querySelectorAll('.el-select-dropdown__item')]
+      .find((o) => o.textContent?.includes('已停用'))
+    expect(option).toBeTruthy()
+    await new DOMWrapper(option as HTMLElement).trigger('click')
+    await flushPromises()
+    await button(wrapper, '查询')!.trigger('click')
+    await flushPromises()
+    expect(mockedManage).toHaveBeenCalledWith(expect.objectContaining({ status: 'DISABLED' }))
+    await button(wrapper, '重置')!.trigger('click')
+    await flushPromises()
+    expect(mockedManage).toHaveBeenLastCalledWith(expect.objectContaining({ status: undefined }))
+    // 类型过滤传参（复审① P3 补钉：type 与 status 双传参各自可达——类型为第二个下拉）
+    mockedManage.mockClear()
+    const selects = wrapper.findAll('.filter-bar .el-select')
+    expect(selects.length).toBeGreaterThanOrEqual(2)
+    await selects[1].trigger('click')
+    await flushPromises()
+    const typeOption = [...document.body.querySelectorAll('.el-select-dropdown__item')]
+      .find((o) => o.textContent?.includes('API调用'))
+    expect(typeOption).toBeTruthy()
+    await new DOMWrapper(typeOption as HTMLElement).trigger('click')
+    await flushPromises()
+    await button(wrapper, '查询')!.trigger('click')
+    await flushPromises()
+    expect(mockedManage).toHaveBeenCalledWith(expect.objectContaining({ type: 'API_CALL' }))
+  })
+
   it('运营档普通主体发维护请求被拒 → C0002 原样展示', async () => {
     setActorMode('operator')
     mockedManage.mockRejectedValue(new ApiError('1008C0002', TEMPLATE_MAINTAIN_FORBIDDEN_TIP))
@@ -328,6 +371,30 @@ describe('模板运营（T5）', () => {
     expect(document.body.textContent).toContain('模板已处于目标状态')
   })
 
+  it('W4 启用腿：DISABLED 模板启用传参 + 启用方向同态 C0007 原样（评审④ P2 补测）', async () => {
+    setActorMode('operator')
+    mockedManage.mockResolvedValue(page([manageTemplate({
+      templateNo: 'CT000009', status: 'DISABLED', name: '已停用模板',
+    })]))
+    mockedEnable.mockResolvedValue({ templateNo: 'CT000009', versionNo: 2, status: 'ENABLED' })
+    const wrapper = await mountPage()
+    await button(wrapper, '运营维护')!.trigger('click')
+    await flushPromises()
+    await button(wrapper, '启用')!.trigger('click')
+    await flushPromises()
+    await flushPromises()
+    await clickBodyButton('确定')
+    await flushPromises()
+    expect(mockedEnable).toHaveBeenCalledWith('CT000009')
+    mockedEnable.mockRejectedValue(new ApiError('1008C0007', '模板已处于目标状态'))
+    await button(wrapper, '启用')!.trigger('click')
+    await flushPromises()
+    await flushPromises()
+    await clickBodyButton('确定')
+    await flushPromises()
+    expect(document.body.textContent).toContain('模板已处于目标状态')
+  })
+
   it('W2 修订成功提示新版本号；R2 版本历史旧版本可查', async () => {
     setActorMode('operator')
     mockedManage.mockResolvedValue(page([manageTemplate()]))
@@ -380,5 +447,21 @@ describe('维护留痕（T6 / R3）', () => {
     await button(wrapper, '维护留痕')!.trigger('click')
     await flushPromises()
     expect(document.body.textContent).toContain('暂无维护记录')
+  })
+
+  it('维护留痕翻页交互：下一页按 pageNum=2 传参（翻页用例名实对齐——评审④ P3）', async () => {
+    setActorMode('operator')
+    mockedLogs.mockResolvedValue(page([tplLog()], 25))
+    const wrapper = await mountPage()
+    await button(wrapper, '运营维护')!.trigger('click')
+    await flushPromises()
+    await button(wrapper, '维护留痕')!.trigger('click')
+    await flushPromises()
+    mockedLogs.mockClear()
+    const nextBtn = wrapper.find('.btn-next')
+    expect(nextBtn.exists()).toBe(true)
+    await nextBtn.trigger('click')
+    await flushPromises()
+    expect(mockedLogs).toHaveBeenCalledWith(expect.objectContaining({ pageNum: 2 }))
   })
 })

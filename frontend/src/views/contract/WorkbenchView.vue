@@ -62,6 +62,7 @@
           <el-input v-model="productId" placeholder="产品编号" class="product-input" />
           <el-button @click="searchProduct">检索产品</el-button>
         </div>
+        <div v-if="pickedProductName" class="picked-name">已选产品：{{ pickedProductName }}</div>
         <div v-if="searchResults.length" class="search-results">
           <div v-for="item in searchResults" :key="item.productId" class="search-row">
             <span>{{ item.productId }} · {{ item.productName }}（{{ item.providerSubjectNo }}）</span>
@@ -114,8 +115,13 @@ import {
   type ClauseFramework,
 } from '../../api/contract'
 import { searchProducts, type CatalogProduct } from '../../api/catalog'
-import { getDemoSubject } from '../../api/client'
-import { CONTRACT_STATUS_LABELS, CONTRACT_STATUS_TAG_TYPES, MY_ROLE_LABELS } from '../../constants/contract'
+import { getActorMode } from '../../stores/demoIdentity'
+import {
+  CONTRACT_STATUS_LABELS,
+  CONTRACT_STATUS_TAG_TYPES,
+  MY_ROLE_LABELS,
+  OPERATOR_MODE_PARTICIPANT_TIP,
+} from '../../constants/contract'
 import ClauseEditor from './components/ClauseEditor.vue'
 import StrategyEditor from './components/StrategyEditor.vue'
 
@@ -170,6 +176,7 @@ const framework = ref<ClauseFramework | null>(null)
 const clauseSlots = ref<{ slots: Record<string, string> }>({ slots: {} })
 const strategy = ref<Record<string, unknown>>({})
 const searchResults = ref<CatalogProduct[]>([])
+const pickedProductName = ref('')
 
 async function openInitiate(): Promise<void> {
   productId.value = ''
@@ -178,6 +185,7 @@ async function openInitiate(): Promise<void> {
   clauseSlots.value = { slots: {} }
   strategy.value = {}
   searchResults.value = []
+  pickedProductName.value = ''
   try {
     const result = await listTemplates({ pageNum: 1, pageSize: 100 })
     templateOptions.value = result.list
@@ -202,6 +210,7 @@ async function searchProduct(): Promise<void> {
 
 function pickProduct(item: CatalogProduct): void {
   productId.value = String(item.productId)
+  pickedProductName.value = item.productName
 }
 
 const selectedTemplate = computed(() =>
@@ -226,8 +235,11 @@ watch(templateNo, (no) => {
 })
 
 async function submitInitiate(): Promise<void> {
-  // 必填前置拦截（零请求——hifi §8-1）：产品编号与模板必填
+  // 必填前置拦截（零请求——hifi §8-1）：产品编号、模板、条款必填槽位留空
   if (!productId.value.trim() || !templateNo.value) {
+    return
+  }
+  if (framework.value?.slots.some((slot) => slot.required && !(clauseSlots.value.slots[slot.key] ?? '').trim())) {
     return
   }
   const selected = templateOptions.value.find((tpl) => tpl.templateNo === templateNo.value)
@@ -245,16 +257,16 @@ async function submitInitiate(): Promise<void> {
     initiateVisible.value = false
     await router.push(`/contracts/workbench/${initiated.contractNo}`)
   } catch (err) {
-    // 原样展示（1008C0010/C0016/C0017/C0014/C0015），弹窗状态不变
+    // 原样展示（1008C0010/C0016/C0017/C0014/C0015），弹窗状态不变；运营档追加切档提示（hifi §4）
     ElMessage.error((err as Error).message)
+    if (getActorMode() === 'operator') {
+      ElMessage.warning(OPERATOR_MODE_PARTICIPANT_TIP)
+    }
   }
 }
 
+// 演示身份空主体的前置拦截统一由 api/contract.ts 承载（零请求——T18/T20 口径），页面层不再兜底
 void loadMine()
-// 演示身份未设置（空主体）时前置拦截口径统一由 api/contract.ts 承载；此处仅兜底提示
-if (!getDemoSubject().trim()) {
-  ElMessage.warning('请先在顶栏设置演示身份主体编号')
-}
 </script>
 
 <style scoped>
@@ -283,6 +295,11 @@ if (!getDemoSubject().trim()) {
 .product-row {
   display: flex;
   gap: 8px;
+}
+
+.picked-name {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 
 .product-input {
