@@ -102,8 +102,8 @@
         <el-descriptions :column="2" border size="small">
           <el-descriptions-item :label="POLICY_ELEMENT_LABELS.quota">{{ strategyLine('quota') }}</el-descriptions-item>
           <el-descriptions-item :label="POLICY_ELEMENT_LABELS.term">{{ strategyLine('term') }}</el-descriptions-item>
-          <el-descriptions-item label="用途">{{ strategyLine('purpose') }}</el-descriptions-item>
-          <el-descriptions-item label="域内范围">{{ strategyLine('territory') }}</el-descriptions-item>
+          <el-descriptions-item :label="POLICY_ELEMENT_LABELS.purpose">{{ strategyLine('purpose') }}</el-descriptions-item>
+          <el-descriptions-item :label="POLICY_ELEMENT_LABELS.territory">{{ strategyLine('territory') }}</el-descriptions-item>
           <el-descriptions-item :label="POLICY_ELEMENT_LABELS.noRedistribution">
             {{ detail.detail.clauseValues.strategy.noRedistribution?.enabled ? '是' : '未启用' }}
           </el-descriptions-item>
@@ -206,6 +206,7 @@
  * 强制终止（W12——理由必填 1~512）。非运营档直链 → 服务端 403 原样展示。
  */
 import { ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
   listGovernanceContracts,
@@ -225,8 +226,17 @@ import {
   MY_ROLE_LABELS,
   CONTENT_HASH_HINT,
 } from '../../constants/contract'
+import { guideToLoginIfAuthFailed } from '../../api/authGuide'
 
+const router = useRouter()
 const pageSize = 10
+
+/** 读面加载失败统一出口：认证失效（1000C0002）经共享 authGuide 引导回登录页（§6.6-6/§8-10），
+ * 其余后端文案原样展示。 */
+function showError(error: unknown): void {
+  if (guideToLoginIfAuthFailed(error, router)) return
+  ElMessage.error((error as Error).message)
+}
 
 // ==== 全量列表（R10） ====
 
@@ -247,7 +257,7 @@ async function loadList(): Promise<void> {
     list.value = result.list
     total.value = result.total
   } catch (err) {
-    ElMessage.error((err as Error).message)
+    showError(err)
   } finally {
     loading.value = false
   }
@@ -281,7 +291,7 @@ async function openDetail(contractNo: string): Promise<void> {
     detailNo.value = contractNo
     detailVisible.value = true
   } catch (err) {
-    ElMessage.error((err as Error).message)
+    showError(err)
     return
   }
   drawerLogsPage.value = 1
@@ -299,7 +309,7 @@ async function loadLogs(): Promise<void> {
     actionLogs.value = result.list
     drawerLogsTotal.value = result.total
   } catch (err) {
-    ElMessage.error((err as Error).message)
+    showError(err)
   } finally {
     logsLoading.value = false
   }
@@ -341,7 +351,7 @@ async function submitForce(): Promise<void> {
     await openDetail(detailNo.value)
     await loadList()
   } catch (err) {
-    ElMessage.error((err as Error).message)
+    showError(err)
   }
 }
 

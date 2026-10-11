@@ -263,8 +263,10 @@ class ContractActionLogIntegrationTest {
 
     @Test
     void t6_outboundFieldWhitelistContainsNoSensitiveMaterial() throws Exception {
+        // marker（含唯一尾数）必须随造数写入条款值（subject_matter，经 initiateBody 嵌入），
+        // 否则"条款明文零出站"恒真（评审④独立评审 P2：原实现 marker 死变量）
         final String marker = "白名单" + Long.toHexString(System.nanoTime());
-        final String contractNo = toEffective("白名单");
+        final String contractNo = toEffective(marker);
         final JsonNode rows = readBody(getLogs(contractNo, REQ, "provider", 200))
                 .path("data").path("list");
         final String first = rows.get(0).toString();

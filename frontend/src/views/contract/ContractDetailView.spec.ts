@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises, DOMWrapper } from '@vue/test-utils'
 import ElementPlus, { ElMessage } from 'element-plus'
-import { createRouter, createMemoryHistory } from 'vue-router'
+import { createRouter, createMemoryHistory, type Router } from 'vue-router'
 import ContractDetailView from './ContractDetailView.vue'
 import {
   getContractDetail,
@@ -29,6 +29,7 @@ import {
 } from '../../api/contract'
 import { ApiError, setDemoSubject } from '../../api/client'
 import { setActorMode } from '../../stores/demoIdentity'
+import { isDemoAuthed, signInDemo } from '../../stores/demoAuth'
 import { CONTRACT_NOT_ACCESSIBLE_TIP, OPERATOR_MODE_PARTICIPANT_TIP } from '../../constants/contract'
 
 /**
@@ -158,6 +159,9 @@ function actionLog(over: Partial<ContractActionLogItem> = {}): ContractActionLog
   }
 }
 
+// mountPage 所建 router 的模块级引用（认证失效引导用例断言跳转用；mountPage 返回值不变）
+let currentRouter: Router | undefined
+
 async function mountPage(route = '/contracts/workbench/CO000013') {
   const router = createRouter({
     history: createMemoryHistory(),
@@ -167,6 +171,7 @@ async function mountPage(route = '/contracts/workbench/CO000013') {
       { path: '/login', name: 'login', component: { template: '<div />' } },
     ],
   })
+  currentRouter = router
   await router.push(route)
   await router.isReady()
   const wrapper = mount(ContractDetailView, {
@@ -222,6 +227,18 @@ describe('同形与深链（T21）', () => {
     expect(text).toContain('V1')
     expect(text).toContain('S20260925000001')
     expect(text).toContain('S20260922000001')
+  })
+})
+
+describe('认证失效引导（hifi §6.6-6 / §8-10）', () => {
+  it('详情加载 1000C0002：原样提示 + 清演示登录态 + 回登录页（不落"不可见"同形提示）', async () => {
+    signInDemo()
+    mockedDetail.mockRejectedValue(new ApiError('1000C0002', '认证失败或身份已失效'))
+    await mountPage()
+    expect(document.body.textContent).toContain('认证失败或身份已失效')
+    expect(isDemoAuthed()).toBe(false)
+    expect(currentRouter?.currentRoute.value.path).toBe('/login')
+    expect(document.body.textContent).not.toContain('合约不存在或不可见')
   })
 })
 
@@ -340,14 +357,21 @@ describe('签署与验签（T11）', () => {
       signatures: [detail().signatures[0]],
       attestation: null,
     }))
-    await mountPage()
+    const partial = await mountPage()
     expect(document.body.textContent).toContain('部分签署')
     expect(document.body.textContent).toContain('did:ctds:S1.1')
-    // 已生效态：存证摘要渲染 + 生效时间（= 最后一签）
-    await mountPage()
+    partial.unmount()
+    // 已生效态：存证摘要渲染 + 生效时间（= 最后一签）；块存在性以存证摘要块独有锚断言
+    // （"存证摘要"标签与"存证时间"字样仅存证块渲染；attestedAt 值与总览 updatedAt 同值，不作独立性依据）
+    mockedDetail.mockResolvedValue(detail())
+    const effective = await mountPage()
     const text = document.body.textContent
+    expect(text).toContain('存证摘要')
+    expect(text).toContain('存证时间')
     expect(text).toContain('hash-abc123')
     expect(text).toContain('2026-10-06T10:00:00')
+    expect(text).toContain('2026-10-06T10:00:01')
+    effective.unmount()
   })
 
   it('验签核验：逐方结果 PASS/FAIL 原样渲染', async () => {
@@ -508,6 +532,8 @@ describe('测试台（T13）', () => {
           outcome: 'PASS', actual: { allowed: true, violations: [] }, note: null },
         { code: 'X1', elementKey: 'usage.quota', direction: 'DENY', expectation: '拒绝',
           outcome: 'FAIL', actual: { allowed: true, violations: [] }, note: '未拦截' },
+        { code: 'D1', elementKey: 'usage.purpose', direction: 'DENY', expectation: '拒绝',
+          outcome: 'PASS', actual: { allowed: false, violations: ['usage.purpose'] }, note: null },
         { code: 'X3', elementKey: 'usage.territory', direction: 'DENY', expectation: '拒绝',
           outcome: 'SKIPPED', actual: null, note: '要素未启用' },
       ],
@@ -524,6 +550,9 @@ describe('测试台（T13）', () => {
     expect(text).toContain('SKIPPED')
     expect(text).toContain('要素未启用')
     expect(text).toContain('2026-10-11T10:00:00')
+    // 实际结论列（lofi W10 / hifi §1.1 TestbenchScenario.actual）：有 actual 渲染结论、无 actual 显"—"
+    expect(text).toContain('实际结论')
+    expect(text).toContain('拒绝（1 项违规）')
   })
 })
 
@@ -547,7 +576,18 @@ describe('受控执行与使用摘要（T14/T15 / R12）', () => {
 
   it('越界 C0020 原样 + 提交后刷新摘要（拒绝行出现）', async () => {
     mockedExecute.mockRejectedValue(new ApiError('1008C0020', '越界使用被拒绝，触发要素见留痕'))
+    // 挂载期摘要为空（隔离 beforeEach 预存的 QUOTA_EXHAUSTED 行——刷新腿以"新值出现"证伪）
+    mockedSummary.mockResolvedValue(usageSummary({
+      records: page([]), allowedCount: 0, deniedCount: 0,
+    }))
     const wrapper = await mountPage()
+    mockedSummary.mockClear()
+    // 提交后刷新：mock 返回含本次执行的新拒绝行（occurredAt 初始渲染必无）
+    mockedSummary.mockResolvedValue(usageSummary({
+      records: page([{ requesterNo: 'S20260922000001', actionType: 'USE', outcome: 'DENIED',
+        reasonCode: 'C0020', violations: '["QUOTA_EXHAUSTED"]', usedCount: 4,
+        occurredAt: '2026-10-11T11:30:00' }]),
+    }))
     await button(wrapper, '发起使用')!.trigger('click')
     await flushPromises()
     await wrapper.find('input[placeholder*="用途"]').setValue('营销外呼')
@@ -555,8 +595,10 @@ describe('受控执行与使用摘要（T14/T15 / R12）', () => {
     await clickBodyButton('确定')
     await flushPromises()
     expect(document.body.textContent).toContain('越界使用被拒绝，触发要素见留痕')
-    expect(mockedSummary).toHaveBeenCalled()
+    // 刷新恰一次：实现未刷新则为 0 → 红（替换原恒真 toHaveBeenCalled 断言）
+    expect(mockedSummary).toHaveBeenCalledTimes(1)
     expect(document.body.textContent).toContain('QUOTA_EXHAUSTED')
+    expect(document.body.textContent).toContain('2026-10-11T11:30:00')
   })
 
   it('使用摘要：quota 已用/上限 + 放行/拒绝计数 + 拒绝行触发要素', async () => {
@@ -574,6 +616,31 @@ describe('受控执行与使用摘要（T14/T15 / R12）', () => {
     }))
     await mountPage()
     expect(document.body.textContent).toContain('无配额上限')
+  })
+
+  it('使用摘要空态：无执行记录渲染"暂无执行记录"（T15 空态腿）', async () => {
+    mockedSummary.mockResolvedValue(usageSummary({
+      quota: { limit: 100, used: 0 }, allowedCount: 0, deniedCount: 0, records: page([]),
+    }))
+    await mountPage()
+    expect(document.body.textContent).toContain('暂无执行记录')
+  })
+
+  it('使用摘要翻页交互：下一页按 pageNum=2 传参（T15 分页腿）', async () => {
+    mockedSummary.mockResolvedValue(usageSummary({ records: page([
+      { requesterNo: 'S20260922000001', actionType: 'USE', outcome: 'ALLOWED', reasonCode: null,
+        violations: null, usedCount: 1, occurredAt: '2026-10-06T10:30:00' },
+    ], 11) }))
+    const wrapper = await mountPage()
+    mockedSummary.mockClear()
+    // 详情页两个分页器（使用摘要 + 留痕区），取第一个 = 使用摘要
+    const nextBtn = wrapper.findAll('.btn-next').at(0)
+    expect(nextBtn).toBeTruthy()
+    await nextBtn!.trigger('click')
+    await flushPromises()
+    expect(mockedSummary).toHaveBeenCalledWith(expect.objectContaining({
+      contractNo: 'CO000013', pageNum: 2,
+    }))
   })
 })
 

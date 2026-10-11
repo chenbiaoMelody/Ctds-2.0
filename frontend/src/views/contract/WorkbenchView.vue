@@ -122,11 +122,19 @@ import {
   MY_ROLE_LABELS,
   OPERATOR_MODE_PARTICIPANT_TIP,
 } from '../../constants/contract'
+import { guideToLoginIfAuthFailed } from '../../api/authGuide'
 import ClauseEditor from './components/ClauseEditor.vue'
 import StrategyEditor from './components/StrategyEditor.vue'
 
 const router = useRouter()
 const pageSize = 10
+
+/** 读面加载失败统一出口：认证失效（1000C0002）经共享 authGuide 引导回登录页（§6.6-6/§8-10），
+ * 其余后端文案原样展示。 */
+function showError(error: unknown): void {
+  if (guideToLoginIfAuthFailed(error, router)) return
+  ElMessage.error((error as Error).message)
+}
 
 // ==== 我的合约（R6） ====
 
@@ -149,7 +157,7 @@ async function loadMine(): Promise<void> {
     list.value = result.list
     total.value = result.total
   } catch (err) {
-    ElMessage.error((err as Error).message)
+    showError(err)
   } finally {
     loading.value = false
   }
@@ -190,7 +198,7 @@ async function openInitiate(): Promise<void> {
     const result = await listTemplates({ pageNum: 1, pageSize: 100 })
     templateOptions.value = result.list
   } catch (err) {
-    ElMessage.error((err as Error).message)
+    showError(err)
   }
   initiateVisible.value = true
 }
@@ -204,7 +212,7 @@ async function searchProduct(): Promise<void> {
       ElMessage.info('未检索到产品，可直接填写产品编号')
     }
   } catch (err) {
-    ElMessage.error((err as Error).message)
+    showError(err)
   }
 }
 
@@ -223,7 +231,7 @@ async function loadFramework(no: string): Promise<void> {
     framework.value = detail.clauseFramework
   } catch (err) {
     framework.value = null
-    ElMessage.error((err as Error).message)
+    showError(err)
   }
 }
 
@@ -258,6 +266,7 @@ async function submitInitiate(): Promise<void> {
     await router.push(`/contracts/workbench/${initiated.contractNo}`)
   } catch (err) {
     // 原样展示（1008C0010/C0016/C0017/C0014/C0015），弹窗状态不变；运营档追加切档提示（hifi §4）
+    if (guideToLoginIfAuthFailed(err, router)) return
     ElMessage.error((err as Error).message)
     if (getActorMode() === 'operator') {
       ElMessage.warning(OPERATOR_MODE_PARTICIPANT_TIP)

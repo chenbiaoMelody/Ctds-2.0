@@ -211,6 +211,7 @@
  * 写动作不做乐观更新（一律以响应为准刷新）。
  */
 import { computed, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   listTemplates,
@@ -236,6 +237,16 @@ import {
   TEMPLATE_ACTION_LOG_LABELS,
   TEMPLATE_NOT_ACCESSIBLE_TIP,
 } from '../../constants/contract'
+import { guideToLoginIfAuthFailed } from '../../api/authGuide'
+
+const router = useRouter()
+
+/** 读面/写面失败统一出口：认证失效（1000C0002）经共享 authGuide 引导回登录页（§6.6-6/§8-10），
+ * 其余后端文案原样展示。 */
+function showError(error: unknown): void {
+  if (guideToLoginIfAuthFailed(error, router)) return
+  ElMessage.error((error as Error).message)
+}
 
 // 档位为体验层显隐（与既有目录域三视图同款 computed 写法；服务端判定为准）
 const isOperator = computed(() => getActorMode() === 'operator')
@@ -264,7 +275,7 @@ async function loadBrowse(): Promise<void> {
     browseList.value = result.list
     browseTotal.value = result.total
   } catch (err) {
-    ElMessage.error((err as Error).message)
+    showError(err)
   } finally {
     browseLoading.value = false
   }
@@ -297,7 +308,7 @@ async function loadManage(): Promise<void> {
     manageList.value = result.list
     manageTotal.value = result.total
   } catch (err) {
-    ElMessage.error((err as Error).message)
+    showError(err)
   } finally {
     manageLoading.value = false
   }
@@ -324,6 +335,7 @@ async function openDetail(templateNo: string): Promise<void> {
     detailVisible.value = true
   } catch (err) {
     // 同形拒绝（1008C0001）：原样展示后端文案；后端文案缺失时以同一条常量兜底（防探测口径一致）
+    if (guideToLoginIfAuthFailed(err, router)) return
     ElMessage.error((err as Error).message || TEMPLATE_NOT_ACCESSIBLE_TIP)
   }
 }
@@ -344,13 +356,22 @@ function openCreate(): void {
   editorVisible.value = true
 }
 
-function openRevise(row: ManageTemplate): void {
-  editorMode.value = 'revise'
-  editorTargetNo.value = row.templateNo
-  editorName.value = row.name
-  editorType.value = row.type.code
-  editorSlots.value = []
-  editorVisible.value = true
+async function openRevise(row: ManageTemplate): Promise<void> {
+  try {
+    // 修订预载现有条款框架（C-4.1 剧本 S2-1 承载 / hifi §9：既有槽位保留，编辑后发布新版本，
+    // 提交为"既有+修订"全量框架——不空开弹窗致既有槽位被静默清空）
+    const current = await getTemplate(row.templateNo)
+    editorMode.value = 'revise'
+    editorTargetNo.value = row.templateNo
+    editorName.value = row.name
+    editorType.value = row.type.code
+    editorSlots.value = current.clauseFramework.slots.map((slot) => ({
+      key: slot.key, name: slot.name, required: slot.required, guide: slot.guide ?? '',
+    }))
+    editorVisible.value = true
+  } catch (err) {
+    showError(err)
+  }
 }
 
 async function submitEditor(): Promise<void> {
@@ -376,7 +397,7 @@ async function submitEditor(): Promise<void> {
     editorVisible.value = false
     await loadManage()
   } catch (err) {
-    ElMessage.error((err as Error).message)
+    showError(err)
   }
 }
 
@@ -399,7 +420,7 @@ async function confirmToggle(row: ManageTemplate, action: 'disable' | 'enable'):
     ElMessage.success('操作成功')
     await loadManage()
   } catch (err) {
-    ElMessage.error((err as Error).message)
+    showError(err)
   }
 }
 
@@ -413,7 +434,7 @@ async function openVersions(templateNo: string): Promise<void> {
     versions.value = await listTemplateVersions(templateNo)
     versionsVisible.value = true
   } catch (err) {
-    ElMessage.error((err as Error).message)
+    showError(err)
   }
 }
 
@@ -431,7 +452,7 @@ async function loadLogs(): Promise<void> {
     logList.value = result.list
     logsTotal.value = result.total
   } catch (err) {
-    ElMessage.error((err as Error).message)
+    showError(err)
   } finally {
     logsLoading.value = false
   }

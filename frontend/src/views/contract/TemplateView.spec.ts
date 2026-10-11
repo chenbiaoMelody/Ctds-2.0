@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises, DOMWrapper } from '@vue/test-utils'
 import ElementPlus from 'element-plus'
-import { createRouter, createMemoryHistory } from 'vue-router'
+import { createRouter, createMemoryHistory, type Router } from 'vue-router'
 import TemplateView from './TemplateView.vue'
 import {
   listTemplates,
@@ -21,6 +21,7 @@ import {
 } from '../../api/contract'
 import { ApiError, setDemoSubject } from '../../api/client'
 import { setActorMode } from '../../stores/demoIdentity'
+import { isDemoAuthed, signInDemo } from '../../stores/demoAuth'
 import {
   TEMPLATE_NOT_ACCESSIBLE_TIP,
   TEMPLATE_MAINTAIN_FORBIDDEN_TIP,
@@ -129,6 +130,9 @@ function page<T>(list: T[], total = list.length) {
   return { list, total, pageNum: 1, pageSize: 10, totalPages: 1 }
 }
 
+// mountPage 所建 router 的模块级引用（认证失效引导用例断言跳转用；mountPage 返回值不变）
+let currentRouter: Router | undefined
+
 async function mountPage(route = '/contracts/templates') {
   const router = createRouter({
     history: createMemoryHistory(),
@@ -137,6 +141,7 @@ async function mountPage(route = '/contracts/templates') {
       { path: '/login', name: 'login', component: { template: '<div />' } },
     ],
   })
+  currentRouter = router
   await router.push(route)
   await router.isReady()
   const wrapper = mount(TemplateView, {
@@ -342,6 +347,7 @@ describe('模板运营（T5）', () => {
     await button(wrapper, '确定')!.trigger('click')
     await flushPromises()
     expect(mockedCreate).toHaveBeenCalledWith(expect.objectContaining({
+      name: '测试模板',
       type: 'PUBLIC_DATA_AUTHORIZATION',
       clauseFramework: expect.objectContaining({
         slots: expect.arrayContaining([expect.objectContaining({ key: 'usage_scope' })]),
@@ -395,25 +401,41 @@ describe('模板运营（T5）', () => {
     expect(document.body.textContent).toContain('模板已处于目标状态')
   })
 
-  it('W2 修订成功提示新版本号；R2 版本历史旧版本可查', async () => {
+  it('W2 修订预载现有条款框架（不丢既有槽位）+ 新版本号提示全锚；R2 版本历史旧版本可查', async () => {
     setActorMode('operator')
     mockedManage.mockResolvedValue(page([manageTemplate()]))
+    mockedTemplate.mockResolvedValue(templateDetail({ templateNo: 'CT000002' }))
     mockedRevise.mockResolvedValue({ templateNo: 'CT000002', versionNo: 3, previousVersionNo: 2 })
     const wrapper = await mountPage()
     await button(wrapper, '运营维护')!.trigger('click')
     await flushPromises()
     await button(wrapper, '修订')!.trigger('click')
     await flushPromises()
+    // 预载现有框架：编辑器呈现既有两槽位（键已回填，不空开弹窗）
+    expect(mockedTemplate).toHaveBeenCalledWith('CT000002')
+    const existedKeys = wrapper.findAll('input[placeholder*="键"], input[placeholder*="英文标识"]')
+      .map((i) => (i.element as HTMLInputElement).value)
+    expect(existedKeys).toContain('subject_matter')
+    expect(existedKeys).toContain('delivery_mode')
+    // 追加一个新条款项后提交：既有槽位不得被静默清空（P1 回归锚：slots = 既有 2 + 新增 1）
     await button(wrapper, '新增条款项')!.trigger('click')
     await flushPromises()
     const keyInputs = wrapper.findAll('input[placeholder*="键"], input[placeholder*="英文标识"]')
-    await keyInputs[0].setValue('extra_item')
+    await keyInputs[2].setValue('extra_item')
     await button(wrapper, '确定')!.trigger('click')
     await flushPromises()
     expect(mockedRevise).toHaveBeenCalledWith('CT000002', expect.objectContaining({
-      clauseFramework: expect.objectContaining({ slots: expect.anything() }),
+      clauseFramework: expect.objectContaining({
+        slots: expect.arrayContaining([
+          expect.objectContaining({ key: 'subject_matter' }),
+          expect.objectContaining({ key: 'delivery_mode' }),
+          expect.objectContaining({ key: 'extra_item' }),
+        ]),
+      }),
     }))
-    expect(document.body.textContent).toContain('3')
+    expect(mockedRevise.mock.calls[0][1].clauseFramework.slots).toHaveLength(3)
+    // 成功提示全锚（防单字符子串垫绿）
+    expect(document.body.textContent).toContain('修订成功：新版本 V3（原 V2 保留）')
     mockedVersions.mockResolvedValue([version(), version({ versionNo: 2 })])
     await button(wrapper, '版本历史')!.trigger('click')
     await flushPromises()
@@ -463,5 +485,16 @@ describe('维护留痕（T6 / R3）', () => {
     await nextBtn.trigger('click')
     await flushPromises()
     expect(mockedLogs).toHaveBeenCalledWith(expect.objectContaining({ pageNum: 2 }))
+  })
+})
+
+describe('认证失效引导（hifi §6.6-6 / §8-10）', () => {
+  it('浏览加载 1000C0002：原样提示 + 清演示登录态 + 回登录页', async () => {
+    signInDemo()
+    mockedTemplates.mockRejectedValue(new ApiError('1000C0002', '认证失败或身份已失效'))
+    await mountPage()
+    expect(document.body.textContent).toContain('认证失败或身份已失效')
+    expect(isDemoAuthed()).toBe(false)
+    expect(currentRouter?.currentRoute.value.path).toBe('/login')
   })
 })

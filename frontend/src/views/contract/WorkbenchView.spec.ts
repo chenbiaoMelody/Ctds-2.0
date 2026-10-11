@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises, DOMWrapper } from '@vue/test-utils'
 import ElementPlus from 'element-plus'
-import { createRouter, createMemoryHistory } from 'vue-router'
+import { createRouter, createMemoryHistory, type Router } from 'vue-router'
 import WorkbenchView from './WorkbenchView.vue'
 import {
   listMyContracts,
@@ -15,6 +15,7 @@ import {
 import { searchProducts, type CatalogProduct } from '../../api/catalog'
 import { ApiError, setDemoSubject } from '../../api/client'
 import { setActorMode } from '../../stores/demoIdentity'
+import { isDemoAuthed, signInDemo } from '../../stores/demoAuth'
 import {
   PRODUCT_NOT_DEALABLE_TIP,
   ADMISSION_REQUIRED_INITIATE_TIP,
@@ -108,6 +109,9 @@ function page<T>(list: T[], total = list.length) {
   return { list, total, pageNum: 1, pageSize: 10, totalPages: 1 }
 }
 
+// mountPage 所建 router 的模块级引用（认证失效引导用例断言跳转用；mountPage 返回值不变）
+let currentRouter: Router | undefined
+
 async function mountPage(route = '/contracts/workbench') {
   const router = createRouter({
     history: createMemoryHistory(),
@@ -118,6 +122,7 @@ async function mountPage(route = '/contracts/workbench') {
       { path: '/login', name: 'login', component: { template: '<div />' } },
     ],
   })
+  currentRouter = router
   await router.push(route)
   await router.isReady()
   const wrapper = mount(WorkbenchView, {
@@ -403,5 +408,16 @@ describe('发起合约弹窗（T8 / W5）', () => {
     await flushPromises()
     expect(document.body.textContent).toContain('合约双方须为不同主体，不可对自己提供的产品发起合约')
     expect(document.body.textContent).toContain(OPERATOR_MODE_PARTICIPANT_TIP)
+  })
+})
+
+describe('认证失效引导（hifi §6.6-6 / §8-10）', () => {
+  it('我的合约加载 1000C0002：原样提示 + 清演示登录态 + 回登录页', async () => {
+    signInDemo()
+    mockedMine.mockRejectedValue(new ApiError('1000C0002', '认证失败或身份已失效'))
+    await mountPage()
+    expect(document.body.textContent).toContain('认证失败或身份已失效')
+    expect(isDemoAuthed()).toBe(false)
+    expect(currentRouter?.currentRoute.value.path).toBe('/login')
   })
 })

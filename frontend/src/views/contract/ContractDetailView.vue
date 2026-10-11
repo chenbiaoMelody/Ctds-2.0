@@ -66,10 +66,10 @@
           <el-descriptions-item :label="POLICY_ELEMENT_LABELS.term">
             {{ strategyLine('term') }}
           </el-descriptions-item>
-          <el-descriptions-item label="用途">
+          <el-descriptions-item :label="POLICY_ELEMENT_LABELS.purpose">
             {{ strategyLine('purpose') }}
           </el-descriptions-item>
-          <el-descriptions-item label="域内范围">
+          <el-descriptions-item :label="POLICY_ELEMENT_LABELS.territory">
             {{ strategyLine('territory') }}
           </el-descriptions-item>
           <el-descriptions-item :label="POLICY_ELEMENT_LABELS.noRedistribution">
@@ -345,6 +345,13 @@
                 </el-tag>
               </template>
             </el-table-column>
+            <el-table-column label="实际结论" min-width="110">
+              <template #default="scope">
+                {{ scope.row.actual
+                  ? (scope.row.actual.allowed ? '放行' : `拒绝（${scope.row.actual.violations.length} 项违规）`)
+                  : '—' }}
+              </template>
+            </el-table-column>
             <el-table-column label="说明" min-width="130">
               <template #default="scope">{{ scope.row.note ?? '—' }}</template>
             </el-table-column>
@@ -365,7 +372,7 @@
  * 展示不弹错误（ADR-021 §2.2 语义）。
  */
 import { computed, onMounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   getContractDetail,
@@ -409,10 +416,12 @@ import {
   SIMULATION_SOURCE_LABELS,
   CONTENT_HASH_HINT,
 } from '../../constants/contract'
+import { guideToLoginIfAuthFailed } from '../../api/authGuide'
 import ClauseEditor from './components/ClauseEditor.vue'
 import StrategyEditor from './components/StrategyEditor.vue'
 
 const route = useRoute()
+const router = useRouter()
 const contractNo = String(route.params.contractNo ?? '')
 
 const notAccessible = ref(false)
@@ -431,8 +440,18 @@ function slotName(key: string): string {
   return slot ? `${slot.name}（${key}）` : key
 }
 
-/** 参与方动作被拒统一出口：后端文案原样展示（不吞不改写）+ 运营档追加体验层切档提示（hifi §4/§8-7）。 */
+/** 读面加载失败统一出口：认证失效（1000C0002）经共享 authGuide 引导回登录页（§6.6-6/§8-10），
+ * 其余后端文案原样展示；返回 true 表示已引导跳转，调用方应立即中止后续逻辑。 */
+function showError(error: unknown): boolean {
+  if (guideToLoginIfAuthFailed(error, router)) return true
+  ElMessage.error((error as Error).message)
+  return false
+}
+
+/** 参与方动作被拒统一出口：认证失效经共享 authGuide 引导（§6.6-6/§8-10）；
+ * 其余后端文案原样展示（不吞不改写）+ 运营档追加体验层切档提示（hifi §4/§8-7）。 */
 function notifyActionRejected(err: unknown): void {
+  if (guideToLoginIfAuthFailed(err, router)) return
   ElMessage.error((err as Error).message)
   if (getActorMode() === 'operator') {
     ElMessage.warning(OPERATOR_MODE_PARTICIPANT_TIP)
@@ -458,14 +477,14 @@ async function loadAll(): Promise<void> {
     detail.value = await getContractDetail(contractNo)
     notAccessible.value = false
   } catch (err) {
+    if (showError(err)) return
     notAccessible.value = true
-    ElMessage.error((err as Error).message)
     return
   }
   try {
     clauseVersions.value = await listClauseVersions(contractNo)
   } catch (err) {
-    ElMessage.error((err as Error).message)
+    showError(err)
   }
   try {
     const tpl = await getTemplate(detail.value.templateNo)
@@ -591,7 +610,7 @@ async function runVerify(): Promise<void> {
   try {
     verifyReport.value = await verifySignatures(contractNo)
   } catch (err) {
-    ElMessage.error((err as Error).message)
+    showError(err)
   }
 }
 
@@ -609,7 +628,7 @@ async function loadSummary(): Promise<void> {
       pageSize: summaryPageSize,
     })
   } catch (err) {
-    ElMessage.error((err as Error).message)
+    showError(err)
   }
 }
 
@@ -660,7 +679,7 @@ async function submitSimulate(): Promise<void> {
       strategyDocument: useDraft.value ? (draftStrategy.value as never) : undefined,
     })
   } catch (err) {
-    ElMessage.error((err as Error).message)
+    showError(err)
   }
 }
 
@@ -671,7 +690,7 @@ async function runTestbench(): Promise<void> {
   try {
     testbench.value = await runPolicyTestbench(contractNo)
   } catch (err) {
-    ElMessage.error((err as Error).message)
+    showError(err)
   }
 }
 
@@ -729,7 +748,7 @@ async function loadLogs(): Promise<void> {
     actionLogs.value = result.list
     logsTotal.value = result.total
   } catch (err) {
-    ElMessage.error((err as Error).message)
+    showError(err)
   } finally {
     logsLoading.value = false
   }

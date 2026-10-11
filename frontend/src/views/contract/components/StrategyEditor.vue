@@ -41,7 +41,7 @@
         v-if="territoryEnabled"
         v-model="territoryText"
         :maxlength="200"
-        placeholder="域内范围"
+        :placeholder="POLICY_ELEMENT_LABELS.territory"
       />
     </div>
     <div class="element-row">
