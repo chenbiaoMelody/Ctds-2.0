@@ -130,9 +130,14 @@ function usageSummary(over: Partial<UsageSummary> = {}): UsageSummary {
     quota: { limit: 100, used: 3 },
     allowedCount: 3,
     deniedCount: 1,
+    // DB-42③（F3）修复：计数与记录行恒等（3 放行 + 1 拒绝 = 4 行；时间倒序最新在前）
     records: page([
       { requesterNo: 'S20260922000001', actionType: 'USE', outcome: 'DENIED', reasonCode: 'C0020',
         violations: '["QUOTA_EXHAUSTED"]', usedCount: 3, occurredAt: '2026-10-06T11:00:00' },
+      { requesterNo: 'S20260922000001', actionType: 'USE', outcome: 'ALLOWED', reasonCode: null,
+        violations: null, usedCount: 3, occurredAt: '2026-10-06T10:50:00' },
+      { requesterNo: 'S20260922000001', actionType: 'USE', outcome: 'ALLOWED', reasonCode: null,
+        violations: null, usedCount: 2, occurredAt: '2026-10-06T10:45:00' },
       { requesterNo: 'S20260922000001', actionType: 'USE', outcome: 'ALLOWED', reasonCode: null,
         violations: null, usedCount: 1, occurredAt: '2026-10-06T10:30:00' },
     ]),
@@ -331,6 +336,9 @@ describe('协商动作（T10）', () => {
     await button(wrapper, '确认')!.trigger('click')
     await flushPromises()
     expect(document.body.textContent).toContain('合约当前状态不允许该操作')
+    // DB-42②（F2）：状态不变断言对齐用例名——拒绝后数据源零重拉（无乐观刷新）+ 状态文案不变
+    expect(mockedDetail).toHaveBeenCalledTimes(1)
+    expect(document.body.textContent).toContain('协商中')
   })
 })
 
@@ -520,6 +528,27 @@ describe('策略视图与模拟试算（T12）', () => {
     await flushPromises()
     expect(document.body.textContent).toContain('策略条款不符合使用控制约定')
   })
+
+  it('模拟试算放行腿：allowed=true → 结果面板渲染放行 tag（DB-42 F1）', async () => {
+    // 既有用例仅覆盖拒绝腿；本例补放行腿（结果面板 tag 双腿齐备——DB-42①）
+    mockedSimulate.mockResolvedValue({
+      contractNo: 'CO000013', contractStatus: 'EFFECTIVE', strategySource: 'EFFECTIVE',
+      strategyEffective: true, allowed: true, violations: [],
+      assumedUsedCount: 3, assumedDate: '2026-10-11', policySnapshot: { 'snapshot.anchor': 'SIM-ANCHOR-43' },
+    } satisfies SimulationResult)
+    const wrapper = await mountPage()
+    await button(wrapper, '模拟试算')!.trigger('click')
+    await flushPromises()
+    await button(wrapper, '开始试算')!.trigger('click')
+    await flushPromises()
+    const panel = wrapper.find('.simulate-result')
+    expect(panel.exists(), '模拟结果面板必须渲染（hifi §6.7-D）').toBe(true)
+    // 放行 tag（面板首个 tag = 放行/拒绝结论列）+ 策略来源锚
+    const tag = panel.find('.el-tag')
+    expect(tag.exists()).toBe(true)
+    expect(tag.text()).toBe('放行')
+    expect(panel.text()).toContain('生效策略')
+  })
 })
 
 describe('测试台（T13）', () => {
@@ -642,8 +671,26 @@ describe('受控执行与使用摘要（T14/T15 / R12）', () => {
       contractNo: 'CO000013', pageNum: 2,
     }))
   })
-})
 
+  it('使用摘要计数与记录行数对账（DB-42 F3）：allowed/denied 计数 ≡ 记录渲染行', async () => {
+    // 夹具卫生锚（数据层）：计数与记录行恒等式——夹具漂移即红（DB-42③ 本意）
+    const fixture = usageSummary()
+    expect(fixture.records.list.filter((r) => r.outcome === 'ALLOWED'))
+      .toHaveLength(fixture.allowedCount)
+    expect(fixture.records.list.filter((r) => r.outcome === 'DENIED'))
+      .toHaveLength(fixture.deniedCount)
+    expect(fixture.quota?.used).toBe(fixture.allowedCount)
+    // 渲染层对账：摘要记录行（结果列独有 tag）放行行数/拒绝行数与计数一致
+    const wrapper = await mountPage()
+    const summaryRows = wrapper.findAll('.el-table__row')
+      .filter((r) => r.find('.el-tag').exists())
+    const allowedRows = summaryRows.filter((r) => r.text().includes('放行')).length
+    const deniedRows = summaryRows.filter((r) => r.text().includes('拒绝')).length
+    expect(allowedRows).toBe(3)
+    expect(deniedRows).toBe(1)
+    expect(document.body.textContent).toContain('3 / 100')
+  })
+})
 describe('合约留痕区（T16 / R13）', () => {
   it('四要素 + from→to + 拒绝码行渲染；治理查看/越权拒绝行中文经常量', async () => {
     mockedLogs.mockResolvedValue(page([
