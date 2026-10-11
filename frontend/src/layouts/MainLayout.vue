@@ -175,7 +175,8 @@ function onSaveIdentity() {
 
 .sidebar {
   background-color: #111827;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   transition: width 0.2s;
 }
 
