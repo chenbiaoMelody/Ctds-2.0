@@ -61,7 +61,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * 同宿主直调（应用层方法，q2-A）。用例承载：生效→放行计数可查（R12）→耗尽拒绝留痕；
  * 五类拦截双向（配额/期限/用途/域/再分发）；终止→策略失效（S3-7）；未生效拒绝；
  * R12 权限矩阵（参与方/治理/非参与方防枚举同形）；拒绝不烧次数；空策略放行不计数；
- * 真并发配额两口径（判检一体防超卖）。L3 密钥源 = 临时密钥文件注入（密钥零入库）。
+ * 真并发配额两口径（判检一体防超卖）；B1 本域对账锚（usage_log 放行行数 ≡ counter.used_count，
+ * 三形态——规格 §4-6 计费协同本域侧）。L3 密钥源 = 临时密钥文件注入（密钥零入库）。
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 @AutoConfigureMockMvc
@@ -429,6 +430,44 @@ class ContractPolicyExecutionIntegrationTest {
         assertThat(data.path("quota").isNull()).as("quota 未启用 → 配额视图 null").isTrue();
         assertThat(data.path("allowedCount").asLong()).isEqualTo(1);
         assertThat(data.path("deniedCount").asLong()).isZero();
+    }
+
+    // ==== t24 本域对账锚（B1 / 规格 §4-6 计费协同本域侧：contract_usage_log 放行行数 ≡
+    // contract_usage_counter.used_count——3.7.x 对账本体的数据源口径准备；三形态边界各断言两表一致）====
+
+    @Test
+    void t24_usageReconciliationLogRowsEqualCounterAcrossThreeShapes() throws Exception {
+        // 混合段：3 放行 + 2 拒绝 → 两表一次对账（放行行数 = 计数 = 3；拒绝行存在且不烧次数）
+        final String mixed = toEffective(unique("对账混合"), quotaAndPurposeStrategy(5, PURPOSE_TEXT));
+        for (int i = 1; i <= 3; i++) {
+            assertThat(policyExecutionService.check(mixed, use(PURPOSE_TEXT, null)).allowed())
+                    .as("混合段第 %s 次放行", i).isTrue();
+        }
+        for (int i = 1; i <= 2; i++) {
+            assertThatThrownBy(() -> policyExecutionService.check(mixed, use("政策研究", null)))
+                    .isInstanceOf(ContractBizException.class)
+                    .extracting(ContractPolicyExecutionIntegrationTest::codeOf).isEqualTo(C0020);
+        }
+        assertThat(allowedCountOf(mixed)).as("usage_log 放行行数").isEqualTo(3);
+        assertThat(counterOf(mixed)).as("counter.used_count").isEqualTo(3);
+        assertThat(deniedCountOf(mixed)).as("拒绝行存在且不改变计数（对账侧复核）").isEqualTo(2);
+        assertThat(allowedCountOf(mixed)).as("两表一致（混合段）").isEqualTo(counterOf(mixed));
+        // 全放行段：拒绝 0 → 放行行数 = 计数
+        final String allAllowed = toEffective(unique("对账全放行"), quotaStrategy(2));
+        assertThat(policyExecutionService.check(allAllowed, use(null, null)).allowed()).isTrue();
+        assertThat(policyExecutionService.check(allAllowed, use(null, null)).allowed()).isTrue();
+        assertThat(allowedCountOf(allAllowed)).isEqualTo(2);
+        assertThat(counterOf(allAllowed)).isEqualTo(2);
+        assertThat(deniedCountOf(allAllowed)).isZero();
+        // 全拒绝段：放行 0 → counter 不动（计数零值），两表一致
+        final String allDenied = toEffective(unique("对账全拒绝"),
+                quotaAndPurposeStrategy(2, PURPOSE_TEXT));
+        assertThatThrownBy(() -> policyExecutionService.check(allDenied, use("政策研究", null)))
+                .isInstanceOf(ContractBizException.class)
+                .extracting(ContractPolicyExecutionIntegrationTest::codeOf).isEqualTo(C0020);
+        assertThat(allowedCountOf(allDenied)).isZero();
+        assertThat(counterOf(allDenied)).isZero();
+        assertThat(deniedCountOf(allDenied)).isEqualTo(1);
     }
 
     // ==== 支撑（链路捷径 / 请求助手 / 探针）====
