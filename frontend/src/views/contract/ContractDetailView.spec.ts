@@ -468,8 +468,11 @@ describe('策略视图与模拟试算（T12）', () => {
 
   it('模拟试算：假想上下文提交形态逐字；拒绝 = 结果面板数据展示（不触发错误提示）', async () => {
     // 隔离垫绿源：使用摘要 mock 不含拒绝行——断言只能由模拟结果面板满足（评审④ P0 修正）
+    // （评审 round1 P3 勘正：局部覆盖同走夹具恒等式——allowedCount/quota.used 与 records 行数自洽）
     const errorSpy = vi.spyOn(ElMessage, 'error')
     mockedSummary.mockResolvedValue(usageSummary({
+      quota: { limit: 100, used: 1 },
+      allowedCount: 1,
       deniedCount: 0,
       records: page([{ requesterNo: 'S20260922000001', actionType: 'USE', outcome: 'ALLOWED',
         reasonCode: null, violations: null, usedCount: 1, occurredAt: '2026-10-06T10:30:00' }]),
