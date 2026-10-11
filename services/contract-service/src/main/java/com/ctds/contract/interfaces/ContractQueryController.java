@@ -6,10 +6,12 @@ import com.ctds.common.auth.RequirePermission;
 import com.ctds.common.pagination.PageQuery;
 import com.ctds.common.pagination.PageResult;
 import com.ctds.contract.application.ContractQueryService;
+import com.ctds.contract.domain.ContractActionLog;
 import com.ctds.contract.domain.ContractBizException;
 import com.ctds.contract.domain.ContractErrorCodes;
 import com.ctds.contract.domain.ContractStatus;
 import com.ctds.contract.domain.PartyRole;
+import com.ctds.contract.interfaces.dto.ContractActionLogView;
 import com.ctds.contract.interfaces.dto.DealViews;
 import com.ctds.contract.interfaces.dto.PageViews;
 import java.util.List;
@@ -82,6 +84,20 @@ public class ContractQueryController {
                 report.results().stream().map(row -> new DealViews.Verification.Row(
                         row.partyRole(), row.did(), row.result(), row.reason(), row.verifiedAt()))
                         .toList()));
+    }
+
+    /** R13 合约统一留痕分页（WBS-3.4.7 hifi §1.2）：参与方 + 治理例外走共享守卫单点
+     * （非参与方与"不存在"同码同文 1008C0012 防枚举 + 既有 DENIED_ACCESS 留痕）；
+     * 治理档 / 参与方读取零新增留痕（§1.2 口径）。 */
+    @GetMapping(path = "/{contractNo}/action-logs", produces = MediaType.APPLICATION_JSON_VALUE)
+    @RequirePermission("contract.read")
+    public ApiResult<PageResult<ContractActionLogView>> actionLogs(
+            @PathVariable final String contractNo,
+            @RequestParam(required = false) final Integer pageNum,
+            @RequestParam(required = false) final Integer pageSize) {
+        final PageResult<ContractActionLog> result = queryService.actionLogs(contractNo,
+                AuthContext.subject(), PageQuery.of(pageNum, pageSize, null));
+        return ApiResult.ok(PageViews.page(result, ContractActionLogView::from));
     }
 
     /** status 过滤参数解析（非法值 400 通用——沿 catalog 检索参数口径）。 */

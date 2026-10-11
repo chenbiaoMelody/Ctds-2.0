@@ -90,6 +90,32 @@ const routes = [
         component: () => import('../views/catalog/GovernanceView.vue'),
         meta: { title: '目录治理', menu: true, menuOrder: 13, icon: 'View', permission: 'catalog.governance' },
       },
+      // WBS-3.4.7 合约域：三菜单（14/15/16）+ 合约详情深链（不占菜单；须声明在
+      // contracts/workbench 之后，深链匹配不吞噬清单页；无权限点——门槛在服务端）
+      {
+        path: 'contracts/templates',
+        name: 'contract-templates',
+        component: () => import('../views/contract/TemplateView.vue'),
+        meta: { title: '合约模板', menu: true, menuOrder: 14, icon: 'Document', permission: 'contract.template' },
+      },
+      {
+        path: 'contracts/workbench',
+        name: 'contract-workbench',
+        component: () => import('../views/contract/WorkbenchView.vue'),
+        meta: { title: '合约工作台', menu: true, menuOrder: 15, icon: 'Briefcase', permission: 'contract.deal' },
+      },
+      {
+        path: 'contracts/workbench/:contractNo',
+        name: 'contract-detail',
+        component: () => import('../views/contract/ContractDetailView.vue'),
+        meta: { title: '合约详情' },
+      },
+      {
+        path: 'contracts/governance',
+        name: 'contract-governance',
+        component: () => import('../views/contract/GovernanceView.vue'),
+        meta: { title: '合约治理', menu: true, menuOrder: 16, icon: 'Stamp', permission: 'contract.governance' },
+      },
       {
         path: 'admin-only',
         name: 'admin-only',

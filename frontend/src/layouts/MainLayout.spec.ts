@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
+import layoutSource from './MainLayout.vue?raw'
 import { flushPromises, mount } from '@vue/test-utils'
 import ElementPlus from 'element-plus'
 import { createRouter, createMemoryHistory } from 'vue-router'
@@ -76,11 +77,11 @@ describe('权限菜单显隐（H4）', () => {
     expect(wrapper.text()).toContain('入驻进度查询')
   })
 
-  it('admin 角色：菜单渲染 13 项，含"仅管理员可见"、"主体审核"、"DID 管理"、空间域两项与目录域三项（WBS-3.3.6 新增）', () => {
+  it('admin 角色：菜单渲染 16 项，含"仅管理员可见"、"主体审核"、"DID 管理"、空间域两项、目录域三项与合约域三项（WBS-3.4.7 新增）', () => {
     setDemoRole('admin')
     const wrapper = mountLayout()
     const items = wrapper.findAll('.el-menu-item')
-    expect(items.length).toBe(13)
+    expect(items.length).toBe(16)
     expect(wrapper.text()).toContain('仅管理员可见')
     expect(wrapper.text()).toContain('主体审核')
     expect(wrapper.text()).toContain('DID 管理')
@@ -89,6 +90,17 @@ describe('权限菜单显隐（H4）', () => {
     expect(wrapper.text()).toContain('资源登记')
     expect(wrapper.text()).toContain('产品上架')
     expect(wrapper.text()).toContain('目录治理')
+    expect(wrapper.text()).toContain('合约模板')
+    expect(wrapper.text()).toContain('合约工作台')
+    expect(wrapper.text()).toContain('合约治理')
+  })
+
+  it('侧边栏菜单溢出可达：.sidebar 纵向可滚（overflow-y: auto——16 项菜单超出视口高时末位"合约治理"可达；走查缺陷 2 修复守卫）', () => {
+    // jsdom 无真实布局，此处守卫样式源（Vite ?raw 导入）；真实滚动行为由浏览器实测背书。
+    // 修复前 .sidebar 为 overflow: hidden（菜单内容 ~953px 裁于可视高度且用户滚轮不可达）。
+    const sidebarBlock = layoutSource.match(/\.sidebar \{[^}]*\}/)?.[0] ?? ''
+    expect(sidebarBlock).toContain('overflow-y: auto')
+    expect(sidebarBlock).not.toMatch(/overflow:\s*hidden(?![^;]*-x)/)
   })
 })
 

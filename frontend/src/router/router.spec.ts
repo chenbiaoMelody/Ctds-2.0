@@ -54,7 +54,8 @@ describe('路由表结构（H3）', () => {
     const didRoute = children.find((r) => r.name === 'did-management')
     expect(didRoute?.meta?.permission).toBe('did.admin')
     const permissionRouteNames = ['admin-only', 'review-queue', 'did-management', 'space-list', 'platform-policy',
-      'catalog-datasets', 'catalog-products', 'catalog-governance']
+      'catalog-datasets', 'catalog-products', 'catalog-governance',
+      'contract-templates', 'contract-workbench', 'contract-governance']
     const normalRoutes = children.filter(
       (r) => r.meta?.menu === true && !permissionRouteNames.includes(String(r.name)),
     )
@@ -64,9 +65,9 @@ describe('路由表结构（H3）', () => {
   })
 
   it('DID 管理路由（WBS-3.1.11）：menuOrder=8、icon=Key、did.admin 权限；演示页不占菜单', () => {
-    // 菜单末尾追加（lofi Q1/Q8：不重排既有菜单）；WBS-3.3.6 追加 menuOrder 11/12/13 后全站最大值为 13
+    // 菜单末尾追加（lofi Q1/Q8：不重排既有菜单）；WBS-3.4.7 追加 menuOrder 14/15/16 后全站最大值为 16
     const menuOrders = children.filter((r) => r.meta?.menu === true).map((r) => r.meta?.menuOrder ?? 0)
-    expect(Math.max(...menuOrders)).toBe(13)
+    expect(Math.max(...menuOrders)).toBe(16)
     const didRoute = children.find((r) => r.name === 'did-management')
     expect(didRoute?.path).toBe('did')
     expect(didRoute?.meta?.title).toBe('DID 管理')
@@ -80,6 +81,43 @@ describe('路由表结构（H3）', () => {
     expect(demoRoute?.meta?.title).toBe('DID 演示与验证')
     expect(demoRoute?.meta?.permission).toBe('did.admin')
     expect(demoRoute?.meta?.menu).toBeUndefined()
+  })
+
+  it('合约域路由（WBS-3.4.7 §3）：三菜单 14/15/16 + 深链不占菜单且声明在 contract-workbench 之后', () => {
+    const templatesRoute = children.find((r) => r.name === 'contract-templates')
+    expect(templatesRoute?.path).toBe('contracts/templates')
+    expect(templatesRoute?.meta?.title).toBe('合约模板')
+    expect(templatesRoute?.meta?.menu).toBe(true)
+    expect(templatesRoute?.meta?.menuOrder).toBe(14)
+    expect(templatesRoute?.meta?.icon).toBe('Document')
+    expect(templatesRoute?.meta?.permission).toBe('contract.template')
+
+    const workbenchRoute = children.find((r) => r.name === 'contract-workbench')
+    expect(workbenchRoute?.path).toBe('contracts/workbench')
+    expect(workbenchRoute?.meta?.title).toBe('合约工作台')
+    expect(workbenchRoute?.meta?.menu).toBe(true)
+    expect(workbenchRoute?.meta?.menuOrder).toBe(15)
+    expect(workbenchRoute?.meta?.icon).toBe('Briefcase')
+    expect(workbenchRoute?.meta?.permission).toBe('contract.deal')
+
+    const detailRoute = children.find((r) => r.name === 'contract-detail')
+    expect(detailRoute?.path).toBe('contracts/workbench/:contractNo')
+    expect(detailRoute?.meta?.title).toBe('合约详情')
+    expect(detailRoute?.meta?.menu).toBeUndefined()
+    // 合约详情深链不设权限点（门槛在服务端——参与方/治理例外判定）
+    expect(detailRoute?.meta?.permission).toBeUndefined()
+
+    const governanceRoute = children.find((r) => r.name === 'contract-governance')
+    expect(governanceRoute?.path).toBe('contracts/governance')
+    expect(governanceRoute?.meta?.title).toBe('合约治理')
+    expect(governanceRoute?.meta?.menu).toBe(true)
+    expect(governanceRoute?.meta?.menuOrder).toBe(16)
+    expect(governanceRoute?.meta?.icon).toBe('Stamp')
+    expect(governanceRoute?.meta?.permission).toBe('contract.governance')
+
+    // 声明顺序：contracts/workbench/:contractNo 必须在 contracts/workbench 之后声明（深链匹配不吞噬清单页）
+    const paths = children.map((r) => r.path)
+    expect(paths.indexOf('contracts/workbench')).toBeLessThan(paths.indexOf('contracts/workbench/:contractNo'))
   })
 
   it('存在 404 兜底路由', () => {
@@ -97,10 +135,10 @@ describe('路由表结构（H3）', () => {
     expect(progressRoute?.meta?.icon).toBe('Search')
     expect(progressRoute?.meta?.permission).toBeUndefined()
     // menuOrder=7 为入驻进度查询占位；WBS-3.1.11（8）与 WBS-3.2.6（9/10）追加后全站最大值为 10；
-    // WBS-3.3.6（11/12/13）追加后全站最大值为 13
+    // WBS-3.3.6（11/12/13）追加后全站最大值为 13；WBS-3.4.7（14/15/16）追加后全站最大值为 16
     const menuOrders = children.filter((r) => r.meta?.menu === true).map((r) => r.meta?.menuOrder ?? 0)
     expect(menuOrders).toContain(7)
-    expect(Math.max(...menuOrders)).toBe(13)
+    expect(Math.max(...menuOrders)).toBe(16)
   })
 
   it('空间管理界面路由（WBS-3.2.6 §3）：菜单 9/10、权限点 space.member / platform.policy，"我的邀请"不占菜单且在 :id 之前', () => {
@@ -255,6 +293,23 @@ describe('守卫 beforeEach 实际行为（H4）', () => {
     await router.push('/did')
     expect(router.currentRoute.value.name).toBe('dashboard')
     expect(router.currentRoute.value.query.denied).toBe('1')
+  })
+
+  it('普通用户直连合约域三条菜单路由：守卫逐条拦截重定向工作台带 denied（WBS-3.4.7 T19）', async () => {
+    const { default: router } = await import('../router/index')
+    setDemoRole('user')
+    for (const path of ['/contracts/templates', '/contracts/workbench', '/contracts/governance']) {
+      await router.push(path)
+      expect(router.currentRoute.value.name).toBe('dashboard')
+      expect(router.currentRoute.value.query.denied).toBe('1')
+    }
+  })
+
+  it('普通用户直连合约详情深链：无权限点守卫放行（门槛在服务端——WBS-3.4.7 §3）', async () => {
+    const { default: router } = await import('../router/index')
+    setDemoRole('user')
+    await router.push('/contracts/workbench/CO000013')
+    expect(router.currentRoute.value.name).toBe('contract-detail')
   })
 
   it('普通用户直连空间域四条路由：守卫逐条拦截重定向工作台带 denied（WBS-3.2.6 T28）', async () => {
