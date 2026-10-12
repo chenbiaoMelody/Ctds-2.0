@@ -102,7 +102,10 @@ describe('页面级角色头（T27：覆盖全局 demoRolesHeader）', () => {
 describe('空主体前置拦截（T27：零请求）', () => {
   it('主体编号为空：不发起任何 HTTP 请求，直接以业务提示失败', async () => {
     setDemoSubject('   ')
-    await expect(spaceApi.listSpaces({ pageNum: 1, pageSize: 10 })).rejects.toThrow(DEMO_SUBJECT_REQUIRED_TIP)
+    await expect(spaceApi.listSpaces({ pageNum: 1, pageSize: 10 })).rejects.toMatchObject({
+      code: '1000C0002',
+      message: DEMO_SUBJECT_REQUIRED_TIP,
+    })
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
@@ -110,7 +113,10 @@ describe('空主体前置拦截（T27：零请求）', () => {
     setDemoSubject('\t\n')
     await expect(spaceApi.createSpace({
       name: '空间', sceneType: 'OTHER', accessMode: 'OPEN', visibility: 'PUBLIC',
-    })).rejects.toThrow(DEMO_SUBJECT_REQUIRED_TIP)
+    })).rejects.toMatchObject({
+      code: '1000C0002',
+      message: DEMO_SUBJECT_REQUIRED_TIP,
+    })
     expect(fetchMock).not.toHaveBeenCalled()
   })
 })

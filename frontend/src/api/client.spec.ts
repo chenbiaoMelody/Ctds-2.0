@@ -10,6 +10,9 @@ import {
   setDemoSubject,
 } from './client'
 import { setDemoRole } from '../stores/demoRole'
+// DB-41 评审修复：t4 编码锚改为触达产品代码（域函数产出的请求 URL），不再只断言 JS 内置函数
+import { fetchSubjectDetail } from './subject'
+import { resolveDid } from './did'
 import {
   catalogRolesHeader,
   contractRolesHeader,
@@ -126,6 +129,8 @@ describe('DB-41 公用层（pageQuery + 域请求工厂）', () => {
     await domainJson('/api/x', { headers: { 'X-Ctds-Roles': 'admin' } })
     const second = (fetchMock.mock.calls[1] as unknown as [string, RequestInit])[1]
     expect((second.headers as Record<string, string>)['X-Ctds-Roles']).toBe('admin')
+    // 覆盖只作用于同名头：其余合并头（主体头）不受影响
+    expect((second.headers as Record<string, string>)['X-Ctds-Subject']).toBe('S20260925000001')
   })
 
   it('t3 pageQuery：两参基础形态 / extra 过滤项追加 / 空 extra 不产生多余参数', () => {
@@ -133,14 +138,25 @@ describe('DB-41 公用层（pageQuery + 域请求工厂）', () => {
     expect(pageQuery(1, 10, {})).toBe('?pageNum=1&pageSize=10')
     expect(pageQuery(2, 20, { keyword: '普惠' }))
       .toBe('?pageNum=2&pageSize=20&keyword=%E6%99%AE%E6%83%A0')
+    // 边界与转义：零值按数值序列化；过滤项值经 URLSearchParams 编码（空格 → +）
+    expect(pageQuery(0, 0)).toBe('?pageNum=0&pageSize=0')
+    expect(pageQuery(1, 10, { keyword: 'a b', status: 'A/B' }))
+      .toBe('?pageNum=1&pageSize=10&keyword=a+b&status=A%2FB')
   })
 
-  it('t4 编码 no-op 锚：现行编号经 encodeURIComponent 逐位不变（守卫锚，防未来"优化"掉编码）', () => {
-    for (const id of ['CO000013', 'CT000003', '1001C0002', 'TV001']) {
-      expect(encodeURIComponent(id)).toBe(id)
-    }
-    // "字符串型路径段一律编码"这道口径本身有效：含特殊字符的取值确实被转义
-    expect(encodeURIComponent('did:ctds:S1')).toBe('did%3Actds%3AS1')
+  it('t4 编码锚：域函数产出的请求 URL 中原编号逐位不变、含特殊字符取值确实转义（守卫锚，防未来"优化"掉编码）', async () => {
+    const fetchMock = captureFetch()
+    vi.stubGlobal('fetch', fetchMock)
+    const calledUrl = (i = 0): string => (fetchMock.mock.calls[i] as unknown as [string, RequestInit])[0]
+    // 现行编号（字母数字）经 encodeURIComponent 为 no-op → URL 逐位不变（subject ①族补编点）
+    await fetchSubjectDetail('S20260925000001')
+    expect(calledUrl()).toBe('/api/v1/subject/registrations/S20260925000001')
+    // did 域既有编码点：含 ":" 的 DID 保持既有转义形态
+    await resolveDid('did:ctds:S1')
+    expect(calledUrl(1)).toBe('/api/v1/did/did%3Actds%3AS1')
+    // 口径有效性：含特殊字符的取值确实被转义（一旦编码被"优化"掉，本断言即红）
+    await fetchSubjectDetail('S 2026/001')
+    expect(calledUrl(2)).toBe('/api/v1/subject/registrations/S%202026%2F001')
   })
 
   it('t5 三域 rolesHeader 导出面：运营档 / 普通档各自取值不变', () => {

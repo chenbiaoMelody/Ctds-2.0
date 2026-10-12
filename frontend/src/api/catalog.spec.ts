@@ -96,6 +96,16 @@ describe('目录域 API 函数面（hifi §2 命名清单）', () => {
     expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/data-products/7/force-delist')
     expect(fetchMock.mock.calls[0][1].body).toBe(JSON.stringify({ forceReason: '违规内容' }))
   })
+
+  it('词表编码路径段（DB-41 ① 族补编点）：编号 no-op + 特殊字符转义 + keyword 过滤项', async () => {
+    await catalogApi.listTerms({ vocabularyCode: 'TV001', pageNum: 1, pageSize: 10 })
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/tag-vocabularies/TV001/terms?pageNum=1&pageSize=10')
+
+    fetchMock.mockClear()
+    await catalogApi.listTerms({ vocabularyCode: 'TV 001/x', pageNum: 1, pageSize: 10, keyword: '普惠' })
+    expect(fetchMock.mock.calls[0][0])
+      .toBe('/api/v1/tag-vocabularies/TV%20001%2Fx/terms?pageNum=1&pageSize=10&keyword=%E6%99%AE%E6%83%A0')
+  })
 })
 
 describe('页面级角色头（T17：覆盖全局 demoRolesHeader）', () => {
@@ -136,13 +146,19 @@ describe('页面级角色头（T17：覆盖全局 demoRolesHeader）', () => {
 describe('空主体前置拦截（T17：零请求）', () => {
   it('主体编号为空：不发起任何 HTTP 请求，直接以业务提示失败', async () => {
     setDemoSubject('   ')
-    await expect(catalogApi.listMyDatasets({ pageNum: 1, pageSize: 10 })).rejects.toThrow(DEMO_SUBJECT_REQUIRED_TIP)
+    await expect(catalogApi.listMyDatasets({ pageNum: 1, pageSize: 10 })).rejects.toMatchObject({
+      code: '1000C0002',
+      message: DEMO_SUBJECT_REQUIRED_TIP,
+    })
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it('主体编号为空白字符：同样零请求', async () => {
     setDemoSubject('\t\n')
-    await expect(catalogApi.searchProducts({ pageNum: 1, pageSize: 10 })).rejects.toThrow(DEMO_SUBJECT_REQUIRED_TIP)
+    await expect(catalogApi.searchProducts({ pageNum: 1, pageSize: 10 })).rejects.toMatchObject({
+      code: '1000C0002',
+      message: DEMO_SUBJECT_REQUIRED_TIP,
+    })
     expect(fetchMock).not.toHaveBeenCalled()
   })
 })
