@@ -52,17 +52,26 @@ export function markDemoIdentityChanged(): void {
   demoIdentityRevision.value += 1
 }
 
+/**
+ * 页面级角色头私有工厂（DB-41③：档位 → 角色值，仅本模块内使用）。
+ * 三个导出函数保持各自载体（导出面零变更），差异值以参数表达——**不做值合并**：
+ * space 普通档 `applicant` 与 catalog/contract 普通档 `provider` 是业务口径差异（DB-41 hifi §4.2）。
+ */
+function pageRolesHeader(operatorRoles: string, normalRoles: string): string {
+  return getActorMode() === 'operator' ? operatorRoles : normalRoles
+}
+
 /** 空间域页面级角色头（覆盖 `apiJson` 的全局演示角色头）。 */
 export function spaceRolesHeader(): string {
-  return getActorMode() === 'operator' ? 'applicant,platform.operator' : 'applicant'
+  return pageRolesHeader('applicant,platform.operator', 'applicant')
 }
 
 /** 目录域页面级角色头（WBS-3.3.6；覆盖 `apiJson` 的全局演示角色头，与空间域互不污染）。 */
 export function catalogRolesHeader(): string {
-  return getActorMode() === 'operator' ? 'admin' : 'provider'
+  return pageRolesHeader('admin', 'provider')
 }
 
 /** 合约域页面级角色头（WBS-3.4.7；覆盖 `apiJson` 的全局演示角色头，与其他域互不污染）。 */
 export function contractRolesHeader(): string {
-  return getActorMode() === 'operator' ? 'admin' : 'provider'
+  return pageRolesHeader('admin', 'provider')
 }

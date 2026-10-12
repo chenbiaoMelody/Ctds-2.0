@@ -86,7 +86,12 @@ async function loadCategories(): Promise<void> {
 async function loadSearch(): Promise<void> {
   searchLoading.value = true
   try {
-    const page = await searchProducts(pageNum.value, pageSize.value, appliedKeyword.value, appliedCategoryCode.value)
+    const page = await searchProducts({
+      pageNum: pageNum.value,
+      pageSize: pageSize.value,
+      keyword: appliedKeyword.value,
+      categoryCode: appliedCategoryCode.value,
+    })
     items.value = page.list
     total.value = page.total
   } catch (error) {
@@ -134,7 +139,7 @@ function openDetail(row: CatalogProduct): void {
 async function loadFavorites(): Promise<void> {
   favoriteLoading.value = true
   try {
-    const page = await listFavorites(favoritePageNum.value, 10)
+    const page = await listFavorites({ pageNum: favoritePageNum.value, pageSize: 10 })
     favoriteItems.value = page.list
     favoriteTotal.value = page.total
   } catch (error) {
@@ -147,7 +152,7 @@ async function loadFavorites(): Promise<void> {
 async function loadSubscriptions(): Promise<void> {
   subscriptionLoading.value = true
   try {
-    const page = await listSubscriptions(subscriptionPageNum.value, 10)
+    const page = await listSubscriptions({ pageNum: subscriptionPageNum.value, pageSize: 10 })
     subscriptionItems.value = page.list
     subscriptionTotal.value = page.total
   } catch (error) {
@@ -160,7 +165,7 @@ async function loadSubscriptions(): Promise<void> {
 async function loadInteractions(): Promise<void> {
   interactionLoading.value = true
   try {
-    const page = await listInteractionLogs(interactionPageNum.value, 10)
+    const page = await listInteractionLogs({ pageNum: interactionPageNum.value, pageSize: 10 })
     interactionItems.value = page.list
     interactionTotal.value = page.total
   } catch (error) {

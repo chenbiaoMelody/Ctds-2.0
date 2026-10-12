@@ -197,7 +197,7 @@ describe('收藏 / 订阅动作（T7）', () => {
     expect(mockedSubscribe).toHaveBeenCalledWith(7)
     expect(mockedSubscriptions).toHaveBeenCalledTimes(2)
     expect(wrapper.find('.unsubscribe-btn').exists()).toBe(true)
-    expect(mockedChangeLogs).toHaveBeenCalledWith(7, 1, 10)
+    expect(mockedChangeLogs).toHaveBeenCalledWith({ productId: 7, pageNum: 1, pageSize: 10 })
 
     // 订阅被拒（1007C0011 原样）且状态不变（不乐观更新）
     document.body.innerHTML = ''
@@ -251,7 +251,7 @@ describe('变更记录区（T10）', () => {
     mockedSubscriptions.mockResolvedValue(page([subscriptionItem()]))
     mockedChangeLogs.mockResolvedValue({ list: [changeLog()], total: 1, pageNum: 1, pageSize: 10, totalPages: 1 })
     const wrapper = await mountPage()
-    expect(mockedChangeLogs).toHaveBeenCalledWith(7, 1, 10)
+    expect(mockedChangeLogs).toHaveBeenCalledWith({ productId: 7, pageNum: 1, pageSize: 10 })
     expect(wrapper.text()).toContain('上架：产品进入统一目录')
     expect(wrapper.text()).toContain('S20260925000001')
   })

@@ -261,12 +261,12 @@ describe('空态与分页（R6 / §7 T5、§8.3、§8.7）', () => {
   it('成员分页：翻页按新页码与每页条数重新拉取（T14 分页）', async () => {
     mockedMembers.mockResolvedValue({ list: [member()], total: 25, pageNum: 1, pageSize: 10, totalPages: 3 })
     const wrapper = await mountPage()
-    expect(mockedMembers).toHaveBeenCalledWith(1, 1, 10)
+    expect(mockedMembers).toHaveBeenCalledWith({ spaceId: 1, pageNum: 1, pageSize: 10 })
 
     mockedMembers.mockResolvedValue({ list: [member({ id: 39, subjectNo: 'S20260925000088' })], total: 25, pageNum: 2, pageSize: 10, totalPages: 3 })
     await wrapper.find('.members-pager .btn-next').trigger('click')
     await flushPromises()
-    expect(mockedMembers).toHaveBeenLastCalledWith(1, 2, 10)
+    expect(mockedMembers).toHaveBeenLastCalledWith({ spaceId: 1, pageNum: 2, pageSize: 10 })
     expect(wrapper.text()).toContain('S20260925000088')
   })
 
@@ -277,7 +277,9 @@ describe('空态与分页（R6 / §7 T5、§8.3、§8.7）', () => {
     mockedAdmissions.mockResolvedValue({ list: [admission({ id: 42, operator: 'S20260925000077' })], total: 25, pageNum: 2, pageSize: 10, totalPages: 3 })
     await wrapper.find('.admissions-pager .btn-next').trigger('click')
     await flushPromises()
-    expect(mockedAdmissions).toHaveBeenLastCalledWith(1, 2, 10, undefined)
+    expect(mockedAdmissions).toHaveBeenLastCalledWith({
+      spaceId: 1, pageNum: 2, pageSize: 10, status: undefined,
+    })
     expect(wrapper.text()).toContain('S20260925000077')
   })
 

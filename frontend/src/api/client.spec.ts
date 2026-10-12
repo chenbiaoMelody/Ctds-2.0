@@ -1,6 +1,22 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { apiJson, apiUpload, ApiError, demoRolesHeader, getDemoSubject } from './client'
+import {
+  apiJson,
+  apiUpload,
+  ApiError,
+  demoRolesHeader,
+  getDemoSubject,
+  makeDomainJson,
+  pageQuery,
+  setDemoSubject,
+} from './client'
 import { setDemoRole } from '../stores/demoRole'
+import {
+  catalogRolesHeader,
+  contractRolesHeader,
+  setActorMode,
+  spaceRolesHeader,
+} from '../stores/demoIdentity'
+import { DEMO_SUBJECT_REQUIRED_TIP } from '../constants/space'
 
 /**
  * WBS-3.1.5 演示期 API 封装测试：身份头注入 / ApiResult 解包 / 错误码保留。
@@ -65,5 +81,76 @@ describe('api/client', () => {
     expect(init.body).toBeInstanceOf(FormData)
     const headers = init.headers as Record<string, string>
     expect(headers['X-Ctds-Subject']).toBe(getDemoSubject())
+  })
+})
+
+/**
+ * DB-41 公用横切四族收敛（hifi `docs/designs/DB-41-hifi.md` §5.1 t1~t5）：
+ * 公用层新增面 = `pageQuery`（唯一副本）+ `makeDomainJson`（域请求工厂），
+ * 契约 = 空主体前置拦截（零请求）/ 角色头合并优先级 / 编码 no-op 锚 / 三域导出面不变。
+ * 三域 api spec 的 URL 断言零改动即零行为变更实证（§5.2 回归锚），此处只锚公用层语义。
+ */
+const captureFetch = () => vi.fn(() =>
+  Promise.resolve({ json: () => Promise.resolve({ code: '0', message: 'OK', data: null }) }),
+)
+const firstHeaders = (mock: ReturnType<typeof captureFetch>): Record<string, string> =>
+  (mock.mock.calls[0] as unknown as [string, RequestInit])[1].headers as Record<string, string>
+
+describe('DB-41 公用层（pageQuery + 域请求工厂）', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    localStorage.clear()
+  })
+
+  it('t1 域请求工厂：空主体编号 → 前置拦截零请求（1000C0002 + 统一文案）', async () => {
+    const fetchMock = captureFetch()
+    vi.stubGlobal('fetch', fetchMock)
+    setDemoSubject('   ')
+    const domainJson = makeDomainJson(() => 'provider')
+    await expect(domainJson('/api/x')).rejects.toBeInstanceOf(ApiError)
+    await expect(domainJson('/api/x')).rejects.toMatchObject({
+      code: '1000C0002',
+      message: DEMO_SUBJECT_REQUIRED_TIP,
+    } satisfies Partial<ApiError>)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('t2 域请求工厂：附页面级角色头，调用方显式同名头覆盖（合并顺序与现状一致）', async () => {
+    const fetchMock = captureFetch()
+    vi.stubGlobal('fetch', fetchMock)
+    setDemoSubject('S20260925000001')
+    const domainJson = makeDomainJson(() => 'provider')
+    await domainJson('/api/x')
+    expect(firstHeaders(fetchMock)['X-Ctds-Roles']).toBe('provider')
+    expect(firstHeaders(fetchMock)['X-Ctds-Subject']).toBe('S20260925000001')
+    await domainJson('/api/x', { headers: { 'X-Ctds-Roles': 'admin' } })
+    const second = (fetchMock.mock.calls[1] as unknown as [string, RequestInit])[1]
+    expect((second.headers as Record<string, string>)['X-Ctds-Roles']).toBe('admin')
+  })
+
+  it('t3 pageQuery：两参基础形态 / extra 过滤项追加 / 空 extra 不产生多余参数', () => {
+    expect(pageQuery(1, 10)).toBe('?pageNum=1&pageSize=10')
+    expect(pageQuery(1, 10, {})).toBe('?pageNum=1&pageSize=10')
+    expect(pageQuery(2, 20, { keyword: '普惠' }))
+      .toBe('?pageNum=2&pageSize=20&keyword=%E6%99%AE%E6%83%A0')
+  })
+
+  it('t4 编码 no-op 锚：现行编号经 encodeURIComponent 逐位不变（守卫锚，防未来"优化"掉编码）', () => {
+    for (const id of ['CO000013', 'CT000003', '1001C0002', 'TV001']) {
+      expect(encodeURIComponent(id)).toBe(id)
+    }
+    // "字符串型路径段一律编码"这道口径本身有效：含特殊字符的取值确实被转义
+    expect(encodeURIComponent('did:ctds:S1')).toBe('did%3Actds%3AS1')
+  })
+
+  it('t5 三域 rolesHeader 导出面：运营档 / 普通档各自取值不变', () => {
+    setActorMode('operator')
+    expect(spaceRolesHeader()).toBe('applicant,platform.operator')
+    expect(catalogRolesHeader()).toBe('admin')
+    expect(contractRolesHeader()).toBe('admin')
+    setActorMode('subject')
+    expect(spaceRolesHeader()).toBe('applicant')
+    expect(catalogRolesHeader()).toBe('provider')
+    expect(contractRolesHeader()).toBe('provider')
   })
 })

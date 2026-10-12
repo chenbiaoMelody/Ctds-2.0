@@ -95,13 +95,13 @@ describe('我的邀请与申请（T18）', () => {
   it('翻页：按新页码与每页条数重新拉取并刷新（T18 分页）', async () => {
     mockedList.mockResolvedValue({ list: [admission()], total: 25, pageNum: 1, pageSize: 10, totalPages: 3 })
     const wrapper = await mountPage()
-    expect(mockedList).toHaveBeenCalledWith(1, 10)
+    expect(mockedList).toHaveBeenCalledWith({ pageNum: 1, pageSize: 10 })
 
     mockedList.mockResolvedValue({ list: [admission({ id: 12, operator: 'S20260925000099' })], total: 25, pageNum: 2, pageSize: 10, totalPages: 3 })
     await wrapper.find('.pager .btn-next').trigger('click')
     await flushPromises()
 
-    expect(mockedList).toHaveBeenLastCalledWith(2, 10)
+    expect(mockedList).toHaveBeenLastCalledWith({ pageNum: 2, pageSize: 10 })
     expect(mockedList).toHaveBeenCalledTimes(2)
     expect(wrapper.text()).toContain('S20260925000099')
   })

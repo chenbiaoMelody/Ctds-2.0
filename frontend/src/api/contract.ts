@@ -6,10 +6,12 @@
  * - **页面级角色头**：`X-Ctds-Roles: contractRolesHeader()`（普通档 `provider` / 运营档
  *   `admin`，覆盖 `apiJson` 的全局演示角色头；T18——普通档不得携带 `admin`）；
  * - 空主体编号 → 前置拦截（**零请求**），沿 3.2.6 E3 口径（hifi §4 边界）。
+ * - DB-41 收敛（`docs/designs/DB-41-hifi.md` §3）：域内 `xxxHeaders` / `xxxJson` / `pageQuery`
+ *   三副本删除，改由 `client.ts` 公用层
+ *   （`makeDomainJson` 工厂 + `pageQuery` 唯一副本）；路径段字符串编号一律 `encodeURIComponent`。
  */
-import { apiJson, ApiError, getDemoSubject } from './client'
+import { makeDomainJson, pageQuery } from './client'
 import { contractRolesHeader } from '../stores/demoIdentity'
-import { DEMO_SUBJECT_REQUIRED_TIP } from '../constants/space'
 import type { PageData } from './types'
 
 /** 分页数据（唯一声明在 `./types`；此处保持既有导出面）。 */
@@ -338,26 +340,8 @@ export interface ContractActionLogItem {
 
 // ==== 请求封装 ====
 
-/** 页面级角色头（覆盖 apiJson 的全局 `demoRolesHeader()`；T18）。 */
-function contractHeaders(): Record<string, string> {
-  return { 'X-Ctds-Roles': contractRolesHeader() }
-}
-
-/** 合约域统一请求：空主体前置拦截（零请求）→ 附页面级角色头 → `apiJson`。 */
-function contractJson<T>(path: string, options: RequestInit = {}): Promise<T> {
-  if (!getDemoSubject().trim()) {
-    return Promise.reject(new ApiError('1000C0002', DEMO_SUBJECT_REQUIRED_TIP))
-  }
-  return apiJson<T>(path, {
-    ...options,
-    headers: { ...contractHeaders(), ...(options.headers || {}) },
-  })
-}
-
-function pageQuery(pageNum: number, pageSize: number, extra: Record<string, string> = {}): string {
-  const params = new URLSearchParams({ pageNum: String(pageNum), pageSize: String(pageSize), ...extra })
-  return `?${params.toString()}`
-}
+/** 合约域统一请求（DB-41②③）：空主体前置拦截（零请求）+ 页面级角色头（T18）→ `apiJson`。 */
+const contractJson = makeDomainJson(contractRolesHeader)
 
 function postJson<T>(path: string, body?: unknown): Promise<T> {
   return contractJson<T>(path, {
@@ -381,7 +365,7 @@ export function listTemplates(query: {
 
 /** R5 模板详情（条款框架；停用/不存在同形 1008C0001）。 */
 export function getTemplate(templateNo: string): Promise<TemplateDetail> {
-  return contractJson(`/api/v1/contract-templates/${templateNo}`)
+  return contractJson(`/api/v1/contract-templates/${encodeURIComponent(templateNo)}`)
 }
 
 /** R1 运营列表（含停用；仅运营档）。 */
@@ -399,7 +383,7 @@ export function listManageTemplates(query: {
 
 /** R2 版本历史（旧版本保留可查）。 */
 export function listTemplateVersions(templateNo: string): Promise<TemplateVersionItem[]> {
-  return contractJson(`/api/v1/contract-templates/manage/${templateNo}/versions`)
+  return contractJson(`/api/v1/contract-templates/manage/${encodeURIComponent(templateNo)}/versions`)
 }
 
 /** R3 维护留痕（含 DENIED_MANAGE 拒绝行）。 */
@@ -427,17 +411,17 @@ export function reviseTemplate(
   templateNo: string,
   command: { clauseFramework: ClauseFramework },
 ): Promise<RevisionResult> {
-  return postJson(`/api/v1/contract-templates/${templateNo}/revisions`, command)
+  return postJson(`/api/v1/contract-templates/${encodeURIComponent(templateNo)}/revisions`, command)
 }
 
 /** W3 停用（同态重复 1008C0007）。 */
 export function disableTemplate(templateNo: string): Promise<TemplateStatusResult> {
-  return postJson(`/api/v1/contract-templates/${templateNo}/disable`)
+  return postJson(`/api/v1/contract-templates/${encodeURIComponent(templateNo)}/disable`)
 }
 
 /** W4 启用。 */
 export function enableTemplate(templateNo: string): Promise<TemplateStatusResult> {
-  return postJson(`/api/v1/contract-templates/${templateNo}/enable`)
+  return postJson(`/api/v1/contract-templates/${encodeURIComponent(templateNo)}/enable`)
 }
 
 // ==== 合约面（W5~W11 + R6~R9 + R12 + 三端点 + R13） ====
@@ -457,17 +441,17 @@ export function proposeClauses(
   contractNo: string,
   command: { clauseValues: ClauseValues },
 ): Promise<ProposalResult> {
-  return postJson(`/api/v1/contracts/${contractNo}/proposals`, command)
+  return postJson(`/api/v1/contracts/${encodeURIComponent(contractNo)}/proposals`, command)
 }
 
 /** W7 确认（空体；双齐 → 待签署）。 */
 export function confirmClauses(contractNo: string): Promise<ContractStateResult> {
-  return postJson(`/api/v1/contracts/${contractNo}/confirmations`)
+  return postJson(`/api/v1/contracts/${encodeURIComponent(contractNo)}/confirmations`)
 }
 
 /** W8 终止协商（空体；终态不可逆）。 */
 export function terminateNegotiation(contractNo: string): Promise<ContractStateResult> {
-  return postJson(`/api/v1/contracts/${contractNo}/negotiation-terminations`)
+  return postJson(`/api/v1/contracts/${encodeURIComponent(contractNo)}/negotiation-terminations`)
 }
 
 /** W9 签署（DID 必填；后签 → 已生效 + 存证）。 */
@@ -475,17 +459,17 @@ export function signContract(
   contractNo: string,
   command: { did: string },
 ): Promise<ContractStateResult> {
-  return postJson(`/api/v1/contracts/${contractNo}/signatures`, command)
+  return postJson(`/api/v1/contracts/${encodeURIComponent(contractNo)}/signatures`, command)
 }
 
 /** W10 拒签终止（空体；含"已签方撤回"语义）。 */
 export function refuseSignature(contractNo: string): Promise<ContractStateResult> {
-  return postJson(`/api/v1/contracts/${contractNo}/signature-refusals`)
+  return postJson(`/api/v1/contracts/${encodeURIComponent(contractNo)}/signature-refusals`)
 }
 
 /** W11 合意解除（空体；双齐 → 已完结）。 */
 export function releaseConsent(contractNo: string): Promise<ReleaseConsentResult> {
-  return postJson(`/api/v1/contracts/${contractNo}/release-consents`)
+  return postJson(`/api/v1/contracts/${encodeURIComponent(contractNo)}/release-consents`)
 }
 
 /** R6 我的合约（恒仅本主体参与）。 */
@@ -503,17 +487,17 @@ export function listMyContracts(query: {
 
 /** R7 合约详情（非参与方与不存在同码同文 1008C0012）。 */
 export function getContractDetail(contractNo: string): Promise<ContractDetail> {
-  return contractJson(`/api/v1/contracts/${contractNo}`)
+  return contractJson(`/api/v1/contracts/${encodeURIComponent(contractNo)}`)
 }
 
 /** R8 条款版本链。 */
 export function listClauseVersions(contractNo: string): Promise<ClauseVersionItem[]> {
-  return contractJson(`/api/v1/contracts/${contractNo}/clause-versions`)
+  return contractJson(`/api/v1/contracts/${encodeURIComponent(contractNo)}/clause-versions`)
 }
 
 /** R9 验签核验（逐方结论；FAIL/UNAVAILABLE 原样展示）。 */
 export function verifySignatures(contractNo: string): Promise<VerificationReport> {
-  return postJson(`/api/v1/contracts/${contractNo}/signature-verifications`)
+  return postJson(`/api/v1/contracts/${encodeURIComponent(contractNo)}/signature-verifications`)
 }
 
 /** R12 使用摘要（quota / 放行 / 拒绝 / 记录分页）。 */
@@ -522,7 +506,7 @@ export function getUsageSummary(query: {
   pageNum: number
   pageSize: number
 }): Promise<UsageSummary> {
-  return contractJson(`/api/v1/contracts/${query.contractNo}/usage-summary${pageQuery(query.pageNum, query.pageSize)}`)
+  return contractJson(`/api/v1/contracts/${encodeURIComponent(query.contractNo)}/usage-summary${pageQuery(query.pageNum, query.pageSize)}`)
 }
 
 /** 模拟试算（拒绝以数据返回 HTTP 200 + allowed=false；草稿非法 1008C0015）。 */
@@ -537,12 +521,12 @@ export function simulatePolicy(
     strategyDocument?: StrategyValues
   },
 ): Promise<SimulationResult> {
-  return postJson(`/api/v1/contracts/${contractNo}/policy-simulations`, command)
+  return postJson(`/api/v1/contracts/${encodeURIComponent(contractNo)}/policy-simulations`, command)
 }
 
 /** 测试台一键报告（11 场景三态；零落库）。 */
 export function runPolicyTestbench(contractNo: string): Promise<TestbenchReport> {
-  return postJson(`/api/v1/contracts/${contractNo}/policy-testbench-runs`)
+  return postJson(`/api/v1/contracts/${encodeURIComponent(contractNo)}/policy-testbench-runs`)
 }
 
 /** 受控执行（发起使用；无幂等键——每次提交计一次使用；越界 1008C0020 原样）。 */
@@ -550,7 +534,7 @@ export function executeUsage(
   contractNo: string,
   command: { actionType: string; purpose: string; territory: string },
 ): Promise<ExecutionResult> {
-  return postJson(`/api/v1/contracts/${contractNo}/usage-executions`, command)
+  return postJson(`/api/v1/contracts/${encodeURIComponent(contractNo)}/usage-executions`, command)
 }
 
 /** R13 合约统一留痕分页（参与方 + 治理例外；读取零新增留痕）。 */
@@ -559,7 +543,7 @@ export function listContractActionLogs(query: {
   pageNum: number
   pageSize: number
 }): Promise<PageData<ContractActionLogItem>> {
-  return contractJson(`/api/v1/contracts/${query.contractNo}/action-logs${pageQuery(query.pageNum, query.pageSize)}`)
+  return contractJson(`/api/v1/contracts/${encodeURIComponent(query.contractNo)}/action-logs${pageQuery(query.pageNum, query.pageSize)}`)
 }
 
 // ==== 治理面（W12 + R10/R11） ====
@@ -577,7 +561,7 @@ export function listGovernanceContracts(query: {
 
 /** R11 治理直查详情（查看留痕；详情 + 版本链）。 */
 export function getGovernanceDetail(contractNo: string): Promise<GovernanceDetail> {
-  return contractJson(`/api/v1/contracts/governance/${contractNo}`)
+  return contractJson(`/api/v1/contracts/governance/${encodeURIComponent(contractNo)}`)
 }
 
 /** W12 强制终止（理由必填 1~512）。 */
@@ -585,5 +569,5 @@ export function forceTerminate(
   contractNo: string,
   command: { reason: string },
 ): Promise<ForceTerminationResult> {
-  return postJson(`/api/v1/contracts/governance/${contractNo}/force-termination`, command)
+  return postJson(`/api/v1/contracts/governance/${encodeURIComponent(contractNo)}/force-termination`, command)
 }

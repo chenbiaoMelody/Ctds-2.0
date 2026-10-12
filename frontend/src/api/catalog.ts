@@ -6,10 +6,13 @@
  *   覆盖 `apiJson` 的全局演示角色头，hifi §4、T17——普通档不得携带 `admin`）；
  *   空间域下拉调用走 `api/space.ts` 的 `spaceRolesHeader()`（两页级头互不污染）；
  * - 空主体编号 → 前置拦截（**零请求**），沿 3.2.6 E3 口径（hifi §4 边界）。
+ * - DB-41 收敛（`docs/designs/DB-41-hifi.md` §3）：域内 `xxxHeaders` / `xxxJson` / `pageQuery`
+ *   三副本删除，改由 `client.ts` 公用层
+ *   （`makeDomainJson` 工厂 + `pageQuery` 唯一副本）；路径段字符串编号一律 `encodeURIComponent`；
+ *   分页型函数签名统一为单对象 `query`（Q2-A）。
  */
-import { apiJson, ApiError, getDemoSubject } from './client'
+import { makeDomainJson, pageQuery } from './client'
 import { catalogRolesHeader } from '../stores/demoIdentity'
-import { DEMO_SUBJECT_REQUIRED_TIP } from '../constants/space'
 import type { PageData } from './types'
 
 /** 分页数据（唯一声明在 `./types`；此处保持既有导出面）。 */
@@ -200,26 +203,8 @@ export interface UpdateProductPayload {
 
 // ==== 请求封装 ====
 
-/** 页面级角色头（覆盖 apiJson 的全局 `demoRolesHeader()`；T17）。 */
-function catalogHeaders(): Record<string, string> {
-  return { 'X-Ctds-Roles': catalogRolesHeader() }
-}
-
-/** 目录域统一请求：空主体前置拦截（零请求）→ 附页面级角色头 → `apiJson`。 */
-function catalogJson<T>(path: string, options: RequestInit = {}): Promise<T> {
-  if (!getDemoSubject().trim()) {
-    return Promise.reject(new ApiError('1000C0002', DEMO_SUBJECT_REQUIRED_TIP))
-  }
-  return apiJson<T>(path, {
-    ...options,
-    headers: { ...catalogHeaders(), ...(options.headers || {}) },
-  })
-}
-
-function pageQuery(pageNum: number, pageSize: number, extra: Record<string, string> = {}): string {
-  const params = new URLSearchParams({ pageNum: String(pageNum), pageSize: String(pageSize), ...extra })
-  return `?${params.toString()}`
-}
+/** 目录域统一请求（DB-41②③）：空主体前置拦截（零请求）+ 页面级角色头（T17）→ `apiJson`。 */
+const catalogJson = makeDomainJson(catalogRolesHeader)
 
 // ==== 门户（R5/R6/R7/R8 + W4~W7） ====
 
@@ -227,32 +212,37 @@ export function listCategories(): Promise<CategoryNode[]> {
   return catalogJson('/api/v1/catalog/categories')
 }
 
-export function searchProducts(
-  pageNum: number,
-  pageSize: number,
-  keyword?: string,
-  categoryCode?: string,
-): Promise<PageData<CatalogProduct>> {
+export function searchProducts(query: {
+  pageNum: number
+  pageSize: number
+  keyword?: string
+  categoryCode?: string
+}): Promise<PageData<CatalogProduct>> {
   const extra: Record<string, string> = {}
-  if (keyword) extra.keyword = keyword
-  if (categoryCode) extra.categoryCode = categoryCode
-  return catalogJson(`/api/v1/data-products${pageQuery(pageNum, pageSize, extra)}`)
+  if (query.keyword) extra.keyword = query.keyword
+  if (query.categoryCode) extra.categoryCode = query.categoryCode
+  return catalogJson(`/api/v1/data-products${pageQuery(query.pageNum, query.pageSize, extra)}`)
 }
 
 export function getProductDetail(productId: number): Promise<CatalogProductDetail> {
   return catalogJson(`/api/v1/data-products/${productId}`)
 }
 
-export function getProductChangeLogs(
-  productId: number,
-  pageNum: number,
-  pageSize: number,
-): Promise<PageData<ProductChangeLog>> {
-  return catalogJson(`/api/v1/data-products/${productId}/change-logs${pageQuery(pageNum, pageSize)}`)
+export function getProductChangeLogs(query: {
+  productId: number
+  pageNum: number
+  pageSize: number
+}): Promise<PageData<ProductChangeLog>> {
+  return catalogJson(
+    `/api/v1/data-products/${query.productId}/change-logs${pageQuery(query.pageNum, query.pageSize)}`,
+  )
 }
 
-export function listFavorites(pageNum: number, pageSize: number): Promise<PageData<FavoriteItem>> {
-  return catalogJson(`/api/v1/catalog/favorites${pageQuery(pageNum, pageSize)}`)
+export function listFavorites(query: {
+  pageNum: number
+  pageSize: number
+}): Promise<PageData<FavoriteItem>> {
+  return catalogJson(`/api/v1/catalog/favorites${pageQuery(query.pageNum, query.pageSize)}`)
 }
 
 export function favoriteProduct(productId: number): Promise<FavoriteView> {
@@ -263,8 +253,11 @@ export function unfavoriteProduct(productId: number): Promise<FavoriteView> {
   return catalogJson(`/api/v1/data-products/${productId}/favorite`, { method: 'DELETE' })
 }
 
-export function listSubscriptions(pageNum: number, pageSize: number): Promise<PageData<SubscriptionItem>> {
-  return catalogJson(`/api/v1/catalog/subscriptions${pageQuery(pageNum, pageSize)}`)
+export function listSubscriptions(query: {
+  pageNum: number
+  pageSize: number
+}): Promise<PageData<SubscriptionItem>> {
+  return catalogJson(`/api/v1/catalog/subscriptions${pageQuery(query.pageNum, query.pageSize)}`)
 }
 
 export function subscribeProduct(productId: number): Promise<SubscriptionView> {
@@ -284,14 +277,14 @@ export function registerDataset(spaceId: number, payload: RegisterDatasetPayload
   })
 }
 
-export function listMyDatasets(
-  pageNum: number,
-  pageSize: number,
-  spaceId?: number,
-): Promise<PageData<DatasetItem>> {
+export function listMyDatasets(query: {
+  pageNum: number
+  pageSize: number
+  spaceId?: number
+}): Promise<PageData<DatasetItem>> {
   const extra: Record<string, string> = {}
-  if (spaceId !== undefined) extra.spaceId = String(spaceId)
-  return catalogJson(`/api/v1/datasets/mine${pageQuery(pageNum, pageSize, extra)}`)
+  if (query.spaceId !== undefined) extra.spaceId = String(query.spaceId)
+  return catalogJson(`/api/v1/datasets/mine${pageQuery(query.pageNum, query.pageSize, extra)}`)
 }
 
 export function getDataset(datasetId: number): Promise<DatasetItem> {
@@ -316,23 +309,27 @@ export function listVocabularies(): Promise<TagVocabulary[]> {
   return catalogJson('/api/v1/tag-vocabularies')
 }
 
-export function listTerms(
-  vocabularyCode: string,
-  pageNum: number,
-  pageSize: number,
-  keyword?: string,
-): Promise<PageData<TagTerm>> {
+export function listTerms(query: {
+  vocabularyCode: string
+  pageNum: number
+  pageSize: number
+  keyword?: string
+}): Promise<PageData<TagTerm>> {
   const extra: Record<string, string> = {}
-  if (keyword) extra.keyword = keyword
-  return catalogJson(`/api/v1/tag-vocabularies/${vocabularyCode}/terms${pageQuery(pageNum, pageSize, extra)}`)
+  if (query.keyword) extra.keyword = query.keyword
+  return catalogJson(
+    `/api/v1/tag-vocabularies/${encodeURIComponent(query.vocabularyCode)}/terms${pageQuery(query.pageNum, query.pageSize, extra)}`,
+  )
 }
 
-export function listDatasetActionLogs(
-  datasetId: number,
-  pageNum: number,
-  pageSize: number,
-): Promise<PageData<DatasetActionLog>> {
-  return catalogJson(`/api/v1/datasets/${datasetId}/action-logs${pageQuery(pageNum, pageSize)}`)
+export function listDatasetActionLogs(query: {
+  datasetId: number
+  pageNum: number
+  pageSize: number
+}): Promise<PageData<DatasetActionLog>> {
+  return catalogJson(
+    `/api/v1/datasets/${query.datasetId}/action-logs${pageQuery(query.pageNum, query.pageSize)}`,
+  )
 }
 
 // ==== 产品域（W8~W13 + R11/R15） ====
@@ -366,8 +363,11 @@ export function cancelProduct(productId: number): Promise<ProviderProduct> {
   })
 }
 
-export function listMyProducts(pageNum: number, pageSize: number): Promise<PageData<ProviderProduct>> {
-  return catalogJson(`/api/v1/data-products/mine${pageQuery(pageNum, pageSize)}`)
+export function listMyProducts(query: {
+  pageNum: number
+  pageSize: number
+}): Promise<PageData<ProviderProduct>> {
+  return catalogJson(`/api/v1/data-products/mine${pageQuery(query.pageNum, query.pageSize)}`)
 }
 
 export function forceDelistProduct(productId: number, forceReason: string): Promise<ProviderProduct> {
@@ -387,14 +387,19 @@ export function getDatasetGovernance(datasetId: number): Promise<DatasetItem> {
   return catalogJson(`/api/v1/datasets/${datasetId}/governance`)
 }
 
-export function listProductActionLogs(
-  productId: number,
-  pageNum: number,
-  pageSize: number,
-): Promise<PageData<ProductActionLog>> {
-  return catalogJson(`/api/v1/data-products/${productId}/action-logs${pageQuery(pageNum, pageSize)}`)
+export function listProductActionLogs(query: {
+  productId: number
+  pageNum: number
+  pageSize: number
+}): Promise<PageData<ProductActionLog>> {
+  return catalogJson(
+    `/api/v1/data-products/${query.productId}/action-logs${pageQuery(query.pageNum, query.pageSize)}`,
+  )
 }
 
-export function listInteractionLogs(pageNum: number, pageSize: number): Promise<PageData<InteractionLog>> {
-  return catalogJson(`/api/v1/catalog/interaction-logs${pageQuery(pageNum, pageSize)}`)
+export function listInteractionLogs(query: {
+  pageNum: number
+  pageSize: number
+}): Promise<PageData<InteractionLog>> {
+  return catalogJson(`/api/v1/catalog/interaction-logs${pageQuery(query.pageNum, query.pageSize)}`)
 }

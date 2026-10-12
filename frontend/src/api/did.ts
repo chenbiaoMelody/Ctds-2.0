@@ -5,7 +5,7 @@
  * **不改** client.ts 的全局 demoRolesHeader()——避免在 example-service 意外激活 greeting.delete
  * （最小权限面）。X-Ctds-Subject 复用 getDemoSubject()（由 apiJson 统一附加）。
  */
-import { apiJson } from './client'
+import { apiJson, pageQuery } from './client'
 import type { PageData } from './types'
 
 /** 分页数据（WBS-3.1.12 F5 类型收口：唯一声明在 `./types`；此处保持原导出面不变）。 */
@@ -123,23 +123,18 @@ export interface VerificationLogQuery {
   pageSize: number
 }
 
-function pageQuery(params: { pageNum: number; pageSize: number }): URLSearchParams {
-  const query = new URLSearchParams()
-  query.set('pageNum', String(params.pageNum))
-  query.set('pageSize', String(params.pageSize))
-  return query
-}
-
 /** 签发记录列表（分页 + 主体申请编号/记录状态过滤）。 */
 export function fetchDidRecords(params: DidRecordQuery): Promise<PageData<DidRecordView>> {
-  const query = pageQuery(params)
+  const extra: Record<string, string> = {}
   if (params.subjectNo && params.subjectNo.trim()) {
-    query.set('subjectNo', params.subjectNo.trim())
+    extra.subjectNo = params.subjectNo.trim()
   }
   if (params.status) {
-    query.set('status', params.status)
+    extra.status = params.status
   }
-  return apiJson(`/api/v1/did/records?${query.toString()}`, { headers: DID_ROLES_HEADER })
+  return apiJson(`/api/v1/did/records${pageQuery(params.pageNum, params.pageSize, extra)}`, {
+    headers: DID_ROLES_HEADER,
+  })
 }
 
 /** 单 DID 操作留痕（不分页）。 */
@@ -151,11 +146,13 @@ export function fetchOperationLogs(did: string): Promise<DidOperationLogView[]> 
 
 /** 验证留痕列表（分页 + 可选 DID 过滤）。 */
 export function fetchVerificationLogs(params: VerificationLogQuery): Promise<PageData<VerificationLogView>> {
-  const query = pageQuery(params)
+  const extra: Record<string, string> = {}
   if (params.did && params.did.trim()) {
-    query.set('did', params.did.trim())
+    extra.did = params.did.trim()
   }
-  return apiJson(`/api/v1/did/verification-logs?${query.toString()}`, { headers: DID_ROLES_HEADER })
+  return apiJson(`/api/v1/did/verification-logs${pageQuery(params.pageNum, params.pageSize, extra)}`, {
+    headers: DID_ROLES_HEADER,
+  })
 }
 
 /** 演示代签（仅演示/调试期；入口未启用时后端回 1000C0003）。 */

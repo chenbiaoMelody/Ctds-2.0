@@ -206,7 +206,11 @@ async function openInitiate(): Promise<void> {
 async function searchProduct(): Promise<void> {
   try {
     // 跨域只读复用目录域检索（api/catalog.ts 内部带目录域角色头——T18）
-    const result = await searchProducts(1, 10, productId.value.trim() || undefined)
+    const result = await searchProducts({
+      pageNum: 1,
+      pageSize: 10,
+      keyword: productId.value.trim() || undefined,
+    })
     searchResults.value = result.list
     if (result.list.length === 0) {
       ElMessage.info('未检索到产品，可直接填写产品编号')

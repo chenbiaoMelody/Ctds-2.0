@@ -49,7 +49,11 @@ const form = ref({
 async function load(): Promise<void> {
   loading.value = true
   try {
-    const page = await listSpaces(pageNum.value, pageSize.value, appliedKeyword.value || undefined)
+    const page = await listSpaces({
+      pageNum: pageNum.value,
+      pageSize: pageSize.value,
+      keyword: appliedKeyword.value || undefined,
+    })
     items.value = page.list
     total.value = page.total
   } catch (error) {

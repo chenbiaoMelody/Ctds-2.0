@@ -5,10 +5,12 @@
  * - **页面级角色头**：`X-Ctds-Roles: spaceRolesHeader()`（普通档 `applicant` / 运营档
  *   `applicant,platform.operator`），覆盖 `apiJson` 的全局演示角色头（hifi §4、T27）；
  * - 空主体编号 → 前置拦截（**零请求**），沿后端未认证口径提示（hifi §4 边界）。
+ * - DB-41 收敛（`docs/designs/DB-41-hifi.md` §3）：域内 `xxxHeaders` / `xxxJson` / `pageQuery`
+ *   三副本删除，改由 `client.ts` 公用层
+ *   （`makeDomainJson` 工厂 + `pageQuery` 唯一副本）；分页型函数签名统一为单对象 `query`（Q2-A）。
  */
-import { apiJson, ApiError, getDemoSubject } from './client'
+import { makeDomainJson, pageQuery } from './client'
 import { spaceRolesHeader } from '../stores/demoIdentity'
-import { DEMO_SUBJECT_REQUIRED_TIP } from '../constants/space'
 import type { PageData } from './types'
 
 /** 分页数据（唯一声明在 `./types`；此处保持既有导出面）。 */
@@ -147,26 +149,8 @@ export interface UpdateSpacePayload {
 const BASE = '/api/v1/data-spaces'
 const PLATFORM_BASE = '/api/v1/platform-policies'
 
-/** 页面级角色头（覆盖 apiJson 的全局 `demoRolesHeader()`）。 */
-function spaceHeaders(): Record<string, string> {
-  return { 'X-Ctds-Roles': spaceRolesHeader() }
-}
-
-/** 空间域统一请求：空主体前置拦截（零请求）→ 附页面级角色头 → `apiJson`。 */
-function spaceJson<T>(path: string, options: RequestInit = {}): Promise<T> {
-  if (!getDemoSubject().trim()) {
-    return Promise.reject(new ApiError('1000C0002', DEMO_SUBJECT_REQUIRED_TIP))
-  }
-  return apiJson<T>(path, {
-    ...options,
-    headers: { ...spaceHeaders(), ...(options.headers || {}) },
-  })
-}
-
-function pageQuery(pageNum: number, pageSize: number, extra: Record<string, string> = {}): string {
-  const params = new URLSearchParams({ pageNum: String(pageNum), pageSize: String(pageSize), ...extra })
-  return `?${params.toString()}`
-}
+/** 空间域统一请求（DB-41②③）：空主体前置拦截（零请求）+ 页面级角色头 → `apiJson`。 */
+const spaceJson = makeDomainJson(spaceRolesHeader)
 
 // ==== 端点 1~8：空间生命周期与读取 ====
 
@@ -197,10 +181,14 @@ export function updateSpace(spaceId: number, payload: UpdateSpacePayload): Promi
   return spaceJson(`${BASE}/${spaceId}`, { method: 'PUT', body: JSON.stringify(payload) })
 }
 
-export function listSpaces(pageNum: number, pageSize: number, keyword?: string): Promise<PageData<SpaceSummary>> {
+export function listSpaces(query: {
+  pageNum: number
+  pageSize: number
+  keyword?: string
+}): Promise<PageData<SpaceSummary>> {
   const extra: Record<string, string> = {}
-  if (keyword) extra.keyword = keyword
-  return spaceJson(`${BASE}${pageQuery(pageNum, pageSize, extra)}`)
+  if (query.keyword) extra.keyword = query.keyword
+  return spaceJson(`${BASE}${pageQuery(query.pageNum, query.pageSize, extra)}`)
 }
 
 export function getSpace(spaceId: number): Promise<SpaceDetail | SpaceSummary> {
@@ -239,23 +227,30 @@ export function approveAdmission(
   })
 }
 
-export function listAdmissions(
-  spaceId: number,
-  pageNum: number,
-  pageSize: number,
-  status?: string,
-): Promise<PageData<AdmissionItem>> {
+export function listAdmissions(query: {
+  spaceId: number
+  pageNum: number
+  pageSize: number
+  status?: string
+}): Promise<PageData<AdmissionItem>> {
   const extra: Record<string, string> = {}
-  if (status) extra.status = status
-  return spaceJson(`${BASE}/${spaceId}/admissions${pageQuery(pageNum, pageSize, extra)}`)
+  if (query.status) extra.status = query.status
+  return spaceJson(`${BASE}/${query.spaceId}/admissions${pageQuery(query.pageNum, query.pageSize, extra)}`)
 }
 
-export function listMyAdmissions(pageNum: number, pageSize: number): Promise<PageData<AdmissionItem>> {
-  return spaceJson(`${BASE}/admissions/mine${pageQuery(pageNum, pageSize)}`)
+export function listMyAdmissions(query: {
+  pageNum: number
+  pageSize: number
+}): Promise<PageData<AdmissionItem>> {
+  return spaceJson(`${BASE}/admissions/mine${pageQuery(query.pageNum, query.pageSize)}`)
 }
 
-export function listMembers(spaceId: number, pageNum: number, pageSize: number): Promise<PageData<MemberItem>> {
-  return spaceJson(`${BASE}/${spaceId}/members${pageQuery(pageNum, pageSize)}`)
+export function listMembers(query: {
+  spaceId: number
+  pageNum: number
+  pageSize: number
+}): Promise<PageData<MemberItem>> {
+  return spaceJson(`${BASE}/${query.spaceId}/members${pageQuery(query.pageNum, query.pageSize)}`)
 }
 
 export function assignRole(spaceId: number, memberId: number, role: 'ADMIN' | 'MEMBER'): Promise<MemberItem> {
@@ -298,8 +293,11 @@ export function updatePlatformPolicy(
   return spaceJson(`${PLATFORM_BASE}/${entryId}`, { method: 'PUT', body: JSON.stringify(payload) })
 }
 
-export function listPlatformPolicies(pageNum: number, pageSize: number): Promise<PageData<PolicyEntry>> {
-  return spaceJson(`${PLATFORM_BASE}${pageQuery(pageNum, pageSize)}`)
+export function listPlatformPolicies(query: {
+  pageNum: number
+  pageSize: number
+}): Promise<PageData<PolicyEntry>> {
+  return spaceJson(`${PLATFORM_BASE}${pageQuery(query.pageNum, query.pageSize)}`)
 }
 
 // ==== 端点 23~25：策略覆盖 / 有效策略 / 操作留痕 ====
@@ -315,6 +313,10 @@ export function getEffectivePolicies(spaceId: number): Promise<EffectivePolicyIt
   return spaceJson(`${BASE}/${spaceId}/policies/effective`)
 }
 
-export function listActionLogs(spaceId: number, pageNum: number, pageSize: number): Promise<PageData<SpaceActionLog>> {
-  return spaceJson(`${BASE}/${spaceId}/action-logs${pageQuery(pageNum, pageSize)}`)
+export function listActionLogs(query: {
+  spaceId: number
+  pageNum: number
+  pageSize: number
+}): Promise<PageData<SpaceActionLog>> {
+  return spaceJson(`${BASE}/${query.spaceId}/action-logs${pageQuery(query.pageNum, query.pageSize)}`)
 }

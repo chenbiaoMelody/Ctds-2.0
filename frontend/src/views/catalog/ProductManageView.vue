@@ -107,7 +107,7 @@ function sourceName(datasetId: number): string {
 async function loadProducts(): Promise<void> {
   loading.value = true
   try {
-    const page = await listMyProducts(pageNum.value, pageSize.value)
+    const page = await listMyProducts({ pageNum: pageNum.value, pageSize: pageSize.value })
     products.value = page.list
     total.value = page.total
     loadFailed.value = false
@@ -122,7 +122,7 @@ async function loadProducts(): Promise<void> {
 
 async function loadSourceDatasets(): Promise<void> {
   try {
-    sourceDatasets.value = (await listMyDatasets(1, 100)).list
+    sourceDatasets.value = (await listMyDatasets({ pageNum: 1, pageSize: 100 })).list
   } catch (error) {
     showError(error)
   }
@@ -324,7 +324,11 @@ async function loadLogs(): Promise<void> {
   if (!target) return
   logLoading.value = true
   try {
-    const page = await listProductActionLogs(target.productId, logPageNum.value, 10)
+    const page = await listProductActionLogs({
+      productId: target.productId,
+      pageNum: logPageNum.value,
+      pageSize: 10,
+    })
     logs.value = page.list
     logTotal.value = page.total
   } catch (error) {

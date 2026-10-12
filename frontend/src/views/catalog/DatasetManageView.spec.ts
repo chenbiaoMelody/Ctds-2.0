@@ -147,7 +147,7 @@ beforeEach(() => {
 describe('我的资源列表（T11 列表面）', () => {
   it('渲染数据标识 / 名称 / 类型中文 / 状态 / 空间 / 分类分级申报 / 登记时间；空态文案', async () => {
     const wrapper = await mountPage()
-    expect(mockedDatasets).toHaveBeenCalledWith(1, 10)
+    expect(mockedDatasets).toHaveBeenCalledWith({ pageNum: 1, pageSize: 10 })
     expect(wrapper.text()).toContain('DS20261002000004')
     expect(wrapper.text()).toContain('小微企业信贷数据集')
     expect(wrapper.text()).toContain('数据集')
@@ -354,7 +354,7 @@ describe('操作留痕区（T13）', () => {
     const wrapper = await mountPage()
     await wrapper.find('.log-btn').trigger('click')
     await flushPromises()
-    expect(mockedLogs).toHaveBeenCalledWith(9, 1, 10)
+    expect(mockedLogs).toHaveBeenCalledWith({ datasetId: 9, pageNum: 1, pageSize: 10 })
     expect(wrapper.text()).toContain('变更')
     expect(wrapper.text()).toContain('被拒')
     expect(wrapper.text()).toContain('C0006')
@@ -376,7 +376,7 @@ describe('操作留痕区（T13）', () => {
     mockedLogs.mockResolvedValue({ list: [log({ id: 10 })], total: 25, pageNum: 2, pageSize: 10, totalPages: 3 })
     await wrapper.find('.dataset-logs-pager .btn-next').trigger('click')
     await flushPromises()
-    expect(mockedLogs).toHaveBeenLastCalledWith(9, 2, 10)
+    expect(mockedLogs).toHaveBeenLastCalledWith({ datasetId: 9, pageNum: 2, pageSize: 10 })
     expect(wrapper.text()).toContain('9')
   })
 })
