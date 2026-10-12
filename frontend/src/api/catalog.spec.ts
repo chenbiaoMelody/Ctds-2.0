@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import * as catalogApi from './catalog'
 import { catalogRolesHeader, setActorMode } from '../stores/demoIdentity'
 import { setDemoRole } from '../stores/demoRole'
-import { getDemoSubject, setDemoSubject } from './client'
+import { setDemoSubject } from './client'
 import { DEMO_SUBJECT_REQUIRED_TIP } from '../constants/space'
 
 /**
@@ -14,12 +14,8 @@ import { DEMO_SUBJECT_REQUIRED_TIP } from '../constants/space'
  *    运营档 `admin`；
  * ③ 空主体编号 → 前置拦截（**零请求**），不发任何 HTTP（沿 3.2.6 E3 口径）。
  */
-vi.mock('./client', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('./client')>()
-  return { ...actual, getDemoSubject: vi.fn(actual.getDemoSubject) }
-})
-
-const mockedSubject = vi.mocked(getDemoSubject)
+// DB-41：空主体拦截已收敛到 client 公用层工厂（工厂自持 `getDemoSubject` 绑定，
+// 不经模块导出替换生效），故本 spec 不再 mock `./client`，主体身份一律经真实存储驱动。
 const fetchMock = vi.fn()
 
 function okResponse(data: unknown) {
@@ -32,7 +28,7 @@ function firstHeaders(): Record<string, string> {
 
 beforeEach(() => {
   localStorage.clear()
-  mockedSubject.mockReturnValue('S20260925000001')
+  setDemoSubject('S20260925000001')
   fetchMock.mockReset()
   fetchMock.mockResolvedValue(okResponse({ list: [], total: 0, pageNum: 1, pageSize: 10, totalPages: 0 }))
   vi.stubGlobal('fetch', fetchMock)
@@ -61,7 +57,7 @@ describe('目录域 API 函数面（hifi §2 命名清单）', () => {
   })
 
   it('端点路径与方法抽样：检索带分页参数、登记走空间域路径段、三个留痕读端点路径正确', async () => {
-    await catalogApi.searchProducts(2, 20, '普惠', 'finance')
+    await catalogApi.searchProducts({ pageNum: 2, pageSize: 20, keyword: '普惠', categoryCode: 'finance' })
     expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/data-products?pageNum=2&pageSize=20&keyword=%E6%99%AE%E6%83%A0&categoryCode=finance')
     expect(fetchMock.mock.calls[0][1].method).toBeUndefined()
 
@@ -78,15 +74,15 @@ describe('目录域 API 函数面（hifi §2 命名清单）', () => {
     }))
 
     fetchMock.mockClear()
-    await catalogApi.listDatasetActionLogs(9, 1, 10)
+    await catalogApi.listDatasetActionLogs({ datasetId: 9, pageNum: 1, pageSize: 10 })
     expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/datasets/9/action-logs?pageNum=1&pageSize=10')
 
     fetchMock.mockClear()
-    await catalogApi.listProductActionLogs(7, 1, 10)
+    await catalogApi.listProductActionLogs({ productId: 7, pageNum: 1, pageSize: 10 })
     expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/data-products/7/action-logs?pageNum=1&pageSize=10')
 
     fetchMock.mockClear()
-    await catalogApi.listInteractionLogs(1, 10)
+    await catalogApi.listInteractionLogs({ pageNum: 1, pageSize: 10 })
     expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/catalog/interaction-logs?pageNum=1&pageSize=10')
 
     fetchMock.mockClear()
@@ -99,6 +95,16 @@ describe('目录域 API 函数面（hifi §2 命名清单）', () => {
     await catalogApi.forceDelistProduct(7, '违规内容')
     expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/data-products/7/force-delist')
     expect(fetchMock.mock.calls[0][1].body).toBe(JSON.stringify({ forceReason: '违规内容' }))
+  })
+
+  it('词表编码路径段（DB-41 ① 族补编点）：编号 no-op + 特殊字符转义 + keyword 过滤项', async () => {
+    await catalogApi.listTerms({ vocabularyCode: 'TV001', pageNum: 1, pageSize: 10 })
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/tag-vocabularies/TV001/terms?pageNum=1&pageSize=10')
+
+    fetchMock.mockClear()
+    await catalogApi.listTerms({ vocabularyCode: 'TV 001/x', pageNum: 1, pageSize: 10, keyword: '普惠' })
+    expect(fetchMock.mock.calls[0][0])
+      .toBe('/api/v1/tag-vocabularies/TV%20001%2Fx/terms?pageNum=1&pageSize=10&keyword=%E6%99%AE%E6%83%A0')
   })
 })
 
@@ -131,7 +137,7 @@ describe('页面级角色头（T17：覆盖全局 demoRolesHeader）', () => {
 
   it('主体头取自 client 的既有存储（不新建第二份 subject 存储）', async () => {
     setDemoSubject('S20260925000001')
-    await catalogApi.listMyDatasets(1, 10)
+    await catalogApi.listMyDatasets({ pageNum: 1, pageSize: 10 })
     expect(firstHeaders()['X-Ctds-Subject']).toBe('S20260925000001')
     expect(localStorage.getItem('ctds-demo-subject')).toBe('S20260925000001')
   })
@@ -139,14 +145,20 @@ describe('页面级角色头（T17：覆盖全局 demoRolesHeader）', () => {
 
 describe('空主体前置拦截（T17：零请求）', () => {
   it('主体编号为空：不发起任何 HTTP 请求，直接以业务提示失败', async () => {
-    mockedSubject.mockReturnValue('')
-    await expect(catalogApi.listMyDatasets(1, 10)).rejects.toThrow(DEMO_SUBJECT_REQUIRED_TIP)
+    setDemoSubject('   ')
+    await expect(catalogApi.listMyDatasets({ pageNum: 1, pageSize: 10 })).rejects.toMatchObject({
+      code: '1000C0002',
+      message: DEMO_SUBJECT_REQUIRED_TIP,
+    })
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it('主体编号为空白字符：同样零请求', async () => {
-    mockedSubject.mockReturnValue('   ')
-    await expect(catalogApi.searchProducts(1, 10)).rejects.toThrow(DEMO_SUBJECT_REQUIRED_TIP)
+    setDemoSubject('\t\n')
+    await expect(catalogApi.searchProducts({ pageNum: 1, pageSize: 10 })).rejects.toMatchObject({
+      code: '1000C0002',
+      message: DEMO_SUBJECT_REQUIRED_TIP,
+    })
     expect(fetchMock).not.toHaveBeenCalled()
   })
 })

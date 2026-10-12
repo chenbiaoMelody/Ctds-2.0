@@ -195,7 +195,7 @@ describe('空态与分页（R6 / §7 T5、§8.3、§8.7）', () => {
       total: 25, pageNum: 1, pageSize: 10, totalPages: 3,
     })
     const wrapper = await mountPage()
-    expect(mockedLogs).toHaveBeenCalledWith(1, 1, 10)
+    expect(mockedLogs).toHaveBeenCalledWith({ spaceId: 1, pageNum: 1, pageSize: 10 })
 
     mockedLogs.mockResolvedValue({
       list: [{
@@ -207,7 +207,7 @@ describe('空态与分页（R6 / §7 T5、§8.3、§8.7）', () => {
     })
     await wrapper.find('.logs-pager .btn-next').trigger('click')
     await flushPromises()
-    expect(mockedLogs).toHaveBeenLastCalledWith(1, 2, 10)
+    expect(mockedLogs).toHaveBeenLastCalledWith({ spaceId: 1, pageNum: 2, pageSize: 10 })
     expect(wrapper.text()).toContain('S20260925000009')
   })
 

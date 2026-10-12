@@ -175,7 +175,9 @@ describe('门户检索（T4）', () => {
 
     await wrapper.findAll('.el-tree-node__content')[0].trigger('click')
     await flushPromises()
-    expect(mockedSearch).toHaveBeenLastCalledWith(1, 10, '', 'finance')
+    expect(mockedSearch).toHaveBeenLastCalledWith({
+      pageNum: 1, pageSize: 10, keyword: '', categoryCode: 'finance',
+    })
   }, 15000)
 
   it('关键词查询按 ≤64 传参；重置清空关键词与类目过滤后重新拉取', async () => {
@@ -183,13 +185,17 @@ describe('门户检索（T4）', () => {
     await wrapper.find('.keyword-input input').setValue('普惠')
     await wrapper.find('.search-btn').trigger('click')
     await flushPromises()
-    expect(mockedSearch).toHaveBeenLastCalledWith(1, 10, '普惠', '')
+    expect(mockedSearch).toHaveBeenLastCalledWith({
+      pageNum: 1, pageSize: 10, keyword: '普惠', categoryCode: '',
+    })
 
     await wrapper.findAll('.el-tree-node__content')[0].trigger('click')
     await flushPromises()
     await wrapper.find('.reset-btn').trigger('click')
     await flushPromises()
-    expect(mockedSearch).toHaveBeenLastCalledWith(1, 10, '', '')
+    expect(mockedSearch).toHaveBeenLastCalledWith({
+      pageNum: 1, pageSize: 10, keyword: '', categoryCode: '',
+    })
   })
 
   it('空结果展示统一空态文案（不是报错）', async () => {
@@ -205,7 +211,7 @@ describe('门户检索（T4）', () => {
     mockedSearch.mockResolvedValue({ list: [product({ productId: 8, productName: '小微企业信贷数据服务' })], total: 25, pageNum: 2, pageSize: 10, totalPages: 3 })
     await wrapper.find('.pager .btn-next').trigger('click')
     await flushPromises()
-    expect(mockedSearch).toHaveBeenLastCalledWith(2, 10, '', '')
+    expect(mockedSearch).toHaveBeenLastCalledWith({ pageNum: 2, pageSize: 10, keyword: '', categoryCode: '' })
     expect(wrapper.text()).toContain('小微企业信贷数据服务')
 
     mockedSearch.mockRejectedValue(new ApiError('1000C0001', '分页参数超出范围'))
@@ -243,7 +249,7 @@ describe('我的收藏 / 我的订阅（T8）', () => {
     const wrapper = await mountPage()
     await wrapper.find('#tab-favorites').trigger('click')
     await flushPromises()
-    expect(mockedFavorites).toHaveBeenCalledWith(1, 10)
+    expect(mockedFavorites).toHaveBeenCalledWith({ pageNum: 1, pageSize: 10 })
     expect(wrapper.text()).toContain('已上架')
     expect(wrapper.text()).toContain('已下架')
     expect(wrapper.text()).toContain('已注销')
@@ -266,7 +272,7 @@ describe('我的收藏 / 我的订阅（T8）', () => {
     mockedFavorites.mockResolvedValue({ list: [favorite({ productId: 8, productName: '小微企业信贷数据服务' })], total: 25, pageNum: 2, pageSize: 10, totalPages: 3 })
     await wrapper.find('.favorites-pager .btn-next').trigger('click')
     await flushPromises()
-    expect(mockedFavorites).toHaveBeenLastCalledWith(2, 10)
+    expect(mockedFavorites).toHaveBeenLastCalledWith({ pageNum: 2, pageSize: 10 })
     expect(wrapper.text()).toContain('小微企业信贷数据服务')
   })
 
@@ -275,12 +281,12 @@ describe('我的收藏 / 我的订阅（T8）', () => {
     const wrapper = await mountPage()
     await wrapper.find('#tab-subscriptions').trigger('click')
     await flushPromises()
-    expect(mockedSubscriptions).toHaveBeenCalledWith(1, 10)
+    expect(mockedSubscriptions).toHaveBeenCalledWith({ pageNum: 1, pageSize: 10 })
 
     mockedSubscriptions.mockResolvedValue({ list: [subscription({ productId: 8, productName: '小微企业信贷数据服务' })], total: 25, pageNum: 2, pageSize: 10, totalPages: 3 })
     await wrapper.find('.subscriptions-pager .btn-next').trigger('click')
     await flushPromises()
-    expect(mockedSubscriptions).toHaveBeenLastCalledWith(2, 10)
+    expect(mockedSubscriptions).toHaveBeenLastCalledWith({ pageNum: 2, pageSize: 10 })
     expect(wrapper.text()).toContain('小微企业信贷数据服务')
   })
 
@@ -315,7 +321,7 @@ describe('我的互动留痕（T9）', () => {
     const wrapper = await mountPage()
     await wrapper.find('#tab-interactions').trigger('click')
     await flushPromises()
-    expect(mockedInteractions).toHaveBeenCalledWith(1, 10)
+    expect(mockedInteractions).toHaveBeenCalledWith({ pageNum: 1, pageSize: 10 })
     expect(wrapper.text()).toContain('收藏')
     expect(wrapper.text()).toContain('订阅')
     expect(wrapper.text()).toContain('被拒')

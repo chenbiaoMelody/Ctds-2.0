@@ -100,7 +100,7 @@ function showError(error: unknown): void {
 async function loadDatasets(): Promise<void> {
   loading.value = true
   try {
-    const page = await listMyDatasets(pageNum.value, pageSize.value)
+    const page = await listMyDatasets({ pageNum: pageNum.value, pageSize: pageSize.value })
     datasets.value = page.list
     total.value = page.total
   } catch (error) {
@@ -130,11 +130,11 @@ async function openRegister(): Promise<void> {
     const vocabularies = await listVocabularies()
     const firstVocabulary = vocabularies[0]
     if (firstVocabulary) {
-      const termPage = await listTerms(firstVocabulary.vocabularyCode, 1, 100)
+      const termPage = await listTerms({ vocabularyCode: firstVocabulary.vocabularyCode, pageNum: 1, pageSize: 100 })
       termOptions.value = termPage.list
     }
     categoryOptions.value = await listCategories()
-    spaceOptions.value = (await listSpaces(1, 100)).list
+    spaceOptions.value = (await listSpaces({ pageNum: 1, pageSize: 100 })).list
   } catch (error) {
     showError(error)
   }
@@ -272,7 +272,11 @@ async function loadLogs(): Promise<void> {
   if (!target) return
   logLoading.value = true
   try {
-    const page = await listDatasetActionLogs(target.id, logPageNum.value, 10)
+    const page = await listDatasetActionLogs({
+      datasetId: target.id,
+      pageNum: logPageNum.value,
+      pageSize: 10,
+    })
     logs.value = page.list
     logTotal.value = page.total
   } catch (error) {

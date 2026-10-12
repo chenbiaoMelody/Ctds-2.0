@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import * as spaceApi from './space'
 import { setActorMode } from '../stores/demoIdentity'
 import { setDemoRole } from '../stores/demoRole'
-import { getDemoSubject, setDemoSubject } from './client'
+import { setDemoSubject } from './client'
 import { DEMO_SUBJECT_REQUIRED_TIP } from '../constants/space'
 
 /**
@@ -12,12 +12,8 @@ import { DEMO_SUBJECT_REQUIRED_TIP } from '../constants/space'
  *    全局头 `applicant,reviewer` 也不得出现）；运营档 `applicant,platform.operator`；
  * ③ 空主体编号 → 前置拦截（**零请求**），不发任何 HTTP。
  */
-vi.mock('./client', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('./client')>()
-  return { ...actual, getDemoSubject: vi.fn(actual.getDemoSubject) }
-})
-
-const mockedSubject = vi.mocked(getDemoSubject)
+// DB-41：空主体拦截已收敛到 client 公用层工厂（工厂自持 `getDemoSubject` 绑定，
+// 不经模块导出替换生效），故本 spec 不再 mock `./client`，主体身份一律经真实存储驱动。
 const fetchMock = vi.fn()
 
 function okResponse(data: unknown) {
@@ -30,7 +26,7 @@ function firstHeaders(): Record<string, string> {
 
 beforeEach(() => {
   localStorage.clear()
-  mockedSubject.mockReturnValue('S20260925000001')
+  setDemoSubject('S20260925000001')
   fetchMock.mockReset()
   fetchMock.mockResolvedValue(okResponse({ list: [], total: 0, pageNum: 1, pageSize: 10, totalPages: 0 }))
   vi.stubGlobal('fetch', fetchMock)
@@ -56,7 +52,7 @@ describe('空间域 API 函数面（hifi §1 端点 1~25）', () => {
   })
 
   it('端点路径与方法抽样：列表带分页参数、覆盖提交为 POST /policies/overrides、留痕为 GET /action-logs', async () => {
-    await spaceApi.listSpaces(2, 20, '蓝')
+    await spaceApi.listSpaces({ pageNum: 2, pageSize: 20, keyword: '蓝' })
     expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/data-spaces?pageNum=2&pageSize=20&keyword=%E8%93%9D')
     expect(fetchMock.mock.calls[0][1].method).toBeUndefined()
 
@@ -67,7 +63,7 @@ describe('空间域 API 函数面（hifi §1 端点 1~25）', () => {
     expect(fetchMock.mock.calls[0][1].body).toBe(JSON.stringify({ entryKey: 'data.retention', entryValue: 'D180' }))
 
     fetchMock.mockClear()
-    await spaceApi.listActionLogs(7, 1, 10)
+    await spaceApi.listActionLogs({ spaceId: 7, pageNum: 1, pageSize: 10 })
     expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/data-spaces/7/action-logs?pageNum=1&pageSize=10')
 
     fetchMock.mockClear()
@@ -81,7 +77,7 @@ describe('页面级角色头（T27：覆盖全局 demoRolesHeader）', () => {
   it('普通档：角色头 = applicant，且不含平台角色（即便演示角色为 admin）', async () => {
     setDemoRole('admin')
     setActorMode('subject')
-    await spaceApi.listSpaces(1, 10)
+    await spaceApi.listSpaces({ pageNum: 1, pageSize: 10 })
     expect(firstHeaders()['X-Ctds-Roles']).toBe('applicant')
     expect(firstHeaders()['X-Ctds-Roles']).not.toContain('platform.operator')
     // 全局演示角色头（applicant,reviewer）不得残留在空间域请求上
@@ -90,7 +86,7 @@ describe('页面级角色头（T27：覆盖全局 demoRolesHeader）', () => {
 
   it('运营档：角色头 = applicant,platform.operator（同一次调用内生效）', async () => {
     setActorMode('operator')
-    await spaceApi.listMembers(1, 1, 10)
+    await spaceApi.listMembers({ spaceId: 1, pageNum: 1, pageSize: 10 })
     expect(firstHeaders()['X-Ctds-Roles']).toBe('applicant,platform.operator')
   })
 
@@ -105,16 +101,22 @@ describe('页面级角色头（T27：覆盖全局 demoRolesHeader）', () => {
 
 describe('空主体前置拦截（T27：零请求）', () => {
   it('主体编号为空：不发起任何 HTTP 请求，直接以业务提示失败', async () => {
-    mockedSubject.mockReturnValue('')
-    await expect(spaceApi.listSpaces(1, 10)).rejects.toThrow(DEMO_SUBJECT_REQUIRED_TIP)
+    setDemoSubject('   ')
+    await expect(spaceApi.listSpaces({ pageNum: 1, pageSize: 10 })).rejects.toMatchObject({
+      code: '1000C0002',
+      message: DEMO_SUBJECT_REQUIRED_TIP,
+    })
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it('主体编号为空白字符：同样零请求', async () => {
-    mockedSubject.mockReturnValue('   ')
+    setDemoSubject('\t\n')
     await expect(spaceApi.createSpace({
       name: '空间', sceneType: 'OTHER', accessMode: 'OPEN', visibility: 'PUBLIC',
-    })).rejects.toThrow(DEMO_SUBJECT_REQUIRED_TIP)
+    })).rejects.toMatchObject({
+      code: '1000C0002',
+      message: DEMO_SUBJECT_REQUIRED_TIP,
+    })
     expect(fetchMock).not.toHaveBeenCalled()
   })
 })

@@ -75,13 +75,13 @@ async function loadDetail(): Promise<void> {
 
 async function loadInteractionState(): Promise<void> {
   try {
-    const favoritePage = await listFavorites(1, 100)
+    const favoritePage = await listFavorites({ pageNum: 1, pageSize: 100 })
     favorited.value = favoritePage.list.some((item: FavoriteItem) => item.productId === productId())
   } catch (error) {
     showError(error)
   }
   try {
-    const subscriptionPage = await listSubscriptions(1, 100)
+    const subscriptionPage = await listSubscriptions({ pageNum: 1, pageSize: 100 })
     subscribed.value = subscriptionPage.list.some((item: SubscriptionItem) => item.productId === productId())
   } catch (error) {
     showError(error)
@@ -91,7 +91,11 @@ async function loadInteractionState(): Promise<void> {
 async function loadChangeLogs(): Promise<void> {
   changeLogLoading.value = true
   try {
-    const page = await getProductChangeLogs(productId(), changeLogPageNum.value, 10)
+    const page = await getProductChangeLogs({
+      productId: productId(),
+      pageNum: changeLogPageNum.value,
+      pageSize: 10,
+    })
     changeLogs.value = page.list
     changeLogTotal.value = page.total
   } catch (error) {

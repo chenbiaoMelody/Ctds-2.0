@@ -109,13 +109,13 @@ describe('列表渲染（T5）', () => {
   it('翻页：按新页码与每页条数重新拉取并刷新列表（T5 分页刷新）', async () => {
     mockedList.mockResolvedValue({ list: [space({ name: '第 1 页空间' })], total: 25, pageNum: 1, pageSize: 10, totalPages: 3 })
     const wrapper = await mountPage()
-    expect(mockedList).toHaveBeenCalledWith(1, 10, undefined)
+    expect(mockedList).toHaveBeenCalledWith({ pageNum: 1, pageSize: 10, keyword: undefined })
 
     mockedList.mockResolvedValue({ list: [space({ id: 11, name: '第 2 页空间' })], total: 25, pageNum: 2, pageSize: 10, totalPages: 3 })
     await wrapper.find('.pager .btn-next').trigger('click')
     await flushPromises()
 
-    expect(mockedList).toHaveBeenLastCalledWith(2, 10, undefined)
+    expect(mockedList).toHaveBeenLastCalledWith({ pageNum: 2, pageSize: 10, keyword: undefined })
     expect(mockedList).toHaveBeenCalledTimes(2)
     expect(wrapper.text()).toContain('第 2 页空间')
   })
@@ -156,16 +156,16 @@ describe('列表渲染（T5）', () => {
 describe('检索与重置（T6）', () => {
   it('关键字检索按名称前缀传参（空值不过滤）', async () => {
     const wrapper = await mountPage()
-    expect(mockedList).toHaveBeenCalledWith(1, 10, undefined)
+    expect(mockedList).toHaveBeenCalledWith({ pageNum: 1, pageSize: 10, keyword: undefined })
 
     await wrapper.find('.keyword-input input').setValue('城市')
     await wrapper.find('.search-btn').trigger('click')
     await flushPromises()
-    expect(mockedList).toHaveBeenLastCalledWith(1, 10, '城市')
+    expect(mockedList).toHaveBeenLastCalledWith({ pageNum: 1, pageSize: 10, keyword: '城市' })
 
     await wrapper.find('.reset-btn').trigger('click')
     await flushPromises()
-    expect(mockedList).toHaveBeenLastCalledWith(1, 10, undefined)
+    expect(mockedList).toHaveBeenLastCalledWith({ pageNum: 1, pageSize: 10, keyword: undefined })
   })
 })
 

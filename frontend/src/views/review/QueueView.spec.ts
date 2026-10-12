@@ -87,7 +87,7 @@ describe('审核工作台清单页（WBS-3.1.5）', () => {
       totalPages: 2,
     })
     const wrapper = await mountPage()
-    expect(mockedQueue).toHaveBeenCalledWith(1, 10)
+    expect(mockedQueue).toHaveBeenCalledWith({ pageNum: 1, pageSize: 10 })
     mockedQueue.mockResolvedValue({
       list: [
         { subjectNo: 'S20260913000011', subjectName: '第二页主体', subjectType: 'ENTERPRISE', createdAt: '2026-09-13T11:00:00' },
@@ -101,7 +101,7 @@ describe('审核工作台清单页（WBS-3.1.5）', () => {
     expect(next.exists()).toBe(true)
     await next.trigger('click')
     await flushPromises()
-    expect(mockedQueue).toHaveBeenLastCalledWith(2, 10)
+    expect(mockedQueue).toHaveBeenLastCalledWith({ pageNum: 2, pageSize: 10 })
     expect(wrapper.text()).toContain('第二页主体')
     expect(wrapper.text()).not.toContain('第一页主体')
   })

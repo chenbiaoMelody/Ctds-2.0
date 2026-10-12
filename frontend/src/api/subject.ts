@@ -1,8 +1,12 @@
 /**
  * WBS-3.1.5 主体服务 API（字段口径逐字对齐 subject-service 已交付接口契约：
  * 3.1.2 注册/查询、3.1.3 认证、3.1.4 政务 CA、3.1.5 审核；不改接口只做界面化）。
+ * - DB-41 收敛（`docs/designs/DB-41-hifi.md` §3）：路径段 `subjectNo` 一律
+ *   `encodeURIComponent`（沿 `fetchRegistrationProgress` 先例）；分页串改 `client.ts` 的
+ *   `pageQuery` 唯一副本；`fetchReviewQueue` 签名统一为单对象（Q2-A）。
+ *   **有意不收敛点**：本域维持"无空主体前置拦截"现状（补拦截 = 行为变更，见 §4.2）。
  */
-import { apiJson, apiUpload } from './client'
+import { apiJson, apiUpload, pageQuery } from './client'
 import type { PageData } from './types'
 
 /** 分页数据（WBS-3.1.12 F5 类型收口：唯一声明在 `./types`；此处保持原导出面不变）。 */
@@ -113,7 +117,7 @@ export function registerSubject(payload: RegisterPayload): Promise<{ subjectNo: 
 }
 
 export function fetchSubjectDetail(subjectNo: string): Promise<SubjectDetailView> {
-  return apiJson(`/api/v1/subject/registrations/${subjectNo}`)
+  return apiJson(`/api/v1/subject/registrations/${encodeURIComponent(subjectNo)}`)
 }
 
 // CHG-C-1.1-V1.2 入驻进度自助查询（行为 8：双凭证；查询失败后端统一 1000C0003 文案防枚举）
@@ -123,21 +127,21 @@ export function fetchRegistrationProgress(subjectNo: string, uscc: string): Prom
 }
 
 export function fetchProfile(subjectNo: string): Promise<CertificationProfile> {
-  return apiJson(`/api/v1/subject/registrations/${subjectNo}/certification`)
+  return apiJson(`/api/v1/subject/registrations/${encodeURIComponent(subjectNo)}/certification`)
 }
 
 export function uploadLicense(
   subjectNo: string,
   file: File,
 ): Promise<{ fileName: string; recognizable: boolean; ocrResult: OcrElements | null }> {
-  return apiUpload(`/api/v1/subject/registrations/${subjectNo}/certification/license`, file)
+  return apiUpload(`/api/v1/subject/registrations/${encodeURIComponent(subjectNo)}/certification/license`, file)
 }
 
 export function confirmLicense(
   subjectNo: string,
   payload: { subjectName: string; uscc: string; legalPerson: string; regAddress: string },
 ): Promise<{ confirmed: boolean }> {
-  return apiJson(`/api/v1/subject/registrations/${subjectNo}/certification/license/confirmation`, {
+  return apiJson(`/api/v1/subject/registrations/${encodeURIComponent(subjectNo)}/certification/license/confirmation`, {
     method: 'POST',
     body: JSON.stringify(payload),
   })
@@ -147,7 +151,7 @@ export function verifyLegalPerson(
   subjectNo: string,
   payload: { legalPersonName: string; legalPersonIdNo: string },
 ): Promise<{ conclusion: string }> {
-  return apiJson(`/api/v1/subject/registrations/${subjectNo}/certification/legal-person-verifications`, {
+  return apiJson(`/api/v1/subject/registrations/${encodeURIComponent(subjectNo)}/certification/legal-person-verifications`, {
     method: 'POST',
     body: JSON.stringify(payload),
   })
@@ -157,28 +161,31 @@ export function submitGovCertificate(
   subjectNo: string,
   file: File,
 ): Promise<{ conclusion: string; status: SubjectStatus; failReason: string | null }> {
-  return apiUpload(`/api/v1/subject/registrations/${subjectNo}/certification/gov-ca-certificate`, file)
+  return apiUpload(`/api/v1/subject/registrations/${encodeURIComponent(subjectNo)}/certification/gov-ca-certificate`, file)
 }
 
 export function fetchLicenseImage(subjectNo: string): Promise<LicenseImageView> {
-  return apiJson(`/api/v1/subject/registrations/${subjectNo}/certification/license/image`)
+  return apiJson(`/api/v1/subject/registrations/${encodeURIComponent(subjectNo)}/certification/license/image`)
 }
 
 // ==== 审核端（WBS-3.1.5，subject.review 权限） ====
 
-export function fetchReviewQueue(pageNum: number, pageSize: number): Promise<PageData<ReviewQueueItem>> {
-  return apiJson(`/api/v1/subject/review/queue?pageNum=${pageNum}&pageSize=${pageSize}`)
+export function fetchReviewQueue(query: {
+  pageNum: number
+  pageSize: number
+}): Promise<PageData<ReviewQueueItem>> {
+  return apiJson(`/api/v1/subject/review/queue${pageQuery(query.pageNum, query.pageSize)}`)
 }
 
 export function approveSubject(subjectNo: string): Promise<{ subjectNo: string; status: string }> {
-  return apiJson(`/api/v1/subject/registrations/${subjectNo}/review/approval`, { method: 'POST' })
+  return apiJson(`/api/v1/subject/registrations/${encodeURIComponent(subjectNo)}/review/approval`, { method: 'POST' })
 }
 
 export function rejectSubject(
   subjectNo: string,
   reason: string,
 ): Promise<{ subjectNo: string; status: string }> {
-  return apiJson(`/api/v1/subject/registrations/${subjectNo}/review/rejection`, {
+  return apiJson(`/api/v1/subject/registrations/${encodeURIComponent(subjectNo)}/review/rejection`, {
     method: 'POST',
     body: JSON.stringify({ reason }),
   })

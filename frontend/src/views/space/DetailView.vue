@@ -150,7 +150,7 @@ async function loadDetail(): Promise<void> {
 
 async function loadLogs(): Promise<void> {
   try {
-    const page = await listActionLogs(spaceId, logsPage.value, pageSize.value)
+    const page = await listActionLogs({ spaceId, pageNum: logsPage.value, pageSize: pageSize.value })
     logs.value = page.list
     logsTotal.value = page.total
   } catch (error) {
@@ -224,7 +224,7 @@ async function submitConfig(): Promise<void> {
 
 async function loadMembers(): Promise<void> {
   try {
-    const page = await listMembers(spaceId, membersPage.value, pageSize.value)
+    const page = await listMembers({ spaceId, pageNum: membersPage.value, pageSize: pageSize.value })
     members.value = page.list
     membersTotal.value = page.total
   } catch (error) {
@@ -236,7 +236,12 @@ async function loadMembers(): Promise<void> {
 
 async function loadAdmissions(): Promise<void> {
   try {
-    const page = await listAdmissions(spaceId, admissionsPage.value, pageSize.value, admissionStatus.value || undefined)
+    const page = await listAdmissions({
+      spaceId,
+      pageNum: admissionsPage.value,
+      pageSize: pageSize.value,
+      status: admissionStatus.value || undefined,
+    })
     admissions.value = page.list
     admissionsTotal.value = page.total
   } catch (error) {

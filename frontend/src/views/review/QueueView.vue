@@ -20,7 +20,7 @@ const pageSize = ref(10)
 async function load(): Promise<void> {
   loading.value = true
   try {
-    const page = await fetchReviewQueue(pageNum.value, pageSize.value)
+    const page = await fetchReviewQueue({ pageNum: pageNum.value, pageSize: pageSize.value })
     items.value = page.list
     total.value = page.total
   } catch (error) {

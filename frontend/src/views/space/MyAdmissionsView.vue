@@ -32,7 +32,7 @@ const declineReason = ref('')
 async function load(): Promise<void> {
   loading.value = true
   try {
-    const page = await listMyAdmissions(pageNum.value, pageSize.value)
+    const page = await listMyAdmissions({ pageNum: pageNum.value, pageSize: pageSize.value })
     items.value = page.list
     total.value = page.total
   } catch (error) {

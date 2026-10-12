@@ -45,7 +45,7 @@ const editOptions = computed(() => POLICY_CATALOG.find((item) => item.entryKey =
 async function load(): Promise<void> {
   loading.value = true
   try {
-    const page = await listPlatformPolicies(pageNum.value, pageSize.value)
+    const page = await listPlatformPolicies({ pageNum: pageNum.value, pageSize: pageSize.value })
     items.value = page.list
     total.value = page.total
   } catch (error) {

@@ -98,7 +98,7 @@ describe('页面级角色头与空主体前置拦截（T18）', () => {
 
   it('跨域产品检索走目录域角色头（普通档 provider；与合约域头互不污染）', async () => {
     const calls = stubFetchCapture()
-    await searchProducts(1, 10, '餐饮')
+    await searchProducts({ pageNum: 1, pageSize: 10, keyword: '餐饮' })
     expect(calls).toHaveLength(1)
     expect(calls[0].url).toContain('/api/v1/data-products')
     expect(calls[0].headers['X-Ctds-Roles']).toBe('provider')

@@ -7,6 +7,7 @@
  * - 统一解析 ADR-005 ApiResult（code="0" 成功，其余抛 ApiError 保留九位错误码与业务文案）。
  */
 import { getDemoRole } from '../stores/demoRole'
+import { DEMO_SUBJECT_REQUIRED_TIP } from '../constants/space'
 
 const SUBJECT_KEY = 'ctds-demo-subject'
 const DEFAULT_SUBJECT = 'demo-applicant'
@@ -57,6 +58,33 @@ export async function apiJson<T>(path: string, options: RequestInit = {}): Promi
     throw new ApiError(body.code, body.message)
   }
   return body.data
+}
+
+/**
+ * 分页查询串（DB-41②：全仓唯一副本；`extra` = 可选过滤项，值编码交给 `URLSearchParams`）。
+ * 输出形态 = `?pageNum=..&pageSize=..&<过滤项按传入顺序>`（与三域既有副本逐字一致）。
+ */
+export function pageQuery(pageNum: number, pageSize: number, extra: Record<string, string> = {}): string {
+  const params = new URLSearchParams({ pageNum: String(pageNum), pageSize: String(pageSize), ...extra })
+  return `?${params.toString()}`
+}
+
+/**
+ * 域请求工厂（DB-41②③：`client.ts` 公用层唯一新增公共 API）：
+ * 空主体前置拦截（**零请求** → `ApiError('1000C0002')`）→ 附页面级角色头
+ * （`X-Ctds-Roles = rolesHeader()`，调用方显式同名头可覆盖）→ `apiJson`。
+ * 接入域：contract / catalog / space（现状有拦截三域）；did / subject 不接入（见 DB-41 hifi §4.2）。
+ */
+export function makeDomainJson(rolesHeader: () => string): <T>(path: string, options?: RequestInit) => Promise<T> {
+  return function domainJson<T>(path: string, options: RequestInit = {}): Promise<T> {
+    if (!getDemoSubject().trim()) {
+      return Promise.reject(new ApiError('1000C0002', DEMO_SUBJECT_REQUIRED_TIP))
+    }
+    return apiJson<T>(path, {
+      ...options,
+      headers: { 'X-Ctds-Roles': rolesHeader(), ...(options.headers || {}) },
+    })
+  }
 }
 
 /** multipart 上传封装（不设 Content-Type，由浏览器带 boundary）。 */
