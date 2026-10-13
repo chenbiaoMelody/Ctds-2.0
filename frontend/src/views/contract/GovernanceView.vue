@@ -62,110 +62,18 @@
           :closable="false"
           :title="`${TERMINATION_TYPE_LABELS[detail.detail.terminationType] ?? detail.detail.terminationType} — 终止理由：${detail.detail.terminationReason ?? '—'}（操作者：${detail.detail.terminatedBy ?? '—'}）`"
         />
-        <el-descriptions title="合约总览" :column="2" border size="small">
-          <el-descriptions-item label="合约编号">{{ detail.detail.contractNo }}</el-descriptions-item>
-          <el-descriptions-item label="状态">
-            {{ CONTRACT_STATUS_LABELS[detail.detail.status] ?? detail.detail.status }}
-          </el-descriptions-item>
-          <el-descriptions-item label="产品名称">{{ detail.detail.productName }}</el-descriptions-item>
-          <el-descriptions-item label="定价快照">
-            {{ detail.detail.pricingModel }} / {{ detail.detail.priceAmount ?? '—' }}
-          </el-descriptions-item>
-          <el-descriptions-item :label="MY_ROLE_LABELS.PROVIDER">{{ detail.detail.providerSubjectNo }}</el-descriptions-item>
-          <el-descriptions-item :label="MY_ROLE_LABELS.REQUESTER">{{ detail.detail.requesterSubjectNo }}</el-descriptions-item>
-          <el-descriptions-item label="模板引用">
-            {{ detail.detail.templateNo }}（V{{ detail.detail.templateVersionNo }}）
-          </el-descriptions-item>
-          <el-descriptions-item label="当前版本">V{{ detail.detail.currentClauseVersion }}</el-descriptions-item>
-          <el-descriptions-item label="内容哈希">
-            <el-tooltip :content="CONTENT_HASH_HINT" placement="top">
-              <span class="hash-cell">{{ detail.detail.contentHash }}</span>
-            </el-tooltip>
-          </el-descriptions-item>
-          <el-descriptions-item label="生效 / 完结">
-            {{ detail.detail.effectiveAt ?? '—' }} / {{ detail.detail.endedAt ?? '—' }}
-          </el-descriptions-item>
-        </el-descriptions>
-
-        <h4>当前条款全文</h4>
-        <el-descriptions :column="1" border size="small">
-          <el-descriptions-item
-            v-for="(value, key) in detail.detail.clauseValues.slots"
-            :key="key"
-            :label="String(key)"
-          >
-            {{ value }}
-          </el-descriptions-item>
-        </el-descriptions>
-
-        <h4>使用控制策略（五要素全文）</h4>
-        <el-descriptions :column="2" border size="small">
-          <el-descriptions-item :label="POLICY_ELEMENT_LABELS.quota">{{ strategyLine('quota') }}</el-descriptions-item>
-          <el-descriptions-item :label="POLICY_ELEMENT_LABELS.term">{{ strategyLine('term') }}</el-descriptions-item>
-          <el-descriptions-item :label="POLICY_ELEMENT_LABELS.purpose">{{ strategyLine('purpose') }}</el-descriptions-item>
-          <el-descriptions-item :label="POLICY_ELEMENT_LABELS.territory">{{ strategyLine('territory') }}</el-descriptions-item>
-          <el-descriptions-item :label="POLICY_ELEMENT_LABELS.noRedistribution">
-            {{ detail.detail.clauseValues.strategy.noRedistribution?.enabled ? '是' : '未启用' }}
-          </el-descriptions-item>
-          <el-descriptions-item label="无使用限制声明">
-            {{ detail.detail.clauseValues.strategy.noRestrictionDeclared ? '是（显式声明）' : '未声明' }}
-          </el-descriptions-item>
-        </el-descriptions>
-
-        <h4>条款版本链</h4>
-        <el-table :data="detail.clauseVersions" size="small" :empty-text="'（仅初始版本）'">
-          <el-table-column type="expand">
-            <template #default="scope">
-              <div class="expand-slots">
-                <div v-for="(value, key) in scope.row.clauseValues.slots" :key="key" class="expand-slot-line">
-                  {{ key }}：{{ value }}
-                </div>
-                <span v-if="!Object.keys(scope.row.clauseValues.slots ?? {}).length">—</span>
-              </div>
-            </template>
-          </el-table-column>
-          <el-table-column label="版本号" width="80">
-            <template #default="scope">V{{ scope.row.versionNo }}</template>
-          </el-table-column>
-          <el-table-column prop="proposedBy" label="提案方" width="160">
-            <template #default="scope">{{ scope.row.proposedBy ?? '发起' }}</template>
-          </el-table-column>
-          <el-table-column prop="proposedAt" label="提案时间" width="170">
-            <template #default="scope">{{ scope.row.proposedAt ?? '—' }}</template>
-          </el-table-column>
-          <el-table-column label="变更明细" min-width="180">
-            <template #default="scope">
-              <div v-for="change in scope.row.changes ?? []" :key="change.slot">
-                {{ change.slot }}：{{ change.from ?? '—' }} → {{ change.to ?? '—' }}
-              </div>
-              <span v-if="!scope.row.changes?.length">—</span>
-            </template>
-          </el-table-column>
-        </el-table>
-
-        <h4>合约留痕</h4>
-        <el-table v-loading="logsLoading" :data="actionLogs" size="small" :empty-text="'暂无记录'">
-          <el-table-column label="动作" width="110">
-            <template #default="scope">{{ ACTION_LOG_ACTION_LABELS[scope.row.action] ?? scope.row.action }}</template>
-          </el-table-column>
-          <el-table-column label="版本号" width="80">
-            <template #default="scope">{{ scope.row.versionNo ?? '—' }}</template>
-          </el-table-column>
-          <el-table-column prop="actorSubjectNo" label="操作者主体编号" min-width="160" />
-          <el-table-column prop="createdAt" label="时间" width="170" />
-          <el-table-column label="从何值 → 到何值" min-width="160">
-            <template #default="scope">{{ scope.row.fromValue ?? '—' }} → {{ scope.row.toValue ?? '—' }}</template>
-          </el-table-column>
-          <el-table-column label="拒绝码" width="90">
-            <template #default="scope">{{ scope.row.reasonCode ?? '—' }}</template>
-          </el-table-column>
-        </el-table>
-        <el-pagination
-          v-model:current-page="drawerLogsPage"
-          layout="prev, pager, next"
-          :total="drawerLogsTotal"
-          :page-size="drawerLogsPageSize"
-          @current-change="loadLogs"
+        <!-- DB-44：只读五分区收敛到共享组件（治理视角 variant，键名漂移已对齐详情侧口径） -->
+        <ContractReadOnlySections
+          variant="governance"
+          :detail="detail.detail"
+          :clause-versions="detail.clauseVersions"
+          :framework="framework"
+          :action-logs="actionLogs"
+          :logs-loading="logsLoading"
+          :logs-total="drawerLogsTotal"
+          :logs-page="drawerLogsPage"
+          :logs-page-size="drawerLogsPageSize"
+          @logs-page-change="onLogsPageChange"
         />
 
         <!-- 治理动作：强制终止（W12；治理页不提供参与方动作与"发起使用"入口——t12 口径） -->
@@ -204,6 +112,9 @@
  * GOVERNANCE_VIEW 留痕，"查看即留痕"提示常驻）+ 按编号直查治理详情（R11——详情 + 版本链 +
  * 留痕区 R13 只读分区，**无参与方动作条、无"发起使用"入口**——服务端 t12 口径）+
  * 强制终止（W12——理由必填 1~512）。非运营档直链 → 服务端 403 原样展示。
+ * DB-44 收敛（`docs/designs/DB-44-hifi.md` §2/§3）：抽屉内只读五分区改由共享组件
+ * `ContractReadOnlySections`（`variant="governance"`）承载；槽位标签口径与详情侧对齐——
+ * 直查时经 Q3-A 加载一次只读模板框架（R5，失败静默回退键名）。
  */
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -213,20 +124,20 @@ import {
   getGovernanceDetail,
   forceTerminate,
   listContractActionLogs,
+  getTemplate,
+  type ClauseFramework,
   type GovernanceContract,
   type GovernanceDetail,
   type ContractActionLogItem,
 } from '../../api/contract'
 import {
-  POLICY_ELEMENT_LABELS,
   CONTRACT_STATUS_LABELS,
   CONTRACT_STATUS_TAG_TYPES,
   TERMINATION_TYPE_LABELS,
-  ACTION_LOG_ACTION_LABELS,
   MY_ROLE_LABELS,
-  CONTENT_HASH_HINT,
 } from '../../constants/contract'
 import { guideToLoginIfAuthFailed } from '../../api/authGuide'
+import ContractReadOnlySections from './components/ContractReadOnlySections.vue'
 
 const router = useRouter()
 const pageSize = 10
@@ -284,6 +195,8 @@ const logsLoading = ref(false)
 const drawerLogsPage = ref(1)
 const drawerLogsTotal = ref(0)
 const drawerLogsPageSize = 20
+/** 模板条款框架（R5）：槽位标签口径与详情页对齐（DB-44 Q3-A）；不可达时回退键名。 */
+const framework = ref<ClauseFramework | null>(null)
 
 async function openDetail(contractNo: string): Promise<void> {
   try {
@@ -295,7 +208,19 @@ async function openDetail(contractNo: string): Promise<void> {
     return
   }
   drawerLogsPage.value = 1
+  await loadFramework()
   await loadLogs()
+}
+
+/** 加载模板框架（Q3-A：治理直查新增 1 次只读 R5）；失败静默回退键名（与详情页同口径），不影响主面。 */
+async function loadFramework(): Promise<void> {
+  framework.value = null
+  try {
+    const tpl = await getTemplate(detail.value?.detail.templateNo ?? '')
+    framework.value = tpl.clauseFramework
+  } catch {
+    // 框架不可达 → 槽位标签回退键名（读面失败不改变主面展示）
+  }
 }
 
 async function loadLogs(): Promise<void> {
@@ -315,18 +240,10 @@ async function loadLogs(): Promise<void> {
   }
 }
 
-function strategyLine(element: 'quota' | 'term' | 'purpose' | 'territory'): string {
-  const el = detail.value?.detail.clauseValues.strategy[element]
-  if (!el?.enabled) {
-    return '未启用'
-  }
-  if (element === 'quota') {
-    return `${POLICY_ELEMENT_LABELS.quota} ${el.maxCount ?? '—'}`
-  }
-  if (element === 'term') {
-    return `${el.startDate ?? '—'} ~ ${el.endDate ?? '—'}`
-  }
-  return el.text ?? '已启用'
+/** 共享组件留痕翻页回传（DB-44）：更新页号并按既有逻辑重新拉取（无乐观更新）。 */
+function onLogsPageChange(page: number): void {
+  drawerLogsPage.value = page
+  void loadLogs()
 }
 
 // ==== 强制终止（W12） ====
@@ -384,14 +301,5 @@ void loadList()
   display: flex;
   flex-direction: column;
   gap: 8px;
-}
-
-.hash-cell {
-  cursor: help;
-}
-
-.expand-slot-line {
-  padding: 2px 0;
-  font-size: 13px;
 }
 </style>

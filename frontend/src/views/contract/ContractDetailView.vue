@@ -3,123 +3,39 @@
     <el-alert v-if="notAccessible" :title="CONTRACT_NOT_ACCESSIBLE_TIP" type="error" :closable="false" />
 
     <template v-else-if="detail">
-      <!-- A 总览：合约元数据 + 模板版本快照（C-4.1 S2-3 核对面）+ 定价快照 -->
-      <el-descriptions title="合约总览" :column="3" border>
-        <el-descriptions-item label="合约编号">{{ detail.contractNo }}</el-descriptions-item>
-        <el-descriptions-item label="状态">
-          <el-tag :type="CONTRACT_STATUS_TAG_TYPES[detail.status] ?? 'info'">
-            {{ CONTRACT_STATUS_LABELS[detail.status] ?? detail.status }}
-          </el-tag>
-        </el-descriptions-item>
-        <el-descriptions-item label="当前条款版本">V{{ detail.currentClauseVersion }}</el-descriptions-item>
-        <el-descriptions-item label="产品名称">{{ detail.productName }}</el-descriptions-item>
-        <el-descriptions-item label="定价快照">{{ detail.pricingModel }} / {{ detail.priceAmount ?? '—' }}</el-descriptions-item>
-        <el-descriptions-item label="模板引用">{{ detail.templateNo }}（版本快照 V{{ detail.templateVersionNo }}）</el-descriptions-item>
-        <el-descriptions-item :label="MY_ROLE_LABELS.PROVIDER">{{ detail.providerSubjectNo }}</el-descriptions-item>
-        <el-descriptions-item :label="MY_ROLE_LABELS.REQUESTER">{{ detail.requesterSubjectNo }}</el-descriptions-item>
-        <el-descriptions-item label="内容哈希">
-          <el-tooltip :content="CONTENT_HASH_HINT" placement="top">
-            <span class="hash-cell">{{ detail.contentHash }}</span>
-          </el-tooltip>
-        </el-descriptions-item>
-        <el-descriptions-item label="生效时间">{{ detail.effectiveAt ?? '—' }}</el-descriptions-item>
-        <el-descriptions-item label="完结时间">{{ detail.endedAt ?? '—' }}</el-descriptions-item>
-        <el-descriptions-item label="创建 / 更新">{{ detail.createdAt }} / {{ detail.updatedAt }}</el-descriptions-item>
-      </el-descriptions>
-
-      <el-alert
-        v-if="detail.terminationType"
-        type="error"
-        :closable="false"
-        :title="`${TERMINATION_TYPE_LABELS[detail.terminationType] ?? detail.terminationType} — 终止理由：${detail.terminationReason ?? '—'}（操作者：${detail.terminatedBy ?? '—'}）`"
-      />
-
-      <!-- 协商动作条（按状态 + 我的角色显隐——非参与方治理档查看无动作条；已生效无"单方撤回签署"入口） -->
-      <div v-if="isParticipant" class="action-bar">
-        <template v-if="detail.status === 'NEGOTIATING'">
-          <el-button type="primary" @click="openPropose">提案</el-button>
-          <el-button type="success" @click="confirmClausesAction">确认</el-button>
-          <el-button type="danger" plain @click="confirmTerminate('terminateNegotiation')">终止协商</el-button>
-        </template>
-        <template v-else-if="detail.status === 'PENDING_SIGNATURE' || detail.status === 'PARTIALLY_SIGNED'">
-          <el-button type="primary" @click="openSign">签署</el-button>
-          <el-button type="danger" plain @click="confirmTerminate('refuseSignature')">拒签终止</el-button>
-        </template>
-        <template v-else-if="detail.status === 'EFFECTIVE'">
-          <el-button type="warning" plain @click="confirmRelease">合意解除</el-button>
-        </template>
-      </div>
-
-      <!-- B 当前条款全文 + F 策略视图 -->
-      <el-card shadow="never">
-        <template #header>当前条款全文（V{{ detail.currentClauseVersion }}）</template>
-        <el-descriptions :column="1" border>
-          <el-descriptions-item v-for="(value, key) in detail.clauseValues.slots" :key="key" :label="slotName(String(key))">
-            {{ value }}
-          </el-descriptions-item>
-        </el-descriptions>
-        <h4>使用控制策略（五要素全文）</h4>
-        <el-descriptions :column="2" border>
-          <el-descriptions-item :label="POLICY_ELEMENT_LABELS.quota">
-            {{ strategyLine('quota') }}
-          </el-descriptions-item>
-          <el-descriptions-item :label="POLICY_ELEMENT_LABELS.term">
-            {{ strategyLine('term') }}
-          </el-descriptions-item>
-          <el-descriptions-item :label="POLICY_ELEMENT_LABELS.purpose">
-            {{ strategyLine('purpose') }}
-          </el-descriptions-item>
-          <el-descriptions-item :label="POLICY_ELEMENT_LABELS.territory">
-            {{ strategyLine('territory') }}
-          </el-descriptions-item>
-          <el-descriptions-item :label="POLICY_ELEMENT_LABELS.noRedistribution">
-            {{ detail.clauseValues.strategy.noRedistribution?.enabled ? '是' : '未启用' }}
-          </el-descriptions-item>
-          <el-descriptions-item label="无使用限制声明">
-            {{ detail.clauseValues.strategy.noRestrictionDeclared ? '是（显式声明）' : '未声明' }}
-          </el-descriptions-item>
-        </el-descriptions>
-      </el-card>
-
-      <!-- C 条款版本链（R8）：逐版 + 可展开条款全文 -->
-      <el-card shadow="never">
-        <template #header>条款版本链</template>
-        <el-table :data="clauseVersions" :empty-text="'（仅初始版本）'">
-          <el-table-column type="expand">
-            <template #default="scope">
-              <div class="expand-slots">
-                <div v-for="(value, key) in scope.row.clauseValues.slots" :key="key" class="expand-slot-line">
-                  {{ key }}：{{ value }}
-                </div>
-                <span v-if="!Object.keys(scope.row.clauseValues.slots ?? {}).length">—</span>
-              </div>
+      <!-- DB-44：只读五分区（总览 / 条款全文 / 策略 / 版本链 / 留痕）收敛到共享组件；
+           本页专有区块经具名插槽置入，保持既有页面区块顺序零变更 -->
+      <ContractReadOnlySections
+        variant="detail"
+        :detail="detail"
+        :clause-versions="clauseVersions"
+        :framework="framework"
+        :action-logs="actionLogs"
+        :logs-loading="logsLoading"
+        :logs-total="logsTotal"
+        :logs-page="logsPage"
+        :logs-page-size="logsPageSize"
+        @logs-page-change="onLogsPageChange"
+      >
+        <!-- 协商动作条（按状态 + 我的角色显隐——非参与方治理档查看无动作条；已生效无"单方撤回签署"入口） -->
+        <template #before-clause>
+          <div v-if="isParticipant" class="action-bar">
+            <template v-if="detail.status === 'NEGOTIATING'">
+              <el-button type="primary" @click="openPropose">提案</el-button>
+              <el-button type="success" @click="confirmClausesAction">确认</el-button>
+              <el-button type="danger" plain @click="confirmTerminate('terminateNegotiation')">终止协商</el-button>
             </template>
-          </el-table-column>
-          <el-table-column label="版本号" width="80">
-            <template #default="scope">V{{ scope.row.versionNo }}</template>
-          </el-table-column>
-          <el-table-column prop="proposedBy" label="提案方" width="170">
-            <template #default="scope">{{ scope.row.proposedBy ?? '发起' }}</template>
-          </el-table-column>
-          <el-table-column prop="proposedAt" label="提案时间" width="180">
-            <template #default="scope">{{ scope.row.proposedAt ?? '—' }}</template>
-          </el-table-column>
-          <el-table-column label="双方确认时间" min-width="240">
-            <template #default="scope">
-              {{ MY_ROLE_LABELS.PROVIDER }}：{{ scope.row.confirmedProviderAt ?? '—' }} / {{ MY_ROLE_LABELS.REQUESTER }}：{{ scope.row.confirmedRequesterAt ?? '—' }}
+            <template v-else-if="detail.status === 'PENDING_SIGNATURE' || detail.status === 'PARTIALLY_SIGNED'">
+              <el-button type="primary" @click="openSign">签署</el-button>
+              <el-button type="danger" plain @click="confirmTerminate('refuseSignature')">拒签终止</el-button>
             </template>
-          </el-table-column>
-          <el-table-column label="变更明细" min-width="200">
-            <template #default="scope">
-              <div v-for="change in scope.row.changes ?? []" :key="change.slot">
-                {{ change.slot }}：{{ change.from ?? '—' }} → {{ change.to ?? '—' }}
-              </div>
-              <span v-if="!scope.row.changes?.length">—</span>
+            <template v-else-if="detail.status === 'EFFECTIVE'">
+              <el-button type="warning" plain @click="confirmRelease">合意解除</el-button>
             </template>
-          </el-table-column>
-        </el-table>
-      </el-card>
+          </div>
+        </template>
 
+      <!-- 详情专有区块（组件默认插槽位置：版本链之后、留痕之前）：签署与存证 / 策略与使用 -->
       <!-- E 签署与存证区（R7 + R9） -->
       <el-card shadow="never">
         <template #header>签署与存证</template>
@@ -201,33 +117,7 @@
         </template>
       </el-card>
 
-      <!-- H 合约留痕区（R13；Q2-A） -->
-      <el-card shadow="never">
-        <template #header>合约留痕</template>
-        <el-table v-loading="logsLoading" :data="actionLogs" size="small" :empty-text="'暂无记录'">
-          <el-table-column label="动作" width="120">
-            <template #default="scope">{{ ACTION_LOG_ACTION_LABELS[scope.row.action] ?? scope.row.action }}</template>
-          </el-table-column>
-          <el-table-column label="版本号" width="80">
-            <template #default="scope">{{ scope.row.versionNo ?? '—' }}</template>
-          </el-table-column>
-          <el-table-column prop="actorSubjectNo" label="操作者主体编号" min-width="170" />
-          <el-table-column prop="createdAt" label="时间" width="180" />
-          <el-table-column label="从何值 → 到何值" min-width="180">
-            <template #default="scope">{{ scope.row.fromValue ?? '—' }} → {{ scope.row.toValue ?? '—' }}</template>
-          </el-table-column>
-          <el-table-column label="拒绝码" width="90">
-            <template #default="scope">{{ scope.row.reasonCode ?? '—' }}</template>
-          </el-table-column>
-        </el-table>
-        <el-pagination
-          v-model:current-page="logsPage"
-          layout="prev, pager, next"
-          :total="logsTotal"
-          :page-size="logsPageSize"
-          @current-change="loadLogs"
-        />
-      </el-card>
+      </ContractReadOnlySections>
     </template>
 
     <!-- 提案弹窗（W6）：全量条款编辑（值可改 + 增删槽位行）+ 策略编辑器；每次打开重挂以回显当前策略 -->
@@ -370,6 +260,9 @@
  * 测试台 / 受控执行〔仅参与方〕/ R12 使用摘要 + 诚实边界两则常驻）+ 合约留痕区（R13）。
  * 动作结果一律以响应刷新（无乐观更新）；错误文案原样展示（不吞不改写）；模拟拒绝 = 数据
  * 展示不弹错误（ADR-021 §2.2 语义）。
+ * DB-44 收敛（`docs/designs/DB-44-hifi.md` §2/§3）：只读五分区（总览 / 条款全文 / 策略 /
+ * 版本链 / 留痕）改由共享组件 `ContractReadOnlySections`（`variant="detail"`）承载；
+ * 本页专有区块（协商动作条、签署与存证、策略与使用）经具名插槽置入，保持区块顺序零变更。
  */
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -403,22 +296,18 @@ import {
 import { getDemoSubject } from '../../api/client'
 import { getActorMode } from '../../stores/demoIdentity'
 import {
-  POLICY_ELEMENT_LABELS,
   CONTRACT_STATUS_LABELS,
-  CONTRACT_STATUS_TAG_TYPES,
   MY_ROLE_LABELS,
-  TERMINATION_TYPE_LABELS,
-  ACTION_LOG_ACTION_LABELS,
   CONTRACT_NOT_ACCESSIBLE_TIP,
   SIMULATION_HONESTY_TIP,
   EXECUTION_DEMO_TIP,
   OPERATOR_MODE_PARTICIPANT_TIP,
   SIMULATION_SOURCE_LABELS,
-  CONTENT_HASH_HINT,
 } from '../../constants/contract'
 import { guideToLoginIfAuthFailed } from '../../api/authGuide'
 import ClauseEditor from './components/ClauseEditor.vue'
 import StrategyEditor from './components/StrategyEditor.vue'
+import ContractReadOnlySections from './components/ContractReadOnlySections.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -434,11 +323,6 @@ const isParticipant = computed(() => {
   const subject = getDemoSubject()
   return subject === detail.value.providerSubjectNo || subject === detail.value.requesterSubjectNo
 })
-
-function slotName(key: string): string {
-  const slot = framework.value?.slots.find((item) => item.key === key)
-  return slot ? `${slot.name}（${key}）` : key
-}
 
 /** 读面加载失败统一出口：认证失效（1000C0002）经共享 authGuide 引导回登录页（§6.6-6/§8-10），
  * 其余后端文案原样展示；返回 true 表示已引导跳转，调用方应立即中止后续逻辑。 */
@@ -456,20 +340,6 @@ function notifyActionRejected(err: unknown): void {
   if (getActorMode() === 'operator') {
     ElMessage.warning(OPERATOR_MODE_PARTICIPANT_TIP)
   }
-}
-
-function strategyLine(element: 'quota' | 'term' | 'purpose' | 'territory'): string {
-  const el = detail.value?.clauseValues.strategy[element]
-  if (!el?.enabled) {
-    return '未启用'
-  }
-  if (element === 'quota') {
-    return `${POLICY_ELEMENT_LABELS.quota} ${el.maxCount ?? '—'}`
-  }
-  if (element === 'term') {
-    return `${el.startDate ?? '—'} ~ ${el.endDate ?? '—'}`
-  }
-  return el.text ?? '已启用'
 }
 
 async function loadAll(): Promise<void> {
@@ -754,6 +624,12 @@ async function loadLogs(): Promise<void> {
   }
 }
 
+/** 共享组件留痕翻页回传（DB-44）：更新页号并按既有逻辑重新拉取（无乐观更新）。 */
+function onLogsPageChange(page: number): void {
+  logsPage.value = page
+  void loadLogs()
+}
+
 onMounted(() => {
   void loadAll()
 })
@@ -831,15 +707,6 @@ onMounted(() => {
   font-size: 12px;
   white-space: pre-wrap;
   word-break: break-all;
-}
-
-.hash-cell {
-  cursor: help;
-}
-
-.expand-slot-line {
-  padding: 2px 0;
-  font-size: 13px;
 }
 
 :deep(.denied-row) {

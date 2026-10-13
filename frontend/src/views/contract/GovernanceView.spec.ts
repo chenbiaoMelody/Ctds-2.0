@@ -8,6 +8,7 @@ import {
   getGovernanceDetail,
   forceTerminate,
   listContractActionLogs,
+  getTemplate,
   type GovernanceContract,
   type GovernanceDetail,
   type ContractActionLogItem,
@@ -30,12 +31,14 @@ vi.mock('../../api/contract', () => ({
   getGovernanceDetail: vi.fn(),
   forceTerminate: vi.fn(),
   listContractActionLogs: vi.fn(),
+  getTemplate: vi.fn(),
 }))
 
 const mockedGovernance = vi.mocked(listGovernanceContracts)
 const mockedGovernanceDetail = vi.mocked(getGovernanceDetail)
 const mockedForce = vi.mocked(forceTerminate)
 const mockedLogs = vi.mocked(listContractActionLogs)
+const mockedTemplate = vi.mocked(getTemplate)
 
 function governanceItem(over: Partial<GovernanceContract> = {}): GovernanceContract {
   return {
@@ -149,7 +152,7 @@ beforeEach(() => {
   localStorage.clear()
   document.body.innerHTML = ''
   vi.restoreAllMocks()
-  for (const fn of [mockedGovernance, mockedGovernanceDetail, mockedForce, mockedLogs]) {
+  for (const fn of [mockedGovernance, mockedGovernanceDetail, mockedForce, mockedLogs, mockedTemplate]) {
     fn.mockReset()
   }
   setDemoSubject('S20260925000001')
@@ -241,6 +244,39 @@ describe('治理直查详情（T17 / R11）', () => {
     await nextBtn.trigger('click')
     await flushPromises()
     expect(mockedLogs).toHaveBeenCalledWith(expect.objectContaining({ pageNum: 2 }))
+  })
+})
+
+describe('治理侧槽位名口径对齐（DB-44 Q3-A）', () => {
+  const FRAMEWORK = { slots: [{ key: 'subject_matter', name: '标的', required: true, guide: null }] }
+
+  it('直查触发 1 次只读模板框架请求；框架命中 → 条款标签显示"名称（键）"', async () => {
+    mockedGovernanceDetail.mockResolvedValue(governanceDetail())
+    mockedTemplate.mockResolvedValue({
+      templateNo: 'CT000001',
+      name: '通用合约模板',
+      type: { code: 'GENERAL', displayName: '通用' },
+      currentVersion: 1,
+      clauseFramework: FRAMEWORK,
+      publishedAt: null,
+    })
+    const wrapper = await mountPage()
+    await button(wrapper, '查看治理详情')!.trigger('click')
+    await flushPromises()
+    expect(mockedTemplate).toHaveBeenCalledWith('CT000001')
+    expect((document.body.textContent ?? '').replace(/\s+/g, '')).toContain('标的（subject_matter）')
+  })
+
+  it('框架不可达（1008C0003）→ 静默回退键名，不弹错误提示（与详情页同口径）', async () => {
+    mockedGovernanceDetail.mockResolvedValue(governanceDetail())
+    mockedTemplate.mockRejectedValue(new ApiError('1008C0003', '主体未入驻或不存在，无法浏览模板'))
+    const wrapper = await mountPage()
+    await button(wrapper, '查看治理详情')!.trigger('click')
+    await flushPromises()
+    const text = document.body.textContent ?? ''
+    expect(text).toContain('subject_matter')
+    expect(text.replace(/\s+/g, '')).not.toContain('（subject_matter）')
+    expect(text).not.toContain('主体未入驻或不存在，无法浏览模板')
   })
 })
 

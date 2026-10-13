@@ -52,7 +52,7 @@ const identitySources = import.meta.glob('../../stores/demoIdentity.ts', {
 const withoutSpecs = (sources: Record<string, string>): Record<string, string> =>
   Object.fromEntries(Object.entries(sources).filter(([path]) => !path.includes('.spec.')))
 
-/** 界面源集（四视图 + 两共享组件 + api/contract.ts），文案与 fetch 口径的作用域。 */
+/** 界面源集（四视图 + 三共享组件 + api/contract.ts），文案与 fetch 口径的作用域（DB-44：新增只读五分区共享组件）。 */
 function uiScanned(): string {
   return [
     ...Object.values(withoutSpecs(viewSources)),
@@ -74,15 +74,35 @@ function withoutComments(source: string): string {
 }
 
 describe('合约界面源集守卫（T20）', () => {
-  it('扫描目标非空：四个合约视图、两个共享组件与 api/contract.ts 均被读入', () => {
+  it('扫描目标非空：四个合约视图、三个共享组件与 api/contract.ts 均被读入', () => {
     const vuePaths = Object.keys(withoutSpecs(viewSources))
     expect(vuePaths.length).toBe(4)
     expect(vuePaths.some((p) => p.includes('TemplateView'))).toBe(true)
     expect(vuePaths.some((p) => p.includes('WorkbenchView'))).toBe(true)
     expect(vuePaths.some((p) => p.includes('ContractDetailView'))).toBe(true)
     expect(vuePaths.some((p) => p.includes('GovernanceView'))).toBe(true)
-    expect(Object.keys(withoutSpecs(componentSources)).length).toBe(2)
+    const componentPaths = Object.keys(withoutSpecs(componentSources))
+    expect(componentPaths.length).toBe(3)
+    expect(componentPaths.some((p) => p.includes('ClauseEditor'))).toBe(true)
+    expect(componentPaths.some((p) => p.includes('StrategyEditor'))).toBe(true)
+    expect(componentPaths.some((p) => p.includes('ContractReadOnlySections'))).toBe(true)
     expect(Object.keys(withoutSpecs(apiSources)).length).toBe(1)
+  })
+
+  it('只读五分区单点：策略行渲染仅存于共享组件，两视图均引用之（DB-44）', () => {
+    const views = withoutSpecs(viewSources)
+    const sections = withoutSpecs(componentSources)['./components/ContractReadOnlySections.vue'] ?? ''
+    expect(sections).not.toBe('')
+    // 视图内不再定义策略行渲染（收敛单点——分散定义即违规）
+    for (const source of Object.values(views)) {
+      expect(hits(source, 'function strategyLine')).toBe(0)
+    }
+    expect(hits(sections, 'function strategyLine')).toBe(1)
+    // 两视图均须引用共享组件（抽了组件却不用 = 复制仍在 → 必红）
+    expect(hits(views['./ContractDetailView.vue'] ?? '', 'ContractReadOnlySections')).toBeGreaterThan(0)
+    expect(hits(views['./GovernanceView.vue'] ?? '', 'ContractReadOnlySections')).toBeGreaterThan(0)
+    // 反向探针：散写样本必被同一口径命中
+    expect(hits('function strategyLine(el: string) { return el }', 'function strategyLine')).toBe(1)
   })
 
   it('合约视图与 API 模块不得直接 fetch（必须经 apiJson 封装）', () => {
