@@ -29,7 +29,7 @@
 | 同文件 裸字面量守卫 | 17 项中文清单（含 `治理查看` / `域内范围` 等）扫 `views + components + api` | 新组件**自动**纳入扫描（glob `./components/*.vue`）；不放松 |
 | 同文件 fetch / admin 字面量守卫 | `fetch(` 0 命中；`'admin'` 仅限 `demoIdentity.ts` + `api/contract.ts` | 新组件同为受管域；不得引入 `fetch(` / `'admin'` |
 | 同形提示守卫 | 常量逐字 + 页面不得散写（反向探针） | 零变 |
-| `GovernanceView.spec.ts` | 4 组 8 例（列表 / 直查只读分区 + 反向探针无动作条 / 留痕分页 / 强制终止 / 认证引导） | 全部保留；另**新增**锚（§5.2） |
+| `GovernanceView.spec.ts` | 4 组 9 例（基线实测 9 例；原记 8 例，评审修复段补正——列表 / 直查只读分区 + 反向探针无动作条 / 留痕分页 / 强制终止 / 认证引导） | 全部保留；另**新增**锚（§5.2） |
 | `ContractDetailView.spec.ts` | 总览 / 条款 / 版本链 / 协商 / 签署 / 策略与使用 / 留痕等 | 全部保留（`vi.mock` 未含 `getTemplate` → framework 恒 null → 走键名回退腿，现状不变） |
 
 > **注（现状实证）**：`ContractDetailView.spec.ts` 的 `vi.mock('../../api/contract')` **未列 `getTemplate`**，故详情页测试中框架恒不可达 → `slotName()` 恒回退键名；"槽位名命中"这一腿当前**无测试覆盖**（本卡补，见 §5.1 t2）。
@@ -148,7 +148,7 @@ function strategyLine(element: 'quota' | 'term' | 'purpose' | 'territory'): stri
 | g1 | `ContractSourceGuard.spec.ts` | 组件计数 2→**3** + 断言路径含 `ContractReadOnlySections.vue`（增强，不放松其它断言） |
 | g2 | `ContractSourceGuard.spec.ts` | **单点锚**：两视图源码 `strategyLine` 定义命中 = 0；`ContractReadOnlySections.vue` 内命中 = 1；两视图源码均引用 `ContractReadOnlySections`（缺引用 = 抽了组件却没用 → 必红） |
 | g3 | `GovernanceView.spec.ts` | 治理直查触发 `getTemplate(templateNo)`（mock 断言）；框架不可达（mock reject）→ 静默回退键名且**不弹错误**（断言无错误提示文本） |
-| g4 | `GovernanceView.spec.ts` | 既有 8 例**逐例保留**（列表 / 直查只读分区 + 反向探针 / 留痕分页 / 强制终止 / 认证引导） |
+| g4 | `GovernanceView.spec.ts` | 既有 9 例**逐例保留**（基线实测 9 例；原记 8 例，评审修复段补正；列表 / 直查只读分区 + 反向探针 / 留痕分页 / 强制终止 / 认证引导） |
 
 ### 5.3 回归与门禁
 
@@ -197,3 +197,4 @@ function strategyLine(element: 'quota' | 'term' | 'purpose' | 'territory'): stri
 | E2 | §2.2 两视图改造 | 同上 | 组件新增具名插槽 **`#before-clause`**：详情视角把"协商动作条"置于总览（含终止提示）之后、条款全文之前——保持既有顺序**零变更**；治理视角不传 | 2026-10-12 编码批 |
 | E3 | §2.1 组件契约 | `clauseVersions` / `actionLogs` 为必填 props | 实施取 `withDefaults` 给两者**空数组缺省**（纯展示组件对入参健壮；消除运行期 prop 类型告警），业务语义不变 | 2026-10-12 编码批 |
 | E4 | §6 前置检查第 6 项 | 治理侧 R5 可达性"实测留痕" | 演示环境停止态下**未做端到端实测**，改为静态权限口径核验（R5 = 认证 + `contract.template.read` + ADMITTED；失败静默回退）并登记为交付观察项；端到端观察随真机走查补 | 2026-10-12 编码批 |
+| E5 | §2.3 note（"列宽差异（留痕 6 列）建议统一采用详情侧宽度"） | 仅点名留痕 6 列 | **版本链列宽一并随组件统一为详情侧**（提案方 160→170 / 提案时间 170→180 / 变更明细 `min-width` 180→200），治理侧出现可见样式微调、**零业务影响**——按 §2.3 note 同口径登记为有意统一（评审① P3 闭环） | 2026-10-13 评审修复段 |

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import ElementPlus from 'element-plus'
 import ContractReadOnlySections from './ContractReadOnlySections.vue'
+import { POLICY_ELEMENT_LABELS } from '../../../constants/contract'
 import type {
   ClauseFramework,
   ClauseValues,
@@ -189,6 +190,24 @@ describe('条款全文标签两腿（t2 / 槽位名单点）', () => {
   })
 })
 
+describe('条款全文边界（hifi §4.1：clauseValues.slots 为空对象）', () => {
+  it('槽位为空对象：条款全文区渲染为空、不崩溃，其余分区照常', async () => {
+    mountSections()
+    await flushPromises()
+    const baseline = normalizedText()
+    mountSections({ detail: detailFixture({ clauseValues: { slots: {}, strategy: FULL_STRATEGY } }) })
+    await flushPromises()
+    const text = bodyText()
+    const normalized = normalizedText()
+    // 对照腿：默认 fixture 条款全文含槽位行（标签「subject_matter」+ 取值紧邻）
+    expect(baseline).toContain('subject_matter城市餐饮单位经营数据集')
+    // 空 slots：该槽位行消失（空 el-descriptions 渲染），页面不崩溃、策略五要素照常
+    expect(normalized).not.toContain('subject_matter城市餐饮单位经营数据集')
+    expect(text).toContain('当前条款全文')
+    expect(normalized).toContain(`${POLICY_ELEMENT_LABELS.quota}次数上限100`)
+  })
+})
+
 describe('策略五要素（t3 / strategyLine 单点）', () => {
   it('启用要素逐项渲染；未启用 → "未启用"；空取值 → "—"', async () => {
     mountSections()
@@ -198,7 +217,11 @@ describe('策略五要素（t3 / strategyLine 单点）', () => {
     expect(text).toContain('2026-10-08 ~ 2026-11-07')
     expect(text).toContain('风控建模')
     expect(text).toContain('本市域')
-    expect(text).toContain('是')
+    // noRedistribution 启用：渲染文本中「要素标签 + 取值」紧邻为「禁止再分发 + 是」
+    // （原为单字符 expect(text).toContain('是')，属弱断言，故收紧到"标签+取值"配对）
+    expect(normalizedText()).toContain(`${POLICY_ELEMENT_LABELS.noRedistribution}是`)
+    // 默认 fixture 六要素无一"未启用"（与上一格互为反向对照，防"是"命中其它文案）
+    expect(text).not.toContain('未启用')
     expect(text).toContain('未声明')
   })
 
@@ -237,7 +260,13 @@ describe('条款版本链（t4 / R8；Q2-2-A 双方确认时间列两视角齐�
     expect(text).toContain('需求方：2026-10-11T11:00:00')
     expect(text).toContain('提供方：—')
     expect(text).toContain('subject_matter：初始标的 → 变更后标的')
-    expect(wrapper.find('.el-table__expand-icon').exists()).toBe(true)
+    // 展开行「键：值」：点击首行展开图标后断言展开面板内容（原仅断言图标存在，属近似断言）
+    const expandIcon = wrapper.find('.el-table__expand-icon')
+    expect(expandIcon.exists()).toBe(true)
+    await expandIcon.trigger('click')
+    await flushPromises()
+    const expandedLines = wrapper.findAll('.expand-slot-line').map((node) => node.text().replace(/\s+/g, ''))
+    expect(expandedLines).toContain('subject_matter：初始标的')
   })
 
   it('治理视角：双方确认时间列同样齐备', async () => {
