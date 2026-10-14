@@ -27,6 +27,19 @@
 #   S11b mvn nonzero-exit branch (清债卡1 复审尾巴) -> stub mvn exits 3 = coverage FAIL naming the
 #                                    exit code (the threshold probe's exit-0 stub no longer covers
 #                                    the "mvn exit != 0 -> FAIL" branch)
+#   S12 mvn success-state log (DB-43 ①) -> stub mvn exit 0: compile PASS AND
+#                                    %TEMP%\ctds-gate-compile-out.log EXISTS, carrying the
+#                                    stage/command/exitCode summary + full original output
+#                                    (structural fix of the "0-byte log" lesson: success is
+#                                    evidenced too; the PASS report row keeps its original format)
+#   S13 npm failure full-output log (DB-43 ③) -> stub npm exit 1: frontendTypeCheck FAIL, out.log
+#                                    carries exitCode + stdout/stderr markers (the DB-44 "error
+#                                    text unobtainable" loss scenario's positive anchor) and the
+#                                    report FAIL row carries the full-output path
+#   S14 timeout process-tree cleanup (DB-43 Q1-A / 跟踪-23) -> stub mvn starts a grandchild then
+#                                    hangs with timeoutSeconds=2: FAIL "timed out", out.log
+#                                    "(TIMED OUT)", grandchild PID GONE (taskkill /T; the old
+#                                    Kill()-only behaviour leaves the grandchild alive = red)
 # How: every scenario builds a hermetic fixture repo under %TEMP% (git init + git add, cheap stages
 # only), generates its config FROM THE REAL gates-config.json (so the real exclude list is what gets
 # exercised), runs scripts/gates/run-gates.ps1 against it and asserts on the report file / stdout /
@@ -106,14 +119,28 @@ function New-FixtureConfig([string]$dir, [string]$fileName, [bool]$mavenStages, 
     [System.IO.File]::WriteAllText($path, ($cfgObj | ConvertTo-Json -Depth 10), $utf8NoBom)
     return $path
 }
-function Invoke-Runner([string]$repo, [string]$cfgPath, [string]$reportPath, [string]$scenario) {
+function Invoke-Runner([string]$repo, [string]$cfgPath, [string]$reportPath, [string]$scenario, [switch]$detached) {
     $outFile = Join-Path $script:workDir ($scenario + ".out.txt")
     $runnerArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $runner, "-RepoRoot", $repo, "-ConfigPath", $cfgPath, "-Scenario", $scenario)
     if ($reportPath -ne "") { $runnerArgs += @("-ReportPath", $reportPath) }
-    & powershell @runnerArgs *> $outFile
-    $code = $LASTEXITCODE
+    if ($detached) {
+        # S14 专用（DB-43）：超时注入的孙进程在旧实现下会幸存并继承本重定向句柄，
+        # `& powershell *> $outFile` 将永远等不到 EOF（红相期挂起）。Start-Process +
+        # WaitForExit 只等待直接子进程退出；不重定向 std（S14 断言全在报告文件上，
+        # 运行器正常路径对 stdout 零输出）——带 -RedirectStandardOutput 时
+        # Start-Process -PassThru 的 ExitCode 不刷新（已实测复证），故此处不重定向。
+        # Start-Process 不会自动给含空格的参数加引号，这里逐元素补齐。
+        $quoted = @()
+        foreach ($a in $runnerArgs) { if ($a -match '\s') { $quoted += ('"' + $a + '"') } else { $quoted += $a } }
+        $sp = Start-Process -FilePath "powershell" -ArgumentList $quoted -WindowStyle Hidden -PassThru
+        $sp.WaitForExit()
+        $code = $sp.ExitCode
+    } else {
+        & powershell @runnerArgs *> $outFile
+        $code = $LASTEXITCODE
+    }
     $text = ""
-    if (Test-Path $outFile) { $text = Get-Content -Path $outFile -Raw }
+    if (Test-Path $outFile) { try { $text = Get-Content -Path $outFile -Raw } catch { $text = "" } }
     return [pscustomobject]@{ ExitCode = $code; Stdout = $text }
 }
 
@@ -124,6 +151,12 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) { Write-Output "[HARNE
 if (-not (Get-Command powershell -ErrorAction SilentlyContinue)) { Write-Output "[HARNESS-ERROR] powershell not found on PATH"; exit 2 }
 $script:workDir = Join-Path $env:TEMP ("ctds-gates-selftest-" + (Get-Date -Format "yyyyMMdd-HHmmss"))
 New-Item -ItemType Directory -Path $script:workDir -Force | Out-Null
+# DB-43：%TEMP%\ctds-gate-<stage>-out.log 是固定名（= 最近一次该阶段运行，含 selftest fixture
+# 运行——已知特性，README 变更条目有述）。开场统一清理：上一次运行（或上一次 selftest）的
+# 残留会让本次"out.log 存在性"类断言假绿，故每次开场先清到白纸状态。
+foreach ($stale in (Get-ChildItem $env:TEMP -Filter "ctds-gate-*-out.log" -ErrorAction SilentlyContinue)) {
+    Remove-Item $stale.FullName -Force -ErrorAction SilentlyContinue
+}
 Write-Output ("C-TDS gate runner selftest - scenario workdir: " + $script:workDir)
 Write-Output ("runner: " + $runner)
 
@@ -439,6 +472,144 @@ $repExitText = Read-Report $repExit
 Assert-Contains $repExitText "| coverage | FAIL |" "S11b nonzero mvn exit turns coverage FAIL"
 Assert-Contains $repExitText "mvn coverage exit 3" "S11b the FAIL names the real Maven exit code"
 
+# ---------- S12: mvn success-state log (DB-43 ① - success must be evidenced too) ----------
+# stub mvn exit 0 + marker output -> compile PASS and %TEMP%\ctds-gate-compile-out.log must exist
+# with the machine-checkable summary (stage/command/exitCode) and the full original output.
+# The PASS report row keeps its ORIGINAL format (no path appended - 最小改动, hifi §2.2-3).
+Write-Output ""
+Write-Output "S12 [mvn success-state log] expect: compile PASS + out.log with 'exitCode: 0' + stub marker"
+$fix = New-Fixture "s12"
+Initialize-FixtureGit $fix
+$stubDir12 = Join-Path $fix "stub-bin"
+New-Item -ItemType Directory -Path $stubDir12 -Force | Out-Null
+$stubMarker12 = "DB43-S12-STUB-MARKER"
+[System.IO.File]::WriteAllText((Join-Path $stubDir12 "mvn.cmd"), "@echo off" + [Environment]::NewLine + "echo " + $stubMarker12 + [Environment]::NewLine + "exit /b 0" + [Environment]::NewLine, $utf8NoBom)
+# 真配置里的 javaHome 原样传入（不写死机器路径；env JAVA_HOME 在时由 runner 优先使用）
+$realJavaHome = (ConvertFrom-Json -InputObject ([System.IO.File]::ReadAllText($realConfig, [System.Text.Encoding]::UTF8))).toolchain.javaHome
+$cfg12 = New-FixtureConfig $fix "cfg-s12.json" $true $realJavaHome $null
+$rep12 = Join-Path $script:workDir "s12-report.md"
+$outLog12 = Join-Path $env:TEMP "ctds-gate-compile-out.log"
+$savedPath12 = $env:PATH
+try {
+    $env:PATH = $stubDir12 + ";" + $env:PATH
+    $r12 = Invoke-Runner $fix $cfg12 $rep12 "selftest-s12-mvn-success-log"
+} finally { $env:PATH = $savedPath12 }
+Assert-True ($r12.ExitCode -eq 0) ("S12 exit code 0 (got " + $r12.ExitCode + ")")
+$rep12Text = Read-Report $rep12
+Assert-Contains $rep12Text "| compile | PASS |" "S12 compile PASS (stub exit 0)"
+Assert-Contains $rep12Text "- ExitCode: 0" "S12 report header declares exit code 0"
+Assert-NotContains $rep12Text "full output:" "S12 the PASS row keeps its original format (no path appended)"
+Assert-True (Test-Path $outLog12) "S12 out.log EXISTS for the success state (the 0-byte-log lesson fixed)"
+$out12 = ""
+if (Test-Path $outLog12) { $out12 = [System.IO.File]::ReadAllText($outLog12, [System.Text.Encoding]::UTF8) }
+Assert-Contains $out12 "stage: compile" "S12 out.log carries the stage summary line"
+Assert-Contains $out12 "exitCode: 0" "S12 out.log carries exitCode: 0 (machine-checkable proof)"
+Assert-Contains $out12 $stubMarker12 "S12 out.log carries the full original output (stub marker)"
+foreach ($n in @("compile", "lint", "unitTest")) {
+    $p = Join-Path $env:TEMP ("ctds-gate-" + $n + "-out.log")
+    if (Test-Path $p) { Remove-Item $p -Force -ErrorAction SilentlyContinue }
+}
+
+# ---------- S13: npm failure full-output log (DB-43 ③ - failure evidence is never lost) ----------
+# stub npm exits 1 with markers on stdout/stderr -> frontendTypeCheck FAIL, out.log carries the
+# exitCode and both markers (DB-44 "error text unobtainable" positive anchor), and the report
+# FAIL row carries the full-output path.
+Write-Output ""
+Write-Output "S13 [npm failure full-output log] expect: FAIL + out.log 'exitCode: 1' + markers + report 'full output:'"
+$fix = New-Fixture "s13"
+Initialize-FixtureGit $fix
+$fixFrontend13 = Join-Path $fix "frontend"
+New-Item -ItemType Directory -Path $fixFrontend13 -Force | Out-Null
+$stubMarker13 = "DB43-S13-STUB-MARKER"
+[System.IO.File]::WriteAllText((Join-Path $fixFrontend13 "fail1.js"),
+    ("process.stdout.write('" + $stubMarker13 + "-out\n'); process.stderr.write('" + $stubMarker13 + "-err\n'); process.exit(1)" + [Environment]::NewLine),
+    $utf8NoBom)
+$pkgJson13 = Join-Path $fixFrontend13 "package.json"
+[System.IO.File]::WriteAllText($pkgJson13, ('{"name":"fixture-frontend","version":"0.0.0","private":true,"scripts":{"typecheck":"node fail1.js"}}' + [Environment]::NewLine), $utf8NoBom)
+$cfg13 = New-FixtureConfig $fix "cfg-s13.json" $false "" $null
+$cfgObj13 = ConvertFrom-Json -InputObject ([System.IO.File]::ReadAllText($cfg13, [System.Text.Encoding]::UTF8))
+$cfgObj13.stages.frontendTypeCheck.enabled = $true
+[System.IO.File]::WriteAllText($cfg13, ($cfgObj13 | ConvertTo-Json -Depth 10), $utf8NoBom)
+$rep13 = Join-Path $script:workDir "s13-report.md"
+$outLog13 = Join-Path $env:TEMP "ctds-gate-frontendTypeCheck-out.log"
+$r13 = Invoke-Runner $fix $cfg13 $rep13 "selftest-s13-npm-failure-log"
+Assert-True ($r13.ExitCode -eq 1) ("S13 exit code 1 (got " + $r13.ExitCode + ")")
+$rep13Text = Read-Report $rep13
+Assert-Contains $rep13Text "| frontendTypeCheck | FAIL |" "S13 the failing typecheck turns the stage FAIL"
+Assert-Contains $rep13Text "full output:" "S13 the FAIL row carries the full-output path marker"
+Assert-True (Test-Path $outLog13) "S13 out.log EXISTS (failure evidence is no longer lost)"
+$out13 = ""
+if (Test-Path $outLog13) { $out13 = [System.IO.File]::ReadAllText($outLog13, [System.Text.Encoding]::UTF8) }
+Assert-Contains $out13 "exitCode: 1" "S13 out.log carries exitCode: 1"
+Assert-Contains $out13 ($stubMarker13 + "-out") "S13 out.log carries the stdout marker (error text obtainable)"
+Assert-Contains $out13 ($stubMarker13 + "-err") "S13 out.log carries the stderr marker"
+if (Test-Path $outLog13) { Remove-Item $outLog13 -Force -ErrorAction SilentlyContinue }
+
+# ---------- S14: timeout process-tree cleanup (DB-43 Q1-A / 跟踪-23 剩余) ----------
+# stub mvn behaves per stage: for the compile goal it starts a grandchild (node, writes its PID
+# to a file) then hangs; for the other goals it exits 0 immediately (so only ONE grandchild is
+# ever spawned). compile timeoutSeconds=2 -> the runner times out and must clean the WHOLE tree.
+# The old Kill()-only behaviour leaves the grandchild alive (red); taskkill /T cleans it (green).
+# Both the grandchild and the hang-loop redirect to nul so they never hold the runner's stdout
+# pipe (an inherited pipe handle would block the harness redirection - a red-phase-only hang).
+# The selftest kills any surviving grandchild itself so a red run never leaks an orphan process.
+Write-Output ""
+Write-Output "S14 [timeout process-tree cleanup] expect: FAIL 'timed out' + out.log '(TIMED OUT)' + grandchild PID gone"
+$fix = New-Fixture "s14"
+Initialize-FixtureGit $fix
+$stubDir14 = Join-Path $fix "stub-bin"
+New-Item -ItemType Directory -Path $stubDir14 -Force | Out-Null
+$childPidFile14 = Join-Path $fix "child.pid"
+$childJs14 = Join-Path $fix "child.js"
+$stubMarker14 = "DB43-S14-STUB-MARKER"
+[System.IO.File]::WriteAllText($childJs14, "require('fs').writeFileSync(process.argv[2], String(process.pid)); try { require('fs').closeSync(1); } catch (e) {} try { require('fs').closeSync(2); } catch (e) {} setInterval(function () {}, 1000);" + [Environment]::NewLine, $utf8NoBom)
+[System.IO.File]::WriteAllText((Join-Path $stubDir14 "mvn.cmd"),
+    ("@echo off" + [Environment]::NewLine +
+     "echo " + $stubMarker14 + [Environment]::NewLine +
+     "echo %* | findstr /c:`"compile`" >nul" + [Environment]::NewLine +
+     "if errorlevel 1 exit /b 0" + [Environment]::NewLine +
+     "start /b node `"" + $childJs14 + "`" `"" + $childPidFile14 + "`" >nul 2>&1" + [Environment]::NewLine +
+     "ping -n 61 127.0.0.1 >nul 2>&1" + [Environment]::NewLine +
+     "exit /b 0" + [Environment]::NewLine),
+    $utf8NoBom)
+$cfg14 = New-FixtureConfig $fix "cfg-s14.json" $true $realJavaHome $null
+$cfgObj14 = ConvertFrom-Json -InputObject ([System.IO.File]::ReadAllText($cfg14, [System.Text.Encoding]::UTF8))
+# compile 段在真配置中无 timeoutSeconds 属性（仅 unitTest 有）——先补属性再设值（V1.5 起的可配置面）
+Add-Member -InputObject $cfgObj14.stages.compile -MemberType NoteProperty -Name timeoutSeconds -Value 2 -Force
+[System.IO.File]::WriteAllText($cfg14, ($cfgObj14 | ConvertTo-Json -Depth 10), $utf8NoBom)
+$rep14 = Join-Path $script:workDir "s14-report.md"
+$outLog14 = Join-Path $env:TEMP "ctds-gate-compile-out.log"
+$savedPath14 = $env:PATH
+try {
+    $env:PATH = $stubDir14 + ";" + $env:PATH
+    $r14 = Invoke-Runner $fix $cfg14 $rep14 "selftest-s14-timeout-tree" -detached
+} finally { $env:PATH = $savedPath14 }
+Assert-True ($r14.ExitCode -eq 1) ("S14 exit code 1 (got " + $r14.ExitCode + ")")
+$rep14Text = Read-Report $rep14
+Assert-Contains $rep14Text "| compile | FAIL |" "S14 compile FAIL on timeout"
+Assert-Contains $rep14Text "timed out after 2s" "S14 the FAIL names the timeout budget"
+Assert-Contains $rep14Text "full output:" "S14 the timeout FAIL row carries the full-output path"
+Assert-Contains $rep14Text "| lint | PASS |" "S14 the other Maven stages still ran (gate was NOT aborted)"
+Assert-True (Test-Path $outLog14) "S14 out.log EXISTS for the timeout state"
+$out14 = ""
+if (Test-Path $outLog14) { $out14 = [System.IO.File]::ReadAllText($outLog14, [System.Text.Encoding]::UTF8) }
+Assert-Contains $out14 "(TIMED OUT)" "S14 out.log marks the TIMED OUT state"
+Assert-Contains $out14 $stubMarker14 "S14 out.log carries the partial output captured before the timeout"
+$childPid14 = 0
+if (Test-Path $childPidFile14) {
+    $childPidText14 = ([System.IO.File]::ReadAllText($childPidFile14, [System.Text.Encoding]::UTF8)).Trim()
+    $null = [int]::TryParse($childPidText14, [ref]$childPid14)
+}
+$childAlive14 = $false
+if ($childPid14 -gt 0) { $childAlive14 = $null -ne (Get-Process -Id $childPid14 -ErrorAction SilentlyContinue) }
+Assert-True (-not $childAlive14) ("S14 the grandchild was cleaned up with the tree (pid " + $childPid14 + " alive=" + $childAlive14 + ")")
+# 兜底：红相期旧实现仅杀 cmd.exe，node 幸存——由 selftest 收杀掉，绝不留孤儿进程
+if ($childAlive14) { try { Stop-Process -Id $childPid14 -Force -ErrorAction SilentlyContinue } catch { } }
+foreach ($n in @("compile", "lint", "unitTest")) {
+    $p = Join-Path $env:TEMP ("ctds-gate-" + $n + "-out.log")
+    if (Test-Path $p) { Remove-Item $p -Force -ErrorAction SilentlyContinue }
+}
+
 
 } catch {
     Write-Output ""
@@ -452,6 +623,11 @@ if ($script:failures -eq 0) {
     Write-Output ("SELFTEST PASS - " + $script:assertions + " assertion(s), 0 failure(s)")
 } else {
     Write-Output ("SELFTEST FAIL - " + $script:assertions + " assertion(s), " + $script:failures + " failure(s)")
+}
+# DB-43：收尾统一清理本次运行产生的全部 out.log（S11/S11b 的 coverage/mutationTest FAIL 也会
+# 落盘——fixture 运行写的是同一固定名，绝不把 fixture 产物留在真实门禁的记录位上）
+foreach ($produced in (Get-ChildItem $env:TEMP -Filter "ctds-gate-*-out.log" -ErrorAction SilentlyContinue)) {
+    Remove-Item $produced.FullName -Force -ErrorAction SilentlyContinue
 }
 if ($KeepFixture -or $script:failures -gt 0) {
     Write-Output ("fixture workdir kept for inspection: " + $script:workDir)
