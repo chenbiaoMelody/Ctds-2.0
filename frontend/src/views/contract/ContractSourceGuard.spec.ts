@@ -1,4 +1,10 @@
+// 双源守卫真读后端源文件需要 node 内置模块类型（node:fs / node:path / node:url）——
+// tsconfig.app.json 的 types 白名单只含 vite/client，用三斜杠引用按文件引入（零配置改动）。
+/// <reference types="node" />
 import { describe, it, expect } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import {
   TEMPLATE_NOT_ACCESSIBLE_TIP,
   TEMPLATE_MAINTAIN_FORBIDDEN_TIP,
@@ -20,7 +26,10 @@ import {
  * ③ **'admin' 角色头字面量仅限 `stores/demoIdentity.ts` 与 `api/contract.ts`**（T18 源集锚——
  *    普通档请求携带 admin 会让模板维护类与"越权被拒"类剧本步骤被放行，让判定失真）；
  * ④ 同形提示常量与后端文案逐字一致，页面源集不得散写（反向探针：改文案 / 散写字面量必红）；
- * ⑤ 详情页无数据本体段落。
+ * ⑤ 详情页无数据本体段落；
+ * ⑥ **同形文案双源守卫（DB-43）**：前端 8 条 *_TIP 是后端 `ContractErrorCodes.java` 8 条
+ *    *_MESSAGE 的副本（后端为真源）——真读后端源文件逐字比对，消灭"人工比对"依赖
+ *    （后端改了前端没跟 → 红；映射表人工维护 8 对，新增同形文案须同步扩表）。
  */
 const viewSources = import.meta.glob('./*.vue', {
   query: '?raw',
@@ -191,5 +200,115 @@ describe('详情页数据本体零接触守卫（§6.4-B 源集面）', () => {
     expect(hits(detailSource, '本体')).toBe(0)
     // 反向探针：出现本体段落结构的样本必被同一口径命中
     expect(hits(withoutComments('<div class="data-body">数据本体</div>'), '本体')).toBe(1)
+  })
+})
+
+// ---- 同形文案双源守卫（DB-43：真读后端真源，消灭"人工比对"依赖）----
+// 前端 constants/contract.ts 的 8 条 *_TIP 是后端 ContractErrorCodes.java 的 8 条 *_MESSAGE
+// 的副本（后端为文案真源，该文件 Javadoc："对外文案为服务端常量"）。既有守卫比的是"测试内
+// 第三份字面量"；本块真读后端源文件逐字比对：后端改了前端没跟 → 门禁前端测试红灯。
+// 映射表为人工维护 8 对：后端新增同形对外文案且前端建副本时须同步扩表（hifi §2.3 规则）。
+const TIP_TO_MESSAGE: Array<[string, string]> = [
+  ['TEMPLATE_NOT_ACCESSIBLE_TIP', 'TEMPLATE_NOT_FOUND_OR_UNAVAILABLE_MESSAGE'],
+  ['TEMPLATE_MAINTAIN_FORBIDDEN_TIP', 'TEMPLATE_FORBIDDEN_MESSAGE'],
+  ['ADMISSION_REQUIRED_BROWSE_TIP', 'BROWSE_ADMISSION_REQUIRED_MESSAGE'],
+  ['ADMISSION_REQUIRED_INITIATE_TIP', 'INITIATE_ADMISSION_REQUIRED_MESSAGE'],
+  ['ADMISSION_REQUIRED_MAINTAIN_TIP', 'MAINTAIN_ADMISSION_REQUIRED_MESSAGE'],
+  ['CONTRACT_NOT_ACCESSIBLE_TIP', 'CONTRACT_NOT_VISIBLE_MESSAGE'],
+  ['PRODUCT_NOT_DEALABLE_TIP', 'PRODUCT_NOT_AVAILABLE_FOR_DEAL_MESSAGE'],
+  ['TEMPLATE_NOT_INITIABLE_TIP', 'TEMPLATE_NOT_AVAILABLE_FOR_INITIATION_MESSAGE'],
+]
+
+/** 解析前端常量源文本：export const X_TIP = '...'（checkstyle 无对应面，正则只认规整单行形态）。 */
+function parseExportedTips(source: string): Record<string, string> {
+  const out: Record<string, string> = {}
+  const re = /export const (\w+_TIP) = '([^']*)'/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(source)) !== null) {
+    out[m[1]] = m[2]
+  }
+  return out
+}
+
+/** 解析后端码表源文本：public static final String X_MESSAGE = "...";（单行形态由 checkstyle 保证）。 */
+function parseStaticMessages(source: string): Record<string, string> {
+  const out: Record<string, string> = {}
+  const re = /public static final String (\w+_MESSAGE) = "([^"]*)";/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(source)) !== null) {
+    out[m[1]] = m[2]
+  }
+  return out
+}
+
+/** 纯函数：按映射表比对两册文案，产出差异清单（供断言与反向探针复用）。 */
+function diffTips(
+  tips: Record<string, string>,
+  messages: Record<string, string>,
+  mapping: Array<[string, string]>,
+): string[] {
+  const diffs: string[] = []
+  for (const [tip, message] of mapping) {
+    const tipValue = tips[tip]
+    const messageValue = messages[message]
+    if (tipValue === undefined) {
+      diffs.push(tip + ' (前端副本缺失)')
+    } else if (messageValue === undefined) {
+      diffs.push(message + ' (后端真源缺失)')
+    } else if (tipValue !== messageValue) {
+      diffs.push(tip + '=' + JSON.stringify(tipValue) + ' vs ' + message + '=' + JSON.stringify(messageValue))
+    }
+  }
+  return diffs
+}
+
+describe('同形文案双源守卫（DB-43：前端副本 vs 后端真源）', () => {
+  const frontendConstants = Object.values(constantsSources)[0] ?? ''
+  // 跨端读取实现说明（hifi §2.3 实施澄清 E2）：路径构造用 fileURLToPath(import.meta.url) +
+  // path.resolve（相对本 spec 文件定位，不依赖 cwd）。勿用 new URL(rel, import.meta.url)——
+  // 该形态会被 Vite 的"资产 URL"改写劫持成 dev-server URL（http://localhost:3000/@fs/...，
+  // 本卡实测），readFileSync 拒绝非 file scheme；import.meta.url 直接取值为 file:// URL
+  // （vitest 实测）。找不到文件时抛错 = 本守卫红（fail-visible，绝不静默跳过）。
+  function backendSource(): string {
+    const here = dirname(fileURLToPath(import.meta.url))
+    return readFileSync(
+      resolve(here, '../../../../services/contract-service/src/main/java/com/ctds/contract/domain/ContractErrorCodes.java'),
+      'utf8',
+    )
+  }
+
+  it('双源均可解析：后端 8 条映射常量全部解析到位（防解析失效 / 常量改名后静默空转）', () => {
+    expect(frontendConstants).not.toBe('')
+    const backendErrorCodes = backendSource()
+    expect(backendErrorCodes).not.toBe('')
+    const messages = parseStaticMessages(backendErrorCodes)
+    for (const [, message] of TIP_TO_MESSAGE) {
+      expect(Object.keys(messages)).toContain(message)
+    }
+    const tips = parseExportedTips(frontendConstants)
+    for (const [tip] of TIP_TO_MESSAGE) {
+      expect(Object.keys(tips)).toContain(tip)
+    }
+  })
+
+  it('前端副本与后端真源 8 对逐字一致（漂移即红，失败信息给出常量名与两侧取值）', () => {
+    const diffs = diffTips(parseExportedTips(frontendConstants), parseStaticMessages(backendSource()), TIP_TO_MESSAGE)
+    expect(diffs).toEqual([])
+  })
+
+  it('映射表完备锚：恰 8 对（防悄悄删映射；新增同形文案必须同步扩表）', () => {
+    expect(TIP_TO_MESSAGE.length).toBe(8)
+  })
+
+  it('反向探针：diffTips 对漂移样本必产出差异、对一致样本必产出空（证明比对逻辑非空转）', () => {
+    const tips = { A_TIP: '甲', B_TIP: '乙' }
+    const messages = { A_MESSAGE: '甲', B_MESSAGE: '乙二' }
+    const mapping: Array<[string, string]> = [['A_TIP', 'A_MESSAGE'], ['B_TIP', 'B_MESSAGE']]
+    // 漂移样本：B 两侧取值不同 -> 必产出差异
+    expect(diffTips(tips, messages, mapping)).toEqual(['B_TIP="乙" vs B_MESSAGE="乙二"'])
+    // 缺失样本：常量改名 -> 必指出缺失侧
+    expect(diffTips(tips, messages, [['A_TIP', 'C_MESSAGE']])).toEqual(['C_MESSAGE (后端真源缺失)'])
+    // 一致样本 -> 必产出空
+    expect(diffTips(tips, messages, [['A_TIP', 'A_MESSAGE']])).toEqual([])
   })
 })

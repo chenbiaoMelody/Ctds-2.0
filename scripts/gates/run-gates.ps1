@@ -22,6 +22,18 @@
 #   R4 报告目标（目录创建 + 可写探针）纳入保护区，结论纳入"报告写入失败"
 #   R5 Maven 段配置违规整段跳过（不再"检出后仍执行命令"）
 #   R6 报告头增加 RunLabel/Scenario/ExitCode/ConfigPath/ConfigSha256；mvn/npm 前置探测
+# DB-43（2026-10-14，门禁变更流程留痕〔红线 3〕，gates-config.json 零改动 = ConfigSha256 不变自证）
+# record: ① mvn 三段（compile/lint/unitTest）成功/失败/超时三态落盘
+#   %TEMP%\ctds-gate-<stage>-out.log（摘要行 stage/command/exitCode/elapsedSec/time + 完整原始输出；
+#   根治 WBS-3.4.7"0 字节日志"教训——成功态也有机器可核证据）；② npm 段与 coverage /
+#   mutationTest / sast 段失败/超时落盘完整原始输出 + 报告失败/超时行尾附
+#   " | full output: <path>"（DB-44 首跑 RED"错误正文未取得"损失场景的根治；
+#   Invoke-MetricProcess 超时分支不再丢弃已读流）；③ 阶段超时后 Stop-ProcessTree
+#   （taskkill /PID <pid> /T /F）清理整个进程树（跟踪-23 剩余子项兑现，Q1-A）。
+#   判定阈值 / 阶段范围 / 扫描面 / 报告五态与退出码语义零改动；PASS 行格式零改动；
+#   落盘失败不影响段判定（记录是加菜，不是判定）。
+#   依据：任务卡 docs/tasks/DB-43-门禁可观测性增强-2026-10-13.md + 两级设计
+#   docs/designs/DB-43-{lofi,hifi}.md（V1.0 已确认）+ ADR-018 修订记录 V1.3。
 param(
     [string]$RepoRoot = "",
     [string]$ReportPath = "",
@@ -63,6 +75,41 @@ try {
 $results = New-Object System.Collections.Generic.List[object]
 function Add-Result([string]$stage, [string]$verdict, [string]$detail) {
     $script:results.Add([pscustomobject]@{ Stage = $stage; Verdict = $verdict; Detail = $detail })
+}
+
+# ---------- DB-43（2026-10-14，门禁变更流程留痕，config 零改动）：阶段原始输出落盘 ----------
+# ① mvn 三段（compile/lint/unitTest）成功/失败/超时三态都落盘（WBS-3.4.7"0 字节日志"教训：
+#    成功态也必须有机器可核证据）；③ npm / coverage / mutationTest / sast 段失败/超时落盘
+#    （DB-44 首跑 RED"错误正文未取得"损失场景的根治）。命名沿用既有
+#    %TEMP%\ctds-gate-<stage>-out.log（Q2-A：固定名 = 最近一次该阶段运行的覆盖式记录）。
+# 落盘失败绝不影响段判定（调用处 try/catch 包裹——"记录是加菜，不是判定"）。
+function Write-StageOutLog([string]$stage, [string]$command, [string]$body, [int]$exitCode, [bool]$timedOut, [int]$elapsedSec) {
+    $path = Join-Path $env:TEMP ("ctds-gate-" + $stage + "-out.log")
+    $exitSuffix = ""
+    if ($timedOut) { $exitSuffix = " (TIMED OUT)" }
+    # 摘要行（stage/command/exitCode/elapsedSec/time）——即使 body 为空，"0 字节日志"因摘要头
+    # 在结构上不可能（WBS-3.4.7 教训的结构性根治）。数组 join 形态：行首 '+' 会被 PowerShell
+    # 解析成一元加（字符串转 Int32 报错），故不用跨行 '+' 拼接。
+    $headLines = @(
+        "# ctds-gate stage output",
+        ("stage: " + $stage),
+        ("command: " + $command),
+        ("exitCode: " + $exitCode + $exitSuffix),
+        ("elapsedSec: " + $elapsedSec),
+        ("time: " + (Get-Date -Format "yyyy-MM-dd HH:mm:ss")),
+        (([string][char]0x2500) * 40)
+    )
+    [System.IO.File]::WriteAllText($path, (($headLines -join [Environment]::NewLine) + [Environment]::NewLine + $body))
+    return $path
+}
+
+# ---------- DB-43（Q1-A / 跟踪-23 剩余）：阶段超时后清理整个进程树 ----------
+# 背景：2026-10-09 实测"unitTest 超时被杀后残留 cmd 孤儿进程"污染 coverage/frontendTest。
+# taskkill /T 按父子快照清理（Windows 定位脚本，系统内置零新依赖）；"已脱离父链的孙进程"
+# 可能漏网（罕见，诚实边界见 README 变更条目）。进程已退出时不再补 Kill。
+function Stop-ProcessTree([System.Diagnostics.Process]$proc) {
+    try { $null = & taskkill /PID $proc.Id /T /F 2>&1 } catch { }
+    try { if (-not $proc.HasExited) { $proc.Kill() } } catch { }
 }
 
 # ---------- Git-tracked index (WBS-2.2.7 V1.2 / R1+R3) ----------
@@ -282,7 +329,6 @@ foreach ($stageName in @("compile", "lint", "unitTest")) {
         Add-Result $stageName "ERROR" ("Maven executable not found on PATH: " + $toolMavenBin + " (install Maven 3.9+ or set gates-config toolchain.mavenBin)")
         continue
     }
-    $outLog = Join-Path $env:TEMP ("ctds-gate-" + $stageName + "-out.log")
     $oldJavaHome = $env:JAVA_HOME
     $env:JAVA_HOME = $toolJavaHome
     $psi = New-Object System.Diagnostics.ProcessStartInfo
@@ -299,21 +345,36 @@ foreach ($stageName in @("compile", "lint", "unitTest")) {
     if ($s.PSObject.Properties['timeoutSeconds'] -and $s.timeoutSeconds) {
         $stageTimeoutSec = [int]$s.timeoutSeconds
     }
+    # DB-43 ①：三态（成功/失败/超时）都落盘 %TEMP%\ctds-gate-<stage>-out.log（摘要行含
+    # stage/command/exitCode/elapsedSec/time + 完整原始输出）；报告行仅失败/超时追加路径。
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    $cmdLine = "mvn " + $toolMavenArgs + " " + $s.goals
     $proc = [System.Diagnostics.Process]::Start($psi)
     $outTask = $proc.StandardOutput.ReadToEndAsync()
     $errTask = $proc.StandardError.ReadToEndAsync()
     if (-not $proc.WaitForExit($stageTimeoutSec * 1000)) {
-        try { $proc.Kill() } catch { }
-        Add-Result $stageName "FAIL" ("mvn " + $s.goals + " timed out after " + $stageTimeoutSec + "s")
+        Stop-ProcessTree $proc
+        $null = $outTask.Wait(5000)
+        $null = $errTask.Wait(5000)
+        $p = $null
+        try { $p = Write-StageOutLog $stageName $cmdLine ($outTask.Result + $errTask.Result) -1 $true ([int]$sw.Elapsed.TotalSeconds) } catch { }
+        if ($p) { Add-Result $stageName "FAIL" ("mvn " + $s.goals + " timed out after " + $stageTimeoutSec + "s | full output: " + $p) }
+        else { Add-Result $stageName "FAIL" ("mvn " + $s.goals + " timed out after " + $stageTimeoutSec + "s") }
     } elseif ($proc.ExitCode -eq 0) {
+        $null = $outTask.Wait(10000)
+        $null = $errTask.Wait(10000)
+        # ① 的核心：成功态也落盘（"0 字节日志"教训的结构性根治）；PASS 报告行保持原格式（不加路径）
+        try { $null = Write-StageOutLog $stageName $cmdLine ($outTask.Result + $errTask.Result) 0 $false ([int]$sw.Elapsed.TotalSeconds) } catch { }
         Add-Result $stageName "PASS" ("mvn " + $s.goals + " exit 0")
     } else {
         $null = $outTask.Wait(10000)
         $null = $errTask.Wait(10000)
         $allOut = ($outTask.Result + [Environment]::NewLine + $errTask.Result) -split "`r?`n" | Where-Object { $_.Trim() -ne "" }
         $tail = ($allOut | Select-Object -Last 6) -join " | "
-        [System.IO.File]::WriteAllText($outLog, ($outTask.Result + $errTask.Result))
-        Add-Result $stageName "FAIL" ("mvn " + $s.goals + " exit " + $proc.ExitCode + ": " + $tail)
+        $p = $null
+        try { $p = Write-StageOutLog $stageName $cmdLine ($outTask.Result + $errTask.Result) $proc.ExitCode $false ([int]$sw.Elapsed.TotalSeconds) } catch { }
+        if ($p) { Add-Result $stageName "FAIL" ("mvn " + $s.goals + " exit " + $proc.ExitCode + ": " + $tail + " | full output: " + $p) }
+        else { Add-Result $stageName "FAIL" ("mvn " + $s.goals + " exit " + $proc.ExitCode + ": " + $tail) }
     }
     if ($oldJavaHome) { $env:JAVA_HOME = $oldJavaHome } else { Remove-Item Env:JAVA_HOME -ErrorAction SilentlyContinue }
 }
@@ -361,9 +422,16 @@ foreach ($stageName in @("frontendTypeCheck", "frontendLint", "frontendTest", "f
     $proc = [System.Diagnostics.Process]::Start($psi)
     $outTask = $proc.StandardOutput.ReadToEndAsync()
     $errTask = $proc.StandardError.ReadToEndAsync()
+    # DB-43 ③：npm 段失败/超时落盘完整原始输出（③ 的处置要求原文 = "失败时落盘"；成功态不落）
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
     if (-not $proc.WaitForExit(300000)) {
-        try { $proc.Kill() } catch { }
-        Add-Result $stageName "FAIL" ("npm " + $s.goals + " timed out after 300s")
+        Stop-ProcessTree $proc
+        $null = $outTask.Wait(5000)
+        $null = $errTask.Wait(5000)
+        $p = $null
+        try { $p = Write-StageOutLog $stageName ("npm " + $s.goals) ($outTask.Result + $errTask.Result) -1 $true ([int]$sw.Elapsed.TotalSeconds) } catch { }
+        if ($p) { Add-Result $stageName "FAIL" ("npm " + $s.goals + " timed out after 300s | full output: " + $p) }
+        else { Add-Result $stageName "FAIL" ("npm " + $s.goals + " timed out after 300s") }
     } elseif ($proc.ExitCode -eq 0) {
         Add-Result $stageName "PASS" ("npm " + $s.goals + " exit 0")
     } else {
@@ -371,7 +439,10 @@ foreach ($stageName in @("frontendTypeCheck", "frontendLint", "frontendTest", "f
         $null = $errTask.Wait(10000)
         $allOut = ($outTask.Result + [Environment]::NewLine + $errTask.Result) -split "`r?`n" | Where-Object { $_.Trim() -ne "" }
         $tail = ($allOut | Select-Object -Last 6) -join " | "
-        Add-Result $stageName "FAIL" ("npm " + $s.goals + " exit " + $proc.ExitCode + ": " + $tail)
+        $p = $null
+        try { $p = Write-StageOutLog $stageName ("npm " + $s.goals) ($outTask.Result + $errTask.Result) $proc.ExitCode $false ([int]$sw.Elapsed.TotalSeconds) } catch { }
+        if ($p) { Add-Result $stageName "FAIL" ("npm " + $s.goals + " exit " + $proc.ExitCode + ": " + $tail + " | full output: " + $p) }
+        else { Add-Result $stageName "FAIL" ("npm " + $s.goals + " exit " + $proc.ExitCode + ": " + $tail) }
     }
 }
 
@@ -392,8 +463,13 @@ function Invoke-MetricProcess([string]$exe, [string]$argLine, [string]$workDir, 
     $outTask = $proc.StandardOutput.ReadToEndAsync()
     $errTask = $proc.StandardError.ReadToEndAsync()
     if (-not $proc.WaitForExit($timeoutSec * 1000)) {
-        try { $proc.Kill() } catch { }
-        return @{ ExitCode = -1; Output = ($stage + " timed out after " + $timeoutSec + "s") }
+        # DB-43：超时也保有已产出的原始输出（原实现丢弃已读流，超时零证据）；进程树清理（Q1-A）
+        Stop-ProcessTree $proc
+        $null = $outTask.Wait(5000)
+        $null = $errTask.Wait(5000)
+        $timedOutBody = ("<timed out after " + $timeoutSec + "s>")
+        try { $timedOutBody = ("<timed out after " + $timeoutSec + "s>") + [Environment]::NewLine + $outTask.Result + $errTask.Result } catch { }
+        return @{ ExitCode = -1; Output = $timedOutBody }
     }
     $null = $outTask.Wait(10000); $null = $errTask.Wait(10000)
     return @{ ExitCode = $proc.ExitCode; Output = ($outTask.Result + [Environment]::NewLine + $errTask.Result) }
@@ -415,17 +491,25 @@ if ($covStage -and $covStage.enabled) {
         $covTimeout = 900; if ($covStage.timeoutSeconds) { $covTimeout = [int]$covStage.timeoutSeconds }
         # cmd /c 包一层（同 maven 段形态）：Process.Start 不解析 PATH，mvn 须经 cmd 定位
         $argLine = "/c " + $toolMavenBin + " " + $toolMavenArgs + " " + $covStage.goals
+        $swCov = [System.Diagnostics.Stopwatch]::StartNew()
         $r = Invoke-MetricProcess "cmd.exe" $argLine $RepoRoot $covTimeout "coverage"
+        # DB-43 ③：凡该段判定 FAIL（超时 / exit≠0 / 无报告 / 阈值不达标）→ 落盘完整原始输出，
+        # 报告行尾附路径（PASS 不落——③ 的原文口径 = "失败时落盘"）
+        $covFail = $false
+        $covDetail = ""
         if ($r.ExitCode -eq -1) {
-            Add-Result "coverage" "FAIL" $r.Output
+            $covFail = $true
+            $covDetail = $r.Output
         } elseif ($r.ExitCode -ne 0) {
             $tail = (($r.Output -split "`r?`n") | Where-Object { $_.Trim() -ne "" } | Select-Object -Last 5) -join " | "
-            Add-Result "coverage" "FAIL" ("mvn coverage exit " + $r.ExitCode + ": " + $tail)
+            $covFail = $true
+            $covDetail = ("mvn coverage exit " + $r.ExitCode + ": " + $tail)
         } else {
             $reportGlobs = @("common\*\target\site\jacoco\jacoco.xml", "services\*\target\site\jacoco\jacoco.xml", "std-adapter\target\site\jacoco\jacoco.xml")
             $reports = @(); foreach ($g in $reportGlobs) { $reports += @(Get-ChildItem (Join-Path $RepoRoot $g) -ErrorAction SilentlyContinue) }
             if ($reports.Count -eq 0) {
-                Add-Result "coverage" "FAIL" "mvn coverage exit 0 but no jacoco.xml reports found (report generation silently skipped?)"
+                $covFail = $true
+                $covDetail = "mvn coverage exit 0 but no jacoco.xml reports found (report generation silently skipped?)"
             } else {
                 $totCovered = [long]0; $totMissed = [long]0; $coreRows = @()
                 $coreNames = @(); if ($cfg.coreModules) { $coreNames = @($cfg.coreModules) }
@@ -460,9 +544,18 @@ if ($covStage -and $covStage.enabled) {
                     }
                 }
                 $detail = ("overall line " + $overallPct + "% (" + $totCovered + "/" + ($totCovered + $totMissed) + "), core [" + ($coreRows -join ", ") + "], thresholds core>=" + $coreLine + "% overall>=" + $overallLine + "%")
-                if ($bad.Count -gt 0) { Add-Result "coverage" "FAIL" ($detail + " - " + ($bad -join "; ")) }
+                if ($bad.Count -gt 0) {
+                    $covFail = $true
+                    $covDetail = ($detail + " - " + ($bad -join "; "))
+                }
                 else { Add-Result "coverage" "PASS" $detail }
             }
+        }
+        if ($covFail) {
+            $p = $null
+            try { $p = Write-StageOutLog "coverage" $argLine $r.Output $r.ExitCode ($r.ExitCode -eq -1) ([int]$swCov.Elapsed.TotalSeconds) } catch { }
+            if ($p) { Add-Result "coverage" "FAIL" ($covDetail + " | full output: " + $p) }
+            else { Add-Result "coverage" "FAIL" $covDetail }
         }
     }
 }
@@ -476,6 +569,9 @@ if ($mutStage -and $mutStage.enabled) {
         $bundleDir = Join-Path $RepoRoot "target\precheck\pit-bundle"
         $marker = Join-Path $bundleDir "bundle-ready.flag"
         $bundleOk = (Test-Path $marker) -and (@(Get-ChildItem (Join-Path $bundleDir "*.jar") -ErrorAction SilentlyContinue).Count -gt 0)
+        # DB-43 ③：mutationTest 各失败点的原始输出收集器（段末汇总落盘，分隔符区分子运行）
+        $mutLogs = @()
+        $swMut = [System.Diagnostics.Stopwatch]::StartNew()
         if (-not $bundleOk) {
             $deps = @(); if ($mutStage.bundle -and $mutStage.bundle.dependencies) { $deps = @($mutStage.bundle.dependencies) }
             $pomLines = @('<?xml version="1.0" encoding="UTF-8"?>', '<project xmlns="http://maven.apache.org/POM/4.0.0">', '  <modelVersion>4.0.0</modelVersion>', '  <groupId>ctds.gate</groupId><artifactId>pit-bundle-assembly</artifactId><version>1.0.0</version><packaging>pom</packaging>', '  <dependencies>')
@@ -487,7 +583,12 @@ if ($mutStage -and $mutStage.enabled) {
             $keyJars = @(); foreach ($d in $deps) { $keyJars += ($d.artifactId + "-" + $d.version + ".jar") }
             $missing = @($keyJars | Where-Object { -not (Test-Path (Join-Path $bundleDir $_)) })
             if ($r.ExitCode -ne 0 -or $missing.Count -gt 0) {
-                Add-Result "mutationTest" "ERROR" ("PIT bundle assembly failed (mvn exit " + $r.ExitCode + ", missing: " + ($missing -join ", ") + ") - run once with network/mirror access; see ADR-018")
+                # bundle 失败后无段末汇总机会（$bundleOk=false 直接跳过模块循环），就地落盘
+                $p = $null
+                try { $p = Write-StageOutLog "mutationTest" ("mvn -f pit-bundle/pom.xml dependency:copy-dependencies (bundle assembly)") $r.Output $r.ExitCode $false ([int]$swMut.Elapsed.TotalSeconds) } catch { }
+                $errDetail = ("PIT bundle assembly failed (mvn exit " + $r.ExitCode + ", missing: " + ($missing -join ", ") + ") - run once with network/mirror access; see ADR-018")
+                if ($p) { Add-Result "mutationTest" "ERROR" ($errDetail + " | full output: " + $p) }
+                else { Add-Result "mutationTest" "ERROR" $errDetail }
             } else {
                 [System.IO.File]::WriteAllText($marker, "ok")
                 $bundleOk = $true
@@ -507,7 +608,7 @@ if ($mutStage -and $mutStage.enabled) {
                     $badMods += ($m.name + ": classes not found (compile stage must run first)"); continue
                 }
                 $rCp = Invoke-MetricProcess "cmd.exe" ("/c " + $toolMavenBin + " dependency:build-classpath -Dmdep.outputFile=target/pit-cp.txt -B -ntp -q") $modDir 300 "mutationTest.classpath"
-                if ($rCp.ExitCode -ne 0) { $badMods += ($m.name + ": classpath generation failed"); continue }
+                if ($rCp.ExitCode -ne 0) { $badMods += ($m.name + ": classpath generation failed"); $mutLogs += ("==== " + $m.name + " classpath ====" + [Environment]::NewLine + $rCp.Output); continue }
                 $cpText = ([System.IO.File]::ReadAllText((Join-Path $modDir "target\pit-cp.txt"), [System.Text.Encoding]::UTF8)).Trim()
                 $fullCp = "target/classes;target/test-classes;" + $cpText + ";" + ((Join-Path $RepoRoot "target\precheck\pit-bundle") + "\*")
                 $mutTargetTests = "com.ctds.*"; if ($mutStage.targetTests) { $mutTargetTests = $mutStage.targetTests }
@@ -515,11 +616,11 @@ if ($mutStage -and $mutStage.enabled) {
                 $r = Invoke-MetricProcess $javaExe $pitArgs $modDir $mutTimeout ("mutationTest." + $m.name)
                 $xmlPath = Join-Path $modDir "target\pit-reports\mutations.xml"
                 if ($r.ExitCode -eq -1) {
-                    $badMods += ($m.name + ": timed out after " + $mutTimeout + "s"); continue
+                    $badMods += ($m.name + ": timed out after " + $mutTimeout + "s"); $mutLogs += ("==== " + $m.name + " (timed out) ====" + [Environment]::NewLine + $r.Output); continue
                 }
                 if (-not (Test-Path $xmlPath)) {
                     $why = (($r.Output -split "`r?`n") | Where-Object { $_ -match "PitHelpError|SEVERE" } | Select-Object -First 1)
-                    $badMods += ($m.name + ": no mutation report (exit " + $r.ExitCode + ") " + $why); continue
+                    $badMods += ($m.name + ": no mutation report (exit " + $r.ExitCode + ") " + $why); $mutLogs += ("==== " + $m.name + " (no report) ====" + [Environment]::NewLine + $r.Output); continue
                 }
                 # PIT 的 mutations.csv 无表头行，改解析 mutations.xml（mutation 元素 detected/status 属性；
                 # detected=true 含 KILLED 与 TIMED_OUT，SURVIVED/NO_COVERAGE 计入分母 = 保守口径）
@@ -533,9 +634,21 @@ if ($mutStage -and $mutStage.enabled) {
                 if ($score -lt $killTh) { $badMods += ($m.name + " " + $score + "% < " + $killTh + "%") }
             }
             $detail = ("kill rate thresholds>=" + $killTh + "% [" + ($modRows -join ", ") + "]")
-            if ($badMods.Count -gt 0) { Add-Result "mutationTest" "FAIL" ($detail + " - " + ($badMods -join "; ")) }
-            elseif ($modRows.Count -eq 0) { Add-Result "mutationTest" "FAIL" "no modules executed (configuration error)" }
+            $mutFailDetail = $null
+            if ($badMods.Count -gt 0) { $mutFailDetail = ($detail + " - " + ($badMods -join "; ")) }
+            elseif ($modRows.Count -eq 0) { $mutFailDetail = "no modules executed (configuration error)" }
             else { Add-Result "mutationTest" "PASS" $detail }
+            if ($mutFailDetail) {
+                # DB-43 ③：有收集到的原始输出 → 汇总落盘（分隔符区分子运行）；无（如阈值不达标
+                # 分支——PIT 报告 JSON/XML 本身即产物）→ 诚实附产物位置，不假装有进程输出可落
+                $p = $null
+                if ($mutLogs.Count -gt 0) {
+                    $sep = [Environment]::NewLine + "----------------------------------------" + [Environment]::NewLine
+                    try { $p = Write-StageOutLog "mutationTest" "pitest (bundle / classpath / module sub-runs; exitCode -1 = aggregated multi-source)" ("# aggregated raw outputs below (separated), each prefixed with its sub-run name" + [Environment]::NewLine + ($mutLogs -join $sep)) -1 $false ([int]$swMut.Elapsed.TotalSeconds) } catch { }
+                }
+                if ($p) { Add-Result "mutationTest" "FAIL" ($mutFailDetail + " | full output: " + $p) }
+                else { Add-Result "mutationTest" "FAIL" ($mutFailDetail + " | no raw process output to archive (PIT reports themselves are the artifacts: see each module target/pit-reports/)") }
+            }
             }
         }
     }
@@ -578,32 +691,52 @@ if ($sastStage -and $sastStage.enabled) {
             } else {
                 $dockerArgs = "/c docker run --rm -v `"" + $scanTemp + ":/src`" " + $image + " semgrep --config " + $ruleset + " --json --quiet /src"
                 $sastTimeout = 900; if ($sastStage.timeoutSeconds) { $sastTimeout = [int]$sastStage.timeoutSeconds }
+                $swSast = [System.Diagnostics.Stopwatch]::StartNew()
                 $r = Invoke-MetricProcess "cmd.exe" $dockerArgs $RepoRoot $sastTimeout "sast"
+                # DB-43 ③：凡该段判定 FAIL/ERROR（超时 / exit≠0 / JSON 不可解析 / scan errors /
+                # findings>0）→ 落盘完整原始输出，报告行尾附路径（PASS 不落）
+                $sastFail = $false
+                $sastVerdict = "FAIL"
+                $sastDetail = ""
                 if ($r.ExitCode -eq -1) {
-                    Add-Result "sast" "FAIL" $r.Output
+                    $sastFail = $true
+                    $sastDetail = $r.Output
                 } elseif ($r.ExitCode -ne 0) {
                     $tail = (($r.Output -split "`r?`n") | Where-Object { $_.Trim() -ne "" } | Select-Object -Last 4) -join " | "
-                    Add-Result "sast" "ERROR" ("semgrep run failed (exit " + $r.ExitCode + "): " + $tail)
+                    $sastFail = $true
+                    $sastVerdict = "ERROR"
+                    $sastDetail = ("semgrep run failed (exit " + $r.ExitCode + "): " + $tail)
                 } else {
                     try { $sj = ConvertFrom-Json ($r.Output -join " ") } catch { $sj = $null }
                     if (-not $sj) {
-                        Add-Result "sast" "ERROR" "semgrep returned unparseable output (no JSON)"
+                        $sastFail = $true
+                        $sastVerdict = "ERROR"
+                        $sastDetail = "semgrep returned unparseable output (no JSON)"
                     } else {
                         $hits = @($sj.results)
                         $scanErrs = @($sj.errors)
                         if ($scanErrs.Count -gt 0) {
                             # 部分文件扫描失败时 results 可能为空——errors 非空即 ERROR，防"扫不动=0 热点"假绿
                             $e0 = ($scanErrs | Select-Object -First 1).message
-                            if ($e0) { $e0 = $e0.ToString() } 
+                            if ($e0) { $e0 = $e0.ToString() }
                             if ($e0 -and $e0.Length -gt 120) { $e0 = $e0.Substring(0, 120) }
-                            Add-Result "sast" "ERROR" ("semgrep reported " + $scanErrs.Count + " scan error(s) [" + $e0 + "] - results incomplete, not a clean 0-finding pass")
+                            $sastFail = $true
+                            $sastVerdict = "ERROR"
+                            $sastDetail = ("semgrep reported " + $scanErrs.Count + " scan error(s) [" + $e0 + "] - results incomplete, not a clean 0-finding pass")
                         } elseif ($hits.Count -eq 0) {
                             Add-Result "sast" "PASS" ("semgrep " + $ruleset + ": 0 findings across " + ($copied -join ", ") + " main source sets")
                         } else {
                             $first = ($hits | Select-Object -First 3 | ForEach-Object { $_.check_id + "@" + $_.path }) -join "; "
-                            Add-Result "sast" "FAIL" ($hits.Count + " finding(s) [" + $first + "] - review before merge")
+                            $sastFail = $true
+                            $sastDetail = ($hits.Count + " finding(s) [" + $first + "] - review before merge")
                         }
                     }
+                }
+                if ($sastFail) {
+                    $p = $null
+                    try { $p = Write-StageOutLog "sast" ("docker run --rm -v <scanTemp>:/src " + $image + " semgrep --config " + $ruleset + " /src") $r.Output $r.ExitCode ($r.ExitCode -eq -1) ([int]$swSast.Elapsed.TotalSeconds) } catch { }
+                    if ($p) { Add-Result "sast" $sastVerdict ($sastDetail + " | full output: " + $p) }
+                    else { Add-Result "sast" $sastVerdict $sastDetail }
                 }
             }
             Remove-Item -Path $scanTemp -Recurse -Force -ErrorAction SilentlyContinue
