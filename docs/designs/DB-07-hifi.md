@@ -1,6 +1,6 @@
 # DB-07-hifi：CI 门禁自动化 · 编码契约（V0.9）
 
-> 版本：V1.0（2026-10-16 编排师一次确认转正；正文零改动）
+> 版本：V1.1（2026-10-16 编排师裁定 C 增补 §3-bis 执行器契约；V1.0 已确认正文除本节外零改动）
 > 任务卡：`docs/tasks/DB-07-CI门禁自动化-2026-10-16.md`；方向确认见 `DB-07-lofi.md`
 > 性质：非界面类编码契约；实现与本契约不一致 = 打回项
 
@@ -67,6 +67,25 @@ permissions:
 | ③ ConfigSha256 基线 | 改前基线（当前 HEAD 值）与改后新值**逐字记录**于任务卡 §四 + 开发日志 + README 补节；adrFieldsCheck/structureCheck 等阶段不受影响 |
 | ④ 编排师确认 | 随本卡 Q5 一次确认覆盖（Q5-A）——确认留痕落任务卡 §二 确认留痕块 |
 
+## 3-bis. gateSelfTest 执行器契约（V1.1 增补 · 2026-10-16 编排师裁定 C 授权）
+
+> 增补缘由：V1.0 §3① 假设"翻 `enabled=true` 即随每轮门禁执行 selftest"，运行器无此代码路径（停报证据链见开发日志 `docs/logs/Ctds-项目开发日志-26-10-16-2022.md`）；编排师裁定 C（卡内改运行器）后，本节为执行器的编码契约，与 §2 / §3 同级效力。授权留痕见任务卡文末边界变更记录。
+
+| 项 | 契约 |
+| --- | --- |
+| 落点 | `run-gates.ps1` 新增 `gateSelfTest` 段（本卡唯一功能性改动；既有行零改动） |
+| 位置 | **全阶段之首**（secretsScan 之前）——selftest 开场/收尾清理及其 fixture 运行均写 `%TEMP%\ctds-gate-*-out.log` 固定名，置于首位避免删除/覆盖本运行先前阶段的失败取证（DB-43 取证链） |
+| 触发 | `stages.gateSelfTest.enabled -eq $true` 时执行；`false` 时由既有 PENDING 循环出可见行（不留静默关闭） |
+| 调用 | `powershell -NoProfile -ExecutionPolicy Bypass -File <RepoRoot>/<stages.gateSelfTest.tool>`（tool 缺省 `scripts/gates/selftest.ps1`；README 规范调用形态；经 `Invoke-MetricProcess` 直传参数、无 shell 注入面） |
+| 前置探测 | 脚本文件不存在 → ERROR 行（配置/环境问题）；`powershell` 不在 PATH → ERROR 行（同 npm 段前置探测口径） |
+| 超时 | 读 `stages.gateSelfTest.timeoutSeconds`（config 设 **300**；实测全量 32s ≈ 9 倍余量，CI 硬件慢于本机）；超时 = **FAIL** + 完整输出落盘（DB-43 口径） |
+| 退出码→五态 | 0 → **PASS**（详情摘录 `SELFTEST PASS - N assertion(s), 0 failure(s)` 摘要行 + 耗时秒数）；1 → **FAIL**（断言失败 = 门禁自身不可信，红灯必须修；完整输出落盘 + 行尾附路径）；2 → **ERROR**（harness/环境问题，非代码结论）；超时 → FAIL |
+| 递归守卫 | `selftest.ps1` `New-FixtureConfig` 对所有 fixture 强制 `gateSelfTest.enabled=false`——真实 config 翻位后 fixture 不再继承 true，杜绝"门禁→selftest→fixture 门禁→selftest"无限递归；S15 显式改回 true 并配 stub 验证接线 |
+| S15 新场景 | fixture 内 `gateSelfTest.enabled=true` + stub `selftest.ps1`：退出 0 → `gateSelfTest PASS` 行 + 退出码 0 + 详情含摘要解析值 + **无 PENDING 行**（执行器已跑的正面锚）；退出 1 → FAIL 行 + 退出码 1 + 行尾 `full output:` 路径；退出 2 → ERROR 行 + 退出码 2；tool 指向不存在文件 → ERROR 行 + 退出码 2（红/绿/ERROR/缺文件四探针） |
+| S1 标签勘误 | fixture 强制 disabled 后 PENDING 行仍在，S1 断言保留；标签由"selftest not wired into CI is visible in every report"勘误为"fixture configs (gateSelfTest forced off) still show the PENDING row" |
+| 辅助函数 | `Invoke-MetricProcess` 由原位置**纯上移**至阶段代码之前（内容零改动——执行器置首须可调用；diff 中呈现为迁移而非改写） |
+| 证据 | 启用后本地全量门禁报告 gateSelfTest 段 PASS（真实链首验）；selftest 全量 94+ 断言 0 失败；V3 报告 + `build-output/db07-local-gate-after-enable.log` |
+
 ## 4. 验证方案（测试先行语义 · 按序执行）
 
 | 序 | 验证 | 期望 | 证据 |
@@ -113,3 +132,5 @@ permissions:
 ## 8. 确认记录
 
 > **✅ 2026-10-16 编排师会话回复"一次确认"**：**Q1~Q7 均采建议口径 A + D1 不拆分**（逐项口径见 lofi §6 确认记录：Q1-A 触发范围 / Q2-A `windows-latest` 工具链 / Q3-A 单 job 全量 / Q4-A 三形态回写 / Q5-A gateSelfTest 本卡启用〔四件套〕/ Q6-A 分支保护归编排师在 GitHub 设置执行 / Q7-A 直连 Maven Central）。**本文件编码契约自确认时生效（V1.0）**；实现与本契约不一致 = 打回项。下一关口 = 编码段（第一动作 = §6 前置检查九项逐项实测留痕）。
+>
+> **增补记录（V1.1，2026-10-16 编排师裁定 C）**：编码段第一日红线 4 停报（运行器无 gateSelfTest 执行器，V1.0 §3① 为未验证假设）后，编排师选定 **C（卡内改运行器）** → 授权增补 **§3-bis 执行器契约**；任务卡纪律声明 / 关闭条件③⑤ / 交付物②同步修订（任务卡文末边界变更记录）。V1.0 已确认正文除本节与版本头外零改动。
