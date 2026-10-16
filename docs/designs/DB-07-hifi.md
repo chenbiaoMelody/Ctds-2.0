@@ -81,7 +81,7 @@ permissions:
 | 超时 | 读 `stages.gateSelfTest.timeoutSeconds`（config 设 **300**；实测全量 32s ≈ 9 倍余量，CI 硬件慢于本机）；超时 = **FAIL** + 完整输出落盘（DB-43 口径） |
 | 退出码→五态 | 0 → **PASS**（详情摘录 `SELFTEST PASS - N assertion(s), 0 failure(s)` 摘要行 + 耗时秒数）；1 → **FAIL**（断言失败 = 门禁自身不可信，红灯必须修；完整输出落盘 + 行尾附路径）；2 → **ERROR**（harness/环境问题，非代码结论）；超时 → FAIL |
 | 递归守卫 | `selftest.ps1` `New-FixtureConfig` 对所有 fixture 强制 `gateSelfTest.enabled=false`——真实 config 翻位后 fixture 不再继承 true，杜绝"门禁→selftest→fixture 门禁→selftest"无限递归；S15 显式改回 true 并配 stub 验证接线 |
-| S15 新场景 | fixture 内 `gateSelfTest.enabled=true` + stub `selftest.ps1`：退出 0 → `gateSelfTest PASS` 行 + 退出码 0 + 详情含摘要解析值 + **无 PENDING 行**（执行器已跑的正面锚）；退出 1 → FAIL 行 + 退出码 1 + 行尾 `full output:` 路径；退出 2 → ERROR 行 + 退出码 2；tool 指向不存在文件 → ERROR 行 + 退出码 2（红/绿/ERROR/缺文件四探针） |
+| S15 新场景 | fixture 内 `gateSelfTest.enabled=true` + stub `selftest.ps1`：退出 0 → `gateSelfTest PASS` 行 + 退出码 0 + 详情含摘要解析值 + **无 PENDING 行**（执行器已跑的正面锚）；**stub 置于带空格目录**（tool = `scripts/gates dir/selftest.ps1`）→ 仍 PASS（锚定 `-File` 路径引号——仓库根路径含空格，未加引号会被 powershell 命令行解析截断）；退出 1 → FAIL 行 + 退出码 1 + 行尾 `full output:` 路径；退出 2 → ERROR 行 + 退出码 2；tool 指向不存在文件 → ERROR 行 + 退出码 2（绿/空格/红/ERROR/缺文件五探针） |
 | S1 标签勘误 | fixture 强制 disabled 后 PENDING 行仍在，S1 断言保留；标签由"selftest not wired into CI is visible in every report"勘误为"fixture configs (gateSelfTest forced off) still show the PENDING row" |
 | 辅助函数 | `Invoke-MetricProcess` 由原位置**纯上移**至阶段代码之前（内容零改动——执行器置首须可调用；diff 中呈现为迁移而非改写） |
 | 证据 | 启用后本地全量门禁报告 gateSelfTest 段 PASS（真实链首验）；selftest 全量 94+ 断言 0 失败；V3 报告 + `build-output/db07-local-gate-after-enable.log` |

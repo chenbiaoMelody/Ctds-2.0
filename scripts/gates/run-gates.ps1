@@ -112,6 +112,38 @@ function Stop-ProcessTree([System.Diagnostics.Process]$proc) {
     try { if (-not $proc.HasExited) { $proc.Kill() } } catch { }
 }
 
+# ---------- 通用辅助：按超时运行进程（不经 cmd 拼接，参数直接传递，无 shell 注入面） ----------
+# DB-06 质量度量段引入；DB-07（编排师裁定 C）gateSelfTest 执行器复用——执行器须位于全阶段之首
+# （selftest 开场/收尾清理及其 fixture 运行均写 %TEMP% 固定名 ctds-gate-*-out.log，置首避免
+# 删除/覆盖本运行先前阶段的失败取证），故本函数由原"质量度量段"位置纯上移至此：
+# 函数体内容零改动，diff 呈现为迁移（留痕见 ADR-018 V1.5 与 hifi §3-bis）。
+function Invoke-MetricProcess([string]$exe, [string]$argLine, [string]$workDir, [int]$timeoutSec, [string]$stage) {
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $exe
+    $psi.Arguments = $argLine
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.WorkingDirectory = $workDir
+    # DB-19 同款口径：JVM 系工具输出按 UTF-8 解码（中文 Windows 默认 GBK 会乱码红灯明细）
+    $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
+    $psi.StandardErrorEncoding = [System.Text.Encoding]::UTF8
+    $proc = [System.Diagnostics.Process]::Start($psi)
+    $outTask = $proc.StandardOutput.ReadToEndAsync()
+    $errTask = $proc.StandardError.ReadToEndAsync()
+    if (-not $proc.WaitForExit($timeoutSec * 1000)) {
+        # DB-43：超时也保有已产出的原始输出（原实现丢弃已读流，超时零证据）；进程树清理（Q1-A）
+        Stop-ProcessTree $proc
+        $null = $outTask.Wait(5000)
+        $null = $errTask.Wait(5000)
+        $timedOutBody = ("<timed out after " + $timeoutSec + "s>")
+        try { $timedOutBody = ("<timed out after " + $timeoutSec + "s>") + [Environment]::NewLine + $outTask.Result + $errTask.Result } catch { }
+        return @{ ExitCode = -1; Output = $timedOutBody }
+    }
+    $null = $outTask.Wait(10000); $null = $errTask.Wait(10000)
+    return @{ ExitCode = $proc.ExitCode; Output = ($outTask.Result + [Environment]::NewLine + $errTask.Result) }
+}
+
 # ---------- Git-tracked index (WBS-2.2.7 V1.2 / R1+R3) ----------
 # 用途：① 排除项护栏——排除项绝不允许命中入库路径；② 不可读文件判定——入库文件不可读记 ERROR，
 # 未入库的构建/运行产物才允许 SKIP。索引取不到属环境问题，护栏记 ERROR（不得静默放行）。
@@ -159,6 +191,56 @@ function Test-Excluded([string]$rel, [string[]]$exclude) {
 # 以下所有阶段包在一个 try 内：任何未预期异常都不允许让门禁"无报告退出"（原缺陷：脚本崩溃不留报告、
 # 退出码与"代码不合格的红灯"同形）。为保持变更最小可读，块内不额外缩进，改由本注释与收尾 catch 标注边界。
 try {
+
+# ---------- Stage: gateSelfTest (DB-07 CI 门禁自动化·编排师裁定 C, config V1.8, ADR-018 V1.5, hifi §3-bis) ----------
+# 运行器自检执行器：enabled=true 时每轮门禁实跑 selftest.ps1（S1~S15，只写 %TEMP%），结论写为报告行。
+# 位置 = 全阶段之首：selftest 开场/收尾清理及其 fixture 运行均写 %TEMP% 固定名 ctds-gate-*-out.log，
+# 置首避免删除/覆盖本运行先前阶段的失败取证（DB-43 取证链）。
+# 语义：0=PASS / 1=FAIL（断言失败=门禁自身不可信，红灯必修）/ 2=ERROR（harness/环境，非代码结论）；
+# 超时=FAIL（与既有阶段一致）。enabled=false 时由下方 PENDING 循环出可见行（不留静默关闭）。
+$gstStage = $cfg.stages.gateSelfTest
+if ($gstStage -and $gstStage.enabled) {
+    $gstTool = "scripts/gates/selftest.ps1"
+    if ($gstStage.tool) { $gstTool = $gstStage.tool }
+    $gstScript = Join-Path $RepoRoot $gstTool
+    if (-not (Test-Path $gstScript)) {
+        Add-Result "gateSelfTest" "ERROR" ("selftest script not found: " + $gstTool + " (resolved under RepoRoot) - fix stages.gateSelfTest.tool or restore the script")
+    } elseif (-not (Get-Command powershell -ErrorAction SilentlyContinue)) {
+        Add-Result "gateSelfTest" "ERROR" "powershell executable not found on PATH (required to run selftest.ps1)"
+    } else {
+        $gstTimeout = 300; if ($gstStage.timeoutSeconds) { $gstTimeout = [int]$gstStage.timeoutSeconds }
+        # 引号包裹（同 mutationTest pitArgs 惯例）：仓库路径含空格（E:\AI Projects\...），未加引号的
+        # -File 路径会被 powershell 命令行解析截断——S15 "spaces" 探针锚定该风险面
+        $gstCmd = "powershell -NoProfile -ExecutionPolicy Bypass -File `"" + $gstScript + "`""
+        $gstSw = [System.Diagnostics.Stopwatch]::StartNew()
+        $gstRun = Invoke-MetricProcess "powershell" ("-NoProfile -ExecutionPolicy Bypass -File `"" + $gstScript + "`"") $RepoRoot $gstTimeout "gateSelfTest"
+        $gstElapsed = [int]$gstSw.Elapsed.TotalSeconds
+        $gstTail = ($gstRun.Output -split "`r?`n" | Where-Object { $_.Trim() -ne "" } | Select-Object -Last 3) -join " | "
+        if ($gstRun.ExitCode -eq -1) {
+            $p = $null
+            try { $p = Write-StageOutLog "gateSelfTest" $gstCmd $gstRun.Output -1 $true $gstElapsed } catch { }
+            if ($p) { Add-Result "gateSelfTest" "FAIL" ("selftest timed out after " + $gstTimeout + "s | full output: " + $p) }
+            else { Add-Result "gateSelfTest" "FAIL" ("selftest timed out after " + $gstTimeout + "s") }
+        } elseif ($gstRun.ExitCode -eq 0) {
+            # 成功态详情摘录 selftest 末行摘要（"SELFTEST PASS - N assertion(s), 0 failure(s)"）——机器可核
+            $gstSummary = "exit 0"
+            if ($gstRun.Output -match "SELFTEST PASS - (\d+) assertion\(s\), (\d+) failure\(s\)") {
+                $gstSummary = ("exit 0, " + $Matches[1] + " assertions, " + $Matches[2] + " failures")
+            }
+            Add-Result "gateSelfTest" "PASS" ("selftest.ps1 " + $gstSummary + " in " + $gstElapsed + "s")
+        } elseif ($gstRun.ExitCode -eq 2) {
+            $p = $null
+            try { $p = Write-StageOutLog "gateSelfTest" $gstCmd $gstRun.Output 2 $false $gstElapsed } catch { }
+            if ($p) { Add-Result "gateSelfTest" "ERROR" ("selftest harness error (exit 2 = fixture/env problem, NOT a code verdict): " + $gstTail + " | full output: " + $p) }
+            else { Add-Result "gateSelfTest" "ERROR" ("selftest harness error (exit 2 = fixture/env problem, NOT a code verdict): " + $gstTail) }
+        } else {
+            $p = $null
+            try { $p = Write-StageOutLog "gateSelfTest" $gstCmd $gstRun.Output $gstRun.ExitCode $false $gstElapsed } catch { }
+            if ($p) { Add-Result "gateSelfTest" "FAIL" ("selftest exit " + $gstRun.ExitCode + " (runner self-check FAILED - the gate cannot vouch for this run): " + $gstTail + " | full output: " + $p) }
+            else { Add-Result "gateSelfTest" "FAIL" ("selftest exit " + $gstRun.ExitCode + " (runner self-check FAILED): " + $gstTail) }
+        }
+    }
+}
 
 # ---------- Stage: secretsScan ----------
 if ($cfg.stages.secretsScan.enabled) {
@@ -447,33 +529,8 @@ foreach ($stageName in @("frontendTypeCheck", "frontendLint", "frontendTest", "f
 }
 
 # ---------- Quality metrics: coverage / mutationTest / sast (DB-06/清债卡1, config V1.4, ADR-018) ----------
-# 通用辅助：按 config 超时运行进程（不经 cmd 拼接，参数直接传递，无 shell 注入面）
-function Invoke-MetricProcess([string]$exe, [string]$argLine, [string]$workDir, [int]$timeoutSec, [string]$stage) {
-    $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = $exe
-    $psi.Arguments = $argLine
-    $psi.UseShellExecute = $false
-    $psi.RedirectStandardOutput = $true
-    $psi.RedirectStandardError = $true
-    $psi.WorkingDirectory = $workDir
-    # DB-19 同款口径：JVM 系工具输出按 UTF-8 解码（中文 Windows 默认 GBK 会乱码红灯明细）
-    $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
-    $psi.StandardErrorEncoding = [System.Text.Encoding]::UTF8
-    $proc = [System.Diagnostics.Process]::Start($psi)
-    $outTask = $proc.StandardOutput.ReadToEndAsync()
-    $errTask = $proc.StandardError.ReadToEndAsync()
-    if (-not $proc.WaitForExit($timeoutSec * 1000)) {
-        # DB-43：超时也保有已产出的原始输出（原实现丢弃已读流，超时零证据）；进程树清理（Q1-A）
-        Stop-ProcessTree $proc
-        $null = $outTask.Wait(5000)
-        $null = $errTask.Wait(5000)
-        $timedOutBody = ("<timed out after " + $timeoutSec + "s>")
-        try { $timedOutBody = ("<timed out after " + $timeoutSec + "s>") + [Environment]::NewLine + $outTask.Result + $errTask.Result } catch { }
-        return @{ ExitCode = -1; Output = $timedOutBody }
-    }
-    $null = $outTask.Wait(10000); $null = $errTask.Wait(10000)
-    return @{ ExitCode = $proc.ExitCode; Output = ($outTask.Result + [Environment]::NewLine + $errTask.Result) }
-}
+# （Invoke-MetricProcess 通用辅助已由 DB-07〔编排师裁定 C〕纯上移至文件头部——gateSelfTest 执行器
+#   位于全阶段之首须可调用；本处不再重复定义。）
 
 $javaExe = "java"
 if ($toolJavaHome) { $javaExe = Join-Path $toolJavaHome "bin\java.exe" }

@@ -40,10 +40,24 @@
 #                                    hangs with timeoutSeconds=2: FAIL "timed out", out.log
 #                                    "(TIMED OUT)", grandchild PID GONE (taskkill /T; the old
 #                                    Kill()-only behaviour leaves the grandchild alive = red)
+#   S15 gateSelfTest executor wiring (DB-07 编排师裁定 C, config V1.8) -> fixture with
+#                                    gateSelfTest.enabled=true + a stub selftest script: exit 0 =
+#                                    gateSelfTest PASS row + exit 0 (PASS detail carries the parsed
+#                                    "SELFTEST PASS - N assertion(s)" summary), a spaced-path stub
+#                                    (tool under "scripts/gates dir/") anchors the -File quoting,
+#                                    exit 1 = FAIL row + exit 1 (self-check FAILED + full-output
+#                                    path), exit 2 = ERROR row + exit 2 (harness error, not a code
+#                                    verdict), missing tool = ERROR row + exit 2. The recursion guard
+#                                    (fixtures force the stage off) is what makes a stub - not the
+#                                    real selftest - the right probe here; the real chain is covered
+#                                    by the standalone baseline run and the post-enable full gate (V3).
 # How: every scenario builds a hermetic fixture repo under %TEMP% (git init + git add, cheap stages
 # only), generates its config FROM THE REAL gates-config.json (so the real exclude list is what gets
 # exercised), runs scripts/gates/run-gates.ps1 against it and asserts on the report file / stdout /
 # exit code. Nothing outside %TEMP% is touched; the fixtures are deleted when all scenarios pass.
+# DB-07 (config V1.8): every fixture FORCES gateSelfTest off (recursion guard - with the stage
+# enabled in the real config, a fixture inheriting it would make the runner invoke selftest again,
+# forever); S15 is the only scenario that turns it back on, with a stub in place of the real script.
 # Usage:
 #   powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gates\selftest.ps1 [-KeepFixture]
 # Exit codes: 0 = all scenarios passed, 1 = assertion failure, 2 = harness error (fixture/env problem).
@@ -110,6 +124,15 @@ function New-FixtureConfig([string]$dir, [string]$fileName, [bool]$mavenStages, 
     $cfgText = [System.IO.File]::ReadAllText($realConfig, [System.Text.Encoding]::UTF8)
     $cfgObj = ConvertFrom-Json -InputObject $cfgText
     foreach ($n in @("compile", "lint", "unitTest", "frontendTypeCheck", "frontendLint", "frontendTest", "frontendE2E", "coverage", "mutationTest", "sast")) { Set-StageEnabled $cfgObj $n $false }
+    # DB-07（编排师裁定 C，config V1.8）：fixture 一律强制 gateSelfTest 关闭——真实 config 翻位
+    # （enabled=true）后 fixture 不再继承 true，杜绝"门禁→selftest→fixture 门禁→selftest"无限递归；
+    # S15 在自己的 fixture 里显式改回 true 并配 stub selftest，验证执行器接线（递归守卫正面锚）。
+    # 同步补回 status:PENDING-SELFTEST：真实 config 启用时已按 ADR-018 V1.4 先例移除该字段
+    # （coverage/mutationTest/sast 等同径），而 PENDING 循环要求 enabled=false 且 status 形如
+    # PENDING* 才出可见行——fixture 须显式重建"关闭态"才能演练 S1 的"关闭态可见性"锚。
+    Set-StageEnabled $cfgObj "gateSelfTest" $false
+    # 补属性再设值（同 S14 timeoutSeconds 模式）：ConvertFrom-Json 对象直接赋不存在的属性在 PS 5.1 抛错
+    Add-Member -InputObject $cfgObj.stages.gateSelfTest -MemberType NoteProperty -Name status -Value "PENDING-SELFTEST" -Force
     if ($mavenStages) {
         foreach ($n in @("compile", "lint", "unitTest")) { Set-StageEnabled $cfgObj $n $true }
         $cfgObj.toolchain.javaHome = $javaHome
@@ -180,7 +203,7 @@ try {
     Assert-Contains $repText "zz-gate-lock-untracked.txt" "S1 the skipped file is named in the report"
     Assert-Contains $repText "| structureCheck | PASS |" "S1 later stages still ran (gate was NOT aborted)"
     Assert-Contains $repText "secretsScan.excludeGuard | PASS |" "S1 exclude guard ran and passed"
-    Assert-Contains $repText "gateSelfTest | PENDING | PENDING-SELFTEST" "S1 'selftest not wired into CI' is visible in every report"
+    Assert-Contains $repText "gateSelfTest | PENDING | PENDING-SELFTEST" "S1 fixture configs (gateSelfTest forced off by the recursion guard) still show the PENDING row"
     Assert-Contains $repText "-> GREEN" "S1 verdict GREEN"
     Assert-Contains $repText "- ExitCode: 0" "S1 report header declares exit code 0 (consistent with the process exit code)"
     Assert-Contains $repText "- Scenario: selftest-s1-untracked-locked" "S1 report records the Scenario label"
@@ -610,6 +633,78 @@ foreach ($n in @("compile", "lint", "unitTest")) {
     if (Test-Path $p) { Remove-Item $p -Force -ErrorAction SilentlyContinue }
 }
 
+# ---------- S15: gateSelfTest executor wiring (DB-07 编排师裁定 C, config V1.8, ADR-018 V1.5) ----------
+# enabled=true 时执行器必须实跑 <tool> 并把退出码映射为报告行：0=PASS / 1=FAIL / 2=ERROR；
+# tool 指向不存在文件 = ERROR。绿/红/ERROR/缺文件四探针。stub 只写标记输出——fixture 内跑真实
+# selftest 会递归（门禁→selftest→fixture 门禁→selftest），故用 stub 验证接线与映射；真实
+# selftest 的回归由 V2 基线与启用后 V3 全量门禁（真实链）覆盖。
+Write-Output ""
+Write-Output "S15 [gateSelfTest executor] expect: exit 0 -> PASS row/exit 0; exit 1 -> FAIL row/exit 1; exit 2 -> ERROR row/exit 2; tool missing -> ERROR row/exit 2"
+$s15Probes = @(
+    @{ Name = "green";   Code = 0;    Verdict = "PASS" },
+    @{ Name = "spaces";  Code = 0;    Verdict = "PASS" },
+    @{ Name = "red";     Code = 1;    Verdict = "FAIL" },
+    @{ Name = "error";   Code = 2;    Verdict = "ERROR" },
+    @{ Name = "missing"; Code = $null; Verdict = "ERROR" }
+)
+foreach ($probe in $s15Probes) {
+    $fix15 = New-Fixture ("s15-" + $probe.Name)
+    Initialize-FixtureGit $fix15
+    $gstDir15 = Join-Path $fix15 "scripts\gates"
+    New-Item -ItemType Directory -Path $gstDir15 -Force | Out-Null
+    $cfg15 = New-FixtureConfig $fix15 ("cfg-s15-" + $probe.Name + ".json") $false "" $null
+    $cfg15Obj = ConvertFrom-Json -InputObject ([System.IO.File]::ReadAllText($cfg15, [System.Text.Encoding]::UTF8))
+    $cfg15Obj.stages.gateSelfTest.enabled = $true
+    $stubMarker15 = ""
+    if ($probe.Name -eq "missing") {
+        # 缺文件探针：tool 指向不存在的脚本（fixture 内连 stub 都不放）
+        $cfg15Obj.stages.gateSelfTest.tool = "scripts/gates/zz-no-such-selftest.ps1"
+    } else {
+        $stubMarker15 = ("DB07-S15-STUB-" + $probe.Name.ToUpper())
+        $stubBody15 = "Write-Output '" + $stubMarker15 + "'" + [Environment]::NewLine
+        if ($probe.Code -eq 0) {
+            # 退出 0 的探针 stub 还打印 selftest 末行摘要——验证执行器 PASS 详情的摘要解析分支
+            $stubBody15 += "Write-Output 'SELFTEST PASS - 3 assertion(s), 0 failure(s)'" + [Environment]::NewLine
+        }
+        $stubBody15 += "exit " + $probe.Code + [Environment]::NewLine
+        if ($probe.Name -eq "spaces") {
+            # 空格路径探针：stub 放"scripts\gates dir"（带空格目录）、tool 指向它——锚定执行器
+            # argLine 必须给 -File 路径加引号（仓库根路径含空格：E:\AI Projects\...；未加引号会被
+            # powershell 命令行解析截断成" cannot find path"类失败）
+            $spacedDir15 = Join-Path $fix15 "scripts\gates dir"
+            New-Item -ItemType Directory -Path $spacedDir15 -Force | Out-Null
+            [System.IO.File]::WriteAllText((Join-Path $spacedDir15 "selftest.ps1"), $stubBody15, $utf8NoBom)
+            $cfg15Obj.stages.gateSelfTest.tool = "scripts/gates dir/selftest.ps1"
+        } else {
+            [System.IO.File]::WriteAllText((Join-Path $gstDir15 "selftest.ps1"), $stubBody15, $utf8NoBom)
+        }
+    }
+    [System.IO.File]::WriteAllText($cfg15, ($cfg15Obj | ConvertTo-Json -Depth 10), $utf8NoBom)
+    $rep15 = Join-Path $script:workDir ("s15-" + $probe.Name + "-report.md")
+    $r15 = Invoke-Runner $fix15 $cfg15 $rep15 ("selftest-s15-gateselftest-" + $probe.Name)
+    $rep15Text = Read-Report $rep15
+    if ($probe.Name -eq "missing") {
+        Assert-True ($r15.ExitCode -eq 2) ("S15 missing probe exit code 2 (got " + $r15.ExitCode + ")")
+        Assert-Contains $rep15Text "| gateSelfTest | ERROR |" "S15 missing probe: gateSelfTest reports ERROR"
+        Assert-Contains $rep15Text "selftest script not found" "S15 missing probe: the ERROR names the missing script"
+    } else {
+        Assert-True ($r15.ExitCode -eq $probe.Code) ("S15 " + $probe.Name + " probe exit code " + $probe.Code + " (got " + $r15.ExitCode + ")")
+        Assert-Contains $rep15Text ("| gateSelfTest | " + $probe.Verdict + " |") ("S15 " + $probe.Name + " probe: gateSelfTest reports " + $probe.Verdict)
+        if ($probe.Code -eq 0) {
+            Assert-Contains $rep15Text "3 assertions, 0 failures" ("S15 " + $probe.Name + " probe: PASS detail carries the parsed selftest summary")
+            Assert-NotContains $rep15Text "gateSelfTest | PENDING" ("S15 " + $probe.Name + " probe: no PENDING row when the executor ran (no silent double-bookkeeping)")
+        } else {
+            Assert-Contains $rep15Text $stubMarker15 ("S15 " + $probe.Name + " probe: the stub marker reached the report evidence")
+            Assert-Contains $rep15Text "full output:" ("S15 " + $probe.Name + " probe: the " + $probe.Verdict + " row carries the full-output path")
+            if ($probe.Name -eq "red") {
+                Assert-Contains $rep15Text "runner self-check FAILED" "S15 red probe: the FAIL says the gate cannot vouch for this run"
+            }
+            if ($probe.Name -eq "error") {
+                Assert-Contains $rep15Text "harness error" "S15 error probe: the ERROR says exit 2 is not a code verdict"
+            }
+        }
+    }
+}
 
 } catch {
     Write-Output ""
