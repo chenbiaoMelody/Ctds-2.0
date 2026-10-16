@@ -13,6 +13,7 @@ import com.ctds.gateway.support.StubServer;
 import com.ctds.gateway.support.TestTokens;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -27,11 +28,15 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.reactive.server.EntityExchangeResult;
 import org.springframework.test.web.reactive.server.WebTestClient;
+import org.springframework.web.util.UriUtils;
 
 /**
  * 网关交付链真链集成测试（hifi §9：T2 头处置 / T3 未认证 / T5 策略执行点 / T6 凭据与发起人 /
  * T8 计量对账）——真实 REACTIVE 应用 + 真实 HTTP，上游与判定均为本地 reactor-netty stub
  * （断言"上游请求计数"，越界与 fail-closed 时必须为 0）。
+ *
+ * <p><b>策略要素编码（hifi §5-2，CHG-WBS-3.5.2-hifi-V1.1）</b>：非 ASCII 要素头由测试<b>显式
+ * 百分号编码</b>发送并断言判定收到解码后原值；另含非法编码 / 解码后超长两类负向。</p>
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = {
@@ -51,6 +56,18 @@ class GatewayDeliveryChainIntegrationTest {
     private static final String CONTRACT_NO = "CT-2026-0001";
     private static final String DELIVERY_PATH = "/api/v1/data-products/12";
     private static final String TRACE_ID = "trace-352-abc";
+
+    /**
+     * 策略要素（中文）与显式 URL 百分号编码值（hifi §5-2，CHG-WBS-3.5.2-hifi-V1.1）：
+     * 测试必须显式编码（不得依赖 HTTP 客户端自动编码——中文会被编成 {@code ?} 造成哑绿，
+     * 走查缺陷 C 教训）；断言判定 stub 收到<b>解码后原值</b>。
+     */
+    private static final String PURPOSE_CN = "风控建模";
+    private static final String TERRITORY_CN = "本市域";
+    private static final String PURPOSE_ENCODED =
+            UriUtils.encode(PURPOSE_CN, StandardCharsets.UTF_8);
+    private static final String TERRITORY_ENCODED =
+            UriUtils.encode(TERRITORY_CN, StandardCharsets.UTF_8);
     private static final String UPSTREAM_BODY = "{\"code\":\"0\",\"data\":{\"productId\":12}}";
     private static final String OVER_LIMIT_CODE = "1008C0020";
     private static final String OVER_LIMIT_MESSAGE = "越界使用被拒绝，触发要素见留痕";
@@ -165,13 +182,17 @@ class GatewayDeliveryChainIntegrationTest {
                 .header(HttpHeaders.AUTHORIZATION,
                         "Bearer " + TestTokens.valid(REQUESTER, List.of("provider")))
                 .header("X-Ctds-Contract-No", CONTRACT_NO)
-                .header("X-Ctds-Purpose", "风控建模")
-                .header("X-Ctds-Territory", "本市域")
+                .header("X-Ctds-Purpose", PURPOSE_ENCODED)
+                .header("X-Ctds-Territory", TERRITORY_ENCODED)
                 .header("X-Trace-Id", TRACE_ID)
                 .exchange().expectStatus().isOk()
                 .expectBody().jsonPath("$.data.productId").isEqualTo(12);
 
         assertThat(JUDGE.requestCount()).as("转发前必须调用一次判定").isEqualTo(1);
+        assertThat(JUDGE.lastBody())
+                .as("判定收到解码后的要素原值（中文策略要素经百分号编码可达判定）")
+                .contains("\"purpose\":\"" + PURPOSE_CN + "\"")
+                .contains("\"territory\":\"" + TERRITORY_CN + "\"");
         assertThat(UPSTREAM.requestCount()).as("放行后触达数据源一次").isEqualTo(1);
         final List<AuditEvent> metering = meteringEvents();
         assertThat(metering).hasSize(1);
@@ -276,6 +297,40 @@ class GatewayDeliveryChainIntegrationTest {
         assertThat(meteringEvents()).hasSize(1);
     }
 
+    @Test
+    void malformedElementEncodingIsRejectedWithoutJudging() {
+        final JsonNode body = readTree(client.get().uri(DELIVERY_PATH)
+                .header(HttpHeaders.AUTHORIZATION,
+                        "Bearer " + TestTokens.valid(REQUESTER, List.of("provider")))
+                .header("X-Ctds-Contract-No", CONTRACT_NO)
+                .header("X-Ctds-Purpose", "%ZZ")
+                .exchange().expectStatus().isBadRequest()
+                .expectBody().returnResult().getResponseBody());
+
+        assertThat(body.path("code").asText()).as("非法百分号序列 → 1000C0001（平台公共段参数码）")
+                .isEqualTo("1000C0001");
+        assertThat(body.path("message").asText())
+                .isEqualTo("策略要素编码不合法");
+        assertThat(JUDGE.requestCount()).as("要素非法不调用判定").isZero();
+        assertThat(UPSTREAM.requestCount()).isZero();
+    }
+
+    @Test
+    void overlongDecodedElementIsRejected() {
+        final JsonNode body = readTree(client.get().uri(DELIVERY_PATH)
+                .header(HttpHeaders.AUTHORIZATION,
+                        "Bearer " + TestTokens.valid(REQUESTER, List.of("provider")))
+                .header("X-Ctds-Contract-No", CONTRACT_NO)
+                .header("X-Ctds-Territory", "A".repeat(257))
+                .exchange().expectStatus().isBadRequest()
+                .expectBody().returnResult().getResponseBody());
+
+        assertThat(body.path("code").asText()).as("解码后超长（>256）→ 1000C0001")
+                .isEqualTo("1000C0001");
+        assertThat(JUDGE.requestCount()).isZero();
+        assertThat(UPSTREAM.requestCount()).isZero();
+    }
+
     // ==== T8 计量对账（双向）与事件字段最小必要 ====
 
     @Test
@@ -319,8 +374,8 @@ class GatewayDeliveryChainIntegrationTest {
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + TestTokens.valid(subject,
                         List.of("provider")))
                 .header("X-Ctds-Contract-No", CONTRACT_NO)
-                .header("X-Ctds-Purpose", "风控建模")
-                .header("X-Ctds-Territory", "本市域")
+                .header("X-Ctds-Purpose", PURPOSE_ENCODED)
+                .header("X-Ctds-Territory", TERRITORY_ENCODED)
                 .exchange().expectStatus().isEqualTo(expected.value())
                 .expectBody().returnResult().getResponseBody());
     }

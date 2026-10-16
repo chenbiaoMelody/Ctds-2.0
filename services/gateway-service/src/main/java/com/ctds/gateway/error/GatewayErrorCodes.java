@@ -1,19 +1,25 @@
 package com.ctds.gateway.error;
 
 import com.ctds.common.errorcode.ErrorCode;
+import com.ctds.common.errorcode.ErrorCodes;
 
 /**
  * 网关自身错误码（1009 段 = 交付与沙箱域，3.5.1 Q8-A 预留、立卡实测全库零占用；hifi §7）。
  *
- * <p>纪律：网关只占用 1009 段自身错；未认证复用 {@code 1000C0002}、无权限复用 {@code 1000C0005}；
- * **越界一律透传合约域原码**（1008C0020 / 1008C0013 / 1008C0012 / 1008C0008），禁止改写与新增
- * "跳过判定 / 强制放行"入参。</p>
+ * <p>纪律：网关只占用 1009 段自身错；未认证复用 {@code 1000C0002}、无权限复用 {@code 1000C0005}、
+ * 策略要素编码非法复用 {@code 1000C0001}（平台公共段参数码，CHG-WBS-3.5.2-hifi-V1.1——不扩张
+ * {@code 1009C0001} 语义、不新增码位）；**越界一律透传合约域原码**（1008C0020 / 1008C0013 /
+ * 1008C0012 / 1008C0008），禁止改写与新增"跳过判定 / 强制放行"入参。</p>
  */
 public final class GatewayErrorCodes {
 
     /** 交付凭据缺失或格式非法（合约编号头）。→ 400 */
     public static final ErrorCode DELIVERY_CREDENTIAL_INVALID = ErrorCode.of("1009C0001");
     public static final String DELIVERY_CREDENTIAL_INVALID_MESSAGE = "交付凭据缺失或格式非法";
+
+    /** 策略要素编码非法 / 解码后超长（URL 百分号编码约定，CHG-WBS-3.5.2-hifi-V1.1）。→ 400 */
+    public static final ErrorCode DELIVERY_ELEMENT_INVALID = ErrorCodes.PARAM_INVALID;
+    public static final String DELIVERY_ELEMENT_INVALID_MESSAGE = "策略要素编码不合法";
 
     /** 调用频率超出限制（网络级频率保护，非业务次数配额）。→ 429 */
     public static final ErrorCode RATE_LIMITED = ErrorCode.of("1009C0002");
