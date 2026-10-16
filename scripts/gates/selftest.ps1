@@ -46,9 +46,13 @@
 #                                    "SELFTEST PASS - N assertion(s)" summary), a spaced-path stub
 #                                    (tool under "scripts/gates dir/") anchors the -File quoting,
 #                                    exit 1 = FAIL row + exit 1 (self-check FAILED + full-output
-#                                    path), exit 2 = ERROR row + exit 2 (harness error, not a code
-#                                    verdict), missing tool = ERROR row + exit 2. The recursion guard
-#                                    (fixtures force the stage off) is what makes a stub - not the
+#                                    path), a hanging stub with timeoutSeconds=2 = FAIL "timed out
+#                                    after 2s" (executor timeout branch), exit 2 = ERROR row + exit 2
+#                                    (harness error, not a code verdict), missing tool = ERROR row +
+#                                    exit 2; PASS probes also anchor the first-stage row order, and a
+#                                    closing guard scan asserts every non-S15 fixture config keeps the
+#                                    stage disabled (recursion guard as a machine check). The recursion
+#                                    guard (fixtures force the stage off) is what makes a stub - not the
 #                                    real selftest - the right probe here; the real chain is covered
 #                                    by the standalone baseline run and the post-enable full gate (V3).
 # How: every scenario builds a hermetic fixture repo under %TEMP% (git init + git add, cheap stages
@@ -645,6 +649,7 @@ $s15Probes = @(
     @{ Name = "spaces";  Code = 0;    Verdict = "PASS" },
     @{ Name = "red";     Code = 1;    Verdict = "FAIL" },
     @{ Name = "error";   Code = 2;    Verdict = "ERROR" },
+    @{ Name = "hang";    Code = 1;    Verdict = "FAIL" },
     @{ Name = "missing"; Code = $null; Verdict = "ERROR" }
 )
 foreach ($probe in $s15Probes) {
@@ -656,7 +661,18 @@ foreach ($probe in $s15Probes) {
     $cfg15Obj = ConvertFrom-Json -InputObject ([System.IO.File]::ReadAllText($cfg15, [System.Text.Encoding]::UTF8))
     $cfg15Obj.stages.gateSelfTest.enabled = $true
     $stubMarker15 = ""
-    if ($probe.Name -eq "missing") {
+    if ($probe.Name -eq "hang") {
+        # hang 探针（④ F-2）：stub 挂起 60s，fixture config 把该段 timeoutSeconds 设为 2——锚定
+        # 执行器超时分支（FAIL "timed out after 2s" + full output 取证）；S14 同款 detached 调用
+        # （超时注入场景不重定向 std，断言全在报告文件上）
+        $stubMarker15 = "DB07-S15-STUB-HANG"
+        # [Console]::Out + Flush：PS 5.1 重定向 stdout 时输出经 PowerShell 缓冲，挂起中被 kill 会丢失
+        # ——直写进程 stdout 并 flush，保证"stub 确已启动且其输出已进入取证"可被断言
+        [System.IO.File]::WriteAllText((Join-Path $gstDir15 "selftest.ps1"),
+            ("[Console]::Out.WriteLine('" + $stubMarker15 + "'); [Console]::Out.Flush()" + [Environment]::NewLine + "Start-Sleep -Seconds 60" + [Environment]::NewLine + "exit 0" + [Environment]::NewLine),
+            $utf8NoBom)
+        Add-Member -InputObject $cfg15Obj.stages.gateSelfTest -MemberType NoteProperty -Name timeoutSeconds -Value 2 -Force
+    } elseif ($probe.Name -eq "missing") {
         # 缺文件探针：tool 指向不存在的脚本（fixture 内连 stub 都不放）
         $cfg15Obj.stages.gateSelfTest.tool = "scripts/gates/zz-no-such-selftest.ps1"
     } else {
@@ -681,7 +697,12 @@ foreach ($probe in $s15Probes) {
     }
     [System.IO.File]::WriteAllText($cfg15, ($cfg15Obj | ConvertTo-Json -Depth 10), $utf8NoBom)
     $rep15 = Join-Path $script:workDir ("s15-" + $probe.Name + "-report.md")
-    $r15 = Invoke-Runner $fix15 $cfg15 $rep15 ("selftest-s15-gateselftest-" + $probe.Name)
+    if ($probe.Name -eq "hang") {
+        # hang 探针走 detached（S14 同款：超时注入不重定向 std，断言全在报告文件上）
+        $r15 = Invoke-Runner $fix15 $cfg15 $rep15 ("selftest-s15-gateselftest-" + $probe.Name) -detached
+    } else {
+        $r15 = Invoke-Runner $fix15 $cfg15 $rep15 ("selftest-s15-gateselftest-" + $probe.Name)
+    }
     $rep15Text = Read-Report $rep15
     if ($probe.Name -eq "missing") {
         Assert-True ($r15.ExitCode -eq 2) ("S15 missing probe exit code 2 (got " + $r15.ExitCode + ")")
@@ -693,18 +714,56 @@ foreach ($probe in $s15Probes) {
         if ($probe.Code -eq 0) {
             Assert-Contains $rep15Text "3 assertions, 0 failures" ("S15 " + $probe.Name + " probe: PASS detail carries the parsed selftest summary")
             Assert-NotContains $rep15Text "gateSelfTest | PENDING" ("S15 " + $probe.Name + " probe: no PENDING row when the executor ran (no silent double-bookkeeping)")
+            # ④ F-1：行序锚——执行器必须位于全阶段之首（selftest 开场/收尾清理及其 fixture 均写
+            # %TEMP% 固定名 ctds-gate-*-out.log；置首保护本运行先前阶段的失败取证，下移即破坏）
+            Assert-True ($rep15Text.IndexOf("| gateSelfTest |") -lt $rep15Text.IndexOf("| secretsScan |")) ("S15 " + $probe.Name + " probe: the executor row precedes secretsScan (first-stage invariant)")
         } else {
-            Assert-Contains $rep15Text $stubMarker15 ("S15 " + $probe.Name + " probe: the stub marker reached the report evidence")
-            Assert-Contains $rep15Text "full output:" ("S15 " + $probe.Name + " probe: the " + $probe.Verdict + " row carries the full-output path")
-            if ($probe.Name -eq "red") {
-                Assert-Contains $rep15Text "runner self-check FAILED" "S15 red probe: the FAIL says the gate cannot vouch for this run"
-            }
-            if ($probe.Name -eq "error") {
-                Assert-Contains $rep15Text "harness error" "S15 error probe: the ERROR says exit 2 is not a code verdict"
+            if ($probe.Name -eq "hang") {
+                # 超时行按既有口径（同 mvn/npm 段）不带输出尾段——行文锚 + full output 取证深锚
+                Assert-Contains $rep15Text "timed out after 2s" "S15 hang probe: the FAIL names the timeout budget (executor timeout branch anchored)"
+                Assert-Contains $rep15Text "full output:" "S15 hang probe: the FAIL row carries the full-output path"
+                $mHang = [regex]::Match($rep15Text, "full output: (.+ctds-gate-gateSelfTest-out\.log)")
+                if ($mHang.Success -and (Test-Path $mHang.Groups[1].Value.Trim())) {
+                    $hangOut = [System.IO.File]::ReadAllText($mHang.Groups[1].Value.Trim(), [System.Text.Encoding]::UTF8)
+                    Assert-Contains $hangOut "stage: gateSelfTest" "S15 hang probe: out.log carries the stage summary line (DB-43 format)"
+                    Assert-Contains $hangOut "exitCode: -1 (TIMED OUT)" "S15 hang probe: out.log marks the TIMED OUT state"
+                    Assert-Contains $hangOut $stubMarker15 "S15 hang probe: out.log carries the stub output captured before the kill"
+                } else {
+                    Assert-True $false "S15 hang probe: the reported out.log path is present and readable"
+                }
+            } else {
+                # marker 仅对真实生成 stub 的探针断言（missing 探针无 stub，marker 为空——避免恒真断言）
+                if ($stubMarker15 -ne "") {
+                    Assert-Contains $rep15Text $stubMarker15 ("S15 " + $probe.Name + " probe: the stub marker reached the report evidence")
+                }
+                Assert-Contains $rep15Text "full output:" ("S15 " + $probe.Name + " probe: the " + $probe.Verdict + " row carries the full-output path")
+                if ($probe.Name -eq "red") {
+                    Assert-Contains $rep15Text "runner self-check FAILED" "S15 red probe: the FAIL says the gate cannot vouch for this run"
+                }
+                if ($probe.Name -eq "error") {
+                    Assert-Contains $rep15Text "harness error" "S15 error probe: the ERROR says exit 2 is not a code verdict"
+                }
             }
         }
     }
 }
+
+# ---------- S15 收尾护栏（④ F-8）：把递归守卫从"约定"升级为"机器强制" ----------
+# New-FixtureConfig 集中强制关闭 + 补回 status；若未来新场景绕过该 helper 直接复制真实 config
+# （enabled=true）当 fixture 配置，将触发"门禁→selftest→fixture 门禁→selftest"无限递归。
+# 收尾前统一扫描本运行产生的全部 fixture 配置（S15 显式开启的 cfg-s15-*.json 按名豁免）。
+Write-Output ""
+Write-Output "S15 guard scan: every non-S15 fixture config must keep gateSelfTest in the disabled state"
+$s15GuardBad = @()
+foreach ($cfgGuardFile in (Get-ChildItem $script:workDir -Recurse -Filter "cfg*.json" -ErrorAction SilentlyContinue)) {
+    if ($cfgGuardFile.Name -like "cfg-s15-*.json") { continue }
+    $cfgGuardObj = ConvertFrom-Json -InputObject ([System.IO.File]::ReadAllText($cfgGuardFile.FullName, [System.Text.Encoding]::UTF8))
+    $gstGuard = $cfgGuardObj.stages.gateSelfTest
+    if ($null -eq $gstGuard -or $gstGuard.enabled -ne $false -or $gstGuard.status -notlike "PENDING*") {
+        $s15GuardBad += ($cfgGuardFile.Name + " (enabled=" + $(if ($null -eq $gstGuard) { "<absent>" } else { $gstGuard.enabled }) + ", status=" + $(if ($null -eq $gstGuard) { "<absent>" } else { $gstGuard.status }) + ")")
+    }
+}
+Assert-True ($s15GuardBad.Count -eq 0) ("S15 guard scan: all non-S15 fixture configs keep gateSelfTest disabled + PENDING status" + $(if ($s15GuardBad.Count -gt 0) { " <violations: " + ($s15GuardBad -join " ; ") + ">" } else { "" }))
 
 } catch {
     Write-Output ""

@@ -34,6 +34,13 @@
 #   落盘失败不影响段判定（记录是加菜，不是判定）。
 #   依据：任务卡 docs/tasks/DB-43-门禁可观测性增强-2026-10-13.md + 两级设计
 #   docs/designs/DB-43-{lofi,hifi}.md（V1.0 已确认）+ ADR-018 修订记录 V1.3。
+# DB-07（2026-10-16，CI 门禁自动化·编排师一次确认 Q5-A + 编码段红线 4 停报后裁定 C，config V1.8，
+# ADR-018 V1.5）record: 新增 gateSelfTest 执行器段（见下方 Stage: gateSelfTest——位于全阶段之首；
+# 退出码 0/1/2→PASS/FAIL/ERROR，超时=FAIL；selftest.ps1 同步适配：New-FixtureConfig 递归守卫 +
+# S15 探针〔绿/空格路径/红/ERROR/缺文件/hang〕，断言只增不减）。Invoke-MetricProcess 由原"质量
+# 度量段"位置纯上移至文件头部（函数体内容零改动，diff 呈现为迁移——执行器置首须可调用）。
+# 判定阈值 / 阶段范围 / 扫描面 / 退出码语义 / 报告五态语义零改动；gates-config.json 改动面 =
+# gateSelfTest.enabled 一位 + timeoutSeconds 新增键 + 移除 status + note + changeLog/version。
 param(
     [string]$RepoRoot = "",
     [string]$ReportPath = "",
@@ -210,10 +217,12 @@ if ($gstStage -and $gstStage.enabled) {
     } else {
         $gstTimeout = 300; if ($gstStage.timeoutSeconds) { $gstTimeout = [int]$gstStage.timeoutSeconds }
         # 引号包裹（同 mutationTest pitArgs 惯例）：仓库路径含空格（E:\AI Projects\...），未加引号的
-        # -File 路径会被 powershell 命令行解析截断——S15 "spaces" 探针锚定该风险面
-        $gstCmd = "powershell -NoProfile -ExecutionPolicy Bypass -File `"" + $gstScript + "`""
+        # -File 路径会被 powershell 命令行解析截断——S15 "spaces" 探针锚定该风险面。
+        # 单变量构造（③ F-c2：$gstCmd 与 argLine 原为同串构建两次）
+        $gstArgLine = "-NoProfile -ExecutionPolicy Bypass -File `"" + $gstScript + "`""
+        $gstCmd = "powershell " + $gstArgLine
         $gstSw = [System.Diagnostics.Stopwatch]::StartNew()
-        $gstRun = Invoke-MetricProcess "powershell" ("-NoProfile -ExecutionPolicy Bypass -File `"" + $gstScript + "`"") $RepoRoot $gstTimeout "gateSelfTest"
+        $gstRun = Invoke-MetricProcess "powershell" $gstArgLine $RepoRoot $gstTimeout "gateSelfTest"
         $gstElapsed = [int]$gstSw.Elapsed.TotalSeconds
         $gstTail = ($gstRun.Output -split "`r?`n" | Where-Object { $_.Trim() -ne "" } | Select-Object -Last 3) -join " | "
         if ($gstRun.ExitCode -eq -1) {

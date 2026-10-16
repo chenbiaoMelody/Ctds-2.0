@@ -19,20 +19,21 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gates\run-gates.ps1
 `.github/workflows/quality-gate.yml` 把本运行器接入 GitHub Actions（D-3 切换接口的首次落地——**门禁脚本零改造，CI 只调用**）：
 
 - **触发**：`pull_request`（全分支，opened/synchronize/reopened）+ `push`（仅 `main`）+ `workflow_dispatch`（手动）；**不按路径过滤**（文档变更同样要过 devLogNamingCheck / adrFieldsCheck / secretsScan——过滤即放水）；
-- **Runner 与工具链**：`windows-latest`（脚本 Windows 定位：`$env:TEMP` / `taskkill /T` / `cmd.exe` 包 mvn）+ `setup-java`（temurin 17，注入 `JAVA_HOME`——脚本 L301-302 优先读环境变量）+ `setup-node`（20）+ runner 自带 Docker（sast 与 Testcontainers 需要，首跑实证可用性）；
+- **Runner 与工具链**：`windows-latest`（脚本 Windows 定位：`$env:TEMP` / `taskkill /T` / `cmd.exe` 包 mvn）+ `setup-java`（temurin 17，注入 `JAVA_HOME`——脚本 toolchain 段的 `$env:JAVA_HOME` 优先分支读环境变量）+ `setup-node`（20）+ **runner 的 Docker 可用性未经实证**（GitHub Windows 镜像默认不含 Docker；sast 段与 Testcontainers 依赖它——**V4 真实 PR 首跑前必须实测**；若不可用，sast 将记 ERROR 且门禁判红，处置路径 = 显式 ERROR 行 + 门禁红并登记，或改用自带 Docker 的 runner 形态，**不得以"CI 环境限制"为由关闭该段**）；
 - **执行**：单 job 全量 `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/gates/run-gates.ps1`（与本 README 规范调用逐字一致）；该步 `continue-on-error` 仅为取回报告，**终态步骤 fail-closed：退出码 0 → job 绿；1（RED）/ 2（环境/配置错）一律 job 红**（摘要区分语义，不得把 2 放行）；
 - **结论三形态**：① job 摘要（`$GITHUB_STEP_SUMMARY`：ExitCode / 五态计数 / RunLabel / ConfigSha256 / 报告文件名）② PR 评论（`actions/github-script`，固定标识 upsert 不刷屏；fork PR 自动跳过——GITHUB_TOKEN 只读）③ artifact 上传（`gate-report-<run_id>`，CI 上 reports 为临时目录，取回供第三方逐字复核）；
 - **并发**：同 ref 新推送取消旧跑（`concurrency`）；
 - **秘密**：**零 secret**——仅用自动注入的 `GITHUB_TOKEN`（最小权限 contents: read + pull-requests: write）；
 - **依赖解析**：runner 无用户级 `.m2/settings.xml`，直连 Maven Central（镜像为国内网络优化，不为 CI 新增配置文件）；
-- **gateSelfTest 启用记录（本卡四件套之一）**：随本次接入 `enabled` false→true（config V1.8 + changeLog V1.8 + ADR-018 V1.5 + 本节）；ConfigSha256 基线 `924f0ca3…dfdd` → **`5f600e72…4eb6`**（改前/改后逐字记录，第三方可以 `Get-FileHash` 复算核对）；
+- **gateSelfTest 启用记录（本卡四件套之一）**：随本次接入 `enabled` false→true（config V1.8 + changeLog V1.8/V1.9 + ADR-018 V1.5 + 本节）；ConfigSha256 基线 `924f0ca3…dfdd` → `5f600e72…4eb6` → **`36ed456e…5696`**（V1.9 = 评审修复批纯口径勘误，零键位零行为；改前/改后逐字记录，第三方可以 `Get-FileHash` 复算核对）；
 - **分支保护（Q6-A）**：main 的 require status checks 由编排师在 GitHub 仓库设置执行（AI 无仓库设置权限——验收通过后呈报待执行，不代设）。
+- **同仓分支 PR 边界（评审② P2-2 登记）**：`pull_request` 全分支触发下，同仓库分支 PR 的 `GITHUB_TOKEN` 保留 `pull-requests: write`，且 job 执行的是 PR 版本的门禁脚本——属触发模型固有面（fork PR 已按 `head.repo` 同仓判断跳过评论步骤、届时令牌只读）；缓解 = 仓库设置对外部协作者 PR 要求审批（与 Q6-A 一并归编排师执行）。
 
 ## 怎么看结果
 
 - 每个检查项五态：**PASS（绿）**、**FAIL（红，必须修复后重交，无特批）**、**SKIP（跳过）**、**ERROR（环境/配置问题）**、**PENDING（待接入）**；
 - **SKIP 不是放行**：记 SKIP 的情形有三类，凡涉及**入库**（git 追踪）文件均**逐条列名**备人工复核——① 未入库文件被占用/不可读（`secretsScan.skipped` 行）；② ≥1MB 超大文件不入正则扫描（`secretsScan.oversized` 行，DB-18）；③ NUL 二进制按启发式跳过（`secretsScan.binary` 行，DB-18）；**入库文件不可读一律记 `ERROR`**（`secretsScan.unreadable` 行），目录枚举失败（其下文件根本没进扫描名单）也记 `ERROR`（`secretsScan.enumGap` 行，DB-18）——"没枚举到/扫不了/没扫/扫过且干净"必须分开；
-- 最后一行汇总 `-> GREEN / RED / ERROR`：只有 **GREEN** 才允许提交评审；
+- 头部 `Result` 行汇总五态计数与终态（`-> GREEN / RED / ERROR`）：只有 **GREEN** 才允许提交评审；
 - 退出码（WBS-2.2.7 语义，**优先级 1 > 2 > 0**）：
   - `1` = RED（**代码/安全不合格**，必须修复后重交）——**只要存在任一 FAIL 就是 1，即使同时存在 ERROR 行**；报告中会明示"环境/配置错误不得掩盖这条红灯"；
   - `0` = GREEN；
@@ -64,9 +65,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gates\selftest.ps1
 | S12 | stub `mvn` 退出 0 + 标记输出 | compile PASS **且** `%TEMP%\ctds-gate-compile-out.log` 存在，含 `stage: compile` / `exitCode: 0` 摘要行与完整原始输出；PASS 报告行保持原格式（DB-43 ①：成功态也要有机器可核证据，"0 字节日志"教训根治） |
 | S13 | stub `npm`（typecheck）退出 1 + stdout/stderr 标记 | frontendTypeCheck FAIL、out.log 含 `exitCode: 1` 与两个标记、报告 FAIL 行含 `full output:`（DB-43 ③：DB-44"错误正文未取得"损失场景的正面锚） |
 | S14 | stub `mvn` 启动孙进程（写 PID 入文件）后挂起，compile `timeoutSeconds=2` | 报告 FAIL "timed out"、out.log 含 `(TIMED OUT)` 与超时前部分输出、**孙进程 PID 已不存在**（taskkill `/T`；旧实现仅杀父进程、孙进程幸存 = 红相锚——DB-43 Q1-A / 跟踪-23 剩余兑现） |
-| S15 | fixture 内 `gateSelfTest.enabled=true` + stub `selftest.ps1` 退出 0 / 1 / 2，tool 指向不存在文件，及 stub 置于带空格目录（`scripts/gates dir/`） | 退出 0 → `gateSelfTest PASS` 行 + 退出码 0（详情摘录断言摘要、**无 PENDING 行**）；**空格路径 → PASS**（锚定执行器 `-File` 引号——仓库根路径含空格，未加引号会被命令行解析截断）；退出 1 → FAIL 行 + 退出码 1（"runner self-check FAILED" + `full output:` 路径）；退出 2 → ERROR 行 + 退出码 2（harness error，非代码结论）；tool 缺失 → ERROR 行 + 退出码 2——执行器接线与退出码映射五探针（DB-07 编排师裁定 C；stub 而非真实 selftest，因 fixture 内跑真实脚本会递归） |
+| S15 | fixture 内 `gateSelfTest.enabled=true` + stub `selftest.ps1` 退出 0 / 1 / 2，tool 指向不存在文件，stub 置于带空格目录（`scripts/gates dir/`），及挂起 stub（`timeoutSeconds=2`） | 退出 0 → `gateSelfTest PASS` 行 + 退出码 0（详情摘录断言摘要、**无 PENDING 行**、**行序位于 secretsScan 之前**）；**空格路径 → PASS**（锚定执行器 `-File` 引号——仓库根路径含空格，未加引号会被命令行解析截断）；退出 1 → FAIL 行 + 退出码 1（"runner self-check FAILED" + `full output:` 路径）；退出 2 → ERROR 行 + 退出码 2（harness error，非代码结论）；tool 缺失 → ERROR 行 + 退出码 2；**挂起 → FAIL "timed out after 2s"**（超时分支锚 + out.log 取证深锚：stage 摘要行 / `exitCode: -1 (TIMED OUT)` / kill 前 stub 输出）——六探针 + 行序锚 + 收尾递归守卫机器扫描（非 S15 fixture 配置必须保持关闭态）（DB-07 编排师裁定 C；stub 而非真实 selftest，因 fixture 内跑真实脚本会递归） |
 
-`selftest.ps1` 只读运行器、只写 `%TEMP%`；全部通过后自动清理沙箱目录（`-KeepFixture` 可保留以便排查）。其运行状态在配置中登记为 `stages.gateSelfTest`：**DB-07 起（2026-10-16，编排师裁定 C）`enabled=true`——`run-gates.ps1` 执行器（全阶段之首）每轮门禁自动实跑本脚本**（S1~S15，115 断言，实测约 32s），退出码 0/1/2 分别记 PASS/FAIL/ERROR 报告行，超时记 FAIL；`enabled=false` 时每份报告显示"自检未跑"（PENDING 行）。fixture 配置一律强制关闭该段并补回 `status:PENDING-SELFTEST`（递归守卫，`New-FixtureConfig`——演练"关闭态可见性"），S15 在自己的 fixture 里显式开启并以 stub 验证执行器接线。
+`selftest.ps1` 只读运行器、只写 `%TEMP%`；全部通过后自动清理沙箱目录（`-KeepFixture` 可保留以便排查）。其运行状态在配置中登记为 `stages.gateSelfTest`：**DB-07 起（2026-10-16，编排师裁定 C）`enabled=true`——`run-gates.ps1` 执行器（全阶段之首）每轮门禁自动实跑本脚本**（S1~S14 + S11b + S15 共十六场景 125 断言；时长双口径：独立单发实测 32s〔94 断言基线〕/ 全量门禁内实测 41s〔V3，115 断言〕），退出码 0/1/2 分别记 PASS/FAIL/ERROR 报告行，超时记 FAIL；`enabled=false` 时每份报告显示"自检未跑"（PENDING 行）。fixture 配置一律强制关闭该段并补回 `status:PENDING-SELFTEST`（递归守卫，`New-FixtureConfig`——演练"关闭态可见性"；收尾另有全量扫描的机器护栏），S15 在自己的 fixture 里显式开启并以 stub 验证执行器接线（六探针 + 行序锚）。
 
 > `run-gates.ps1` 另有两个**仅供 selftest / 变更验证**的参数：`-ConfigPath`（指定另一份配置，报告会写明实际路径与其 SHA256）与 `-Scenario`（运行标签）。**正常交付运行一律使用默认配置、`Scenario=default`**；带标签的运行在报告中一眼可辨。
 
@@ -82,7 +83,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gates\selftest.ps1
 **机器护栏（V1.2 起）**：门禁启动时用 `git ls-files` 取入库路径清单，**任一排除项命中入库路径即记 `secretsScan.excludeGuard ERROR` 并以退出码 2 结束**。"排除项不得规避已入库文件"这条约束不再只写在注释里，而是每次运行都在校验——**改动排除项若误伤入库文件，门禁当次即红**。
 
 > 变更留痕：
-> - **DB-07（2026-10-16，CI 门禁自动化，任务卡 `docs/tasks/DB-07-CI门禁自动化-2026-10-16.md` + 两级设计 `docs/designs/DB-07-{lofi,hifi}.md`（V1.0 一次确认 + V1.1 增补 §3-bis），编排师 Q1~Q7 均采 A + 编码段红线 4 停报后裁定 C）**：① `.github/workflows/quality-gate.yml` 新增（触发 / windows-latest / 单 job 全量 / 结论三形态回写 / fail-closed / 零秘密——见上"CI 接入"节）；② `gates-config.json` V1.8：`stages.gateSelfTest.enabled` false→true + `timeoutSeconds=300` + 移除 `status:PENDING-SELFTEST` + note 更新 + version V1.6→V1.8（ConfigSha256 `924f0ca3…dfdd` → **`5f600e72…4eb6`**）——V1.0 契约"翻 enabled 即随每轮门禁执行 selftest"经编码段实证为**未验证假设**（运行器原无执行器；单翻位 = 不执行 + PENDING 行消失 + selftest 自身 S1 断言失败），经编排师裁定 C 卡内补齐；③ `run-gates.ps1` 新增 gateSelfTest 执行器段（**全阶段之首**——selftest 清理/fixture 均写 `%TEMP%` 固定名 `ctds-gate-*-out.log`，置首保护本运行阶段取证；退出码 0/1/2→PASS/FAIL/ERROR，超时=FAIL；`Invoke-MetricProcess` 纯上移、内容零改动）；④ `selftest.ps1`：`New-FixtureConfig` 递归守卫（fixture 一律强制该段关闭并补回 `status:PENDING-SELFTEST`——演练"关闭态可见性"；该联动缺口由翻位后 selftest 回归实证捕获）+ S15 五探针（绿/空格路径/红/ERROR/缺文件）+ S1 标签勘误（94→115 断言**只增不减**）；⑤ README 本节 + 场景表 S15 + §运行器自检措辞 + 检查项表 gateSelfTest 行 + 本留痕条目。**强度只增不减：判定阈值、阶段范围、扫描面、退出码语义、报告五态语义零改动**。实测：selftest 全量 111 断言 0 失败；启用后本地全量门禁复跑（V3）结论见任务卡 §四。
+> - **DB-07（2026-10-16，CI 门禁自动化，任务卡 `docs/tasks/DB-07-CI门禁自动化-2026-10-16.md` + 两级设计 `docs/designs/DB-07-{lofi,hifi}.md`（V1.0 一次确认 + V1.1 增补 §3-bis），编排师 Q1~Q7 均采 A + 编码段红线 4 停报后裁定 C）**：① `.github/workflows/quality-gate.yml` 新增（触发 / windows-latest / 单 job 全量 / 结论三形态回写 / fail-closed / 零秘密——见上"CI 接入"节）；② `gates-config.json` V1.8：`stages.gateSelfTest.enabled` false→true + `timeoutSeconds=300` + 移除 `status:PENDING-SELFTEST` + note 更新 + version V1.6→V1.8（ConfigSha256 `924f0ca3…dfdd` → **`5f600e72…4eb6`**）——V1.0 契约"翻 enabled 即随每轮门禁执行 selftest"经编码段实证为**未验证假设**（运行器原无执行器；单翻位 = 不执行 + PENDING 行消失 + selftest 自身 S1 断言失败），经编排师裁定 C 卡内补齐；③ `run-gates.ps1` 新增 gateSelfTest 执行器段（**全阶段之首**——selftest 清理/fixture 均写 `%TEMP%` 固定名 `ctds-gate-*-out.log`，置首保护本运行阶段取证；退出码 0/1/2→PASS/FAIL/ERROR，超时=FAIL；`Invoke-MetricProcess` 纯上移、内容零改动）；④ `selftest.ps1`：`New-FixtureConfig` 递归守卫（fixture 一律强制该段关闭并补回 `status:PENDING-SELFTEST`——演练"关闭态可见性"；该联动缺口由翻位后 selftest 回归实证捕获）+ S15 六探针（绿/空格路径/红/ERROR/hang/缺文件）+ 行序锚 + 收尾递归守卫机器扫描 + S1 标签勘误（94→125 断言**只增不减**，过渡态 111→115→125）；⑤ README 本节 + 场景表 S15 + §运行器自检措辞 + 检查项表 gateSelfTest 行 + 本留痕条目。**强度只增不减：判定阈值、阶段范围、扫描面、退出码语义、报告五态语义零改动**。实测：selftest 全量 **125 断言 0 失败**（评审修复批后；过程 111 → 翻位后回归 FAIL×1〔fixture 补 status〕+ 复核发现空格引号×1 → 115 → 评审批 +10 → 125）；启用后本地全量门禁复跑（V3）GREEN 结论见任务卡 §四。
 > - **DB-43（2026-10-14，门禁可观测性增强，任务卡 `docs/tasks/DB-43-门禁可观测性增强-2026-10-13.md` + 两级设计 `docs/designs/DB-43-{lofi,hifi}.md`，编排师一次确认 Q1-A / Q2-A / D1 不拆分；`gates-config.json` 零改动——ConfigSha256 `29782aad…42c9` 逐字不变为"零放水"自证）**：① mvn 三段（compile/lint/unitTest）**成功/失败/超时三态**都落盘 `%TEMP%\ctds-gate-<stage>-out.log`（开头摘要行 `stage/command/exitCode/elapsedSec/time` + 完整原始输出——WBS-3.4.7"0 字节日志"教训的结构性根治：成功态也有机器可核证据）；② npm 段（4 阶段）与 coverage / mutationTest / sast 段**失败或超时**落盘完整原始输出，报告失败/超时行尾附 `| full output: <路径>`（DB-44 首跑 RED"错误正文未取得"损失场景的根治）；`Invoke-MetricProcess` 超时分支不再丢弃已读流；③ 阶段超时后 `Stop-ProcessTree`（`taskkill /PID <pid> /T /F`）清理整个进程树（跟踪-23 剩余子项兑现——2026-10-09"unitTest 超时后残留 cmd 孤儿进程污染 coverage/frontendTest"假红的根治）；mutationTest 多子运行失败汇总落盘（`==== <子运行名> ====` 分隔），阈值不达标分支诚实附"PIT 报告产物位于各模块 `target/pit-reports/`"。**判定阈值 / 阶段范围 / 扫描面 / 报告五态语义 / 退出码语义零改动；PASS 报告行格式零改动；落盘失败不影响段判定**（记录是加菜，不是判定）。selftest 增 S12（mvn 成功态落盘）/ S13（npm 失败落盘取证）/ S14（超时进程树清理，红相期孙进程幸存锚）三场景（十二→十五场景、70→94 断言，只增不减；场景表同步补登 S10~S11b——V1.3/V1.4 留痕条目已述但表格漏登的既有缺口，纯文档补全）；前端 `ContractSourceGuard.spec.ts` 增"同形文案双源守卫"（真读后端 `ContractErrorCodes.java` 逐字比对 8 对文案，漂移即红）。实测全仓门禁 GREEN（RunLabel `20261015-000102-6374`，PASS=14 / FAIL=0 / SKIP=2 / ERROR=0 / PENDING=6，报告 `gate-report-20261015-002442.md`；SKIP=2 = oversized 2 + binary 49，均为未入库产物）。
 >   **运行说明（已知特性）**：`%TEMP%\ctds-gate-<stage>-out.log` 为固定名 = **最近一次该阶段运行**的记录（含 selftest fixture 运行——selftest 开场与收尾统一清理该前缀文件，不会把 fixture 产物留在真实门禁的记录位上）；`taskkill /T` 按父子快照清理，"已脱离父链的孙进程"可能漏网（罕见）；本脚本 Windows 定位，若未来迁 Linux 须同步改。
 > - **V1.4（2026-09-26，清债卡1 / DB-06 质量度量门禁接入，任务卡 `docs/tasks/DB-06-23-24-前端类型-清债小卡-2026-09-25.md` 卡1 + ADR-018，编排师裁决 Q1=A）**：coverage / mutationTest / sast 三段 PENDING → enabled——jacoco 0.8.12 命令行形态（整体 ≥70% / 核心 ≥80%，`thresholds` 节自 V1.0 起首次被实际读取）；PIT 1.30.0 CLI + junit5-plugin 1.2.1（did 服务层 132 突变 / 杀除率 68.18% 实测，保守口径）；semgrep docker 形态（p/java 热点=0）；dependencyScan **如实登记维持 PENDING**（NVD 库同步预算不可行，另立卡）。selftest 增 S11（三段在裸 fixture 中 fail-visible + coverage 阈值极性探针 + 反向探针）与 S11b（mvn 退出非 0 FAIL 分支探针，复审尾巴修复）。强度只增不减；既有阶段零改动。
@@ -93,7 +94,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gates\selftest.ps1
 
 **已知观察项（不在本卡范围，登记待收敛）**：V1.2 下 `services/*/logs/`（服务运行期日志，共 24 个未入库文件）重新进入扫描范围。它们**未入库**，被占用时只记 SKIP、不影响绿灯判定，代价仅是每轮多扫若干日志文本。若要重新排除，必须写成带模块前缀的形式（如 `services/**/logs/**`）——**写成 `**/logs/**` 会被上述护栏直接拦下**（它会命中入库的 `docs/logs/`）。建议随 DB-12（运行期数据置于项目目录外）一并收敛。
 
-## 当前检查项（V1.4）
+## 当前检查项（版本随 `gates-config.json`，当前 V1.9）
 
 | 检查项 | 状态 | 说明 |
 | --- | --- | --- |
@@ -109,7 +110,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gates\selftest.ps1
 | frontendLint 前端格式与风格 | ✅ 已启用（WBS 2.4.12 接入） | `npm run lint`（ESLint 9，覆盖 src 与 e2e），零错误 |
 | frontendTest 前端单元测试 | ✅ 已启用（WBS 2.4.12 接入） | `npm run test`（Vitest + jsdom），全部通过 |
 | frontendE2E 前端端到端测试 | ⏸ PENDING-CI（WBS 2.4.12 登记） | `npm run e2e`（Playwright + Chromium）；CI 环境浏览器二进制供给待 2.5.x 评估，本机可手动全量 |
-| gateSelfTest 运行器自检 | ✅ 已启用（DB-07 接入，2026-10-16 编排师裁定 C） | `selftest.ps1` 十六场景（S1~S14 + S15，115 断言；S15 = 执行器接线五探针：绿/空格路径/红/ERROR/缺文件）；执行器位于**全阶段之首**，每轮门禁实跑（实测约 32s）；退出码 0/1/2→PASS/FAIL/ERROR，超时=FAIL；`enabled=false` 时回到 PENDING 可见行 |
+| gateSelfTest 运行器自检 | ✅ 已启用（DB-07 接入，2026-10-16 编排师裁定 C） | `selftest.ps1` 十六场景（S1~S14 + S11b + S15，125 断言；S15 = 执行器接线六探针〔绿/空格路径/红/ERROR/hang/缺文件〕+ 行序锚 + 收尾递归守卫机器扫描）；执行器位于**全阶段之首**，每轮门禁实跑（独立单发 32s / V3 门禁内 41s）；退出码 0/1/2→PASS/FAIL/ERROR，超时=FAIL；`enabled=false` 时回到 PENDING 可见行 |
 | coverage 覆盖率 | ✅ 已启用（清债卡1/DB-06 接入，ADR-018） | jacoco 0.8.12 命令行形态（零 pom 变更）；解析各模块 jacoco.xml，整体 ≥70%、coreModules 核心 ≥80%（thresholds 首次被实际读取） |
 | mutationTest 变异测试 | ✅ 已启用（清债卡1/DB-06 接入，ADR-018） | PIT 1.30.0 CLI + junit5-plugin 1.2.1（bundle 聚合至 target/precheck/pit-bundle）；范围 = `stages.mutationTest.modules` 独立清单（当前 did 服务层——coreModules 其余核心模块的变异扩展在 modules 表加行即可）；杀除率 ≥60%（保守口径：NO_COVERAGE 计入分母） |
 | sast 静态安全扫描 | ✅ 已启用（清债卡1/DB-06 接入，ADR-018） | semgrep 官方镜像 + p/java 社区规则集（docker 运行，扫描 Java 主源集副本）；热点 = 0；缺镜像 = ERROR 提示手动 pull |
@@ -120,7 +121,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gates\selftest.ps1
 
 ## 工具链
 
-Maven 阶段需要 JDK 17 与 Maven 3.9+：脚本优先读环境变量 `JAVA_HOME`，缺省回退到 `gates-config.json` 的 `toolchain.javaHome`（当前本机 `C:\Program Files\Java\jdk-17`）；`mavenBin`/`mavenArgs` 同理可覆盖。依赖解析走用户级 `%USERPROFILE%\.m2\settings.xml`（阿里云镜像）。单阶段超时：Java 阶段默认 600 秒（config `timeoutSeconds` 可覆盖，V1.6 起 `unitTest` 设为 1200 秒——全仓实测波动 850~900+ 秒，跟踪-23/编排师裁决 A→A2）；前端阶段 300 秒 / 质量度量段独立预算（coverage 900 秒 / mutationTest 1800 秒 / sast 900 秒，ADR-018）。前端阶段（WBS 2.4.12 接入）在 `frontend/` 目录执行 npm 命令（workdir 可按阶段在 gates-config.json 配置）。
+Maven 阶段需要 JDK 17 与 Maven 3.9+：脚本优先读环境变量 `JAVA_HOME`（toolchain 段的优先分支），缺省回退到 `gates-config.json` 的 `toolchain.javaHome`（当前本机 `C:\Program Files\Java\jdk-17`）；`mavenBin`/`mavenArgs` 同理可覆盖。依赖解析走用户级 `%USERPROFILE%\.m2\settings.xml`（阿里云镜像）。单阶段超时：Java 阶段默认 600 秒（config `timeoutSeconds` 可覆盖，**V1.7 起 `unitTest` 设为 1800 秒**——全仓实测波动 850~900+ 秒，跟踪-23/编排师裁决 A→A2→V1.7）；前端阶段 300 秒 / 质量度量段独立预算（**coverage 1800 秒**〔V1.7〕/ mutationTest 1800 秒 / sast 900 秒，ADR-018）/ gateSelfTest 300 秒（DB-07，实测 32~41s）。前端阶段（WBS 2.4.12 接入）在 `frontend/` 目录执行 npm 命令（workdir 可按阶段在 gates-config.json 配置）。
 
 **工具前置探测（V1.2 起）**：`mvn` / `npm` 不在 PATH 时记 `ERROR`（退出码 2）而不是让阶段以"命令不存在"的失败面目出现——工具缺失是环境问题，不是代码结论。配置值含非法字符时**整个阶段跳过、不执行任何命令**（不得"检出后仍启动命令"）。
 

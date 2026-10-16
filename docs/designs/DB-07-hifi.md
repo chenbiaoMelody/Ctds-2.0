@@ -43,13 +43,13 @@ permissions:
 | 序 | 步骤 | action / 命令 | 契约要点 |
 | --- | --- | --- | --- |
 | 1 | 检出 | `actions/checkout@v4` | 默认 fetch-depth（`git ls-files` 只需索引） |
-| 2 | JDK | `actions/setup-java@v4`（distribution: temurin, java-version: '17', cache: maven） | 注入 `JAVA_HOME`——脚本 L301-302 优先读环境变量，config 的 Windows 路径回退不依赖 |
+| 2 | JDK | `actions/setup-java@v4`（distribution: temurin, java-version: '17', cache: maven） | 注入 `JAVA_HOME`——脚本 toolchain 段的 `$env:JAVA_HOME` 优先分支读环境变量，config 的 Windows 路径回退不依赖 |
 | 3 | Node | `actions/setup-node@v4`（node-version: '20'） | 前端四段（typecheck/lint/test/e2e-PENDING）npm 运行期 |
 | 4 | Docker 探测 | `docker version`（`continue-on-error: true`，结果仅记入摘要） | 探测不判定——sast/Testcontainers 的可用性由门禁段自身 ERROR/SKIP 语义承担 |
 | 5 | 跑门禁 | `shell: pwsh` + `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/gates/run-gates.ps1`；`continue-on-error: true`；步骤末 `"exit_code=$LASTEXITCODE" >> $env:GITHUB_OUTPUT` | 与 README 规范调用逐字一致；**非 0 也继续**（回写需要报告）；退出码入 output 供终态步骤判定 |
 | 6 | 写 job 摘要 | `if: always()`；PowerShell 取最新 `scripts/gates/reports/gate-report-*.md` 头部字段 + 尾部结论行 + `$env:GITHUB_OUTPUT` 的 exit_code，写入 `$env:GITHUB_STEP_SUMMARY` | 摘要含：ExitCode / 五态计数 / RunLabel / ConfigSha256 / 报告文件名；退出码 2 时注明"环境/配置错误（非质量结论）" |
 | 7 | PR 评论 | `if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository`；`actions/github-script@v7` | upsert 语义：按固定标识搜索本 PR 已有评论则更新、否则新建（不刷屏）；内容 = 摘要同款字段 + 报告尾部结论行；**不含密钥/敏感信息**（报告本身已受该约束） |
-| 8 | 上传 artifact | `if: always()`；`actions/upload-artifact@v4`，name: `gate-report-${{ github.run_id }}`，path: `scripts/gates/reports/*.md` | CI 上 reports 为临时目录（脚本 L758-760 自动创建）；取回供第三方逐字复核 |
+| 8 | 上传 artifact | `if: always()`；`actions/upload-artifact@v4`，name: `gate-report-${{ github.run_id }}`，path: `scripts/gates/reports/*.md` | CI 上 reports 为临时目录（脚本报告目标区自动创建）；取回供第三方逐字复核 |
 | 9 | 终态判定 | `if: always()`；读步骤 5 的 `exit_code`：0 → 成功结束；非 0 → `exit 1`（job 红 = PR check 红） | **fail-closed**：退出码 1（RED）与 2（环境/配置错）一律判 job 失败；摘要已区分语义，不得把 2 放行 |
 
 ### 2.3 明确不做（契约边界）
@@ -107,7 +107,7 @@ permissions:
 | 门禁 exit 2（环境/配置错） | job 红；摘要注明"环境/配置错误（非质量结论）"——**不放行、不冒充质量结论** |
 | fork PR（head.repo ≠ 本仓） | 评论步骤跳过（GITHUB_TOKEN 只读）；job 摘要 + artifact 仍回写；登记边界 |
 | PR 评论步骤失败（如 API 抖动） | job 失败（回写是交付物，fail-closed）；重跑即恢复 |
-| 报告目录不存在（CI 新鲜克隆） | 脚本自动创建（L758-760）——零额外处理 |
+| 报告目录不存在（CI 新鲜克隆） | 脚本报告目标区自动创建——零额外处理 |
 | 并发推送 | concurrency 取消旧跑；PR 评论 upsert 不刷屏 |
 | 额度耗尽 / runner 不可用 | job 以 GitHub 侧失败形态出现——不得据此推断门禁结论；登记环境项 |
 
@@ -134,3 +134,5 @@ permissions:
 > **✅ 2026-10-16 编排师会话回复"一次确认"**：**Q1~Q7 均采建议口径 A + D1 不拆分**（逐项口径见 lofi §6 确认记录：Q1-A 触发范围 / Q2-A `windows-latest` 工具链 / Q3-A 单 job 全量 / Q4-A 三形态回写 / Q5-A gateSelfTest 本卡启用〔四件套〕/ Q6-A 分支保护归编排师在 GitHub 设置执行 / Q7-A 直连 Maven Central）。**本文件编码契约自确认时生效（V1.0）**；实现与本契约不一致 = 打回项。下一关口 = 编码段（第一动作 = §6 前置检查九项逐项实测留痕）。
 >
 > **增补记录（V1.1，2026-10-16 编排师裁定 C）**：编码段第一日红线 4 停报（运行器无 gateSelfTest 执行器，V1.0 §3① 为未验证假设）后，编排师选定 **C（卡内改运行器）** → 授权增补 **§3-bis 执行器契约**；任务卡纪律声明 / 关闭条件③⑤ / 交付物②同步修订（任务卡文末边界变更记录）。V1.0 已确认正文除本节与版本头外零改动。
+>
+> **V1.1 勘误行（2026-10-17，4 视角评审循环 1 修复批）**：以下条款**被 §3-bis 与任务卡文末边界变更记录取代**（按"实现与本契约不一致 = 打回项"口径登记；已确认正文不二次改动）：① §1 交付物清单 #2 约束列"除该位与 changeLog/version 外逐字不变"——实际 config 改动面 = `enabled` 一位 + `timeoutSeconds` 新增键 + 移除 `status` + note + changeLog/version（裁定 C 授权范围④）；② §3①"selftest.ps1 十五场景 94 断言自此随每轮门禁执行（分钟级）"——翻位本身不产生执行（须运行器执行器，见 §3-bis），实为**十六场景 125 断言、秒级**（32s 独立单发 / 41s 门禁内双口径）；③ §2.2 步 6/7"报告尾部结论行"——报告实为**头部 `Result` 行**含五态计数与终态（workflow 按头部字段提取，功能等价）；④ §2.2 步 2/步 8 与 §5 的 `run-gates.ps1` 行号引用已随执行器插入与函数上移漂移——一律改**锚点名**（"toolchain 段的 `$env:JAVA_HOME` 优先分支" / "报告目标区的目录自动创建"），行号不再作为契约要素。

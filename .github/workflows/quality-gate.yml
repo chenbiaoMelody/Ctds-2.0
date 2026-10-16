@@ -4,6 +4,10 @@ name: quality-gate
 # 编码契约 docs/designs/DB-07-hifi.md（V1.1）§2/§3-bis；变更留痕见 scripts/gates/README.md 与
 # ADR-018 V1.5。原则：门禁脚本零改造（D-3 切换接口首次落地——CI 只调用 run-gates.ps1 并按退出码
 # 判定）；判定逻辑只归 run-gates.ps1，本文件不复刻任何判定；零 secret、零三方 action。
+# 安全边界登记（评审② P2-2）：pull_request 全分支触发下，同仓库分支 PR 的 GITHUB_TOKEN 保留
+# pull-requests: write，且本 job 执行的是 PR 版本的门禁脚本——属触发模型固有面（fork PR 已按
+# head.repo 同仓判断跳过评论步骤、届时令牌只读）。缓解 = 仓库设置对外部协作者 PR 要求审批
+# （与 Q6-A 分支保护一并归编排师在 GitHub 设置执行，AI 不代设）。
 
 on:
   pull_request:
@@ -28,7 +32,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 2. JDK 17（注入 JAVA_HOME——run-gates.ps1 L301-302 优先读环境变量，config 回退路径不依赖）
+      # 2. JDK 17（注入 JAVA_HOME——run-gates.ps1 toolchain 段的 $env:JAVA_HOME 优先分支读环境变量）
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -63,10 +67,14 @@ jobs:
       - name: Write job summary
         if: always()
         shell: pwsh
+        env:
+          GATE_EXIT_CODE: ${{ steps.gate.outputs.exit_code }}
         run: |
           $reportDir = "scripts/gates/reports"
-          $latest = Get-ChildItem $reportDir -Filter "gate-report-*.md" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime | Select-Object -Last 1
-          $exitCode = "${{ steps.gate.outputs.exit_code }}"
+          # 取最新报告 = 文件名字典序最大（与 RunLabel 时间戳同构；③ F-c1：与评论步骤同 key 排序）
+          $latest = Get-ChildItem $reportDir -Filter "gate-report-*.md" -ErrorAction SilentlyContinue | Sort-Object Name | Select-Object -Last 1
+          $exitCode = $env:GATE_EXIT_CODE
+          if ($exitCode -eq "") { $exitCode = "not-run" }
           $lines = @()
           $lines += "## C-TDS Quality Gate"
           $lines += ""
@@ -90,13 +98,15 @@ jobs:
       - name: Comment on PR (upsert)
         if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         uses: actions/github-script@v7
+        env:
+          GATE_EXIT_CODE: ${{ steps.gate.outputs.exit_code }}
         with:
           script: |
             const fs = require('fs');
             const path = require('path');
             const reportDir = 'scripts/gates/reports';
             const marker = '<!-- ctds-quality-gate-report -->';
-            const exitCode = '${{ steps.gate.outputs.exit_code }}';
+            const exitCode = process.env.GATE_EXIT_CODE || 'not-run';
             let body = marker + '\n## C-TDS Quality Gate\n\n';
             body += '- ExitCode: ' + exitCode + ' (0=GREEN, 1=RED, 2=environment/config error)\n';
             if (exitCode === '2') {
@@ -142,8 +152,14 @@ jobs:
       - name: Final verdict (fail-closed)
         if: always()
         shell: pwsh
+        env:
+          GATE_EXIT_CODE: ${{ steps.gate.outputs.exit_code }}
         run: |
-          $code = "${{ steps.gate.outputs.exit_code }}"
+          $code = $env:GATE_EXIT_CODE
+          if ($code -eq "") {
+            Write-Output "quality gate step did not run (exit_code empty) -> job FAILED (fail-closed)"
+            exit 1
+          }
           if ($code -eq "0") {
             Write-Output "quality gate exit_code=0 -> GREEN"
             exit 0
