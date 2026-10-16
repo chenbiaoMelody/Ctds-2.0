@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.ctds.gateway.support.TestTokens;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ReactiveWebApplicationContextRunner;
+import org.springframework.core.Ordered;
 import org.springframework.security.web.server.SecurityWebFilterChain;
 import org.springframework.security.web.server.ServerAuthenticationEntryPoint;
 import org.springframework.web.server.WebFilter;
@@ -32,8 +33,15 @@ class GatewayAuthWiringTest {
                     assertThat(context).hasSingleBean(SecurityWebFilterChain.class);
                     assertThat(context.getBean(ServerAuthenticationEntryPoint.class))
                             .as("网关自建 401 出口（带真实 traceId）")
-                            .hasFieldOrPropertyWithValue("class",
-                                    com.ctds.gateway.security.GatewayUnauthorizedEntryPoint.class);
+                            .isInstanceOf(com.ctds.gateway.security.GatewayUnauthorizedEntryPoint.class);
+                    assertThat(context).hasBean("headerStripFilter");
+                    assertThat(context).hasBean("contextHeaderInjectFilter");
+                    assertThat(context.getBean("headerStripFilter", Ordered.class).getOrder())
+                            .as("入站伪造身份头剥离先于安全链（hifi §1.4：order -200）")
+                            .isEqualTo(-200);
+                    assertThat(context.getBean("contextHeaderInjectFilter", Ordered.class).getOrder())
+                            .as("权威身份头注入（hifi §1.4：order -90）")
+                            .isEqualTo(-90);
                     assertThat(context.getBeansOfType(WebFilter.class)).isNotEmpty();
                 });
     }

@@ -52,7 +52,7 @@
 
 | 口径 | 内容 | 业务影响 |
 | --- | --- | --- |
-| **A（建议）** | 合约域**新增内部判定端点**（`/api/v1/contracts/internal/...`，`@RequirePermission("contract.internal.read")`，复用既有 `check` **零第二语义**；返回判定摘要 + 参与方摘要，供交付域校验"发起人 = 合约需求方"）+ contract `application.yml` 授权 1 行 + ADR-016 §6 第 6 消费方补记；网关以**服务身份头**调用；越界原码透传 | 判定语义唯一权威不破；交付域规则（发起人唯一）落在交付侧；内部端点沿既有惯例（`/internal/...` + 内部权限点 + yml 1 行），3.4.3 有先例 |
+| **A（建议）** | 合约域**新增内部判定端点**（`/api/v1/contracts/internal/...`，`@RequirePermission("contract.internal.read")`，复用既有 `check` **零第二语义**；返回判定摘要 + 参与方摘要，供交付域校验"发起人 = 合约需求方"）+ contract `application.yml` 授权 1 行 + ADR-016 §6 消费方补记（第 7 位）；网关以**服务身份头**调用；越界原码透传 | 判定语义唯一权威不破；交付域规则（发起人唯一）落在交付侧；内部端点沿既有惯例（`/internal/...` + 内部权限点 + yml 1 行），3.4.3 有先例 |
 | B | 复用 3.4.6 演示期 `POST /api/v1/contracts/{contractNo}/usage-executions` | 该端点归 ADR-021 **演示期形态**（权限面向参与方、编排为演示入口）；复用会把演示端点变成生产链路，并混淆"受控执行"与"交付链判定"两件事 |
 | C | 网关不接策略执行点（只做鉴权 + 限流） | 不满足 WBS 行 289 与规格行为 2 规则 2；越界请求会直达数据源 |
 
@@ -126,5 +126,5 @@
 
 ## 确认记录（V0.9 → V1.0）
 
-> **✅ 已签署（2026-10-16 08:1x，编排师会话回复"一次确认"）**：**Q1 采 A**（新模块 `services/gateway-service` 8086 + `spring-cloud-starter-gateway` 落实 ADR-005 已批准选型 + BOM import + webflux/resource-server；静态路由；按 `docs/dependencies.md` 四步登记）/ **Q2 采 A**（进程内令牌桶，主体 + 接口，阈值配置化；零新中间件，沿 `common-idempotency`「memory 模式」先例）/ **Q3 采 A**（合约域新增内部判定端点 `/api/v1/contracts/internal/usage-checks` 复用 `check` 零第二语义 + ADR-016 §6 第 6 消费方补记；**不复用** 3.4.6 演示期 `usage-executions`）/ **Q4 采 A**（配置化交付面白名单 + 凭据头 + 演示期配置化密钥本地签发令牌 + **前端 11 条代理与部署清单不在本卡切换**）/ **Q5 采 A**（交付记录 `deliveries` 面**不纳入**，归交付域宿主包）/ **Q6 采 A**（复用 `common-logging` `AuditRecorder` jsonl + 「放行 1 次 ≡ 事件 1 条」对账锚；流水与计费归 3.7.5/3.7.6）/ **Q7 采 A**（网关自身错占 **1009 段**；未认证 `1000C0002` / 无权限 `1000C0005` 复用；**越界一律透传合约域原码**）/ **Q8 采 A**（网关内反应式 traceId 过滤器；不改 `common`，提沉淀建议）/ **Q9 采 A**（新建 `ADR-022 网关交付链契约`）；**D1 = 不拆分**（预估 900~1200 行）。
+> **✅ 已签署（2026-10-16 08:1x，编排师会话回复"一次确认"）**：**Q1 采 A**（新模块 `services/gateway-service` 8086 + `spring-cloud-starter-gateway` 落实 ADR-005 已批准选型 + BOM import + webflux/resource-server；静态路由；按 `docs/dependencies.md` 四步登记）/ **Q2 采 A**（进程内令牌桶，主体 + 接口，阈值配置化；零新中间件，沿 `common-idempotency`「memory 模式」先例）/ **Q3 采 A**（合约域新增内部判定端点 `/api/v1/contracts/internal/usage-checks` 复用 `check` 零第二语义 + ADR-016 §6 消费方补记（第 7 位）；**不复用** 3.4.6 演示期 `usage-executions`）/ **Q4 采 A**（配置化交付面白名单 + 凭据头 + 演示期配置化密钥本地签发令牌 + **前端 11 条代理与部署清单不在本卡切换**）/ **Q5 采 A**（交付记录 `deliveries` 面**不纳入**，归交付域宿主包）/ **Q6 采 A**（复用 `common-logging` `AuditRecorder` jsonl + 「放行 1 次 ≡ 事件 1 条」对账锚；流水与计费归 3.7.5/3.7.6）/ **Q7 采 A**（网关自身错占 **1009 段**；未认证 `1000C0002` / 无权限 `1000C0005` 复用；**越界一律透传合约域原码**）/ **Q8 采 A**（网关内反应式 traceId 过滤器；不改 `common`，提沉淀建议）/ **Q9 采 A**（新建 `ADR-022 网关交付链契约`）；**D1 = 不拆分**（预估 900~1200 行）。
 > **本文件与 `docs/designs/WBS-3.5.2-hifi.md` 同批转 V1.0（方向定稿 / 编码契约即时生效）**；分支推送 origin；编码段归新会话冷启动（测试先行，第一动作 = hifi §10 前置检查项七项逐项实测留痕）。

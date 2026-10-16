@@ -39,7 +39,13 @@ public class IdentityHeaderResolver {
         return properties == null ? DEFAULT_ROLES_HEADER : properties.getHeader().getRoles();
     }
 
-    /** 调用主体（缺省 anonymous；仅用于限流 key 与审计，不参与策略判定——判定主体由请求体显式给出）。 */
+    /**
+     * 调用主体（缺省 anonymous）：限流 key、审计/计量主体与交付判定请求体 {@code requesterNo} 的取值来源。
+     *
+     * <p>本值取自 common-auth {@code ContextHeaderInjectFilter}（order -90）按 JWT 声明注入的权威头
+     * （入站伪造头已在 order -200 被剥离）——即"网关按令牌生成的主体"，业务代码不另立主体口径
+     * （hifi §4.2 / §8-3）。</p>
+     */
     public String resolveSubject(final ServerWebExchange exchange) {
         final String value = exchange.getRequest().getHeaders().getFirst(subjectHeaderName());
         return (value == null || value.isBlank()) ? ANONYMOUS : value.trim();

@@ -43,17 +43,12 @@ public class RateLimitGlobalFilter implements GlobalFilter, Ordered {
 
     @Autowired
     public RateLimitGlobalFilter(final GatewayProperties properties,
-            final GatewayErrorWriter errorWriter, final IdentityHeaderResolver identityHeaders) {
-        this(properties, errorWriter, identityHeaders, System::nanoTime);
-    }
-
-    /** 测试用构造：注入可控纳秒时钟（令牌桶补充速率的时间来源）。 */
-    RateLimitGlobalFilter(final GatewayProperties properties, final GatewayErrorWriter errorWriter,
-            final IdentityHeaderResolver identityHeaders, final LongSupplier nanoClock) {
+            final GatewayErrorWriter errorWriter, final IdentityHeaderResolver identityHeaders,
+            final LongSupplier gatewayNanoClock) {
         this.properties = properties;
         this.errorWriter = errorWriter;
         this.identityHeaders = identityHeaders;
-        this.nanoClock = nanoClock;
+        this.nanoClock = gatewayNanoClock;
     }
 
     @Override

@@ -2,6 +2,7 @@ package com.ctds.gateway;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.ctds.common.auth.AuthAdvice;
 import com.ctds.common.logging.AuditEvent;
 import com.ctds.common.logging.AuditOutcome;
 import com.ctds.common.logging.AuditRecorder;
@@ -97,7 +98,8 @@ class GatewayDeliveryChainIntegrationTest {
 
         assertThat(body.path("code").asText()).isEqualTo("1000C0002");
         assertThat(body.path("traceId").asText()).as("网关自建 401 封套带真实追踪号").isEqualTo(TRACE_ID);
-        assertThat(body.path("message").asText()).doesNotContainIgnoringCase("token");
+        assertThat(body.path("message").asText()).as("对外文案 = 服务端常量（不回显输入、不暴露内部）")
+                .isEqualTo(AuthAdvice.UNAUTHORIZED_MESSAGE);
         assertThat(UPSTREAM.requestCount()).as("未认证不触达数据源").isZero();
         assertThat(JUDGE.requestCount()).as("未认证不调用判定").isZero();
         assertThat(meteringEvents()).as("未认证不产生计量事件").isEmpty();
@@ -179,8 +181,9 @@ class GatewayDeliveryChainIntegrationTest {
         assertThat(event.actor()).isEqualTo(REQUESTER);
         assertThat(event.detail().get("traceId")).isEqualTo(TRACE_ID);
         assertThat(event.detail().get("result")).isEqualTo("ALLOWED");
-        assertThat(event.detail().get("resource")).contains("delivery-catalog-products")
-                .contains("GET").contains("/api/v1/catalog/products/**");
+        assertThat(event.detail().get("resource"))
+                .as("被交付资源 = routeId + 方法 + 路径模板（不含原始路径与查询串）")
+                .isEqualTo("delivery-catalog-products GET /api/v1/catalog/products/**");
     }
 
     @Test
@@ -241,8 +244,12 @@ class GatewayDeliveryChainIntegrationTest {
     void malformedCredentialIsRejected() {
         final JsonNode body = errorBody(HttpStatus.BAD_REQUEST,
                 TestTokens.valid(REQUESTER, List.of("provider")), "CT 2026/0001#", null);
+        final JsonNode tooLong = errorBody(HttpStatus.BAD_REQUEST,
+                TestTokens.valid(REQUESTER, List.of("provider")), "C".repeat(65), null);
 
         assertThat(body.path("code").asText()).isEqualTo("1009C0001");
+        assertThat(tooLong.path("code").asText()).as("合约编号头超长（>64）同码同文")
+                .isEqualTo("1009C0001");
         assertThat(JUDGE.requestCount()).isZero();
         assertThat(UPSTREAM.requestCount()).isZero();
     }

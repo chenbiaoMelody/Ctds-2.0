@@ -8,6 +8,7 @@ import com.ctds.gateway.audit.GatewayAuditActions;
 import com.ctds.gateway.support.RecordingAuditConfiguration;
 import com.ctds.gateway.support.RecordingAuditRecorder;
 import com.ctds.gateway.support.StubServer;
+import com.ctds.gateway.support.TestNanoClockConfiguration;
 import com.ctds.gateway.support.TestTokens;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -28,7 +29,9 @@ import org.springframework.test.web.reactive.server.WebTestClient;
 /**
  * 限流与判定不可用（fail-closed）真链集成测试（hifi §9：T4 限流双向 / T7 判定超时）。
  *
- * <p>限流阈值 = 3 次容量 + 1 次/秒补充（用例在同一秒内连打，故第 4 次必被拒）；
+ * <p>限流阈值 = 3 次容量 + 1 次/秒补充；<b>令牌桶时间来源以 {@link TestNanoClockConfiguration}
+ * 的可控时钟注入</b>（生产默认 {@code System::nanoTime} 不变）——"同一刻度内第 4 次被拒"与
+ * "推进 1 秒后补充 1 个令牌"两条判定均为确定性断言，不依赖用例执行耗时（消除挂钟假红）。
  * 判定超时阈值 300ms，判定 stub 延迟 1000ms → 必须 fail-closed（503 + 1009S0001，不触达数据源）。</p>
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
@@ -39,8 +42,10 @@ import org.springframework.test.web.reactive.server.WebTestClient;
             "ctds.gateway.rate-limit.default-refill-per-second=1",
             "ctds.gateway.policy.timeout=300ms"
         })
-@Import(RecordingAuditConfiguration.class)
+@Import({RecordingAuditConfiguration.class, TestNanoClockConfiguration.class})
 class GatewayRateLimitIntegrationTest {
+
+    private static final long NANOS_PER_SECOND = 1_000_000_000L;
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final StubServer UPSTREAM = new StubServer();
@@ -75,6 +80,7 @@ class GatewayRateLimitIntegrationTest {
     @BeforeEach
     void setUp() {
         client = WebTestClient.bindToServer().baseUrl("http://127.0.0.1:" + port).build();
+        TestNanoClockConfiguration.NANOS.set(0L);
         UPSTREAM.resetCounters();
         JUDGE.resetCounters();
         UPSTREAM.setDelayMillis(0L);
@@ -116,8 +122,30 @@ class GatewayRateLimitIntegrationTest {
         final JsonNode body = readTree(over.expectBody().returnResult().getResponseBody());
         assertThat(body.path("code").asText()).isEqualTo(RATE_LIMITED_CODE);
         assertThat(UPSTREAM.requestCount()).as("超限不触达上游").isEqualTo(3);
+        assertThat(JUDGE.requestCount()).as("超限不调用判定（hifi §2 限流先于策略执行点）").isEqualTo(3);
         assertThat(meteringEvents()).as("超限不产生计量事件").hasSize(3);
         assertThat(recorder().eventsOf(GatewayAuditActions.DELIVERY_DENIED)).hasSize(1);
+    }
+
+    @Test
+    void refillRestoresOneTokenAfterClockAdvanceAndExhaustsAgain() {
+        final String subject = "S-rate-refill";
+        JUDGE.respondAllowed(subject, "S-prov-352");
+
+        for (int i = 0; i < 3; i++) {
+            delivery(HttpStatus.OK, subject);
+        }
+        assertThat(delivery(HttpStatus.TOO_MANY_REQUESTS, subject).path("code").asText())
+                .as("同一时钟刻度内不补充 → 第 4 次被拒").isEqualTo(RATE_LIMITED_CODE);
+
+        TestNanoClockConfiguration.NANOS.addAndGet(NANOS_PER_SECOND);
+        assertThat(delivery(HttpStatus.OK, subject).path("code").asText())
+                .as("时钟推进 1 秒 → 补充 1 个令牌 → 恢复放行").isEqualTo("0");
+        assertThat(delivery(HttpStatus.TOO_MANY_REQUESTS, subject).path("code").asText())
+                .as("补充的令牌被消耗后再次拒绝").isEqualTo(RATE_LIMITED_CODE);
+
+        assertThat(UPSTREAM.requestCount()).as("放行 4 次触达上游 4 次").isEqualTo(4);
+        assertThat(meteringEvents()).as("放行 4 次 ≡ 计量事件 4 条（拒绝不计量）").hasSize(4);
     }
 
     // ==== T7 判定超时 → fail-closed ====
