@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.ctds</groupId>
+    <artifactId>ctds-platform</artifactId>
+    <version>2.0.0-SNAPSHOT</version>
+    <relativePath>../../pom.xml</relativePath>
+  </parent>
+
+  <artifactId>gateway-service</artifactId>
+  <name>gateway-service</name>
+  <description>API 网关交付服务（WBS 3.5.2，设计定稿 docs/designs/WBS-3.5.2-hifi.md——鉴权 / 限流 / 策略执行点 / 计量埋点四件；Reactive，无库无迁移，端口 8086）</description>
+
+  <dependencies>
+    <!-- 平台组件（版本走父 BOM，非第三方新增依赖） -->
+    <dependency>
+      <groupId>com.ctds</groupId>
+      <artifactId>common-errorcode</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.ctds</groupId>
+      <artifactId>common-logging</artifactId>
+    </dependency>
+    <!-- 网关侧鉴权链（GatewayAuthAutoConfiguration / HeaderStripFilter / ContextHeaderInjectFilter）：
+         零新研发复用；exclusion 说明见下方注释块。 -->
+    <dependency>
+      <groupId>com.ctds</groupId>
+      <artifactId>common-auth</artifactId>
+      <exclusions>
+        <!-- 网关 = 反应式栈（ADR-005 §3 第 1 项：Spring Cloud Gateway 全平台唯一流量入口）。
+             Spring Cloud Gateway 需 Netty/WebFlux 运行时，不支持 Servlet 容器；而 common-auth
+             的 servlet 装配面（AuthAutoConfiguration / PermissionInterceptor）以
+             spring-boot-starter-web 为编译依赖。若不移除，classpath 同时存在 spring-webmvc 会
+             使 Boot 判定 WebApplicationType=SERVLET（反应式安全链与网关整体不激活）。
+             移除仅在网关模块生效（common-auth 一行未改，其它服务类路径不变）。 -->
+        <exclusion>
+          <groupId>org.springframework.boot</groupId>
+          <artifactId>spring-boot-starter-web</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <!-- 网关本体（ADR-005 已批准方案 A；版本走根 pom 的 spring-cloud-dependencies BOM） -->
+    <dependency>
+      <groupId>org.springframework.cloud</groupId>
+      <artifactId>spring-cloud-starter-gateway</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-webflux</artifactId>
+    </dependency>
+    <!-- JWT 校验运行时（common-auth 以 optional 屏蔽，网关须显式引入——common/auth/pom.xml 注释点名 3.5.2） -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-checkstyle-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
+</project>

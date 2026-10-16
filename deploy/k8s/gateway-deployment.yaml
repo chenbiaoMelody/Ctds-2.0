@@ -1,0 +1,72 @@
+# C-TDS gateway-service Deployment (WBS-3.5.2, spec: docs/designs/WBS-3.5.2-hifi.md §1/§5;
+# template follows contract-deployment.yaml per ADR-013, WBS-2.5.2 label conventions).
+# IMAGE_PLACEHOLDER is injected by the 2.5.2 deployment toolchain convention (ADR-012).
+# ACTIVATION NOTE: enlisted by WBS-3.5.2 but NOT yet runnable in the demo cluster - activation
+# prerequisites (registered in the delivery note): (1) gateway image added to the nightly build /
+# ModuleMap wiring (2.5.x), (2) reachable contract-service for the pre-forward policy check,
+# (3) CTDS_GATEWAY_JWT_SECRET injected via secret/env at activation (key material never enters
+# the repo, charter red line 7). Until then the pod stays ImagePullBackOff if applied: expected.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ctds-gateway-service
+  labels:
+    app.kubernetes.io/part-of: ctds
+    app.kubernetes.io/name: ctds-gateway-service
+    app.kubernetes.io/component: gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ctds-gateway-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: ctds
+        app.kubernetes.io/name: ctds-gateway-service
+        app.kubernetes.io/component: gateway
+    spec:
+      containers:
+        - name: ctds-gateway-service
+          # Image reference is injected by the 2.5.2 toolchain convention (ADR-012).
+          # Only the `image:` field below is replaced - inject by line, not by string search.
+          image: IMAGE_PLACEHOLDER
+          securityContext:
+            # Image USER is numeric uid 1001 (appuser); non-root is verified at run
+            # (2.5.2 drill finding: numeric uid, not user name).
+            runAsNonRoot: true
+          ports:
+            - containerPort: 8086
+          readinessProbe:
+            tcpSocket:
+              port: 8086
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 8086
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          env:
+            # In-cluster relaxation of the host-demo loopback binding (ADR-016 §2.7):
+            # ClusterIP keeps the gateway non-exposed to the outside world.
+            - name: SPRING_SERVER_ADDRESS
+              value: "0.0.0.0"
+            # JWT verification key source (HS256 secret, >= 32 bytes): injected via
+            # secret/env at activation - never committed (charter red line 7).
+            - name: CTDS_GATEWAY_JWT_SECRET
+              value: ""
+            # Delivery-plane route target (V1.0 honest boundary: an existing read-only
+            # endpoint carries the delivered resource; real data sources land in 3.6.x).
+            - name: CTDS_GATEWAY_CATALOG_BASEURL
+              value: "http://ctds-catalog-service:8084"
+            # Policy execution point: contract-domain internal usage-check endpoint.
+            - name: CTDS_GATEWAY_CONTRACT_BASEURL
+              value: "http://ctds-contract-service:8085"

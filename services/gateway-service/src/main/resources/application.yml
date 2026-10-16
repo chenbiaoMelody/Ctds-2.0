@@ -1,0 +1,69 @@
+spring:
+  application:
+    name: gateway-service
+  # 反应式应用类型显式声明（ADR-005 §3 第 1 项：网关为反应式入口）：网关模块已排除
+  # common-auth 的 spring-boot-starter-web 传递依赖，此处再显式声明一次，防止后续类路径
+  # 变动使 Boot 回退到 SERVLET（回退即安全链与网关整体不激活——静默失效即鉴权旁路）。
+  main:
+    web-application-type: reactive
+
+server:
+  port: 8086
+  # 防御性回环（DB-24 同族口径 / ADR-016 §2.7）：演示期仅本机可达，不得对外暴露；
+  # k8s 部署经清单环境变量放宽（ClusterIP 不外露）。
+  address: 127.0.0.1
+
+logging:
+  file:
+    name: logs/app.log
+  structured:
+    format:
+      console: logstash
+      file: logstash
+
+ctds:
+  audit:
+    # 计量事件与拒绝留痕落 logs/audit-*.jsonl（hifi §6）
+    enabled: true
+  auth:
+    gateway:
+      # 网关侧鉴权链开关（common-auth 网关侧组件；WBS 3.5.2 启用 = 兑现 DB-03 长期解除条件之一）
+      enabled: true
+      # 本卡不引入 actuator（依赖最小化），健康检查面留空；部署就绪/存活探针沿 k8s
+      # tcpSocket 惯例（deploy/k8s/gateway-deployment.yaml）。业务交付路径一律 authenticated()。
+      permit-paths: []
+    jwt:
+      # 密钥来源二选一（common-auth fail-fast 校验）：演示期按配置化 HS256 密钥本地签发令牌，
+      # 密钥仅环境变量注入，不入库、不入日志、不入仓库（红线 7）；生产令牌签发归 3.9.1。
+      secret: ${CTDS_GATEWAY_JWT_SECRET:}
+      issuer: ${CTDS_GATEWAY_JWT_ISSUER:}
+  gateway:
+    # 静态路由（hifi §1.6）：V1.0 仅暴露交付面探针路由（被交付资源以既有只读端点承载，
+    # 真实数据源接入归连接器 3.6.x）；不引入服务发现（登记演进项）。
+    routes:
+      - id: delivery-catalog-products
+        uri: ${CTDS_GATEWAY_CATALOG_BASEURL:http://127.0.0.1:8084}
+        predicates:
+          - Path=/api/v1/catalog/products/**
+        filters: []
+    delivery:
+      # 交付面白名单（routeId 显式列举；默认空 = 无交付面可用，fail-closed，hifi §5-1）
+      routes:
+        - delivery-catalog-products
+      contract-no-header: X-Ctds-Contract-No
+      purpose-header: X-Ctds-Purpose
+      territory-header: X-Ctds-Territory
+    rate-limit:
+      # 进程内令牌桶（主体 + 接口；多实例部署须换分布式实现，登记演进项）
+      enabled: true
+      default-capacity: 100
+      default-refill-per-second: 100
+      routes: {}
+    policy:
+      # 合约域内部判定端点（服务身份 + 体携带主体编号；服务间调用不落用户令牌，hifi §4.2）
+      base-url: ${CTDS_GATEWAY_CONTRACT_BASEURL:http://127.0.0.1:8085}
+      path: /api/v1/contracts/internal/usage-checks
+      # 判定超时（ADR-020 §2.8 授权消费方定；超时即 fail-closed 503 + 1009S0001）
+      timeout: 2s
+      subject: gateway-service
+      roles: gateway-internal

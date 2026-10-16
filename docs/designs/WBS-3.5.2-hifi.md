@@ -166,6 +166,21 @@
 
 ---
 
+## 编码段就地补登记（2026-10-16，实现期细化，**不动已确认口径**）
+
+> 记载实现期必须落定的细节与两条边界判定；均为契约条文的**具体化**，不构成口径变更（口径变更须走变更流程）。
+
+1. **§1.2 依赖装配补记（实现口径）**：`common-auth` 以 `spring-boot-starter-web` 为**编译依赖**（其 servlet 装配面），网关模块在依赖声明中对该 starter 做 **`<exclusions>`**——否则 classpath 同时含 `spring-webmvc` 会使 Boot 判定 `WebApplicationType=SERVLET`，反应式安全链与网关整体不激活（静默失效 = 鉴权旁路）。同时 `application.yml` 显式声明 `spring.main.web-application-type: reactive` 作为第二道防线。**common-auth 一行未改**。
+2. **§1.3 配置补记**：本卡不引入 `spring-boot-starter-actuator`（依赖最小化）→ `ctds.auth.gateway.permit-paths` 留空；部署就绪/存活探针沿既有 k8s `tcpSocket` 惯例（`deploy/k8s/gateway-deployment.yaml`）。
+3. **§1.4 / §1.5 401 出口补记**：common-auth 的 `GatewayAuthEntryPoint` 固定 `traceId="-"`（其类注释为已知限制），而 §1.5（Q8-A）要求未认证响应亦带追踪号 → 网关侧**自建** `ServerAuthenticationEntryPoint`（`GatewayUnauthorizedEntryPoint`，以 `@ConditionalOnMissingBean` 语义优先于 common-auth 缺省 Bean），复用 `1000C0002` 码值 + `AuthAdvice` 常量文案 + `auth.verify` FAILURE 审计动作（原因枚举口径逐字保持）。**不改 common**。
+4. **§1.5 无权限面补记（诚实边界）**：`1000C0005`（403）在本卡**不由网关产生**——common-auth 安全链只挂 `authenticationEntryPoint`（无 `accessDeniedHandler` 接点），网关以 `anyExchange().authenticated()` 只做"是否认证"判定；无权限面的 403 + `1000C0005` 由下游服务承载（本卡不改 common，故不新增接点）。
+5. **§1.6 路由配置补记（支持子集 + fail-fast）**：`ctds.gateway.routes` 本卡支持形态 = **谓词仅 `Path=<模板>`、`filters` 为空列表**；出现其它谓词/过滤器形态**启动即失败**（配置被静默忽略等于安全口径失守）。路径模板以 `path-template` 元数据随路由登记，供 §3-1 限流 key 与 §6-2 计量"被交付资源"字段取用。
+6. **§4.1 响应字段补记**：响应 `contract` 摘要字段名以 `InternalUsageCheckViews.ContractSummary` 锚定（`applicantNo` = `Contract#requesterSubjectNo` 需求方 / `providerNo` = `providerSubjectNo` / `status` / `effectiveAt`）；`verdict.violations` 出站为枚举名集合（不含条款原文）。
+7. **§4.2 判定不可用口径补记（边界判定）**：判定响应的**非合约域业务码**（`1008S` 型依赖不可用 / 未知形态 / 非 2xx 无码体）→ 统一 **fail-closed**（503 + `1009S0001`），不透传 S 型原码——理由：`§7` 明文透传集为**越界类 C 型码**（C0020/C0013/C0012/C0008），而 `§2` 明文"判定不可达 → 不放行"；把"判定未能完成"透传为业务结论会削弱 fail-closed 语义。
+8. **§5.2 凭据格式补记**：合约编号头取值规则 = **非空且仅 `[A-Za-z0-9._-]`、长度 ≤64**（与 common-api traceId 净化同族字符集，避免把控制字符/空白带入下游与留痕）；空值/null 与格式非法同码同文（`1009C0001`）。**任务卡 Q1 摘要曾以 `ctds.gateway.delivery.paths`（路径白名单）表述，与本 hifi V1.0 §5.1（routeId 白名单）不一致——实现按已确认 hifi（`delivery.routes`，routeId）执行**，差异登记于此供评审①复核。
+9. **§8-4 计时/次序观察项（登记，不擅自调整）**：合约域 `check` 为"放行即计数"，而 §2 固定次序为"判定 → 发起人校验"→ "发起人 ≠ 需求方"的拒绝发生在计数之后（提供方可消耗该合约配额一次）。本卡按已确认设计实现（未改次序）；如需前置该规则须走变更流程（关联 3.7.5 计量口径复核）。
+10. **§6.5 分级规范回写**：已刷新 `docs/domain/数据分类分级规范.md` §6.1（新增"网关交付链审计事件字段"行，CAT-06 **L3**）与 §6.2（新增"网关交付链事件与限流计数"示例行）。
+
 ## 确认记录（V0.9 → V1.0）
 
 > **✅ 已签署（2026-10-16 08:1x，编排师会话回复"一次确认"）**：**Q1~Q9 全采建议口径 A + D1 不拆分**（与 lofi 末节确认记录同源同批）；**编码契约（本文件 §1~§12）即时生效**——编码会话按 **§10 前置检查项七项**逐项实测留痕开工，测试先行（§9 十组用例，红相归档 `build-output/w352-red-*`），判定与走查按 **§11 判定表**执行；§3 限流 / §4 策略执行点 / §6 计量 / §7 错误码 / §8 头处置为本卡实现与评审的逐条依据。
