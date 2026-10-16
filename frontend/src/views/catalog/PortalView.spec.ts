@@ -178,7 +178,7 @@ describe('门户检索（T4）', () => {
     expect(mockedSearch).toHaveBeenLastCalledWith({
       pageNum: 1, pageSize: 10, keyword: '', categoryCode: 'finance',
     })
-  }, 15000)
+  })
 
   it('关键词查询按 ≤64 传参；重置清空关键词与类目过滤后重新拉取', async () => {
     const wrapper = await mountPage()

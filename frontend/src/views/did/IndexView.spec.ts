@@ -105,7 +105,7 @@ describe('DID 管理页 · 记录清单（WBS-3.1.11 T10）', () => {
     expect(wrapper.text()).toContain('待签发（记录中间态）')
     expect(wrapper.text()).toContain('did-S20260925000001-1')
     expect(wrapper.text()).toContain('2026-09-25T10:00:00')
-  }, 15000)
+  })
 
   it('状态文案经常量收口且与设计口径逐字一致（hifi §6.4；R2 修复）', async () => {
     mockedRecords.mockResolvedValue(page([activeRow, revokedRow, pendingRow]) as never)
