@@ -23,6 +23,7 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
+import reactor.util.context.ContextView;
 
 /**
  * 网关自建错误响应单点（hifi §1.5 / §7）：未认证 / 白名单外 / 凭据非法 / 限流 / 越界透传 /
@@ -55,14 +56,14 @@ public class GatewayErrorWriter {
     public Mono<Void> write(final ServerWebExchange exchange, final HttpStatus status,
             final String code, final String message) {
         return Mono.deferContextual(context -> write(exchange, status, code, message,
-                TraceIds.orAbsent(context.getOrDefault(TraceIds.CONTEXT_KEY, null))));
+                resolveTraceId(context, exchange)));
     }
 
     /** 写响应 + 记拒绝留痕（交付链拒绝统一入口）。 */
     public Mono<Void> writeDenied(final ServerWebExchange exchange, final HttpStatus status,
             final ErrorCode code, final String message) {
         return Mono.deferContextual(context -> {
-            final String traceId = TraceIds.orAbsent(context.getOrDefault(TraceIds.CONTEXT_KEY, null));
+            final String traceId = resolveTraceId(context, exchange);
             recordDenied(traceId, exchange, code.value());
             return write(exchange, status, code.value(), message, traceId);
         });
@@ -72,10 +73,23 @@ public class GatewayErrorWriter {
     public Mono<Void> writePassthrough(final ServerWebExchange exchange, final int httpStatus,
             final String code, final String message) {
         return Mono.deferContextual(context -> {
-            final String traceId = TraceIds.orAbsent(context.getOrDefault(TraceIds.CONTEXT_KEY, null));
+            final String traceId = resolveTraceId(context, exchange);
             recordDenied(traceId, exchange, code);
             return write(exchange, HttpStatus.valueOf(httpStatus), code, message, traceId);
         });
+    }
+
+    /**
+     * 追踪号解析：反应式上下文（{@link TraceIds#CONTEXT_KEY}，过滤器链内）优先；缺失时回退
+     * 响应头的 {@link TraceIds#HEADER} 值（{@code TraceIdWebFilter} 恒先写入）——异常出口
+     * （如无路由 advice）位于 WebFilter 链外层订阅位置时上下文不可见，仍可取到真实追踪号。
+     */
+    private static String resolveTraceId(final ContextView context, final ServerWebExchange exchange) {
+        final String fromContext = context.getOrDefault(TraceIds.CONTEXT_KEY, null);
+        if (fromContext != null && !fromContext.isBlank()) {
+            return fromContext;
+        }
+        return TraceIds.orAbsent(exchange.getResponse().getHeaders().getFirst(TraceIds.HEADER));
     }
 
     private Mono<Void> write(final ServerWebExchange exchange, final HttpStatus status,

@@ -52,7 +52,7 @@ class GatewayRateLimitIntegrationTest {
     private static final StubServer JUDGE = new StubServer();
 
     private static final String CONTRACT_NO = "CT-2026-0002";
-    private static final String DELIVERY_PATH = "/api/v1/catalog/products/12";
+    private static final String DELIVERY_PATH = "/api/v1/data-products/12";
     private static final String RATE_LIMITED_CODE = "1009C0002";
     private static final String UNAVAILABLE_CODE = "1009S0001";
 

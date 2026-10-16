@@ -76,6 +76,7 @@
 > **独立 API Key 的签发 / 轮换 / 吊销 = 未定义项**（规格 §6-5），归后续包。
 
 3. **V1.0 被交付资源（诚实边界）**：演示期以**既有只读端点**承载"被交付资源"（探针路由，配置化，指向既有服务）；**真实数据源接入归连接器 3.6.x**（登记）；候选探针路由在编码段按实测确定并登记（不新增业务端点）。
+   - **（DB-47 实测登记，2026-10-16）探针路由实测值 = `delivery-catalog-products` → `Path=/api/v1/data-products/**`**（catalog 真实只读读面，实测直调 200）；原编码段值 `/api/v1/catalog/products/**` 在 catalog 不存在（真链走查放行后取货腿恒 404 = 缺陷 A）——本项登记即"按实测确定并登记"的兑现。
 4. **不切换面**：`frontend/vite.config.ts` 11 条代理与 `deploy/k8s/kustomization.yaml` 的"单入口收敛"**不在本卡**（登记为切换动作，建议归 3.5.6/3.5.7 前统一执行）；本卡仅新增 `deploy/k8s/gateway-deployment.yaml` + `gateway-service.yaml` + `kustomization.yaml` 2 行。
 
 ## §6 计量埋点口径（Q6-A，规格行为 2 规则 6）
@@ -99,6 +100,8 @@
 | `1009S0001` | 策略判定服务不可达 / 超时（fail-closed） | 503 |
 
 **复用与透传**：未认证 `1000C0002`（401）/ 无权限 `1000C0005`（403）复用平台公共段（**`1000C0005` 不由本卡网关产生**——common-auth 安全链无 `accessDeniedHandler` 接点，无权限面 403 由下游服务承载，见补登记第 4 条）；**越界一律透传合约域原码**（`1008C0020`→403 / `1008C0013`→409 / `1008C0012`→404）；**禁止**改写合约域结论码或新增"跳过判定/强制放行"入参（规格行为 2 规则 3 / fail-closed）。
+
+**`1009C0004` 两形态登记（DB-47 缺陷 B，2026-10-16）**：① **路由内但白名单外**（原形态，`DeliveryWhitelistGlobalFilter` 出口）；② **无路由匹配**（路径不匹配 `ctds.gateway.routes` 任何路由，不进网关过滤器链）——由网关侧最高优先级 advice 将 WebFlux 响应式 `NoResourceFoundException` 收敛为 **404 + `1009C0004`**（与形态 ① **同码同文同写出口**）+ `delivery.denied` 留痕。**上游 404 透传不受影响**（转发响应不抛该异常）。未新增码位。
 
 ## §8 头处置与信任边界（规格行为 1 / 行为 7；ADR-016 §2.7）
 
@@ -205,3 +208,12 @@
 ## 确认记录（V0.9 → V1.0）
 
 > **✅ 已签署（2026-10-16 08:1x，编排师会话回复"一次确认"）**：**Q1~Q9 全采建议口径 A + D1 不拆分**（与 lofi 末节确认记录同源同批）；**编码契约（本文件 §1~§12）即时生效**——编码会话按 **§10 前置检查项七项**逐项实测留痕开工，测试先行（§9 十组用例，红相归档 `build-output/w352-red-*`），判定与走查按 **§11 判定表**执行；§3 限流 / §4 策略执行点 / §6 计量 / §7 错误码 / §8 头处置为本卡实现与评审的逐条依据。
+
+## DB-47 修复段就地补登记（2026-10-16，真链走查缺陷修复，**不动已确认口径**）
+
+> 承"评审修复段就地补登记 11~20"续号；记载真链走查两缺陷（A/B）的修复落地与如实登记——缺陷修复 = 回到已确认条文的正确实现，**不构成口径变更**（缺陷 C〔要素传递编码约定〕属契约缺口，走 `CHG-WBS-3.5.2-hifi-V1.1` 变更流程，不在本节）。
+
+21. **§5-3 探针路由实测登记（缺陷 A 修复）**：`delivery-catalog-products` 谓词由 `/api/v1/catalog/products/**` 勘正为 **`/api/v1/data-products/**`**（catalog 真实只读读面）；原因 = 原值在 catalog 不存在（真机放行后取货腿恒 404，判定与计量面均正确）。
+22. **§7 无路由出口（缺陷 B 修复）**：新增网关侧最高优先级 advice（`GatewayNoRouteAdvice`），将 WebFlux 响应式 `NoResourceFoundException` 收敛为 **404 + `1009C0004`**（与白名单外**同码同文同写出口**）+ `delivery.denied` 拒绝留痕。**根因如实登记** = `common-errorcode` 的 `GlobalExceptionHandler` 仅识别 servlet 版 `NoResourceFoundException`，reactive 版落入其 `Exception` 兜底（实测 500 + `1000S9999`）；**common 零改动**，向 common 提沉淀建议（兼容响应式异常类型；承接沿 DB-26/DB-30 条件触发式口径）——本卡不夹带。
+23. **`GatewayErrorWriter` traceId 解析补强（副作用登记）**：上下文缺失时回退响应头 `X-Trace-Id`（`TraceIdWebFilter` 恒先写入）——无路由 advice 位于 WebFilter 链外层订阅位置、上下文不可见，回退保证出口追踪号非 `"-"`。**过滤器链内路径行为零变化**（上下文优先）。
+24. **用例数变更登记**：网关模块 **27 → 32 例**（新增 `GatewayProbeRouteIntegrationTest` 3 例〔T-A1a 谓词 / T-A1b 反向探针 / T-A2 转发路径实例〕+ `GatewayWhitelistRejectIntegrationTest` 2 例〔无路由同码同文 / 不判定不转发不计量留痕〕），其余断言零弱化（仅请求路径随探针勘正同步）；`StubServer` 测试设施增强（记录最近请求路径与请求体——供 T-A2 与变更 C 断言复用）。

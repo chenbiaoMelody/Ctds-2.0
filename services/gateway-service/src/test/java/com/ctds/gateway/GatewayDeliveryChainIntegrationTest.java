@@ -49,7 +49,7 @@ class GatewayDeliveryChainIntegrationTest {
     private static final String REQUESTER = "S-req-352";
     private static final String PROVIDER = "S-prov-352";
     private static final String CONTRACT_NO = "CT-2026-0001";
-    private static final String DELIVERY_PATH = "/api/v1/catalog/products/12";
+    private static final String DELIVERY_PATH = "/api/v1/data-products/12";
     private static final String TRACE_ID = "trace-352-abc";
     private static final String UPSTREAM_BODY = "{\"code\":\"0\",\"data\":{\"productId\":12}}";
     private static final String OVER_LIMIT_CODE = "1008C0020";
@@ -183,7 +183,7 @@ class GatewayDeliveryChainIntegrationTest {
         assertThat(event.detail().get("result")).isEqualTo("ALLOWED");
         assertThat(event.detail().get("resource"))
                 .as("被交付资源 = routeId + 方法 + 路径模板（不含原始路径与查询串）")
-                .isEqualTo("delivery-catalog-products GET /api/v1/catalog/products/**");
+                .isEqualTo("delivery-catalog-products GET /api/v1/data-products/**");
     }
 
     @Test

@@ -40,11 +40,13 @@ ctds:
   gateway:
     # 静态路由（hifi §1.6）：V1.0 仅暴露交付面探针路由（被交付资源以既有只读端点承载，
     # 真实数据源接入归连接器 3.6.x）；不引入服务发现（登记演进项）。
+    # 探针路径按实测登记（hifi §5-3 / DB-47 缺陷 A）：catalog 真实读面 = /api/v1/data-products/**，
+    # 旧值 /api/v1/catalog/products/** 在 catalog 不存在（放行后取货腿恒 404）。
     routes:
       - id: delivery-catalog-products
         uri: ${CTDS_GATEWAY_CATALOG_BASEURL:http://127.0.0.1:8084}
         predicates:
-          - Path=/api/v1/catalog/products/**
+          - Path=/api/v1/data-products/**
         filters: []
     delivery:
       # 交付面白名单（routeId 显式列举；默认空 = 无交付面可用，fail-closed，hifi §5-1）

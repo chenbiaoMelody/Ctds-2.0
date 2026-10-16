@@ -69,7 +69,7 @@ class GatewayPolicyUnavailableIntegrationTest {
 
         final JsonNode body = readTree(WebTestClient.bindToServer()
                 .baseUrl("http://127.0.0.1:" + port).build()
-                .get().uri("/api/v1/catalog/products/12")
+                .get().uri("/api/v1/data-products/12")
                 .header(HttpHeaders.AUTHORIZATION,
                         "Bearer " + TestTokens.valid("S-unreachable", List.of("provider")))
                 .header("X-Ctds-Contract-No", "CT-2026-0003")

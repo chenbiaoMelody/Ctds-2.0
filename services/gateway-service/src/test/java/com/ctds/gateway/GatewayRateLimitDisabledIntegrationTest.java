@@ -69,7 +69,7 @@ class GatewayRateLimitDisabledIntegrationTest {
         final WebTestClient client = WebTestClient.bindToServer()
                 .baseUrl("http://127.0.0.1:" + port).build();
         for (int i = 0; i < 5; i++) {
-            client.get().uri("/api/v1/catalog/products/12")
+            client.get().uri("/api/v1/data-products/12")
                     .header(HttpHeaders.AUTHORIZATION,
                             "Bearer " + TestTokens.valid("S-burst", List.of("provider")))
                     .header("X-Ctds-Contract-No", "CT-2026-0005")
