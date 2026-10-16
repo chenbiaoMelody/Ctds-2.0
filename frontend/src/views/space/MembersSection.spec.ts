@@ -174,7 +174,7 @@ describe('成员表格（T14）', () => {
     expect(wrapper.findAll('.member-remove').length).toBe(2)
     expect(wrapper.findAll('.role-revoke').length).toBe(1)
     expect(wrapper.findAll('.role-grant').length).toBe(1)
-  }, 15000)
+  })
 })
 
 describe('状态门槛提示（R1 / §8.6、§6.3 C）', () => {
@@ -199,7 +199,7 @@ describe('状态门槛提示（R1 / §8.6、§6.3 C）', () => {
       expect(mockedInvite).not.toHaveBeenCalled()
       wrapper.unmount()
     }
-  }, 15000)
+  })
 
   it('审批制空间未启用：提交加入申请按钮禁用并给出状态门槛提示（T16 状态维度）', async () => {
     mockedGetSpace.mockResolvedValue(detail({ accessMode: 'APPROVAL', status: 'CREATED' }))

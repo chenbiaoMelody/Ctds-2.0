@@ -34,6 +34,10 @@ ctds:
     permissions:
       provider: contract.template.read,contract.read,contract.deal
       admin: contract.template.read,contract.template.manage,contract.read,contract.deal,contract.governance
+      # 服务间内部判定专用（WBS-3.5.2 hifi §4.1，ADR-016 §6 第 6 消费方 = 网关交付链）：
+      # 仅 gateway-internal 持有 contract.internal.read；provider/admin 业务角色均不持有
+      # ——判定面只对交付链服务身份开放，防按编号枚举判定（沿 subject/catalog internal 先例）。
+      gateway-internal: contract.internal.read
   # 合约服务参数（WBS-3.4.2 hifi §9 + WBS-3.4.3 hifi §9）
   contract:
     # 主体服务衔接（资格判定只读通道，subject yml 已加 contract-internal 1 行授权）：

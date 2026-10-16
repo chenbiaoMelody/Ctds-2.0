@@ -157,7 +157,7 @@ describe('概览（T10）', () => {
     // 留痕：动作标签 + 结果 + 值变化（fromValue → toValue）
     expect(text).toContain('冻结空间')
     expect(text).toContain('ACTIVE → FROZEN')
-  }, 15000)
+  })
 
   it('概览三要素（场景类型 / 参与方范围 / 可见性）显示中文标签，不出现裸枚举码（R4 / §6.6.1）', async () => {
     mockedGetSpace.mockResolvedValue(detail({ sceneType: 'MEDICAL', accessMode: 'APPROVAL', visibility: 'PRIVATE' }))

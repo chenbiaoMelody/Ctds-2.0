@@ -34,6 +34,8 @@
     <module>services/space-service</module>
     <module>services/catalog-service</module>
     <module>services/contract-service</module>
+    <!-- API 网关交付服务（WBS 3.5.2；ADR-005 §3 第 1 项：Spring Cloud Gateway 全平台唯一流量入口） -->
+    <module>services/gateway-service</module>
   </modules>
 
   <properties>
@@ -44,10 +46,22 @@
     <logstash-logback-encoder.version>8.1</logstash-logback-encoder.version>
     <bouncycastle.version>1.85.2</bouncycastle.version>
     <redisson.version>3.52.0</redisson.version>
+    <!-- Spring Cloud 发布列车（WBS 3.5.2 首次引入）：官方兼容矩阵 2025.0.x（Northfields）↔ Spring Boot 3.5.x，
+         本项目 Boot 3.5.16 匹配；锁定线内最新补丁 2025.0.3（gateway 4.3.5 / commons 4.3.3）。
+         登记 docs/dependencies.md；核验留痕见开发日志（注册表 metadata + 官方 Wiki 兼容矩阵）。 -->
+    <spring-cloud.version>2025.0.3</spring-cloud.version>
   </properties>
 
   <dependencyManagement>
     <dependencies>
+      <!-- Spring Cloud BOM（import 形态，本仓首个；兜底管理 gateway/commons 及其传递依赖版本） -->
+      <dependency>
+        <groupId>org.springframework.cloud</groupId>
+        <artifactId>spring-cloud-dependencies</artifactId>
+        <version>${spring-cloud.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
       <dependency>
         <groupId>com.tngtech.archunit</groupId>
         <artifactId>archunit-junit5</artifactId>

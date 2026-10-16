@@ -195,7 +195,7 @@ describe('登记资源（T11）', () => {
     await flushPromises()
     expect(mockedRegister).not.toHaveBeenCalled()
     expect(document.body.textContent).toContain(SPACE_ID_REQUIRED_TIP)
-  }, 15000)
+  })
 
   // 显式放宽超时：弹窗挂载 + 表单交互在全量并行负载下可越 5s 默认门槛，非被测行为慢
   it('契约字段逐字提交：tags 传 termName 数组、declareImportant 布尔、空间编号直填', async () => {
@@ -220,7 +220,7 @@ describe('登记资源（T11）', () => {
       declareImportant: false,
     })
     expect(mockedDatasets).toHaveBeenCalledTimes(2)
-  }, 15000)
+  })
 
   it('未启用空间允许提交（界面不拦截），1007C0002 原样展示', async () => {
     mockedRegister.mockRejectedValue(new ApiError('1007C0002', '空间当前状态不允许登记资源'))
@@ -263,7 +263,7 @@ describe('登记资源（T11）', () => {
       expect(document.body.textContent).toContain(item.message)
       wrapper.unmount()
     }
-  }, 20000)
+  })
 })
 
 describe('变更与注销（T12）', () => {

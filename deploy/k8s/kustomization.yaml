@@ -14,3 +14,5 @@ resources:
   - catalog-service.yaml
   - contract-deployment.yaml
   - contract-service.yaml
+  - gateway-deployment.yaml
+  - gateway-service.yaml

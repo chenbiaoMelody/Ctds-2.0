@@ -68,7 +68,17 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     pool: 'threads',
+    // DB-48 并发上限：24 逻辑核下 vitest 默认起 ~23 worker 同时装配 jsdom + element-plus，
+    // CPU/内存争抢放大重型 spec 耗时（隔离单跑约 5s 的用例在满载下 >30s）——限制并发后
+    // 单用例耗时回落、总时长可控（门禁 frontendTest 各 npm 命令预算 300s）。
+    maxWorkers: 8,
     exclude: [...defaultExclude, 'e2e/**'],
+    // DB-48 用例级超时机制：vitest 默认 testTimeout = 5000ms，与重型视图 spec（冷 transform +
+    // element-plus 全量装配 / 多轮挂载，单文件数秒级）不匹配，全仓并发负载下放大为批量
+    // 用例级 "Test timed out in 5000ms"（门禁 frontendTest 41 例超时、零断言失败）。
+    // 放宽的是"用例等待上限"，判定强度不变（超时〔含放宽后〕仍 = FAIL）；断言/用例/覆盖
+    // 零改动、门禁配置（gates-config.json / run-gates.ps1）零触碰。
+    testTimeout: 30000,
     // WBS-3.1.6 测试环境修复：el-form 校验在 vitest SSR 下假通过——element-plus 被外置后，
     // 其 'async-validator' 裸导入走 Node CJS interop 拿到整个 module.exports 对象，
     // new Schema() 抛 TypeError 且被 EP 的 catch(fields) 吞成通过。将两者内联交 vite 解析

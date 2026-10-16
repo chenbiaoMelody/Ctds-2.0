@@ -145,7 +145,7 @@ describe('顶栏"演示身份"控件（WBS-3.2.6 §6.1 / T27）', () => {
     await flushPromises()
     expect(localStorage.getItem('ctds-demo-actor-mode')).toBeNull()
     expect(document.body.textContent).toContain('请先填写演示身份主体编号')
-  }, 15000)
+  })
 })
 
 describe('无权限访问提示（H4 边界值）', () => {
