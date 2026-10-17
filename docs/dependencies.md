@@ -75,7 +75,7 @@
 
 ## 门禁质量度量工具（WBS-2.2.8 / DB-06，ADR-018）
 
-> 门禁工具链不入 pom（Q1=A 命令行形态裁决）：jacoco 经 Maven 全限定插件目标调用、PIT 经临时 pom 聚合 bundle 至 `target/precheck/pit-bundle/`（运行期产物不入库）、semgrep 为 docker 镜像。登记义务覆盖工具坐标与版本线；升级须走门禁配置变更留痕。
+> 门禁工具链不入 pom（Q1=A 命令行形态裁决）：jacoco 经 Maven 全限定插件目标调用、PIT 经临时 pom 聚合 bundle 至 `target/precheck/pit-bundle/`（运行期产物不入库）、semgrep 为 docker 镜像（本地回退）与 PyPI 原生 CLI（CI 主路径，DB-07 V1.2 免 Docker 形态）。登记义务覆盖工具坐标与版本线；升级须走门禁配置变更留痕。
 
 | 坐标 | 锁定版本 | 用途 | 许可证 | 核验来源与日期 | 审批记录 | 引入任务 |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -83,4 +83,5 @@
 | `org.pitest:pitest-command-line`（含 pitest-entry/pitest/pitest-html-report 传递依赖） | 1.30.0 | 变异测试 CLI（主类 MutationCoverageReport；maven 直调路径 3.1.12 实测不可行，见 ADR-018 备选） | Apache-2.0 | 阿里云镜像实测 200（2026-09-26，本卡下载通道核验）+ m2 缓存 pitest 全家 1.30.0 | 同上 | 清债卡1 / DB-06 |
 | `org.junit.platform:junit-platform-launcher` | 1.12.2（与项目 Spring Boot 3.5.16 BOM 管理的 JUnit Platform 版本对齐，m2 实测） | PIT bundle 运行 JUnit 5 测试的 launcher（bundle 聚合三依赖之一） | Eclipse Public License 2.0 | m2 本地缓存实测（1.12.2，2026-09-26） | 同上 | 清债卡1 / DB-06 |
 | `org.pitest:pitest-junit5-plugin` | 1.2.1（PIT 1.30.0 同期配套线） | PIT 的 JUnit 5 平台适配（缺它 `Ran 0 tests` 全 NO_COVERAGE——3.1.12 §11-1 实证教训） | Apache-2.0 | 阿里云镜像 maven-metadata 实测版本线 1.1.1~1.2.3，2026-09-26 | 同上 | 清债卡1 / DB-06 |
-| `semgrep/semgrep`（docker 镜像） | 1.177.0（版本 tag 锁定 = 接入实测引擎版，禁 latest 漂移——沿本簿容器镜像纪律） | sast 段 Java 静态安全扫描（p/java 社区规则集，热点=0 判定；docker 形态——semgrep 不支持 Windows 原生运行） | LGPL-2.1（semgrep OSS） | docker pull 实测成功（2026-09-26，本机直连 Docker Hub，tag 1.177.0 与 latest 引擎版本一致实测核验）+ 规则源 registry 可达实测（--config p/java 扫描返回正常 JSON） | 同上 | 清债卡1 / DB-06 |
+| `semgrep/semgrep`（docker 镜像） | 1.177.0（版本 tag 锁定 = 接入实测引擎版，禁 latest 漂移——沿本簿容器镜像纪律） | sast 段 Java 静态安全扫描（p/java 社区规则集，热点=0 判定）；docker 形态 = **本地回退**（CI 托管 Windows 无 Docker daemon，V4 首跑实证） | LGPL-2.1（semgrep OSS） | docker pull 实测成功（2026-09-26，本机直连 Docker Hub，tag 1.177.0 与 latest 引擎版本一致实测核验）+ 规则源 registry 可达实测（--config p/java 扫描返回正常 JSON） | 同上 | 清债卡1 / DB-06 |
+| `semgrep`（PyPI 包，`win_amd64` wheel） | 1.177.0（与 docker 镜像 tag 同版，禁 latest 漂移） | sast 段 Java 静态安全扫描的 **CI 主路径**（免 Docker 原生 CLI；ruleset 与判定解析同镜像形态同一套） | LGPL-2.1-or-later（Semgrep OSS） | PyPI 官方注册表 JSON 实测（2026-10-17）：1.177.0 存在、`yanked=false`、无已标漏洞、`requires_python>=3.10`、含 `semgrep-1.177.0-…-none-win_amd64.whl`（58,158,477 B）；Semgrep 官方文档平台表列 Windows (beta) | 编排师裁决 B（2026-10-17，DB-07 V4 首跑 RED；留痕 = ADR-018 V1.6 + 任务卡边界变更记录） | DB-07 |

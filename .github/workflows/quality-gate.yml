@@ -1,0 +1,220 @@
+name: quality-gate
+
+# DB-07 CI 门禁自动化（2026-10-16，编排师一次确认 Q1~Q7 均采 A + 编码段裁定 C）
+# V1.2（2026-10-17，编排师裁决：修复扩面批准 + Docker 策略 B）——增 npm ci / semgrep 原生 CLI /
+# 失败证据上传；契约见 docs/designs/DB-07-hifi.md §2-bis / §3-ter，变更留痕见 ADR-018 V1.6。
+# 编码契约 docs/designs/DB-07-hifi.md（V1.2）§2 / §2-bis / §3-bis / §3-ter；变更留痕见
+# scripts/gates/README.md 与 ADR-018 V1.5 / V1.6。原则：门禁脚本零改造（D-3 切换接口首次落地——
+# CI 只调用 run-gates.ps1 并按退出码判定）；判定逻辑只归 run-gates.ps1，本文件不复刻任何判定；
+# 零 secret、零三方 action。
+# 安全边界登记（评审② P2-2）：pull_request 全分支触发下，同仓库分支 PR 的 GITHUB_TOKEN 保留
+# pull-requests: write，且本 job 执行的是 PR 版本的门禁脚本——属触发模型固有面（fork PR 已按
+# head.repo 同仓判断跳过评论步骤、届时令牌只读）。缓解 = 仓库设置对外部协作者 PR 要求审批
+# （与 Q6-A 分支保护一并归编排师在 GitHub 设置执行，AI 不代设）。
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  gate:
+    runs-on: windows-latest
+    steps:
+      # 1. 检出（默认 fetch-depth；git ls-files 只需索引）
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 2. JDK 17（注入 JAVA_HOME——run-gates.ps1 toolchain 段的 $env:JAVA_HOME 优先分支读环境变量）
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      # 3. Node 22（V1.2 修复：Node 20 下 vitest/jsdom 加载 undici 报
+      #    "webidl.util.markAsUncloneable is not a function"——前端依赖实际要求 Node 22+，本地开发为
+      #    Node 24；package.json 无 engines，故在此显式钉版本）
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # 3b. 前端依赖安装（DB-07 V1.2 / 编排师裁决①：V4 首跑缺 node_modules 使 typecheck/lint/test
+      #     三段以"命令不存在"假红；npm ci 依 package-lock 安装，失败即红——真实原因优先于下游假红）
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci --no-audit --no-fund
+
+      # 3c. SAST 引擎（DB-07 V1.2 §3-ter：CI 免 Docker 形态——托管 Windows 无 Docker daemon 已由
+      #     V4 首跑实证；PyPI semgrep 1.177.0 与本地 docker 镜像同版同 ruleset〔p/java〕，判定与解析
+      #     在 run-gates.ps1 只有一份实现。安装失败不阻塞门禁：由 sast 段按工具缺失记 ERROR 并判红
+      #     〔fail-closed〕，同时保证其它阶段的失败证据仍可取回）
+      - name: Set up Python 3.12 (semgrep CLI)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install semgrep 1.177.0 (no Docker needed for SAST)
+        run: python -m pip install semgrep==1.177.0
+        continue-on-error: true
+
+      # 4. Docker 探测（continue-on-error；sast 已不依赖 Docker〔§3-ter〕，本探测仅记录
+      #    Testcontainers 等可能的运行期需求——探测不判定，可用性由门禁段自身 ERROR/SKIP 语义承担）
+      - name: Docker probe (informational only)
+        run: docker version
+        continue-on-error: true
+
+      # 5. 跑门禁（README 规范调用逐字一致；continue-on-error 仅为取回报告，
+      #    退出码入 output 供终态步骤判定；非 0 也继续=回写需要报告）
+      - name: Run quality gate
+        id: gate
+        shell: pwsh
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/gates/run-gates.ps1
+          "exit_code=$LASTEXITCODE" >> $env:GITHUB_OUTPUT
+        continue-on-error: true
+
+      # 6. 写 job 摘要（ExitCode / 五态计数 / RunLabel / ConfigSha256 / 报告文件名；
+      #    退出码 2 注明"环境/配置错误（非质量结论）"）
+      - name: Write job summary
+        if: always()
+        shell: pwsh
+        env:
+          GATE_EXIT_CODE: ${{ steps.gate.outputs.exit_code }}
+        run: |
+          $reportDir = "scripts/gates/reports"
+          # 取最新报告 = 文件名字典序最大（与 RunLabel 时间戳同构；③ F-c1：与评论步骤同 key 排序）
+          $latest = Get-ChildItem $reportDir -Filter "gate-report-*.md" -ErrorAction SilentlyContinue | Sort-Object Name | Select-Object -Last 1
+          $exitCode = $env:GATE_EXIT_CODE
+          if ($exitCode -eq "") { $exitCode = "not-run" }
+          $lines = @()
+          $lines += "## C-TDS Quality Gate"
+          $lines += ""
+          $lines += ("- ExitCode: " + $exitCode + " (0=GREEN, 1=RED, 2=environment/config error)")
+          if ($exitCode -eq "2") { $lines += "- NOTE: exit code 2 = environment/config error (NOT a quality verdict) - fix the environment/config and re-run; it must NOT be read as a code conclusion" }
+          if ($latest) {
+            $lines += ("- Report file: " + $latest.Name)
+            $text = Get-Content -LiteralPath $latest.FullName -Raw -Encoding UTF8
+            foreach ($f in @("RunLabel", "ConfigSha256", "Result")) {
+              $m = [regex]::Match($text, "(?m)^-\s*" + $f + ":\s*(.*)$")
+              if ($m.Success) { $lines += ("- " + $f + ": " + $m.Groups[1].Value.Trim()) }
+            }
+          } else {
+            $lines += "- Report file: NONE produced (the runner exited before writing a report - see the gate step log)"
+          }
+          $lines += ""
+          $lines | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+
+      # 7. PR 评论（upsert 语义：固定标识搜索本 PR 已有评论则更新、否则新建，不刷屏；
+      #    内容 = 摘要同款字段；不含密钥/敏感信息；fork PR 跳过——GITHUB_TOKEN 只读）
+      - name: Comment on PR (upsert)
+        if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        uses: actions/github-script@v7
+        env:
+          GATE_EXIT_CODE: ${{ steps.gate.outputs.exit_code }}
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const reportDir = 'scripts/gates/reports';
+            const marker = '<!-- ctds-quality-gate-report -->';
+            const exitCode = process.env.GATE_EXIT_CODE || 'not-run';
+            let body = marker + '\n## C-TDS Quality Gate\n\n';
+            body += '- ExitCode: ' + exitCode + ' (0=GREEN, 1=RED, 2=environment/config error)\n';
+            if (exitCode === '2') {
+              body += '- NOTE: exit code 2 = environment/config error (NOT a quality verdict) - fix the environment/config and re-run; it must NOT be read as a code conclusion\n';
+            }
+            let files = [];
+            if (fs.existsSync(reportDir)) {
+              files = fs.readdirSync(reportDir).filter(f => /^gate-report-.*\.md$/.test(f)).sort();
+            }
+            if (files.length > 0) {
+              const latest = files[files.length - 1];
+              body += '- Report file: ' + latest + '\n';
+              const text = fs.readFileSync(path.join(reportDir, latest), 'utf8');
+              for (const f of ['RunLabel', 'ConfigSha256', 'Result']) {
+                const m = text.match(new RegExp('^- ' + f + ': (.+)$', 'm'));
+                if (m) { body += '- ' + f + ': ' + m[1].trim() + '\n'; }
+              }
+            } else {
+              body += '- Report file: NONE produced (the runner exited before writing a report - see the gate step log)\n';
+            }
+            body += '\n_Upserted by the quality-gate workflow (fixed marker, no spam). Full report is attached as an artifact._';
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const issue_number = context.issue.number;
+            const { data: comments } = await github.rest.issues.listComments({ owner, repo, issue_number, per_page: 100 });
+            const existing = comments.find(c => (c.body || '').includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
+
+      # 8. 上传 artifact（CI 上 reports 为临时目录——脚本自动创建；取回供第三方逐字复核）
+      - name: Upload gate report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gate-report-${{ github.run_id }}
+          path: scripts/gates/reports/*.md
+
+      # 8a. 收集失败证据到工作区（Windows 上 runner.temp〔D:\a\_temp〕与 PowerShell 的 $env:TEMP
+      #     〔C:\Users\<user>\AppData\Local\Temp〕不是同一目录——V4 第二轮 artifact 仅含报告即此因。
+      #     先复制到 reports/evidence 再随 8b 上传；复制失败不影响判定）
+      - name: Collect failure evidence
+        if: always()
+        shell: pwsh
+        run: |
+          $dest = "scripts/gates/reports/evidence"
+          New-Item -ItemType Directory -Path $dest -Force | Out-Null
+          Get-ChildItem $env:TEMP -Filter "ctds-gate-*-out.log" -ErrorAction SilentlyContinue | ForEach-Object {
+            Copy-Item $_.FullName (Join-Path $dest $_.Name) -Force -ErrorAction SilentlyContinue
+          }
+          Get-ChildItem $env:TEMP -Filter "ctds-gates-selftest-*" -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+            Copy-Item $_.FullName (Join-Path $dest $_.Name) -Recurse -Force -ErrorAction SilentlyContinue
+          }
+
+      # 8b. 上传失败证据（DB-07 V1.2 §2-bis #3 / 编排师裁决①：报告未写出或阶段失败时，
+      #     原始 out.log 与 selftest fixture 由本 artifact 取回。本步骤只取证据，不改变任何判定与
+      #     退出码语义；无文件时 warn 不失败）
+      - name: Upload failure evidence (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gate-evidence-${{ github.run_id }}
+          path: scripts/gates/reports/
+          if-no-files-found: warn
+          retention-days: 14
+
+      # 9. 终态判定（fail-closed：退出码 1〔RED〕与 2〔环境/配置错〕一律判 job 失败；
+      #    摘要已区分语义，不得把 2 放行）
+      - name: Final verdict (fail-closed)
+        if: always()
+        shell: pwsh
+        env:
+          GATE_EXIT_CODE: ${{ steps.gate.outputs.exit_code }}
+        run: |
+          $code = $env:GATE_EXIT_CODE
+          if ($code -eq "") {
+            Write-Output "quality gate step did not run (exit_code empty) -> job FAILED (fail-closed)"
+            exit 1
+          }
+          if ($code -eq "0") {
+            Write-Output "quality gate exit_code=0 -> GREEN"
+            exit 0
+          }
+          Write-Output ("quality gate exit_code=" + $code + " -> job FAILED (fail-closed: 1=RED code verdict, 2=environment/config error)")
+          exit 1

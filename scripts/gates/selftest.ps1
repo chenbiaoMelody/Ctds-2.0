@@ -22,11 +22,19 @@
 #                                    stage is genuinely executed and a type failure can never be green)
 #   S11 metric stages fail-visible (config V1.4, 清债卡1/DB-06) -> coverage/mutationTest/sast in a
 #                                    bare fixture: FAIL/ERROR rows + verdict RED, NEVER a silent PASS;
-#                                    coverage threshold-polarity probe (10% < 70% must FAIL);
+#                                    coverage threshold-polarity probe (10% < 70% must FAIL); the probe
+#                                    strips CI env vars (GITHUB_ACTIONS/CI) around its runner call
+#                                    (DB-07 V5: the CI-env coverage deferral would turn it SKIP - the
+#                                    deferral's three forms are anchored by S17 instead);
 #                                    reverse probe (stages off) -> GREEN (fail-visible, not fail-silent)
 #   S11b mvn nonzero-exit branch (清债卡1 复审尾巴) -> stub mvn exits 3 = coverage FAIL naming the
 #                                    exit code (the threshold probe's exit-0 stub no longer covers
 #                                    the "mvn exit != 0 -> FAIL" branch)
+#   S11c sast engine unavailable (DB-07 V1.2 §3-ter) -> stub docker (writes stderr then exits 1):
+#                                    sast ERROR row, report STILL written, exit 2, no runner-crash row
+#                                    (regression anchor for the V4 first run where a bare
+#                                    `docker image inspect 2>&1` aborted the whole gate under
+#                                    $ErrorActionPreference=Stop and lost all evidence)
 #   S12 mvn success-state log (DB-43 ①) -> stub mvn exit 0: compile PASS AND
 #                                    %TEMP%\ctds-gate-compile-out.log EXISTS, carrying the
 #                                    stage/command/exitCode summary + full original output
@@ -40,10 +48,41 @@
 #                                    hangs with timeoutSeconds=2: FAIL "timed out", out.log
 #                                    "(TIMED OUT)", grandchild PID GONE (taskkill /T; the old
 #                                    Kill()-only behaviour leaves the grandchild alive = red)
+#   S15 gateSelfTest executor wiring (DB-07 编排师裁定 C, config V1.8) -> fixture with
+#                                    gateSelfTest.enabled=true + a stub selftest script: exit 0 =
+#                                    gateSelfTest PASS row + exit 0 (PASS detail carries the parsed
+#                                    "SELFTEST PASS - N assertion(s)" summary), a spaced-path stub
+#                                    (tool under "scripts/gates dir/") anchors the -File quoting,
+#                                    exit 1 = FAIL row + exit 1 (self-check FAILED + full-output
+#                                    path), a hanging stub with timeoutSeconds=2 = FAIL "timed out
+#                                    after 2s" (executor timeout branch), exit 2 = ERROR row + exit 2
+#                                    (harness error, not a code verdict), missing tool = ERROR row +
+#                                    exit 2; PASS probes also anchor the first-stage row order, and a
+#                                    closing guard scan asserts every non-S15 fixture config keeps the
+#                                    stage disabled (recursion guard as a machine check). The recursion
+#                                    guard (fixtures force the stage off) is what makes a stub - not the
+#                                    real selftest - the right probe here; the real chain is covered
+#                                    by the standalone baseline run and the post-enable full gate (V3).
+#   S16 short-form 8.3 RepoRoot     -> same fixture content as S6, but the runner is invoked with the
+#                                    repo root in 8.3 short form (CI's %TEMP% is a short path): the
+#                                    scan-hit row must STILL be repo-relative - the entry point must
+#                                    expand the root to its long form (run-3 evidence: cmd "cd" does
+#                                    not expand short names; the fix is Get-Item -LiteralPath)
+#   S17 CI coverage threshold deferral (DB-07 V5, config V1.11, ADR-018 V1.8) -> stub mvn (exit 0 +
+#                                    writes a 45% jacoco.xml) + stub docker (exit 1 = no daemon /
+#                                    prints linux = usable; prepended fixture bin shadows any real
+#                                    tools): CI env + no Linux Docker = coverage SKIP row carrying the
+#                                    MEASURED value + deferral reason + exit 0/GREEN; local env + no
+#                                    Docker = FAIL row + exit 1/RED with NO deferral text (local
+#                                    verdict semantics unchanged); CI + Linux Docker = FAIL row +
+#                                    exit 1 (no deferral when a real verdict is measurable)
 # How: every scenario builds a hermetic fixture repo under %TEMP% (git init + git add, cheap stages
 # only), generates its config FROM THE REAL gates-config.json (so the real exclude list is what gets
 # exercised), runs scripts/gates/run-gates.ps1 against it and asserts on the report file / stdout /
 # exit code. Nothing outside %TEMP% is touched; the fixtures are deleted when all scenarios pass.
+# DB-07 (config V1.8): every fixture FORCES gateSelfTest off (recursion guard - with the stage
+# enabled in the real config, a fixture inheriting it would make the runner invoke selftest again,
+# forever); S15 is the only scenario that turns it back on, with a stub in place of the real script.
 # Usage:
 #   powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gates\selftest.ps1 [-KeepFixture]
 # Exit codes: 0 = all scenarios passed, 1 = assertion failure, 2 = harness error (fixture/env problem).
@@ -110,6 +149,15 @@ function New-FixtureConfig([string]$dir, [string]$fileName, [bool]$mavenStages, 
     $cfgText = [System.IO.File]::ReadAllText($realConfig, [System.Text.Encoding]::UTF8)
     $cfgObj = ConvertFrom-Json -InputObject $cfgText
     foreach ($n in @("compile", "lint", "unitTest", "frontendTypeCheck", "frontendLint", "frontendTest", "frontendE2E", "coverage", "mutationTest", "sast")) { Set-StageEnabled $cfgObj $n $false }
+    # DB-07（编排师裁定 C，config V1.8）：fixture 一律强制 gateSelfTest 关闭——真实 config 翻位
+    # （enabled=true）后 fixture 不再继承 true，杜绝"门禁→selftest→fixture 门禁→selftest"无限递归；
+    # S15 在自己的 fixture 里显式改回 true 并配 stub selftest，验证执行器接线（递归守卫正面锚）。
+    # 同步补回 status:PENDING-SELFTEST：真实 config 启用时已按 ADR-018 V1.4 先例移除该字段
+    # （coverage/mutationTest/sast 等同径），而 PENDING 循环要求 enabled=false 且 status 形如
+    # PENDING* 才出可见行——fixture 须显式重建"关闭态"才能演练 S1 的"关闭态可见性"锚。
+    Set-StageEnabled $cfgObj "gateSelfTest" $false
+    # 补属性再设值（同 S14 timeoutSeconds 模式）：ConvertFrom-Json 对象直接赋不存在的属性在 PS 5.1 抛错
+    Add-Member -InputObject $cfgObj.stages.gateSelfTest -MemberType NoteProperty -Name status -Value "PENDING-SELFTEST" -Force
     if ($mavenStages) {
         foreach ($n in @("compile", "lint", "unitTest")) { Set-StageEnabled $cfgObj $n $true }
         $cfgObj.toolchain.javaHome = $javaHome
@@ -180,7 +228,7 @@ try {
     Assert-Contains $repText "zz-gate-lock-untracked.txt" "S1 the skipped file is named in the report"
     Assert-Contains $repText "| structureCheck | PASS |" "S1 later stages still ran (gate was NOT aborted)"
     Assert-Contains $repText "secretsScan.excludeGuard | PASS |" "S1 exclude guard ran and passed"
-    Assert-Contains $repText "gateSelfTest | PENDING | PENDING-SELFTEST" "S1 'selftest not wired into CI' is visible in every report"
+    Assert-Contains $repText "gateSelfTest | PENDING | PENDING-SELFTEST" "S1 fixture configs (gateSelfTest forced off by the recursion guard) still show the PENDING row"
     Assert-Contains $repText "-> GREEN" "S1 verdict GREEN"
     Assert-Contains $repText "- ExitCode: 0" "S1 report header declares exit code 0 (consistent with the process exit code)"
     Assert-Contains $repText "- Scenario: selftest-s1-untracked-locked" "S1 report records the Scenario label"
@@ -280,6 +328,104 @@ Assert-True ($r.ExitCode -eq 1) ("S6 exit code 1 (got " + $r.ExitCode + ")")
 $repText = Read-Report $rep
 Assert-Contains $repText "secretsScan | FAIL | Pattern hit in docs/logs/Ctds-fixture-26-01-01-0000.md" "S6 the committed dev log was actually scanned"
 Assert-Contains $repText "-> RED" "S6 verdict RED"
+
+# ---------- S16: short-form (8.3) RepoRoot -> relative paths still correct (DB-07 V4 复跑 3 取证修复锚) ----------
+# CI 的 %TEMP% 本身是 8.3 短路径（C:\Users\RUNNER~1\...）：fixture 建于其下，runner 收到的
+# -RepoRoot 是短路径，而 Get-ChildItem 返回长路径 FullName——入口必须把仓库根展开成长路径，
+# 否则 Get-RelRepoPath 前缀剥离失配、走全路径兜底：入库文件被判"未入库"（S2 降级 SKIP）、
+# 扫描命中路径不再是仓库相对路径（复跑 3 的 S2×4+S6×1 五断言失败；修复批 864f9d2 用的
+# cmd /c "cd /d <短路径> && cd" 不展开短名——本地实测原样回显，改用 Get-Item -LiteralPath）。
+# 本场景用短路径 RepoRoot 重放 S6 断言，把该类回归钉成机器断言。8.3 别名不可用的卷
+# （8dot3name 关闭）下 %~sI 原样返回长路径——探针退化为长路径运行，不失真、不假绿。
+Write-Output ""
+Write-Output "S16 [short-form 8.3 RepoRoot] expect: scan hit row still repo-RELATIVE, exit 1"
+$fix = New-Fixture "s16"
+$logFile16 = Join-Path $fix "docs\logs\Ctds-fixture-26-01-01-0000.md"
+# 同 S6：假凭据按片段拼装，避免门禁把 selftest.ps1 自己判为命中
+$fakeCredentialLine16 = ('pass' + 'word = "Fixture' + 'NotAReal' + 'Secret01"')
+[System.IO.File]::WriteAllText($logFile16, ("# fixture dev log" + [Environment]::NewLine + $fakeCredentialLine16 + [Environment]::NewLine), $utf8NoBom)
+Initialize-FixtureGit $fix
+$cfg16 = New-FixtureConfig $fix "cfg-s16.json" $false "" $null
+$rep16 = Join-Path $script:workDir "s16-report.md"
+$shortFix16 = $fix
+try {
+    $s16Short = ([string](cmd.exe /c ("for %I in (""" + $fix + """) do @echo %~sI"))).Trim()
+    if ($s16Short -ne "" -and (Test-Path -LiteralPath $s16Short)) { $shortFix16 = $s16Short }
+} catch { }
+$r16 = Invoke-Runner $shortFix16 $cfg16 $rep16 "selftest-s16-short-repo-root"
+Assert-True ($r16.ExitCode -eq 1) ("S16 exit code 1 (got " + $r16.ExitCode + ")")
+$rep16Text = Read-Report $rep16
+Assert-Contains $rep16Text "secretsScan | FAIL | Pattern hit in docs/logs/Ctds-fixture-26-01-01-0000.md" "S16 the scan hit is repo-RELATIVE even when RepoRoot was given in 8.3 short form"
+Assert-Contains $rep16Text "-> RED" "S16 verdict RED"
+
+# ---------- S17: CI coverage threshold deferral (DB-07 V5, config V1.11, ADR-018 V1.8) ----------
+# 口径（门禁变更流程四件套齐备）：CI 环境且无 Linux 容器 Docker → coverage 阈值判定降级 SKIP
+# （jacoco 照常执行、实测值如实入报告；CI 物理上测不出章程口径覆盖率——Testcontainers 集成测试
+# 静默 skip，实证复跑 4 = overall 45.61% 对阈值 core>=80/overall>=70），权威判定面 = 有 Docker 的
+# 本地门禁；本地无 Docker 维持 FAIL（可修复环境不开口子）；CI 有 Linux Docker 不降级。三探针全
+# 密封：stub mvn.cmd（exit 0 + 写 45% jacoco.xml——模块名 fake 不在 coreModules，只触发 overall
+# 判定）+ stub docker.cmd（exit 1 = 无 daemon / 输出 linux = 可用）；PATH 前插 fixture\bin 遮蔽
+# 宿主机真 mvn/docker——本机 Docker 运行状态不影响探针。环境变量注入/恢复沿 S3（JAVA_HOME）先例；
+# 收尾清理 %TEMP%\ctds-gate-coverage-out.log（探针 B/C 的 FAIL 落盘）——不留白纸外残留干扰后续场景。
+Write-Output ""
+Write-Output "S17 [CI coverage defer] expect: CI+no-docker = SKIP/exit 0; local+no-docker = FAIL/exit 1; CI+docker-linux = FAIL/exit 1"
+$fix17 = New-Fixture "s17"
+Initialize-FixtureGit $fix17
+$binDir17 = Join-Path $fix17 "bin"
+New-Item -ItemType Directory -Path $binDir17 -Force | Out-Null
+$stubMvn17 = "@echo off" + [Environment]::NewLine +
+    "mkdir `"%CD%\services\fake\target\site\jacoco`" 2>nul" + [Environment]::NewLine +
+    ">`"%CD%\services\fake\target\site\jacoco\jacoco.xml`" echo ^<?xml version=`"1.0`" encoding=`"UTF-8`"?^>" + [Environment]::NewLine +
+    ">>`"%CD%\services\fake\target\site\jacoco\jacoco.xml`" echo ^<report name=`"fake`"^>^<counter type=`"LINE`" missed=`"55`" covered=`"45`"/^>^</report^>" + [Environment]::NewLine +
+    "exit /b 0" + [Environment]::NewLine
+[System.IO.File]::WriteAllText((Join-Path $binDir17 "mvn.cmd"), $stubMvn17, $utf8NoBom)
+$cfg17 = New-FixtureConfig $fix17 "cfg-s17.json" $false "" $null
+$cfg17Obj = ConvertFrom-Json -InputObject ([System.IO.File]::ReadAllText($cfg17, [System.Text.Encoding]::UTF8))
+$cfg17Obj.stages.coverage.enabled = $true
+# javaHome 继承真实 config（与宿主机门禁同口径，前置探测必过）；stub 经 PATH 前插生效
+[System.IO.File]::WriteAllText($cfg17, ($cfg17Obj | ConvertTo-Json -Depth 10), $utf8NoBom)
+$s17Saved = @{ GH = $env:GITHUB_ACTIONS; CI = $env:CI; PATH = $env:PATH }
+try {
+    $env:PATH = $binDir17 + ";" + $s17Saved.PATH
+    # 探针 A：CI 环境 + 无 Linux Docker（stub exit 1）→ SKIP / exit 0 / GREEN
+    [System.IO.File]::WriteAllText((Join-Path $binDir17 "docker.cmd"), ("@echo off" + [Environment]::NewLine + "exit /b 1" + [Environment]::NewLine), $utf8NoBom)
+    $env:GITHUB_ACTIONS = "true"
+    $rep17a = Join-Path $script:workDir "s17-a-report.md"
+    $r17a = Invoke-Runner $fix17 $cfg17 $rep17a "selftest-s17-ci-no-docker"
+    Assert-True ($r17a.ExitCode -eq 0) ("S17-a exit code 0 (got " + $r17a.ExitCode + ")")
+    $rep17aText = Read-Report $rep17a
+    Assert-Contains $rep17aText "| coverage | SKIP |" "S17-a coverage verdict DEFERRED to SKIP in CI without Linux Docker"
+    Assert-Contains $rep17aText "overall line 45% (45/100)" "S17-a the MEASURED value is still reported (data not lost)"
+    Assert-Contains $rep17aText "threshold verdict DEFERRED" "S17-a the deferral is explicit on the row"
+    Assert-Contains $rep17aText "authoritative coverage verdict = local gate with Docker" "S17-a the authoritative surface is named"
+    Assert-Contains $rep17aText "-> GREEN" "S17-a a deferred coverage does not block GREEN"
+    # 探针 B：本地形态（无 CI 变量）+ 同一无 Docker stub → FAIL / exit 1 / RED，且无降级字样
+    Remove-Item Env:GITHUB_ACTIONS -ErrorAction SilentlyContinue
+    Remove-Item Env:CI -ErrorAction SilentlyContinue
+    $rep17b = Join-Path $script:workDir "s17-b-report.md"
+    $r17b = Invoke-Runner $fix17 $cfg17 $rep17b "selftest-s17-local-no-docker"
+    Assert-True ($r17b.ExitCode -eq 1) ("S17-b exit code 1 (got " + $r17b.ExitCode + ")")
+    $rep17bText = Read-Report $rep17b
+    Assert-Contains $rep17bText "| coverage | FAIL |" "S17-b local env keeps the threshold FAIL (no deferral locally)"
+    Assert-Contains $rep17bText "overall 45% < 70%" "S17-b the threshold breach detail is unchanged"
+    Assert-NotContains $rep17bText "DEFERRED" "S17-b no deferral text leaks into a local verdict"
+    Assert-Contains $rep17bText "-> RED" "S17-b verdict RED"
+    # 探针 C：CI 环境 + Linux Docker 可用（stub 输出 linux）→ 不降级，阈值 FAIL / exit 1 / RED
+    [System.IO.File]::WriteAllText((Join-Path $binDir17 "docker.cmd"), ("@echo off" + [Environment]::NewLine + "echo linux" + [Environment]::NewLine + "exit /b 0" + [Environment]::NewLine), $utf8NoBom)
+    $env:GITHUB_ACTIONS = "true"
+    $rep17c = Join-Path $script:workDir "s17-c-report.md"
+    $r17c = Invoke-Runner $fix17 $cfg17 $rep17c "selftest-s17-ci-docker-linux"
+    Assert-True ($r17c.ExitCode -eq 1) ("S17-c exit code 1 (got " + $r17c.ExitCode + ")")
+    $rep17cText = Read-Report $rep17c
+    Assert-Contains $rep17cText "| coverage | FAIL |" "S17-c CI WITH Linux Docker does NOT defer"
+    Assert-Contains $rep17cText "overall 45% < 70%" "S17-c the threshold verdict applies unchanged"
+    Assert-Contains $rep17cText "-> RED" "S17-c verdict RED"
+} finally {
+    $env:PATH = $s17Saved.PATH
+    if ($null -eq $s17Saved.GH) { Remove-Item Env:GITHUB_ACTIONS -ErrorAction SilentlyContinue } else { $env:GITHUB_ACTIONS = $s17Saved.GH }
+    if ($null -eq $s17Saved.CI) { Remove-Item Env:CI -ErrorAction SilentlyContinue } else { $env:CI = $s17Saved.CI }
+    Remove-Item (Join-Path $env:TEMP "ctds-gate-coverage-out.log") -Force -ErrorAction SilentlyContinue
+}
 
 # ---------- S7: a stage throwing -> outer fallback: runner ERROR, report still produced, exit 2 ----------
 Write-Output ""
@@ -429,10 +575,23 @@ $cfgObj.stages.sast.enabled = $true
 [System.IO.File]::WriteAllText($cfg, ($cfgObj | ConvertTo-Json -Depth 10), $utf8NoBom)
 $rep = Join-Path $script:workDir "s11-report.md"
 $savedPath = $env:PATH
+$savedGh = $env:GITHUB_ACTIONS
+$savedCi = $env:CI
 try {
     $env:PATH = $stubDir + ";" + $env:PATH
+    # DB-07 V5（2026-10-17）：coverage 环境自适应判定后，S11 的阈值极性探针必须锚定"阈值判定
+    # 本身"——CI 形态（GITHUB_ACTIONS/CI=true）会触发降级 SKIP，本探针即失效（CI 复跑 5 实证：
+    # S11 三断言失败、exit 2 无 FAIL 行；本机全绿系无 CI 变量——"本地全绿 ≠ CI 全绿"又一实证，
+    # 环境形态差异清单增"CI 环境变量"一项）。降级三形态由 S17 专责锚定；此处显式剥离 CI 变量
+    # （沿 S3 先例），finally 恢复——本机（无 CI 变量）行为零变化。
+    Remove-Item Env:GITHUB_ACTIONS -ErrorAction SilentlyContinue
+    Remove-Item Env:CI -ErrorAction SilentlyContinue
     $r = Invoke-Runner $fix $cfg $rep "selftest-s11-metric-stages"
-} finally { $env:PATH = $savedPath }
+} finally {
+    $env:PATH = $savedPath
+    if ($null -eq $savedGh) { Remove-Item Env:GITHUB_ACTIONS -ErrorAction SilentlyContinue } else { $env:GITHUB_ACTIONS = $savedGh }
+    if ($null -eq $savedCi) { Remove-Item Env:CI -ErrorAction SilentlyContinue } else { $env:CI = $savedCi }
+}
 Assert-True ($r.ExitCode -eq 1) ("S11 exit code 1 (got " + $r.ExitCode + ")")
 $repText = Read-Report $rep
 Assert-Contains $repText "| coverage | FAIL |" "S11 coverage FAIL row present (exit-0 stub lets the threshold branch drive it)"
@@ -471,6 +630,38 @@ Assert-True ($rExit.ExitCode -eq 1) ("S11b exit code 1 (got " + $rExit.ExitCode 
 $repExitText = Read-Report $repExit
 Assert-Contains $repExitText "| coverage | FAIL |" "S11b nonzero mvn exit turns coverage FAIL"
 Assert-Contains $repExitText "mvn coverage exit 3" "S11b the FAIL names the real Maven exit code"
+
+# ---------- S11c: sast engine unavailable must NOT abort the run (DB-07 V1.2 §3-ter) ----------
+# V4 首跑实证：裸 `docker image inspect <image> 2>&1` 在 PS 5.1 + $ErrorActionPreference=Stop 下
+# 被 native stderr 抛出，整轮中止（runner 行 ERROR + 报告未写出）。本锚用 stub docker（写 stderr
+# 后 exit 1）锚定"引擎不可用 = sast ERROR 行 + 报告照常写出 + exit 2"，不再以整轮崩溃形态出现。
+# 载体自适应：本机无 semgrep 时走 docker 分支（直接锚定修复点）；若机器装有 semgrep 则走原生分支
+# 并在 fixture 无源集处记 ERROR——两条路径都必须满足同一组断言（不中止、报告可核、fail-closed）。
+Write-Output ""
+Write-Output "S11c [sast engine unavailable] expect: sast ERROR row + report written + exit 2, no runner crash"
+$fix = New-Fixture "s11c"
+Initialize-FixtureGit $fix
+$stubDockerDir = Join-Path $fix "stub-docker"
+New-Item -ItemType Directory -Path $stubDockerDir -Force | Out-Null
+[System.IO.File]::WriteAllText((Join-Path $stubDockerDir "docker.cmd"),
+    ("@echo off" + [Environment]::NewLine + "echo failed to connect to the docker API at npipe:////./pipe/docker_engine 1>&2" + [Environment]::NewLine + "exit /b 1" + [Environment]::NewLine),
+    $utf8NoBom)
+$cfg11c = New-FixtureConfig $fix "cfg-s11c.json" $false "" $null
+$cfg11cObj = ConvertFrom-Json -InputObject ([System.IO.File]::ReadAllText($cfg11c, [System.Text.Encoding]::UTF8))
+$cfg11cObj.stages.sast.enabled = $true
+[System.IO.File]::WriteAllText($cfg11c, ($cfg11cObj | ConvertTo-Json -Depth 10), $utf8NoBom)
+$rep11c = Join-Path $script:workDir "s11c-report.md"
+$savedPath11c = $env:PATH
+try {
+    $env:PATH = $stubDockerDir + ";" + $env:PATH
+    $r11c = Invoke-Runner $fix $cfg11c $rep11c "selftest-s11c-sast-engine-unavailable"
+} finally { $env:PATH = $savedPath11c }
+Assert-True ($r11c.ExitCode -eq 2) ("S11c exit code 2 (got " + $r11c.ExitCode + ")")
+Assert-True (Test-Path $rep11c) "S11c the report is still written (the old bug lost all evidence)"
+$rep11cText = Read-Report $rep11c
+Assert-Contains $rep11cText "- ExitCode: 2" "S11c printed report declares the real exit code"
+Assert-Contains $rep11cText "| sast | ERROR |" "S11c sast reports ERROR when the engine is unavailable"
+Assert-True (-not ($rep11cText -match "\| runner \|")) "S11c no runner-crash row (the run must not abort mid-way)"
 
 # ---------- S12: mvn success-state log (DB-43 ① - success must be evidenced too) ----------
 # stub mvn exit 0 + marker output -> compile PASS and %TEMP%\ctds-gate-compile-out.log must exist
@@ -610,6 +801,133 @@ foreach ($n in @("compile", "lint", "unitTest")) {
     if (Test-Path $p) { Remove-Item $p -Force -ErrorAction SilentlyContinue }
 }
 
+# ---------- S15: gateSelfTest executor wiring (DB-07 编排师裁定 C, config V1.8, ADR-018 V1.5) ----------
+# enabled=true 时执行器必须实跑 <tool> 并把退出码映射为报告行：0=PASS / 1=FAIL / 2=ERROR；
+# tool 指向不存在文件 = ERROR。绿/红/ERROR/缺文件四探针。stub 只写标记输出——fixture 内跑真实
+# selftest 会递归（门禁→selftest→fixture 门禁→selftest），故用 stub 验证接线与映射；真实
+# selftest 的回归由 V2 基线与启用后 V3 全量门禁（真实链）覆盖。
+Write-Output ""
+Write-Output "S15 [gateSelfTest executor] expect: exit 0 -> PASS row/exit 0; exit 1 -> FAIL row/exit 1; exit 2 -> ERROR row/exit 2; tool missing -> ERROR row/exit 2"
+$s15Probes = @(
+    @{ Name = "green";   Code = 0;    Verdict = "PASS" },
+    @{ Name = "spaces";  Code = 0;    Verdict = "PASS" },
+    @{ Name = "red";     Code = 1;    Verdict = "FAIL" },
+    @{ Name = "error";   Code = 2;    Verdict = "ERROR" },
+    @{ Name = "hang";    Code = 1;    Verdict = "FAIL" },
+    @{ Name = "missing"; Code = $null; Verdict = "ERROR" }
+)
+foreach ($probe in $s15Probes) {
+    $fix15 = New-Fixture ("s15-" + $probe.Name)
+    Initialize-FixtureGit $fix15
+    $gstDir15 = Join-Path $fix15 "scripts\gates"
+    New-Item -ItemType Directory -Path $gstDir15 -Force | Out-Null
+    $cfg15 = New-FixtureConfig $fix15 ("cfg-s15-" + $probe.Name + ".json") $false "" $null
+    $cfg15Obj = ConvertFrom-Json -InputObject ([System.IO.File]::ReadAllText($cfg15, [System.Text.Encoding]::UTF8))
+    $cfg15Obj.stages.gateSelfTest.enabled = $true
+    $stubMarker15 = ""
+    if ($probe.Name -eq "hang") {
+        # hang 探针（④ F-2）：stub 挂起 60s，fixture config 把该段 timeoutSeconds 设为 2——锚定
+        # 执行器超时分支（FAIL "timed out after 2s" + full output 取证）；S14 同款 detached 调用
+        # （超时注入场景不重定向 std，断言全在报告文件上）
+        $stubMarker15 = "DB07-S15-STUB-HANG"
+        # [Console]::Out + Flush：PS 5.1 重定向 stdout 时输出经 PowerShell 缓冲，挂起中被 kill 会丢失
+        # ——直写进程 stdout 并 flush，保证"stub 确已启动且其输出已进入取证"可被断言
+        [System.IO.File]::WriteAllText((Join-Path $gstDir15 "selftest.ps1"),
+            ("[Console]::Out.WriteLine('" + $stubMarker15 + "'); [Console]::Out.Flush()" + [Environment]::NewLine + "Start-Sleep -Seconds 60" + [Environment]::NewLine + "exit 0" + [Environment]::NewLine),
+            $utf8NoBom)
+        Add-Member -InputObject $cfg15Obj.stages.gateSelfTest -MemberType NoteProperty -Name timeoutSeconds -Value 2 -Force
+    } elseif ($probe.Name -eq "missing") {
+        # 缺文件探针：tool 指向不存在的脚本（fixture 内连 stub 都不放）
+        $cfg15Obj.stages.gateSelfTest.tool = "scripts/gates/zz-no-such-selftest.ps1"
+    } else {
+        $stubMarker15 = ("DB07-S15-STUB-" + $probe.Name.ToUpper())
+        $stubBody15 = "Write-Output '" + $stubMarker15 + "'" + [Environment]::NewLine
+        if ($probe.Code -eq 0) {
+            # 退出 0 的探针 stub 还打印 selftest 末行摘要——验证执行器 PASS 详情的摘要解析分支
+            $stubBody15 += "Write-Output 'SELFTEST PASS - 3 assertion(s), 0 failure(s)'" + [Environment]::NewLine
+        }
+        $stubBody15 += "exit " + $probe.Code + [Environment]::NewLine
+        if ($probe.Name -eq "spaces") {
+            # 空格路径探针：stub 放"scripts\gates dir"（带空格目录）、tool 指向它——锚定执行器
+            # argLine 必须给 -File 路径加引号（仓库根路径含空格：E:\AI Projects\...；未加引号会被
+            # powershell 命令行解析截断成" cannot find path"类失败）
+            $spacedDir15 = Join-Path $fix15 "scripts\gates dir"
+            New-Item -ItemType Directory -Path $spacedDir15 -Force | Out-Null
+            [System.IO.File]::WriteAllText((Join-Path $spacedDir15 "selftest.ps1"), $stubBody15, $utf8NoBom)
+            $cfg15Obj.stages.gateSelfTest.tool = "scripts/gates dir/selftest.ps1"
+        } else {
+            [System.IO.File]::WriteAllText((Join-Path $gstDir15 "selftest.ps1"), $stubBody15, $utf8NoBom)
+        }
+    }
+    [System.IO.File]::WriteAllText($cfg15, ($cfg15Obj | ConvertTo-Json -Depth 10), $utf8NoBom)
+    $rep15 = Join-Path $script:workDir ("s15-" + $probe.Name + "-report.md")
+    if ($probe.Name -eq "hang") {
+        # hang 探针走 detached（S14 同款：超时注入不重定向 std，断言全在报告文件上）
+        $r15 = Invoke-Runner $fix15 $cfg15 $rep15 ("selftest-s15-gateselftest-" + $probe.Name) -detached
+    } else {
+        $r15 = Invoke-Runner $fix15 $cfg15 $rep15 ("selftest-s15-gateselftest-" + $probe.Name)
+    }
+    $rep15Text = Read-Report $rep15
+    if ($probe.Name -eq "missing") {
+        Assert-True ($r15.ExitCode -eq 2) ("S15 missing probe exit code 2 (got " + $r15.ExitCode + ")")
+        Assert-Contains $rep15Text "| gateSelfTest | ERROR |" "S15 missing probe: gateSelfTest reports ERROR"
+        Assert-Contains $rep15Text "selftest script not found" "S15 missing probe: the ERROR names the missing script"
+    } else {
+        Assert-True ($r15.ExitCode -eq $probe.Code) ("S15 " + $probe.Name + " probe exit code " + $probe.Code + " (got " + $r15.ExitCode + ")")
+        Assert-Contains $rep15Text ("| gateSelfTest | " + $probe.Verdict + " |") ("S15 " + $probe.Name + " probe: gateSelfTest reports " + $probe.Verdict)
+        if ($probe.Code -eq 0) {
+            Assert-Contains $rep15Text "3 assertions, 0 failures" ("S15 " + $probe.Name + " probe: PASS detail carries the parsed selftest summary")
+            Assert-NotContains $rep15Text "gateSelfTest | PENDING" ("S15 " + $probe.Name + " probe: no PENDING row when the executor ran (no silent double-bookkeeping)")
+            # ④ F-1：行序锚——执行器必须位于全阶段之首（selftest 开场/收尾清理及其 fixture 均写
+            # %TEMP% 固定名 ctds-gate-*-out.log；置首保护本运行先前阶段的失败取证，下移即破坏）
+            Assert-True ($rep15Text.IndexOf("| gateSelfTest |") -lt $rep15Text.IndexOf("| secretsScan |")) ("S15 " + $probe.Name + " probe: the executor row precedes secretsScan (first-stage invariant)")
+        } else {
+            if ($probe.Name -eq "hang") {
+                # 超时行按既有口径（同 mvn/npm 段）不带输出尾段——行文锚 + full output 取证深锚
+                Assert-Contains $rep15Text "timed out after 2s" "S15 hang probe: the FAIL names the timeout budget (executor timeout branch anchored)"
+                Assert-Contains $rep15Text "full output:" "S15 hang probe: the FAIL row carries the full-output path"
+                $mHang = [regex]::Match($rep15Text, "full output: (.+ctds-gate-gateSelfTest-out\.log)")
+                if ($mHang.Success -and (Test-Path $mHang.Groups[1].Value.Trim())) {
+                    $hangOut = [System.IO.File]::ReadAllText($mHang.Groups[1].Value.Trim(), [System.Text.Encoding]::UTF8)
+                    Assert-Contains $hangOut "stage: gateSelfTest" "S15 hang probe: out.log carries the stage summary line (DB-43 format)"
+                    Assert-Contains $hangOut "exitCode: -1 (TIMED OUT)" "S15 hang probe: out.log marks the TIMED OUT state"
+                    Assert-Contains $hangOut $stubMarker15 "S15 hang probe: out.log carries the stub output captured before the kill"
+                } else {
+                    Assert-True $false "S15 hang probe: the reported out.log path is present and readable"
+                }
+            } else {
+                # marker 仅对真实生成 stub 的探针断言（missing 探针无 stub，marker 为空——避免恒真断言）
+                if ($stubMarker15 -ne "") {
+                    Assert-Contains $rep15Text $stubMarker15 ("S15 " + $probe.Name + " probe: the stub marker reached the report evidence")
+                }
+                Assert-Contains $rep15Text "full output:" ("S15 " + $probe.Name + " probe: the " + $probe.Verdict + " row carries the full-output path")
+                if ($probe.Name -eq "red") {
+                    Assert-Contains $rep15Text "runner self-check FAILED" "S15 red probe: the FAIL says the gate cannot vouch for this run"
+                }
+                if ($probe.Name -eq "error") {
+                    Assert-Contains $rep15Text "harness error" "S15 error probe: the ERROR says exit 2 is not a code verdict"
+                }
+            }
+        }
+    }
+}
+
+# ---------- S15 收尾护栏（④ F-8）：把递归守卫从"约定"升级为"机器强制" ----------
+# New-FixtureConfig 集中强制关闭 + 补回 status；若未来新场景绕过该 helper 直接复制真实 config
+# （enabled=true）当 fixture 配置，将触发"门禁→selftest→fixture 门禁→selftest"无限递归。
+# 收尾前统一扫描本运行产生的全部 fixture 配置（S15 显式开启的 cfg-s15-*.json 按名豁免）。
+Write-Output ""
+Write-Output "S15 guard scan: every non-S15 fixture config must keep gateSelfTest in the disabled state"
+$s15GuardBad = @()
+foreach ($cfgGuardFile in (Get-ChildItem $script:workDir -Recurse -Filter "cfg*.json" -ErrorAction SilentlyContinue)) {
+    if ($cfgGuardFile.Name -like "cfg-s15-*.json") { continue }
+    $cfgGuardObj = ConvertFrom-Json -InputObject ([System.IO.File]::ReadAllText($cfgGuardFile.FullName, [System.Text.Encoding]::UTF8))
+    $gstGuard = $cfgGuardObj.stages.gateSelfTest
+    if ($null -eq $gstGuard -or $gstGuard.enabled -ne $false -or $gstGuard.status -notlike "PENDING*") {
+        $s15GuardBad += ($cfgGuardFile.Name + " (enabled=" + $(if ($null -eq $gstGuard) { "<absent>" } else { $gstGuard.enabled }) + ", status=" + $(if ($null -eq $gstGuard) { "<absent>" } else { $gstGuard.status }) + ")")
+    }
+}
+Assert-True ($s15GuardBad.Count -eq 0) ("S15 guard scan: all non-S15 fixture configs keep gateSelfTest disabled + PENDING status" + $(if ($s15GuardBad.Count -gt 0) { " <violations: " + ($s15GuardBad -join " ; ") + ">" } else { "" }))
 
 } catch {
     Write-Output ""

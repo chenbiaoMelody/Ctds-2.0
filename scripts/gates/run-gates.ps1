@@ -34,6 +34,24 @@
 #   落盘失败不影响段判定（记录是加菜，不是判定）。
 #   依据：任务卡 docs/tasks/DB-43-门禁可观测性增强-2026-10-13.md + 两级设计
 #   docs/designs/DB-43-{lofi,hifi}.md（V1.0 已确认）+ ADR-018 修订记录 V1.3。
+# DB-07（2026-10-16，CI 门禁自动化·编排师一次确认 Q5-A + 编码段红线 4 停报后裁定 C，config V1.8，
+# ADR-018 V1.5）record: 新增 gateSelfTest 执行器段（见下方 Stage: gateSelfTest——位于全阶段之首；
+# 退出码 0/1/2→PASS/FAIL/ERROR，超时=FAIL；selftest.ps1 同步适配：New-FixtureConfig 递归守卫 +
+# S15 探针〔绿/空格路径/红/ERROR/缺文件/hang〕，断言只增不减）。Invoke-MetricProcess 由原"质量
+# 度量段"位置纯上移至文件头部（函数体内容零改动，diff 呈现为迁移——执行器置首须可调用）。
+# 判定阈值 / 阶段范围 / 扫描面 / 退出码语义 / 报告五态语义零改动；gates-config.json 改动面 =
+# gateSelfTest.enabled 一位 + timeoutSeconds 新增键 + 移除 status + note + changeLog/version。
+# DB-07 V5（2026-10-17，CI 覆盖率口径裁决——编排师授权"评估后按合理建议执行"；config V1.11 +
+# ADR-018 V1.8 留痕）record: coverage 段环境自适应判定。背景：CI（GitHub 托管 Windows runner，
+# 裁决 B 既定）无 Linux 容器 Docker，Testcontainers 集成测试按测试代码既有语义静默 skip（实证：
+# 复跑 4〔run 39024057954〕coverage 45.61%〔4153/9106，core did 52.96%〕，16/16 模块 BUILD
+# SUCCESS、contract 240 例 skip 127；本地有 Docker 真值 94.1%）——CI 物理上测不出章程口径覆盖率，
+# 以低阈值冒充达标 = 绿灯失真（弃选项①原案）、永久 FAIL = 门禁长红失效（弃选项②）、换 runner =
+# 推翻裁决 B 且丢失 Windows 特有验证面（弃选项③）。口径：Docker Linux 容器可用 → 阈值判定不变；
+# CI 环境且不可用 → jacoco 照常执行（实测值入报告不丢），阈值判定降级 SKIP（detail 明示实测值 +
+# 未达标项 + 降级原因 + 权威判定归属本地门禁）；本地无 Docker → 维持 FAIL（可修复环境不开口子）。
+# 执行层失败（exit≠0 / 无报告 / 超时）不降级。机器护栏 = selftest S17 三探针；判定阈值 / 阶段范围 /
+# 扫描面 / 退出码语义 / 五态语义零改动（降级复用既有 SKIP 态——"no FAIL; PENDING/SKIP allowed"）。
 param(
     [string]$RepoRoot = "",
     [string]$ReportPath = "",
@@ -51,6 +69,32 @@ if (-not (Test-Path $RepoRoot)) {
     Write-Output "[CONFIG-ERROR] RepoRoot not found: $RepoRoot"
     exit 2
 }
+# DB-07 V1.2（2026-10-17，CI 取证修复）：Windows 8.3 短路径（CI 的 C:\Users\RUNNER~1\...）与
+# Get-ChildItem 返回的长路径（C:\Users\runneradmin\...）混用，会让"按根长度截断"的相对化错位
+# （实证：相对路径变成 "-s2/docs/..."——S2 锁定文件被判"未入库"降级 SKIP、S6 扫描命中路径对不上）。
+# 入口统一把 RepoRoot 展开为长路径；相对化改为前缀剥离 + 兜底，绝不静默截断。
+# DB-07 V4 复跑 3 取证再修正（2026-10-17）：cmd /c "cd /d <短路径> && cd" **不展开** 8.3 短名
+# ——cmd 的 cd 无参回显的是"进入时给出的路径原样"（本地实测：cd /d C:\PROGRA~1 后 cd 仍回显
+# C:\PROGRA~1），故修复批 864f9d2 的展开方法无效：CI 复跑 3 的 S2/S6 五断言仍失败（报告 Repo
+# 行仍为短路径，SKIP/FAIL 行列出长路径全名 = 前缀剥离失配走全路径兜底；本地短路径 TEMP 复现同型）。
+# 改用 Get-Item -LiteralPath 的 FullName：文件系统提供程序逐组件解析为长名（本地实测
+# C:\PROGRA~1 -> C:\Program Files，嵌套 C:\PROGRA~1\COMMON~1 同样成立，PS 5.1 与 7 双解释器一致）。
+function Resolve-LongDirPath([string]$path) {
+    try {
+        $item = Get-Item -LiteralPath $path
+        if ($item -and $item.FullName) { return $item.FullName }
+    } catch { }
+    return $path
+}
+function Get-RelRepoPath([string]$fullPath) {
+    $r = $RepoRoot.TrimEnd('\', '/')
+    if ($fullPath.StartsWith($r + '\', [System.StringComparison]::OrdinalIgnoreCase)) {
+        return ($fullPath.Substring($r.Length + 1) -replace '\\', '/')
+    }
+    return ($fullPath -replace '\\', '/')
+}
+$RepoRoot = Resolve-LongDirPath $RepoRoot
+
 $cfgPath = $ConfigPath
 if ($cfgPath -eq "") { $cfgPath = Join-Path $PSScriptRoot "gates-config.json" }
 if (-not (Test-Path $cfgPath)) {
@@ -112,6 +156,38 @@ function Stop-ProcessTree([System.Diagnostics.Process]$proc) {
     try { if (-not $proc.HasExited) { $proc.Kill() } } catch { }
 }
 
+# ---------- 通用辅助：按超时运行进程（不经 cmd 拼接，参数直接传递，无 shell 注入面） ----------
+# DB-06 质量度量段引入；DB-07（编排师裁定 C）gateSelfTest 执行器复用——执行器须位于全阶段之首
+# （selftest 开场/收尾清理及其 fixture 运行均写 %TEMP% 固定名 ctds-gate-*-out.log，置首避免
+# 删除/覆盖本运行先前阶段的失败取证），故本函数由原"质量度量段"位置纯上移至此：
+# 函数体内容零改动，diff 呈现为迁移（留痕见 ADR-018 V1.5 与 hifi §3-bis）。
+function Invoke-MetricProcess([string]$exe, [string]$argLine, [string]$workDir, [int]$timeoutSec, [string]$stage) {
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $exe
+    $psi.Arguments = $argLine
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.WorkingDirectory = $workDir
+    # DB-19 同款口径：JVM 系工具输出按 UTF-8 解码（中文 Windows 默认 GBK 会乱码红灯明细）
+    $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
+    $psi.StandardErrorEncoding = [System.Text.Encoding]::UTF8
+    $proc = [System.Diagnostics.Process]::Start($psi)
+    $outTask = $proc.StandardOutput.ReadToEndAsync()
+    $errTask = $proc.StandardError.ReadToEndAsync()
+    if (-not $proc.WaitForExit($timeoutSec * 1000)) {
+        # DB-43：超时也保有已产出的原始输出（原实现丢弃已读流，超时零证据）；进程树清理（Q1-A）
+        Stop-ProcessTree $proc
+        $null = $outTask.Wait(5000)
+        $null = $errTask.Wait(5000)
+        $timedOutBody = ("<timed out after " + $timeoutSec + "s>")
+        try { $timedOutBody = ("<timed out after " + $timeoutSec + "s>") + [Environment]::NewLine + $outTask.Result + $errTask.Result } catch { }
+        return @{ ExitCode = -1; Output = $timedOutBody }
+    }
+    $null = $outTask.Wait(10000); $null = $errTask.Wait(10000)
+    return @{ ExitCode = $proc.ExitCode; Output = ($outTask.Result + [Environment]::NewLine + $errTask.Result) }
+}
+
 # ---------- Git-tracked index (WBS-2.2.7 V1.2 / R1+R3) ----------
 # 用途：① 排除项护栏——排除项绝不允许命中入库路径；② 不可读文件判定——入库文件不可读记 ERROR，
 # 未入库的构建/运行产物才允许 SKIP。索引取不到属环境问题，护栏记 ERROR（不得静默放行）。
@@ -160,6 +236,58 @@ function Test-Excluded([string]$rel, [string[]]$exclude) {
 # 退出码与"代码不合格的红灯"同形）。为保持变更最小可读，块内不额外缩进，改由本注释与收尾 catch 标注边界。
 try {
 
+# ---------- Stage: gateSelfTest (DB-07 CI 门禁自动化·编排师裁定 C, config V1.8, ADR-018 V1.5, hifi §3-bis) ----------
+# 运行器自检执行器：enabled=true 时每轮门禁实跑 selftest.ps1（S1~S15，只写 %TEMP%），结论写为报告行。
+# 位置 = 全阶段之首：selftest 开场/收尾清理及其 fixture 运行均写 %TEMP% 固定名 ctds-gate-*-out.log，
+# 置首避免删除/覆盖本运行先前阶段的失败取证（DB-43 取证链）。
+# 语义：0=PASS / 1=FAIL（断言失败=门禁自身不可信，红灯必修）/ 2=ERROR（harness/环境，非代码结论）；
+# 超时=FAIL（与既有阶段一致）。enabled=false 时由下方 PENDING 循环出可见行（不留静默关闭）。
+$gstStage = $cfg.stages.gateSelfTest
+if ($gstStage -and $gstStage.enabled) {
+    $gstTool = "scripts/gates/selftest.ps1"
+    if ($gstStage.tool) { $gstTool = $gstStage.tool }
+    $gstScript = Join-Path $RepoRoot $gstTool
+    if (-not (Test-Path $gstScript)) {
+        Add-Result "gateSelfTest" "ERROR" ("selftest script not found: " + $gstTool + " (resolved under RepoRoot) - fix stages.gateSelfTest.tool or restore the script")
+    } elseif (-not (Get-Command powershell -ErrorAction SilentlyContinue)) {
+        Add-Result "gateSelfTest" "ERROR" "powershell executable not found on PATH (required to run selftest.ps1)"
+    } else {
+        $gstTimeout = 300; if ($gstStage.timeoutSeconds) { $gstTimeout = [int]$gstStage.timeoutSeconds }
+        # 引号包裹（同 mutationTest pitArgs 惯例）：仓库路径含空格（E:\AI Projects\...），未加引号的
+        # -File 路径会被 powershell 命令行解析截断——S15 "spaces" 探针锚定该风险面。
+        # 单变量构造（③ F-c2：$gstCmd 与 argLine 原为同串构建两次）
+        $gstArgLine = "-NoProfile -ExecutionPolicy Bypass -File `"" + $gstScript + "`""
+        $gstCmd = "powershell " + $gstArgLine
+        $gstSw = [System.Diagnostics.Stopwatch]::StartNew()
+        $gstRun = Invoke-MetricProcess "powershell" $gstArgLine $RepoRoot $gstTimeout "gateSelfTest"
+        $gstElapsed = [int]$gstSw.Elapsed.TotalSeconds
+        $gstTail = ($gstRun.Output -split "`r?`n" | Where-Object { $_.Trim() -ne "" } | Select-Object -Last 3) -join " | "
+        if ($gstRun.ExitCode -eq -1) {
+            $p = $null
+            try { $p = Write-StageOutLog "gateSelfTest" $gstCmd $gstRun.Output -1 $true $gstElapsed } catch { }
+            if ($p) { Add-Result "gateSelfTest" "FAIL" ("selftest timed out after " + $gstTimeout + "s | full output: " + $p) }
+            else { Add-Result "gateSelfTest" "FAIL" ("selftest timed out after " + $gstTimeout + "s") }
+        } elseif ($gstRun.ExitCode -eq 0) {
+            # 成功态详情摘录 selftest 末行摘要（"SELFTEST PASS - N assertion(s), 0 failure(s)"）——机器可核
+            $gstSummary = "exit 0"
+            if ($gstRun.Output -match "SELFTEST PASS - (\d+) assertion\(s\), (\d+) failure\(s\)") {
+                $gstSummary = ("exit 0, " + $Matches[1] + " assertions, " + $Matches[2] + " failures")
+            }
+            Add-Result "gateSelfTest" "PASS" ("selftest.ps1 " + $gstSummary + " in " + $gstElapsed + "s")
+        } elseif ($gstRun.ExitCode -eq 2) {
+            $p = $null
+            try { $p = Write-StageOutLog "gateSelfTest" $gstCmd $gstRun.Output 2 $false $gstElapsed } catch { }
+            if ($p) { Add-Result "gateSelfTest" "ERROR" ("selftest harness error (exit 2 = fixture/env problem, NOT a code verdict): " + $gstTail + " | full output: " + $p) }
+            else { Add-Result "gateSelfTest" "ERROR" ("selftest harness error (exit 2 = fixture/env problem, NOT a code verdict): " + $gstTail) }
+        } else {
+            $p = $null
+            try { $p = Write-StageOutLog "gateSelfTest" $gstCmd $gstRun.Output $gstRun.ExitCode $false $gstElapsed } catch { }
+            if ($p) { Add-Result "gateSelfTest" "FAIL" ("selftest exit " + $gstRun.ExitCode + " (runner self-check FAILED - the gate cannot vouch for this run): " + $gstTail + " | full output: " + $p) }
+            else { Add-Result "gateSelfTest" "FAIL" ("selftest exit " + $gstRun.ExitCode + " (runner self-check FAILED): " + $gstTail) }
+        }
+    }
+}
+
 # ---------- Stage: secretsScan ----------
 if ($cfg.stages.secretsScan.enabled) {
     $exclude = @($cfg.secretsExcludePaths)
@@ -197,7 +325,7 @@ if ($cfg.stages.secretsScan.enabled) {
     $oversizedUntracked = 0
     $files = New-Object System.Collections.Generic.List[object]
     foreach ($f in $all) {
-        $rel = $f.FullName.Substring($RepoRoot.Length).TrimStart('\', '/') -replace '\\', '/'
+        $rel = Get-RelRepoPath $f.FullName
         if (Test-Excluded $rel $exclude) { $excludedCount++; continue }
         if ($f.Length -ge 1MB) {
             if ($tracked.Contains($rel)) { $oversized.Add($rel) } else { $oversizedUntracked++ }
@@ -206,7 +334,7 @@ if ($cfg.stages.secretsScan.enabled) {
         $files.Add($f)
     }
     foreach ($f in $files) {
-        $rel = $f.FullName.Substring($RepoRoot.Length).TrimStart('\', '/') -replace '\\', '/'
+        $rel = Get-RelRepoPath $f.FullName
         # WBS-2.2.7: 单文件不可读（被占用/权限）不得中断整个门禁；
         # R3: 但"不能扫"与"扫过且干净"必须区分——入库文件不可读 = 扫描缺口 -> ERROR（退出码 2）。
         try {
@@ -447,36 +575,25 @@ foreach ($stageName in @("frontendTypeCheck", "frontendLint", "frontendTest", "f
 }
 
 # ---------- Quality metrics: coverage / mutationTest / sast (DB-06/清债卡1, config V1.4, ADR-018) ----------
-# 通用辅助：按 config 超时运行进程（不经 cmd 拼接，参数直接传递，无 shell 注入面）
-function Invoke-MetricProcess([string]$exe, [string]$argLine, [string]$workDir, [int]$timeoutSec, [string]$stage) {
-    $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = $exe
-    $psi.Arguments = $argLine
-    $psi.UseShellExecute = $false
-    $psi.RedirectStandardOutput = $true
-    $psi.RedirectStandardError = $true
-    $psi.WorkingDirectory = $workDir
-    # DB-19 同款口径：JVM 系工具输出按 UTF-8 解码（中文 Windows 默认 GBK 会乱码红灯明细）
-    $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
-    $psi.StandardErrorEncoding = [System.Text.Encoding]::UTF8
-    $proc = [System.Diagnostics.Process]::Start($psi)
-    $outTask = $proc.StandardOutput.ReadToEndAsync()
-    $errTask = $proc.StandardError.ReadToEndAsync()
-    if (-not $proc.WaitForExit($timeoutSec * 1000)) {
-        # DB-43：超时也保有已产出的原始输出（原实现丢弃已读流，超时零证据）；进程树清理（Q1-A）
-        Stop-ProcessTree $proc
-        $null = $outTask.Wait(5000)
-        $null = $errTask.Wait(5000)
-        $timedOutBody = ("<timed out after " + $timeoutSec + "s>")
-        try { $timedOutBody = ("<timed out after " + $timeoutSec + "s>") + [Environment]::NewLine + $outTask.Result + $errTask.Result } catch { }
-        return @{ ExitCode = -1; Output = $timedOutBody }
-    }
-    $null = $outTask.Wait(10000); $null = $errTask.Wait(10000)
-    return @{ ExitCode = $proc.ExitCode; Output = ($outTask.Result + [Environment]::NewLine + $errTask.Result) }
-}
+# （Invoke-MetricProcess 通用辅助已由 DB-07〔编排师裁定 C〕纯上移至文件头部——gateSelfTest 执行器
+#   位于全阶段之首须可调用；本处不再重复定义。）
 
 $javaExe = "java"
 if ($toolJavaHome) { $javaExe = Join-Path $toolJavaHome "bin\java.exe" }
+
+# ----- coverage 环境自适应判定辅助（DB-07 V5，见文件头 record） -----
+function Test-CiEnvironment {
+    # GitHub Actions 恒注入 GITHUB_ACTIONS=true；CI=true 为通用惯例（GitHub 同设）。两者其一即 CI。
+    return (($env:GITHUB_ACTIONS -eq "true") -or ($env:CI -eq "true"))
+}
+function Test-LinuxDockerDaemon {
+    # 仅 Linux 容器 daemon 可供 Testcontainers 跑真值（GitHub 托管 Windows runner 的 docker 仅
+    # Windows 容器，OSType=windows 同样判不可用）；无 CLI / daemon 不可达 / 探测超时均判 false。
+    if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { return $false }
+    $probe = Invoke-MetricProcess "cmd.exe" "/c docker info --format {{.OSType}}" $RepoRoot 60 "coverage-docker-probe"
+    if ($probe.ExitCode -ne 0) { return $false }
+    return (($probe.Output.Trim()) -ieq "linux")
+}
 
 # ----- coverage (jacoco 命令行形态：prepare-agent test report 一次完成，零 pom 变更) -----
 $covStage = $cfg.stages.coverage
@@ -489,6 +606,9 @@ if ($covStage -and $covStage.enabled) {
         Add-Result "coverage" "ERROR" "Illegal characters in gates-config stages.coverage.goals - stage SKIPPED, command NOT executed"
     } else {
         $covTimeout = 900; if ($covStage.timeoutSeconds) { $covTimeout = [int]$covStage.timeoutSeconds }
+        # DB-07 V5：降级判定在段首一次性探测（CI 环境 且 无 Linux Docker）；非 CI 短路不探测
+        # （本地判定语义零变化）；仅作用于下方阈值判定环节，执行层失败不降级。
+        $covDefer = (Test-CiEnvironment) -and (-not (Test-LinuxDockerDaemon))
         # cmd /c 包一层（同 maven 段形态）：Process.Start 不解析 PATH，mvn 须经 cmd 定位
         $argLine = "/c " + $toolMavenBin + " " + $toolMavenArgs + " " + $covStage.goals
         $swCov = [System.Diagnostics.Stopwatch]::StartNew()
@@ -545,8 +665,14 @@ if ($covStage -and $covStage.enabled) {
                 }
                 $detail = ("overall line " + $overallPct + "% (" + $totCovered + "/" + ($totCovered + $totMissed) + "), core [" + ($coreRows -join ", ") + "], thresholds core>=" + $coreLine + "% overall>=" + $overallLine + "%")
                 if ($bad.Count -gt 0) {
-                    $covFail = $true
-                    $covDetail = ($detail + " - " + ($bad -join "; "))
+                    if ($covDefer) {
+                        # DB-07 V5：CI 无 Linux Docker —— 阈值判定降级 SKIP；实测值与未达标项如实
+                        # 入报告（测量数据不丢），权威覆盖率判定归属有 Docker 的本地门禁
+                        Add-Result "coverage" "SKIP" ($detail + " - threshold verdict DEFERRED [" + ($bad -join "; ") + "]: no Linux Docker daemon in this CI environment (Testcontainers integration tests skip per test-code semantics; measured value not comparable to thresholds) - authoritative coverage verdict = local gate with Docker")
+                    } else {
+                        $covFail = $true
+                        $covDetail = ($detail + " - " + ($bad -join "; "))
+                    }
                 }
                 else { Add-Result "coverage" "PASS" $detail }
             }
@@ -607,7 +733,21 @@ if ($mutStage -and $mutStage.enabled) {
                 if (-not (Test-Path (Join-Path $modDir "target\classes"))) {
                     $badMods += ($m.name + ": classes not found (compile stage must run first)"); continue
                 }
-                $rCp = Invoke-MetricProcess "cmd.exe" ("/c " + $toolMavenBin + " dependency:build-classpath -Dmdep.outputFile=target/pit-cp.txt -B -ntp -q") $modDir 300 "mutationTest.classpath"
+                $cpCmd = "/c " + $toolMavenBin + " dependency:build-classpath -Dmdep.outputFile=target/pit-cp.txt -B -ntp -q"
+                $rCp = Invoke-MetricProcess "cmd.exe" $cpCmd $modDir 300 "mutationTest.classpath"
+                if ($rCp.ExitCode -ne 0) {
+                    # CI 适配（DB-07 V1.2）：CI 工作流只跑 compile/test，不会把兄弟模块 SNAPSHOT 装进
+                    # 本地仓库，dependency:build-classpath 因此解析失败（V4 第二轮实证：did 找不到
+                    # common-*/std-adapter 的 2.0.0-SNAPSHOT）。先以 reactor 方式安装该模块及其依赖
+                    # （-am，跳过测试）再重试一次；判定语义不变——仍以最终 classpath 与 PIT 结论为准，
+                    # 重试后仍失败照记 classpath failed。
+                    $mutLogs += ("==== " + $m.name + " classpath (first attempt) ====" + [Environment]::NewLine + $rCp.Output)
+                    $prepArgs = "/c " + $toolMavenBin + " -B -ntp -q -DskipTests -pl " + $m.moduleDir + " -am install"
+                    $rPrep = Invoke-MetricProcess "cmd.exe" $prepArgs $RepoRoot 1800 ("mutationTest." + $m.name + ".classpath-prep")
+                    $mutLogs += ("==== " + $m.name + " classpath prep (install -am, exit " + $rPrep.ExitCode + ") ====" + [Environment]::NewLine + $rPrep.Output)
+                    if ($rPrep.ExitCode -ne 0) { $badMods += ($m.name + ": classpath generation failed (module install -am exit " + $rPrep.ExitCode + ")"); continue }
+                    $rCp = Invoke-MetricProcess "cmd.exe" $cpCmd $modDir 300 "mutationTest.classpath"
+                }
                 if ($rCp.ExitCode -ne 0) { $badMods += ($m.name + ": classpath generation failed"); $mutLogs += ("==== " + $m.name + " classpath ====" + [Environment]::NewLine + $rCp.Output); continue }
                 $cpText = ([System.IO.File]::ReadAllText((Join-Path $modDir "target\pit-cp.txt"), [System.Text.Encoding]::UTF8)).Trim()
                 $fullCp = "target/classes;target/test-classes;" + $cpText + ";" + ((Join-Path $RepoRoot "target\precheck\pit-bundle") + "\*")
@@ -654,17 +794,39 @@ if ($mutStage -and $mutStage.enabled) {
     }
 }
 
-# ----- sast (semgrep 官方镜像，docker 运行时扫描 Java 主源集副本——规避仓库路径空格) -----
+# ----- sast（DB-07 V1.2 §3-ter：免 Docker 形态——semgrep 原生 CLI 优先〔CI 主路径〕，docker 为本地回退） -----
+# 判定与解析只有一份（下方统一 JSON 段）；两种载体仅"如何启动 semgrep"不同，扫描面与五态语义零改动。
 $sastStage = $cfg.stages.sast
 if ($sastStage -and $sastStage.enabled) {
-    if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
-        Add-Result "sast" "ERROR" "docker executable not found on PATH (required for semgrep stage)"
+    $semgrepCmd = Get-Command semgrep -ErrorAction SilentlyContinue
+    $dockerCmd = Get-Command docker -ErrorAction SilentlyContinue
+    $sastEngine = ""
+    $sastEngineErr = ""
+    if ($semgrepCmd) {
+        $sastEngine = "native"
+        $semgrepExe = $semgrepCmd.Source
+    } elseif ($dockerCmd) {
+        $sastEngine = "docker"
+        $image = $sastStage.image
+        # 探测不得在 $ErrorActionPreference=Stop 下中止整轮：PS 5.1 中 native stderr 经 2>&1 会变成
+        # ErrorRecord 被抛出（V4 首跑 line 730 整轮中止的根因）。经 cmd.exe 内部重定向吞掉 stderr，
+        # 只按 $LASTEXITCODE 判定；文案同时点明 daemon 不可达 / 镜像缺失两种可能，不猜测具体哪一种。
+        $probeCode = 1
+        try {
+            cmd.exe /c ("docker image inspect " + $image + " >nul 2>&1")
+            $probeCode = $LASTEXITCODE
+        } catch { $probeCode = 1 }
+        if ($probeCode -ne 0) {
+            $sastEngine = ""
+            $sastEngineErr = ("docker daemon unreachable or image not present locally: " + $image + " - start Docker / pull the image manually first (supply-chain leave-trace, no auto-pull; see ADR-018)")
+        }
     } else {
-        $image = $sastStage.image; $ruleset = $sastStage.ruleset
-        $null = docker image inspect $image 2>&1
-        if ($LASTEXITCODE -ne 0) {
-            Add-Result "sast" "ERROR" ("image not present locally: " + $image + " - pull it manually first (supply-chain leave-trace, no auto-pull; see ADR-018)")
-        } else {
+        $sastEngineErr = "neither semgrep CLI nor docker found on PATH (required for semgrep stage)"
+    }
+    if ($sastEngine -eq "") {
+        Add-Result "sast" "ERROR" $sastEngineErr
+    } else {
+        $ruleset = $sastStage.ruleset
             $scanTemp = Join-Path $env:TEMP ("ctds-sast-" + (Get-Date -Format "yyyyMMdd-HHmmss"))
             New-Item -ItemType Directory -Path $scanTemp -Force | Out-Null
             $copied = @()
@@ -679,7 +841,7 @@ if ($sastStage -and $sastStage.enabled) {
                     if (Test-Path $mpath) { $srcDirs += $mpath }
                 }
                 foreach ($src in $srcDirs) {
-                    $rel = $src.Substring($RepoRoot.Length).TrimStart("\")
+                    $rel = Get-RelRepoPath $src
                     $dst = Join-Path $scanTemp $rel
                     New-Item -ItemType Directory -Path (Split-Path -Parent $dst) -Force | Out-Null
                     Copy-Item $src $dst -Recurse -Force
@@ -689,10 +851,17 @@ if ($sastStage -and $sastStage.enabled) {
             if ($copied.Count -eq 0) {
                 Add-Result "sast" "ERROR" "no Java main source sets found to scan (scanRoots misconfigured?)"
             } else {
-                $dockerArgs = "/c docker run --rm -v `"" + $scanTemp + ":/src`" " + $image + " semgrep --config " + $ruleset + " --json --quiet /src"
                 $sastTimeout = 900; if ($sastStage.timeoutSeconds) { $sastTimeout = [int]$sastStage.timeoutSeconds }
                 $swSast = [System.Diagnostics.Stopwatch]::StartNew()
-                $r = Invoke-MetricProcess "cmd.exe" $dockerArgs $RepoRoot $sastTimeout "sast"
+                if ($sastEngine -eq "native") {
+                    # 与 docker 形态同一参数集（ruleset/json/quiet 不变）；扫描副本路径可能含空格，必须加引号
+                    # （同类坑见 S15 空格探针：未加引号会被命令行解析截断）
+                    $nativeArgs = "--config " + $ruleset + " --json --quiet `"" + $scanTemp + "`""
+                    $r = Invoke-MetricProcess $semgrepExe $nativeArgs $RepoRoot $sastTimeout "sast"
+                } else {
+                    $dockerArgs = "/c docker run --rm -v `"" + $scanTemp + ":/src`" " + $image + " semgrep --config " + $ruleset + " --json --quiet /src"
+                    $r = Invoke-MetricProcess "cmd.exe" $dockerArgs $RepoRoot $sastTimeout "sast"
+                }
                 # DB-43 ③：凡该段判定 FAIL/ERROR（超时 / exit≠0 / JSON 不可解析 / scan errors /
                 # findings>0）→ 落盘完整原始输出，报告行尾附路径（PASS 不落）
                 $sastFail = $false
@@ -734,13 +903,14 @@ if ($sastStage -and $sastStage.enabled) {
                 }
                 if ($sastFail) {
                     $p = $null
-                    try { $p = Write-StageOutLog "sast" ("docker run --rm -v <scanTemp>:/src " + $image + " semgrep --config " + $ruleset + " /src") $r.Output $r.ExitCode ($r.ExitCode -eq -1) ([int]$swSast.Elapsed.TotalSeconds) } catch { }
+                    $sastCmdLabel = "semgrep --config " + $ruleset + " --json --quiet <scanTemp>"
+                    if ($sastEngine -eq "docker") { $sastCmdLabel = "docker run --rm -v <scanTemp>:/src " + $image + " semgrep --config " + $ruleset + " /src" }
+                    try { $p = Write-StageOutLog "sast" $sastCmdLabel $r.Output $r.ExitCode ($r.ExitCode -eq -1) ([int]$swSast.Elapsed.TotalSeconds) } catch { }
                     if ($p) { Add-Result "sast" $sastVerdict ($sastDetail + " | full output: " + $p) }
                     else { Add-Result "sast" $sastVerdict $sastDetail }
                 }
             }
             Remove-Item -Path $scanTemp -Recurse -Force -ErrorAction SilentlyContinue
-        }
     }
 }
 
@@ -823,7 +993,12 @@ $report = $lines -join [Environment]::NewLine
 # 兜底：若执行中途崩溃以致探针未跑，这里仍尽力写出报告（写不进去也算 ERROR 而非绿灯）
 $reportTarget = $ReportPath
 if ($reportTarget -eq "") {
-    $reportTarget = Join-Path $PSScriptRoot ("reports\gate-report-" + (Get-Date -Format "yyyyMMdd-HHmmss") + ".md")
+    # DB-07 V1.2：兜底路径的目录可能不存在（CI 新鲜克隆 + 早期阶段中止致报告探针未跑）——
+    # 先建目录再写，避免"报告写不出"把整轮可核证据丢掉。仅兜底分支建目录；显式 -ReportPath
+    # 不建（S4 不可写路径探针的 ERROR/exit 2 语义保持不变）。
+    $fallbackDir = Join-Path $PSScriptRoot "reports"
+    if (-not (Test-Path $fallbackDir)) { New-Item -ItemType Directory -Path $fallbackDir -Force | Out-Null }
+    $reportTarget = Join-Path $fallbackDir ("gate-report-" + (Get-Date -Format "yyyyMMdd-HHmmss") + ".md")
 }
 $reportWritten = $true
 $writeErr = ""
