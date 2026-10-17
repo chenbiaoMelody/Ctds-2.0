@@ -65,6 +65,14 @@
 #                                    scan-hit row must STILL be repo-relative - the entry point must
 #                                    expand the root to its long form (run-3 evidence: cmd "cd" does
 #                                    not expand short names; the fix is Get-Item -LiteralPath)
+#   S17 CI coverage threshold deferral (DB-07 V5, config V1.11, ADR-018 V1.8) -> stub mvn (exit 0 +
+#                                    writes a 45% jacoco.xml) + stub docker (exit 1 = no daemon /
+#                                    prints linux = usable; prepended fixture bin shadows any real
+#                                    tools): CI env + no Linux Docker = coverage SKIP row carrying the
+#                                    MEASURED value + deferral reason + exit 0/GREEN; local env + no
+#                                    Docker = FAIL row + exit 1/RED with NO deferral text (local
+#                                    verdict semantics unchanged); CI + Linux Docker = FAIL row +
+#                                    exit 1 (no deferral when a real verdict is measurable)
 # How: every scenario builds a hermetic fixture repo under %TEMP% (git init + git add, cheap stages
 # only), generates its config FROM THE REAL gates-config.json (so the real exclude list is what gets
 # exercised), runs scripts/gates/run-gates.ps1 against it and asserts on the report file / stdout /
@@ -346,6 +354,75 @@ Assert-True ($r16.ExitCode -eq 1) ("S16 exit code 1 (got " + $r16.ExitCode + ")"
 $rep16Text = Read-Report $rep16
 Assert-Contains $rep16Text "secretsScan | FAIL | Pattern hit in docs/logs/Ctds-fixture-26-01-01-0000.md" "S16 the scan hit is repo-RELATIVE even when RepoRoot was given in 8.3 short form"
 Assert-Contains $rep16Text "-> RED" "S16 verdict RED"
+
+# ---------- S17: CI coverage threshold deferral (DB-07 V5, config V1.11, ADR-018 V1.8) ----------
+# 口径（门禁变更流程四件套齐备）：CI 环境且无 Linux 容器 Docker → coverage 阈值判定降级 SKIP
+# （jacoco 照常执行、实测值如实入报告；CI 物理上测不出章程口径覆盖率——Testcontainers 集成测试
+# 静默 skip，实证复跑 4 = overall 45.61% 对阈值 core>=80/overall>=70），权威判定面 = 有 Docker 的
+# 本地门禁；本地无 Docker 维持 FAIL（可修复环境不开口子）；CI 有 Linux Docker 不降级。三探针全
+# 密封：stub mvn.cmd（exit 0 + 写 45% jacoco.xml——模块名 fake 不在 coreModules，只触发 overall
+# 判定）+ stub docker.cmd（exit 1 = 无 daemon / 输出 linux = 可用）；PATH 前插 fixture\bin 遮蔽
+# 宿主机真 mvn/docker——本机 Docker 运行状态不影响探针。环境变量注入/恢复沿 S3（JAVA_HOME）先例；
+# 收尾清理 %TEMP%\ctds-gate-coverage-out.log（探针 B/C 的 FAIL 落盘）——不留白纸外残留干扰后续场景。
+Write-Output ""
+Write-Output "S17 [CI coverage defer] expect: CI+no-docker = SKIP/exit 0; local+no-docker = FAIL/exit 1; CI+docker-linux = FAIL/exit 1"
+$fix17 = New-Fixture "s17"
+Initialize-FixtureGit $fix17
+$binDir17 = Join-Path $fix17 "bin"
+New-Item -ItemType Directory -Path $binDir17 -Force | Out-Null
+$stubMvn17 = "@echo off" + [Environment]::NewLine +
+    "mkdir `"%CD%\services\fake\target\site\jacoco`" 2>nul" + [Environment]::NewLine +
+    ">`"%CD%\services\fake\target\site\jacoco\jacoco.xml`" echo ^<?xml version=`"1.0`" encoding=`"UTF-8`"?^>" + [Environment]::NewLine +
+    ">>`"%CD%\services\fake\target\site\jacoco\jacoco.xml`" echo ^<report name=`"fake`"^>^<counter type=`"LINE`" missed=`"55`" covered=`"45`"/^>^</report^>" + [Environment]::NewLine +
+    "exit /b 0" + [Environment]::NewLine
+[System.IO.File]::WriteAllText((Join-Path $binDir17 "mvn.cmd"), $stubMvn17, $utf8NoBom)
+$cfg17 = New-FixtureConfig $fix17 "cfg-s17.json" $false "" $null
+$cfg17Obj = ConvertFrom-Json -InputObject ([System.IO.File]::ReadAllText($cfg17, [System.Text.Encoding]::UTF8))
+$cfg17Obj.stages.coverage.enabled = $true
+# javaHome 继承真实 config（与宿主机门禁同口径，前置探测必过）；stub 经 PATH 前插生效
+[System.IO.File]::WriteAllText($cfg17, ($cfg17Obj | ConvertTo-Json -Depth 10), $utf8NoBom)
+$s17Saved = @{ GH = $env:GITHUB_ACTIONS; CI = $env:CI; PATH = $env:PATH }
+try {
+    $env:PATH = $binDir17 + ";" + $s17Saved.PATH
+    # 探针 A：CI 环境 + 无 Linux Docker（stub exit 1）→ SKIP / exit 0 / GREEN
+    [System.IO.File]::WriteAllText((Join-Path $binDir17 "docker.cmd"), ("@echo off" + [Environment]::NewLine + "exit /b 1" + [Environment]::NewLine), $utf8NoBom)
+    $env:GITHUB_ACTIONS = "true"
+    $rep17a = Join-Path $script:workDir "s17-a-report.md"
+    $r17a = Invoke-Runner $fix17 $cfg17 $rep17a "selftest-s17-ci-no-docker"
+    Assert-True ($r17a.ExitCode -eq 0) ("S17-a exit code 0 (got " + $r17a.ExitCode + ")")
+    $rep17aText = Read-Report $rep17a
+    Assert-Contains $rep17aText "| coverage | SKIP |" "S17-a coverage verdict DEFERRED to SKIP in CI without Linux Docker"
+    Assert-Contains $rep17aText "overall line 45% (45/100)" "S17-a the MEASURED value is still reported (data not lost)"
+    Assert-Contains $rep17aText "threshold verdict DEFERRED" "S17-a the deferral is explicit on the row"
+    Assert-Contains $rep17aText "authoritative coverage verdict = local gate with Docker" "S17-a the authoritative surface is named"
+    Assert-Contains $rep17aText "-> GREEN" "S17-a a deferred coverage does not block GREEN"
+    # 探针 B：本地形态（无 CI 变量）+ 同一无 Docker stub → FAIL / exit 1 / RED，且无降级字样
+    Remove-Item Env:GITHUB_ACTIONS -ErrorAction SilentlyContinue
+    Remove-Item Env:CI -ErrorAction SilentlyContinue
+    $rep17b = Join-Path $script:workDir "s17-b-report.md"
+    $r17b = Invoke-Runner $fix17 $cfg17 $rep17b "selftest-s17-local-no-docker"
+    Assert-True ($r17b.ExitCode -eq 1) ("S17-b exit code 1 (got " + $r17b.ExitCode + ")")
+    $rep17bText = Read-Report $rep17b
+    Assert-Contains $rep17bText "| coverage | FAIL |" "S17-b local env keeps the threshold FAIL (no deferral locally)"
+    Assert-Contains $rep17bText "overall 45% < 70%" "S17-b the threshold breach detail is unchanged"
+    Assert-NotContains $rep17bText "DEFERRED" "S17-b no deferral text leaks into a local verdict"
+    Assert-Contains $rep17bText "-> RED" "S17-b verdict RED"
+    # 探针 C：CI 环境 + Linux Docker 可用（stub 输出 linux）→ 不降级，阈值 FAIL / exit 1 / RED
+    [System.IO.File]::WriteAllText((Join-Path $binDir17 "docker.cmd"), ("@echo off" + [Environment]::NewLine + "echo linux" + [Environment]::NewLine + "exit /b 0" + [Environment]::NewLine), $utf8NoBom)
+    $env:GITHUB_ACTIONS = "true"
+    $rep17c = Join-Path $script:workDir "s17-c-report.md"
+    $r17c = Invoke-Runner $fix17 $cfg17 $rep17c "selftest-s17-ci-docker-linux"
+    Assert-True ($r17c.ExitCode -eq 1) ("S17-c exit code 1 (got " + $r17c.ExitCode + ")")
+    $rep17cText = Read-Report $rep17c
+    Assert-Contains $rep17cText "| coverage | FAIL |" "S17-c CI WITH Linux Docker does NOT defer"
+    Assert-Contains $rep17cText "overall 45% < 70%" "S17-c the threshold verdict applies unchanged"
+    Assert-Contains $rep17cText "-> RED" "S17-c verdict RED"
+} finally {
+    $env:PATH = $s17Saved.PATH
+    if ($null -eq $s17Saved.GH) { Remove-Item Env:GITHUB_ACTIONS -ErrorAction SilentlyContinue } else { $env:GITHUB_ACTIONS = $s17Saved.GH }
+    if ($null -eq $s17Saved.CI) { Remove-Item Env:CI -ErrorAction SilentlyContinue } else { $env:CI = $s17Saved.CI }
+    Remove-Item (Join-Path $env:TEMP "ctds-gate-coverage-out.log") -Force -ErrorAction SilentlyContinue
+}
 
 # ---------- S7: a stage throwing -> outer fallback: runner ERROR, report still produced, exit 2 ----------
 Write-Output ""

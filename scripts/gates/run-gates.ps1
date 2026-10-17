@@ -41,6 +41,17 @@
 # 度量段"位置纯上移至文件头部（函数体内容零改动，diff 呈现为迁移——执行器置首须可调用）。
 # 判定阈值 / 阶段范围 / 扫描面 / 退出码语义 / 报告五态语义零改动；gates-config.json 改动面 =
 # gateSelfTest.enabled 一位 + timeoutSeconds 新增键 + 移除 status + note + changeLog/version。
+# DB-07 V5（2026-10-17，CI 覆盖率口径裁决——编排师授权"评估后按合理建议执行"；config V1.11 +
+# ADR-018 V1.8 留痕）record: coverage 段环境自适应判定。背景：CI（GitHub 托管 Windows runner，
+# 裁决 B 既定）无 Linux 容器 Docker，Testcontainers 集成测试按测试代码既有语义静默 skip（实证：
+# 复跑 4〔run 39024057954〕coverage 45.61%〔4153/9106，core did 52.96%〕，16/16 模块 BUILD
+# SUCCESS、contract 240 例 skip 127；本地有 Docker 真值 94.1%）——CI 物理上测不出章程口径覆盖率，
+# 以低阈值冒充达标 = 绿灯失真（弃选项①原案）、永久 FAIL = 门禁长红失效（弃选项②）、换 runner =
+# 推翻裁决 B 且丢失 Windows 特有验证面（弃选项③）。口径：Docker Linux 容器可用 → 阈值判定不变；
+# CI 环境且不可用 → jacoco 照常执行（实测值入报告不丢），阈值判定降级 SKIP（detail 明示实测值 +
+# 未达标项 + 降级原因 + 权威判定归属本地门禁）；本地无 Docker → 维持 FAIL（可修复环境不开口子）。
+# 执行层失败（exit≠0 / 无报告 / 超时）不降级。机器护栏 = selftest S17 三探针；判定阈值 / 阶段范围 /
+# 扫描面 / 退出码语义 / 五态语义零改动（降级复用既有 SKIP 态——"no FAIL; PENDING/SKIP allowed"）。
 param(
     [string]$RepoRoot = "",
     [string]$ReportPath = "",
@@ -570,6 +581,20 @@ foreach ($stageName in @("frontendTypeCheck", "frontendLint", "frontendTest", "f
 $javaExe = "java"
 if ($toolJavaHome) { $javaExe = Join-Path $toolJavaHome "bin\java.exe" }
 
+# ----- coverage 环境自适应判定辅助（DB-07 V5，见文件头 record） -----
+function Test-CiEnvironment {
+    # GitHub Actions 恒注入 GITHUB_ACTIONS=true；CI=true 为通用惯例（GitHub 同设）。两者其一即 CI。
+    return (($env:GITHUB_ACTIONS -eq "true") -or ($env:CI -eq "true"))
+}
+function Test-LinuxDockerDaemon {
+    # 仅 Linux 容器 daemon 可供 Testcontainers 跑真值（GitHub 托管 Windows runner 的 docker 仅
+    # Windows 容器，OSType=windows 同样判不可用）；无 CLI / daemon 不可达 / 探测超时均判 false。
+    if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { return $false }
+    $probe = Invoke-MetricProcess "cmd.exe" "/c docker info --format {{.OSType}}" $RepoRoot 60 "coverage-docker-probe"
+    if ($probe.ExitCode -ne 0) { return $false }
+    return (($probe.Output.Trim()) -ieq "linux")
+}
+
 # ----- coverage (jacoco 命令行形态：prepare-agent test report 一次完成，零 pom 变更) -----
 $covStage = $cfg.stages.coverage
 if ($covStage -and $covStage.enabled) {
@@ -581,6 +606,9 @@ if ($covStage -and $covStage.enabled) {
         Add-Result "coverage" "ERROR" "Illegal characters in gates-config stages.coverage.goals - stage SKIPPED, command NOT executed"
     } else {
         $covTimeout = 900; if ($covStage.timeoutSeconds) { $covTimeout = [int]$covStage.timeoutSeconds }
+        # DB-07 V5：降级判定在段首一次性探测（CI 环境 且 无 Linux Docker）；非 CI 短路不探测
+        # （本地判定语义零变化）；仅作用于下方阈值判定环节，执行层失败不降级。
+        $covDefer = (Test-CiEnvironment) -and (-not (Test-LinuxDockerDaemon))
         # cmd /c 包一层（同 maven 段形态）：Process.Start 不解析 PATH，mvn 须经 cmd 定位
         $argLine = "/c " + $toolMavenBin + " " + $toolMavenArgs + " " + $covStage.goals
         $swCov = [System.Diagnostics.Stopwatch]::StartNew()
@@ -637,8 +665,14 @@ if ($covStage -and $covStage.enabled) {
                 }
                 $detail = ("overall line " + $overallPct + "% (" + $totCovered + "/" + ($totCovered + $totMissed) + "), core [" + ($coreRows -join ", ") + "], thresholds core>=" + $coreLine + "% overall>=" + $overallLine + "%")
                 if ($bad.Count -gt 0) {
-                    $covFail = $true
-                    $covDetail = ($detail + " - " + ($bad -join "; "))
+                    if ($covDefer) {
+                        # DB-07 V5：CI 无 Linux Docker —— 阈值判定降级 SKIP；实测值与未达标项如实
+                        # 入报告（测量数据不丢），权威覆盖率判定归属有 Docker 的本地门禁
+                        Add-Result "coverage" "SKIP" ($detail + " - threshold verdict DEFERRED [" + ($bad -join "; ") + "]: no Linux Docker daemon in this CI environment (Testcontainers integration tests skip per test-code semantics; measured value not comparable to thresholds) - authoritative coverage verdict = local gate with Docker")
+                    } else {
+                        $covFail = $true
+                        $covDetail = ($detail + " - " + ($bad -join "; "))
+                    }
                 }
                 else { Add-Result "coverage" "PASS" $detail }
             }
