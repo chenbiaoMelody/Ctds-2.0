@@ -25,7 +25,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gates\run-gates.ps1
 - **并发**：同 ref 新推送取消旧跑（`concurrency`）；
 - **秘密**：**零 secret**——仅用自动注入的 `GITHUB_TOKEN`（最小权限 contents: read + pull-requests: write）；
 - **依赖解析**：runner 无用户级 `.m2/settings.xml`，直连 Maven Central（镜像为国内网络优化，不为 CI 新增配置文件）；
-- **gateSelfTest 启用记录（本卡四件套之一）**：随本次接入 `enabled` false→true（config V1.8 + changeLog V1.8/V1.9 + ADR-018 V1.5 + 本节）；ConfigSha256 基线 `924f0ca3…dfdd` → `5f600e72…4eb6` → **`36ed456e…5696`**（V1.9 = 评审修复批纯口径勘误，零键位零行为；改前/改后逐字记录，第三方可以 `Get-FileHash` 复算核对）；
+- **gateSelfTest 启用记录（本卡四件套之一）**：随本次接入 `enabled` false→true（config V1.8 + changeLog V1.8~V1.10 + ADR-018 V1.5 + 本节）；ConfigSha256 基线链 `924f0ca3…dfdd` → `5f600e72…4eb6`（V1.8）→ `4cefc43b…13c`（V1.9 实际值）→ **`b7591621…7080`（V1.10，当前）**（**V1.10 勘误（2026-10-17）**：V1.9 段尾登记 `36ed456e…5696` 系自指陷阱失实——把当前文件哈希写入 changeLog 即改变文件本身，登记值随写入失效；V1.9 实际哈希经工作区 `Get-FileHash` + V3.2 报告双源证实 = `4cefc43b…13c`；自 V1.10 起当前哈希不内嵌 changeLog，当前基线一律在本行与 ADR-018 外部登记，第三方可对任意 git 历史版本以 `Get-FileHash` 复算核对）；
 - **分支保护（Q6-A）**：main 的 require status checks 由编排师在 GitHub 仓库设置执行（AI 无仓库设置权限——验收通过后呈报待执行，不代设）。
 - **同仓分支 PR 边界（评审② P2-2 登记）**：`pull_request` 全分支触发下，同仓库分支 PR 的 `GITHUB_TOKEN` 保留 `pull-requests: write`，且 job 执行的是 PR 版本的门禁脚本——属触发模型固有面（fork PR 已按 `head.repo` 同仓判断跳过评论步骤、届时令牌只读）；缓解 = 仓库设置对外部协作者 PR 要求审批（与 Q6-A 一并归编排师执行）。
 
