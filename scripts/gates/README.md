@@ -63,7 +63,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gates\selftest.ps1
 | S8 | 日志命名违规（FAIL）+ 无效 `JAVA_HOME`（ERROR）并存 | 退出码 **1**、结论 `RED (also N ERROR...)`（真红灯绝不能被环境/配置错误掩盖 —— R2 锚点，DB-17） |
 | S9 | Maven `compile.goals` 注入非法字符（`&`） | 该阶段记 ERROR 且行文含 **"stage SKIPPED, command NOT executed"**（非法配置绝不启动命令 —— R5 锚点，DB-17） |
 | S10 | 前端 `typecheck` stub 退出 1 / 退出 0（红/绿双探针） | 退出 1 → FAIL/RED/退出码 1；退出 0 → PASS/GREEN/0（类型失败绝不能绿 —— V1.3 防假绿灯锚） |
-| S11 | 裸 fixture 中启用 coverage / mutationTest / sast 三段 | 三段 fail-visible（FAIL/ERROR 行、绝无静默 PASS）+ coverage 阈值极性探针（10% < 70% 必 FAIL）+ 反向探针（段关掉 → GREEN）——V1.4 |
+| S11 | 裸 fixture 中启用 coverage / mutationTest / sast 三段（探针调用前显式剥离 `GITHUB_ACTIONS`/`CI` 环境变量——DB-07 V5：否则 CI 形态下 coverage 触发降级 SKIP、极性探针失效；降级三形态由 S17 锚定） | 三段 fail-visible（FAIL/ERROR 行、绝无静默 PASS）+ coverage 阈值极性探针（10% < 70% 必 FAIL）+ 反向探针（段关掉 → GREEN）——V1.4 |
 | S11b | stub `mvn` 退出 3 | coverage FAIL 且行文点名 `mvn coverage exit 3`（"退出非 0 → FAIL"分支探针，V1.4 复审尾巴修复） |
 | S11c | stub `docker`（写 stderr 后退出 1，模拟 daemon 不可达 / 镜像缺失） | sast 记 **ERROR** 行、**报告照常写出**、退出码 2，且报告无 `runner` 崩溃行——V1.2 锚定 V4 首跑"裸 `docker image inspect` 在 Stop 策略下中止整轮、报告与证据全丢"的回归（载体自适应：装有 semgrep 的机器走原生分支，同样要求不中止 + ERROR + fail-closed） |
 | S12 | stub `mvn` 退出 0 + 标记输出 | compile PASS **且** `%TEMP%\ctds-gate-compile-out.log` 存在，含 `stage: compile` / `exitCode: 0` 摘要行与完整原始输出；PASS 报告行保持原格式（DB-43 ①：成功态也要有机器可核证据，"0 字节日志"教训根治） |

@@ -22,7 +22,10 @@
 #                                    stage is genuinely executed and a type failure can never be green)
 #   S11 metric stages fail-visible (config V1.4, 清债卡1/DB-06) -> coverage/mutationTest/sast in a
 #                                    bare fixture: FAIL/ERROR rows + verdict RED, NEVER a silent PASS;
-#                                    coverage threshold-polarity probe (10% < 70% must FAIL);
+#                                    coverage threshold-polarity probe (10% < 70% must FAIL); the probe
+#                                    strips CI env vars (GITHUB_ACTIONS/CI) around its runner call
+#                                    (DB-07 V5: the CI-env coverage deferral would turn it SKIP - the
+#                                    deferral's three forms are anchored by S17 instead);
 #                                    reverse probe (stages off) -> GREEN (fail-visible, not fail-silent)
 #   S11b mvn nonzero-exit branch (清债卡1 复审尾巴) -> stub mvn exits 3 = coverage FAIL naming the
 #                                    exit code (the threshold probe's exit-0 stub no longer covers
@@ -572,10 +575,23 @@ $cfgObj.stages.sast.enabled = $true
 [System.IO.File]::WriteAllText($cfg, ($cfgObj | ConvertTo-Json -Depth 10), $utf8NoBom)
 $rep = Join-Path $script:workDir "s11-report.md"
 $savedPath = $env:PATH
+$savedGh = $env:GITHUB_ACTIONS
+$savedCi = $env:CI
 try {
     $env:PATH = $stubDir + ";" + $env:PATH
+    # DB-07 V5（2026-10-17）：coverage 环境自适应判定后，S11 的阈值极性探针必须锚定"阈值判定
+    # 本身"——CI 形态（GITHUB_ACTIONS/CI=true）会触发降级 SKIP，本探针即失效（CI 复跑 5 实证：
+    # S11 三断言失败、exit 2 无 FAIL 行；本机全绿系无 CI 变量——"本地全绿 ≠ CI 全绿"又一实证，
+    # 环境形态差异清单增"CI 环境变量"一项）。降级三形态由 S17 专责锚定；此处显式剥离 CI 变量
+    # （沿 S3 先例），finally 恢复——本机（无 CI 变量）行为零变化。
+    Remove-Item Env:GITHUB_ACTIONS -ErrorAction SilentlyContinue
+    Remove-Item Env:CI -ErrorAction SilentlyContinue
     $r = Invoke-Runner $fix $cfg $rep "selftest-s11-metric-stages"
-} finally { $env:PATH = $savedPath }
+} finally {
+    $env:PATH = $savedPath
+    if ($null -eq $savedGh) { Remove-Item Env:GITHUB_ACTIONS -ErrorAction SilentlyContinue } else { $env:GITHUB_ACTIONS = $savedGh }
+    if ($null -eq $savedCi) { Remove-Item Env:CI -ErrorAction SilentlyContinue } else { $env:CI = $savedCi }
+}
 Assert-True ($r.ExitCode -eq 1) ("S11 exit code 1 (got " + $r.ExitCode + ")")
 $repText = Read-Report $rep
 Assert-Contains $repText "| coverage | FAIL |" "S11 coverage FAIL row present (exit-0 stub lets the threshold branch drive it)"
