@@ -169,18 +169,31 @@ jobs:
           name: gate-report-${{ github.run_id }}
           path: scripts/gates/reports/*.md
 
-      # 8b. 上传失败证据（DB-07 V1.2 §2-bis #3 / 编排师裁决①：V4 首跑报告未写出、artifact 为空，
-      #     三项待定性失败〔gateSelfTest 5 断言 / coverage / mutationTest〕无取证可用。本步骤只取
-      #     证据，不改变任何判定与退出码语义；无文件时 warn 不失败）
+      # 8a. 收集失败证据到工作区（Windows 上 runner.temp〔D:\a\_temp〕与 PowerShell 的 $env:TEMP
+      #     〔C:\Users\<user>\AppData\Local\Temp〕不是同一目录——V4 第二轮 artifact 仅含报告即此因。
+      #     先复制到 reports/evidence 再随 8b 上传；复制失败不影响判定）
+      - name: Collect failure evidence
+        if: always()
+        shell: pwsh
+        run: |
+          $dest = "scripts/gates/reports/evidence"
+          New-Item -ItemType Directory -Path $dest -Force | Out-Null
+          Get-ChildItem $env:TEMP -Filter "ctds-gate-*-out.log" -ErrorAction SilentlyContinue | ForEach-Object {
+            Copy-Item $_.FullName (Join-Path $dest $_.Name) -Force -ErrorAction SilentlyContinue
+          }
+          Get-ChildItem $env:TEMP -Filter "ctds-gates-selftest-*" -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+            Copy-Item $_.FullName (Join-Path $dest $_.Name) -Recurse -Force -ErrorAction SilentlyContinue
+          }
+
+      # 8b. 上传失败证据（DB-07 V1.2 §2-bis #3 / 编排师裁决①：报告未写出或阶段失败时，
+      #     原始 out.log 与 selftest fixture 由本 artifact 取回。本步骤只取证据，不改变任何判定与
+      #     退出码语义；无文件时 warn 不失败）
       - name: Upload failure evidence (always)
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: gate-evidence-${{ github.run_id }}
-          path: |
-            ${{ runner.temp }}/ctds-gate-*-out.log
-            ${{ runner.temp }}/ctds-gates-selftest-*/
-            scripts/gates/reports/
+          path: scripts/gates/reports/
           if-no-files-found: warn
           retention-days: 14
 
