@@ -60,6 +60,11 @@
 #                                    guard (fixtures force the stage off) is what makes a stub - not the
 #                                    real selftest - the right probe here; the real chain is covered
 #                                    by the standalone baseline run and the post-enable full gate (V3).
+#   S16 short-form 8.3 RepoRoot     -> same fixture content as S6, but the runner is invoked with the
+#                                    repo root in 8.3 short form (CI's %TEMP% is a short path): the
+#                                    scan-hit row must STILL be repo-relative - the entry point must
+#                                    expand the root to its long form (run-3 evidence: cmd "cd" does
+#                                    not expand short names; the fix is Get-Item -LiteralPath)
 # How: every scenario builds a hermetic fixture repo under %TEMP% (git init + git add, cheap stages
 # only), generates its config FROM THE REAL gates-config.json (so the real exclude list is what gets
 # exercised), runs scripts/gates/run-gates.ps1 against it and asserts on the report file / stdout /
@@ -312,6 +317,35 @@ Assert-True ($r.ExitCode -eq 1) ("S6 exit code 1 (got " + $r.ExitCode + ")")
 $repText = Read-Report $rep
 Assert-Contains $repText "secretsScan | FAIL | Pattern hit in docs/logs/Ctds-fixture-26-01-01-0000.md" "S6 the committed dev log was actually scanned"
 Assert-Contains $repText "-> RED" "S6 verdict RED"
+
+# ---------- S16: short-form (8.3) RepoRoot -> relative paths still correct (DB-07 V4 复跑 3 取证修复锚) ----------
+# CI 的 %TEMP% 本身是 8.3 短路径（C:\Users\RUNNER~1\...）：fixture 建于其下，runner 收到的
+# -RepoRoot 是短路径，而 Get-ChildItem 返回长路径 FullName——入口必须把仓库根展开成长路径，
+# 否则 Get-RelRepoPath 前缀剥离失配、走全路径兜底：入库文件被判"未入库"（S2 降级 SKIP）、
+# 扫描命中路径不再是仓库相对路径（复跑 3 的 S2×4+S6×1 五断言失败；修复批 864f9d2 用的
+# cmd /c "cd /d <短路径> && cd" 不展开短名——本地实测原样回显，改用 Get-Item -LiteralPath）。
+# 本场景用短路径 RepoRoot 重放 S6 断言，把该类回归钉成机器断言。8.3 别名不可用的卷
+# （8dot3name 关闭）下 %~sI 原样返回长路径——探针退化为长路径运行，不失真、不假绿。
+Write-Output ""
+Write-Output "S16 [short-form 8.3 RepoRoot] expect: scan hit row still repo-RELATIVE, exit 1"
+$fix = New-Fixture "s16"
+$logFile16 = Join-Path $fix "docs\logs\Ctds-fixture-26-01-01-0000.md"
+# 同 S6：假凭据按片段拼装，避免门禁把 selftest.ps1 自己判为命中
+$fakeCredentialLine16 = ('pass' + 'word = "Fixture' + 'NotAReal' + 'Secret01"')
+[System.IO.File]::WriteAllText($logFile16, ("# fixture dev log" + [Environment]::NewLine + $fakeCredentialLine16 + [Environment]::NewLine), $utf8NoBom)
+Initialize-FixtureGit $fix
+$cfg16 = New-FixtureConfig $fix "cfg-s16.json" $false "" $null
+$rep16 = Join-Path $script:workDir "s16-report.md"
+$shortFix16 = $fix
+try {
+    $s16Short = ([string](cmd.exe /c ("for %I in (""" + $fix + """) do @echo %~sI"))).Trim()
+    if ($s16Short -ne "" -and (Test-Path -LiteralPath $s16Short)) { $shortFix16 = $s16Short }
+} catch { }
+$r16 = Invoke-Runner $shortFix16 $cfg16 $rep16 "selftest-s16-short-repo-root"
+Assert-True ($r16.ExitCode -eq 1) ("S16 exit code 1 (got " + $r16.ExitCode + ")")
+$rep16Text = Read-Report $rep16
+Assert-Contains $rep16Text "secretsScan | FAIL | Pattern hit in docs/logs/Ctds-fixture-26-01-01-0000.md" "S16 the scan hit is repo-RELATIVE even when RepoRoot was given in 8.3 short form"
+Assert-Contains $rep16Text "-> RED" "S16 verdict RED"
 
 # ---------- S7: a stage throwing -> outer fallback: runner ERROR, report still produced, exit 2 ----------
 Write-Output ""

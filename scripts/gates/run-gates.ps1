@@ -62,13 +62,16 @@ if (-not (Test-Path $RepoRoot)) {
 # Get-ChildItem 返回的长路径（C:\Users\runneradmin\...）混用，会让"按根长度截断"的相对化错位
 # （实证：相对路径变成 "-s2/docs/..."——S2 锁定文件被判"未入库"降级 SKIP、S6 扫描命中路径对不上）。
 # 入口统一把 RepoRoot 展开为长路径；相对化改为前缀剥离 + 兜底，绝不静默截断。
+# DB-07 V4 复跑 3 取证再修正（2026-10-17）：cmd /c "cd /d <短路径> && cd" **不展开** 8.3 短名
+# ——cmd 的 cd 无参回显的是"进入时给出的路径原样"（本地实测：cd /d C:\PROGRA~1 后 cd 仍回显
+# C:\PROGRA~1），故修复批 864f9d2 的展开方法无效：CI 复跑 3 的 S2/S6 五断言仍失败（报告 Repo
+# 行仍为短路径，SKIP/FAIL 行列出长路径全名 = 前缀剥离失配走全路径兜底；本地短路径 TEMP 复现同型）。
+# 改用 Get-Item -LiteralPath 的 FullName：文件系统提供程序逐组件解析为长名（本地实测
+# C:\PROGRA~1 -> C:\Program Files，嵌套 C:\PROGRA~1\COMMON~1 同样成立，PS 5.1 与 7 双解释器一致）。
 function Resolve-LongDirPath([string]$path) {
     try {
-        $out = @(cmd.exe /c ("cd /d """ + $path + """ && cd"))
-        if ($LASTEXITCODE -eq 0 -and $out.Count -gt 0) {
-            $p = ([string]$out[0]).Trim().TrimEnd('\')
-            if ($p -ne "" -and (Test-Path -LiteralPath $p)) { return $p }
-        }
+        $item = Get-Item -LiteralPath $path
+        if ($item -and $item.FullName) { return $item.FullName }
     } catch { }
     return $path
 }
