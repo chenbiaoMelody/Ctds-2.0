@@ -27,6 +27,11 @@
 #   S11b mvn nonzero-exit branch (清债卡1 复审尾巴) -> stub mvn exits 3 = coverage FAIL naming the
 #                                    exit code (the threshold probe's exit-0 stub no longer covers
 #                                    the "mvn exit != 0 -> FAIL" branch)
+#   S11c sast engine unavailable (DB-07 V1.2 §3-ter) -> stub docker (writes stderr then exits 1):
+#                                    sast ERROR row, report STILL written, exit 2, no runner-crash row
+#                                    (regression anchor for the V4 first run where a bare
+#                                    `docker image inspect 2>&1` aborted the whole gate under
+#                                    $ErrorActionPreference=Stop and lost all evidence)
 #   S12 mvn success-state log (DB-43 ①) -> stub mvn exit 0: compile PASS AND
 #                                    %TEMP%\ctds-gate-compile-out.log EXISTS, carrying the
 #                                    stage/command/exitCode summary + full original output
@@ -498,6 +503,38 @@ Assert-True ($rExit.ExitCode -eq 1) ("S11b exit code 1 (got " + $rExit.ExitCode 
 $repExitText = Read-Report $repExit
 Assert-Contains $repExitText "| coverage | FAIL |" "S11b nonzero mvn exit turns coverage FAIL"
 Assert-Contains $repExitText "mvn coverage exit 3" "S11b the FAIL names the real Maven exit code"
+
+# ---------- S11c: sast engine unavailable must NOT abort the run (DB-07 V1.2 §3-ter) ----------
+# V4 首跑实证：裸 `docker image inspect <image> 2>&1` 在 PS 5.1 + $ErrorActionPreference=Stop 下
+# 被 native stderr 抛出，整轮中止（runner 行 ERROR + 报告未写出）。本锚用 stub docker（写 stderr
+# 后 exit 1）锚定"引擎不可用 = sast ERROR 行 + 报告照常写出 + exit 2"，不再以整轮崩溃形态出现。
+# 载体自适应：本机无 semgrep 时走 docker 分支（直接锚定修复点）；若机器装有 semgrep 则走原生分支
+# 并在 fixture 无源集处记 ERROR——两条路径都必须满足同一组断言（不中止、报告可核、fail-closed）。
+Write-Output ""
+Write-Output "S11c [sast engine unavailable] expect: sast ERROR row + report written + exit 2, no runner crash"
+$fix = New-Fixture "s11c"
+Initialize-FixtureGit $fix
+$stubDockerDir = Join-Path $fix "stub-docker"
+New-Item -ItemType Directory -Path $stubDockerDir -Force | Out-Null
+[System.IO.File]::WriteAllText((Join-Path $stubDockerDir "docker.cmd"),
+    ("@echo off" + [Environment]::NewLine + "echo failed to connect to the docker API at npipe:////./pipe/docker_engine 1>&2" + [Environment]::NewLine + "exit /b 1" + [Environment]::NewLine),
+    $utf8NoBom)
+$cfg11c = New-FixtureConfig $fix "cfg-s11c.json" $false "" $null
+$cfg11cObj = ConvertFrom-Json -InputObject ([System.IO.File]::ReadAllText($cfg11c, [System.Text.Encoding]::UTF8))
+$cfg11cObj.stages.sast.enabled = $true
+[System.IO.File]::WriteAllText($cfg11c, ($cfg11cObj | ConvertTo-Json -Depth 10), $utf8NoBom)
+$rep11c = Join-Path $script:workDir "s11c-report.md"
+$savedPath11c = $env:PATH
+try {
+    $env:PATH = $stubDockerDir + ";" + $env:PATH
+    $r11c = Invoke-Runner $fix $cfg11c $rep11c "selftest-s11c-sast-engine-unavailable"
+} finally { $env:PATH = $savedPath11c }
+Assert-True ($r11c.ExitCode -eq 2) ("S11c exit code 2 (got " + $r11c.ExitCode + ")")
+Assert-True (Test-Path $rep11c) "S11c the report is still written (the old bug lost all evidence)"
+$rep11cText = Read-Report $rep11c
+Assert-Contains $rep11cText "- ExitCode: 2" "S11c printed report declares the real exit code"
+Assert-Contains $rep11cText "| sast | ERROR |" "S11c sast reports ERROR when the engine is unavailable"
+Assert-True (-not ($rep11cText -match "\| runner \|")) "S11c no runner-crash row (the run must not abort mid-way)"
 
 # ---------- S12: mvn success-state log (DB-43 ① - success must be evidenced too) ----------
 # stub mvn exit 0 + marker output -> compile PASS and %TEMP%\ctds-gate-compile-out.log must exist

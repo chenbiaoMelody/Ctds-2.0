@@ -720,17 +720,39 @@ if ($mutStage -and $mutStage.enabled) {
     }
 }
 
-# ----- sast (semgrep 官方镜像，docker 运行时扫描 Java 主源集副本——规避仓库路径空格) -----
+# ----- sast（DB-07 V1.2 §3-ter：免 Docker 形态——semgrep 原生 CLI 优先〔CI 主路径〕，docker 为本地回退） -----
+# 判定与解析只有一份（下方统一 JSON 段）；两种载体仅"如何启动 semgrep"不同，扫描面与五态语义零改动。
 $sastStage = $cfg.stages.sast
 if ($sastStage -and $sastStage.enabled) {
-    if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
-        Add-Result "sast" "ERROR" "docker executable not found on PATH (required for semgrep stage)"
+    $semgrepCmd = Get-Command semgrep -ErrorAction SilentlyContinue
+    $dockerCmd = Get-Command docker -ErrorAction SilentlyContinue
+    $sastEngine = ""
+    $sastEngineErr = ""
+    if ($semgrepCmd) {
+        $sastEngine = "native"
+        $semgrepExe = $semgrepCmd.Source
+    } elseif ($dockerCmd) {
+        $sastEngine = "docker"
+        $image = $sastStage.image
+        # 探测不得在 $ErrorActionPreference=Stop 下中止整轮：PS 5.1 中 native stderr 经 2>&1 会变成
+        # ErrorRecord 被抛出（V4 首跑 line 730 整轮中止的根因）。经 cmd.exe 内部重定向吞掉 stderr，
+        # 只按 $LASTEXITCODE 判定；文案同时点明 daemon 不可达 / 镜像缺失两种可能，不猜测具体哪一种。
+        $probeCode = 1
+        try {
+            cmd.exe /c ("docker image inspect " + $image + " >nul 2>&1")
+            $probeCode = $LASTEXITCODE
+        } catch { $probeCode = 1 }
+        if ($probeCode -ne 0) {
+            $sastEngine = ""
+            $sastEngineErr = ("docker daemon unreachable or image not present locally: " + $image + " - start Docker / pull the image manually first (supply-chain leave-trace, no auto-pull; see ADR-018)")
+        }
     } else {
-        $image = $sastStage.image; $ruleset = $sastStage.ruleset
-        $null = docker image inspect $image 2>&1
-        if ($LASTEXITCODE -ne 0) {
-            Add-Result "sast" "ERROR" ("image not present locally: " + $image + " - pull it manually first (supply-chain leave-trace, no auto-pull; see ADR-018)")
-        } else {
+        $sastEngineErr = "neither semgrep CLI nor docker found on PATH (required for semgrep stage)"
+    }
+    if ($sastEngine -eq "") {
+        Add-Result "sast" "ERROR" $sastEngineErr
+    } else {
+        $ruleset = $sastStage.ruleset
             $scanTemp = Join-Path $env:TEMP ("ctds-sast-" + (Get-Date -Format "yyyyMMdd-HHmmss"))
             New-Item -ItemType Directory -Path $scanTemp -Force | Out-Null
             $copied = @()
@@ -755,10 +777,17 @@ if ($sastStage -and $sastStage.enabled) {
             if ($copied.Count -eq 0) {
                 Add-Result "sast" "ERROR" "no Java main source sets found to scan (scanRoots misconfigured?)"
             } else {
-                $dockerArgs = "/c docker run --rm -v `"" + $scanTemp + ":/src`" " + $image + " semgrep --config " + $ruleset + " --json --quiet /src"
                 $sastTimeout = 900; if ($sastStage.timeoutSeconds) { $sastTimeout = [int]$sastStage.timeoutSeconds }
                 $swSast = [System.Diagnostics.Stopwatch]::StartNew()
-                $r = Invoke-MetricProcess "cmd.exe" $dockerArgs $RepoRoot $sastTimeout "sast"
+                if ($sastEngine -eq "native") {
+                    # 与 docker 形态同一参数集（ruleset/json/quiet 不变）；扫描副本路径可能含空格，必须加引号
+                    # （同类坑见 S15 空格探针：未加引号会被命令行解析截断）
+                    $nativeArgs = "--config " + $ruleset + " --json --quiet `"" + $scanTemp + "`""
+                    $r = Invoke-MetricProcess $semgrepExe $nativeArgs $RepoRoot $sastTimeout "sast"
+                } else {
+                    $dockerArgs = "/c docker run --rm -v `"" + $scanTemp + ":/src`" " + $image + " semgrep --config " + $ruleset + " --json --quiet /src"
+                    $r = Invoke-MetricProcess "cmd.exe" $dockerArgs $RepoRoot $sastTimeout "sast"
+                }
                 # DB-43 ③：凡该段判定 FAIL/ERROR（超时 / exit≠0 / JSON 不可解析 / scan errors /
                 # findings>0）→ 落盘完整原始输出，报告行尾附路径（PASS 不落）
                 $sastFail = $false
@@ -800,13 +829,14 @@ if ($sastStage -and $sastStage.enabled) {
                 }
                 if ($sastFail) {
                     $p = $null
-                    try { $p = Write-StageOutLog "sast" ("docker run --rm -v <scanTemp>:/src " + $image + " semgrep --config " + $ruleset + " /src") $r.Output $r.ExitCode ($r.ExitCode -eq -1) ([int]$swSast.Elapsed.TotalSeconds) } catch { }
+                    $sastCmdLabel = "semgrep --config " + $ruleset + " --json --quiet <scanTemp>"
+                    if ($sastEngine -eq "docker") { $sastCmdLabel = "docker run --rm -v <scanTemp>:/src " + $image + " semgrep --config " + $ruleset + " /src" }
+                    try { $p = Write-StageOutLog "sast" $sastCmdLabel $r.Output $r.ExitCode ($r.ExitCode -eq -1) ([int]$swSast.Elapsed.TotalSeconds) } catch { }
                     if ($p) { Add-Result "sast" $sastVerdict ($sastDetail + " | full output: " + $p) }
                     else { Add-Result "sast" $sastVerdict $sastDetail }
                 }
             }
             Remove-Item -Path $scanTemp -Recurse -Force -ErrorAction SilentlyContinue
-        }
     }
 }
 
@@ -889,7 +919,12 @@ $report = $lines -join [Environment]::NewLine
 # 兜底：若执行中途崩溃以致探针未跑，这里仍尽力写出报告（写不进去也算 ERROR 而非绿灯）
 $reportTarget = $ReportPath
 if ($reportTarget -eq "") {
-    $reportTarget = Join-Path $PSScriptRoot ("reports\gate-report-" + (Get-Date -Format "yyyyMMdd-HHmmss") + ".md")
+    # DB-07 V1.2：兜底路径的目录可能不存在（CI 新鲜克隆 + 早期阶段中止致报告探针未跑）——
+    # 先建目录再写，避免"报告写不出"把整轮可核证据丢掉。仅兜底分支建目录；显式 -ReportPath
+    # 不建（S4 不可写路径探针的 ERROR/exit 2 语义保持不变）。
+    $fallbackDir = Join-Path $PSScriptRoot "reports"
+    if (-not (Test-Path $fallbackDir)) { New-Item -ItemType Directory -Path $fallbackDir -Force | Out-Null }
+    $reportTarget = Join-Path $fallbackDir ("gate-report-" + (Get-Date -Format "yyyyMMdd-HHmmss") + ".md")
 }
 $reportWritten = $true
 $writeErr = ""

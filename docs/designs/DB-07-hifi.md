@@ -1,6 +1,7 @@
 # DB-07-hifi：CI 门禁自动化 · 编码契约（V0.9）
 
-> 版本：V1.1（2026-10-16 编排师裁定 C 增补 §3-bis 执行器契约；V1.0 已确认正文除本节外零改动）
+> 版本：V1.2（2026-10-17 编排师裁决 B 增补 §2-bis / §3-ter 免 Docker SAST 契约；V1.0 已确认正文除增补节与版本头外零改动）
+> 前一版：V1.1（2026-10-16 编排师裁定 C 增补 §3-bis 执行器契约）
 > 任务卡：`docs/tasks/DB-07-CI门禁自动化-2026-10-16.md`；方向确认见 `DB-07-lofi.md`
 > 性质：非界面类编码契约；实现与本契约不一致 = 打回项
 
@@ -58,6 +59,18 @@ permissions:
 - 不按路径过滤触发（文档变更同样要过 devLogNamingCheck / adrFieldsCheck / secretsScan——过滤即放水）；
 - 不在 workflow 内复刻任何判定逻辑（判定只归 run-gates.ps1，D-3 单一事实源）。
 
+## 2-bis. workflow V1.2 增补契约（2026-10-17 编排师裁决：修复扩面批准项）
+
+| # | 增补 | 落点 | 契约要点 |
+| --- | --- | --- | --- |
+| 1 | 前端依赖安装 | workflow，`Set up Node 20` 之后、Docker 探测之前 | `working-directory: frontend` + `npm ci --no-audit --no-fund`；**失败即红**（依赖未装则前端三段必假红，提前失败给出真实原因）；不引入 `npm install` 回退 |
+| 2 | semgrep 原生安装 | workflow，紧接前端依赖安装 | `actions/setup-python@v5`（python-version '3.12'）+ `python -m pip install semgrep==1.177.0`；**版本与 docker 镜像 tag 逐字一致**（同一引擎版，规则语义不变）；安装步骤 `continue-on-error: true`——失败不阻塞门禁，由 sast 段按"工具缺失"记 ERROR 并判红（fail-closed，且保证其它阶段证据可取回） |
+| 3 | 失败证据上传 | workflow，`Upload gate report artifact` 之后、终态判定之前 | `if: always()`；artifact 名 `gate-evidence-<run_id>`；paths = `%TEMP%\ctds-gate-*-out.log` + `%TEMP%\ctds-gates-selftest-*` + `scripts/gates/reports/`；`if-no-files-found: warn`（不因缺文件改判）；用于 V4 首跑三项待定性失败的取证 |
+| 4 | Docker 探测措辞 | workflow 既有步骤注释 | sast 已不依赖 Docker；探测仅记录 Testcontainers 等可能的运行期需求；**探测仍不判定** |
+
+- Docker 探测步骤保留（信息性），**不得**因本增补删除或改为判定；
+- 失败证据上传只做"取回证据"，**不改变任何阶段判定与退出码语义**。
+
 ## 3. 门禁配置变更契约（gateSelfTest 启用 · 变更流程四件套）
 
 | 件 | 内容 |
@@ -85,6 +98,21 @@ permissions:
 | S1 标签勘误 | fixture 强制 disabled 后 PENDING 行仍在，S1 断言保留；标签由"selftest not wired into CI is visible in every report"勘误为"fixture configs (gateSelfTest forced off) still show the PENDING row" |
 | 辅助函数 | `Invoke-MetricProcess` 由原位置**纯上移**至阶段代码之前（内容零改动——执行器置首须可调用；diff 中呈现为迁移而非改写） |
 | 证据 | 启用后本地全量门禁报告 gateSelfTest 段 PASS（真实链首验）；selftest 全量 94+ 断言 0 失败；V3 报告 + `build-output/db07-local-gate-after-enable.log` |
+
+## 3-ter. sast 免 Docker 形态契约（V1.2 增补 · 2026-10-17 编排师裁决 B）
+
+> 增补缘由：V4 真实 PR 首跑（run 39012488535）实证 GitHub 托管 `windows-latest` **无 Docker daemon**（`npipe` 不可达），sast 段在 `docker image inspect` 处以 native stderr 中止整轮（runner ERROR，报告未写出）。编排师裁决 **B = 换免 Docker 的 SAST 形态**，保留免费托管 Windows 跑机；A 自托管（公开仓库外部 PR 执行宿主代码的安全面）/ C 永久红灯（关闭条件不可达）/ D 拆 Linux job（破坏单 job 契约）落选。授权留痕见任务卡边界变更记录 + ADR-018 V1.6。
+
+| 项 | 契约 |
+| --- | --- |
+| 形态选型 | **semgrep 原生 CLI 优先**（PyPI `semgrep==1.177.0`，官方注册表实测含 `win_amd64` wheel；Semgrep 官方文档平台表列 Windows (beta)）。落选 GitHub CodeQL：查询集与 semgrep `p/java` **规则语义不等价**（扫描面/基线均变，超本卡"扫描面零改动"红线）、Java 需构建、需 `security-events: write` 权限面、与既有 JSON 解析段不兼容（须双实现） |
+| 执行路径 | 单实现、双载体：`Get-Command semgrep` 存在 → 原生调用（**CI 路径**）；否则 `Get-Command docker` 存在 → 既有 docker 形态（**本地回退**）；两者皆无 → ERROR。**判定与解析段只有一份**（同一 JSON：`results` / `errors` / 热点=0），载体差异仅在"如何启动 semgrep" |
+| 扫描面 | **零改动**：仍先复制 `scanRoots` 下 Java 主源集到 `%TEMP%` 副本（规避仓库路径空格），原生形态直接扫该副本；`copied` 清单、PASS/FAIL 详情文案、错误语义均不变 |
+| 判定语义 | **零改动**：退出码 -1（超时）= FAIL；非 0 = ERROR；JSON 不可解析 = ERROR；`errors` 非空 = ERROR（防部分扫描假绿）；`results` 命中数 > 0 = FAIL；0 命中 = PASS |
+| 调用参数 | 原生：`semgrep --config <ruleset> --json --quiet "<scanTemp>"`（与 docker 形态同一参数集；路径加引号，`Invoke-MetricProcess` 直传参数无 shell 注入面） |
+| Docker 探测健壮性 | 不再用裸 `docker image inspect ... 2>&1`（PS 5.1 `$ErrorActionPreference=Stop` 下 native stderr 会被当错误抛出——V4 首跑 `line 730` 整轮中止的根因）；改经 `cmd.exe /c "... >nul 2>&1"` 判 `$LASTEXITCODE`，失败文案同时点明"daemon 不可达 / 镜像缺失"两种可能，**不猜测具体哪一种** |
+| 回退语义 | 删除 workflow 的 semgrep 安装步骤即回到 docker 形态（本地/带 Docker 的 runner 自动走回退分支），无需改运行器；反向删除 docker 回退须另行留痕 |
+| 风险登记 | Windows 原生 semgrep 为官方 beta；以 V4 复跑实测为验收锚，若原生形态失败则如实记 ERROR（不伪造 PASS），按门禁红灯流程处置 |
 
 ## 4. 验证方案（测试先行语义 · 按序执行）
 
@@ -136,3 +164,5 @@ permissions:
 > **增补记录（V1.1，2026-10-16 编排师裁定 C）**：编码段第一日红线 4 停报（运行器无 gateSelfTest 执行器，V1.0 §3① 为未验证假设）后，编排师选定 **C（卡内改运行器）** → 授权增补 **§3-bis 执行器契约**；任务卡纪律声明 / 关闭条件③⑤ / 交付物②同步修订（任务卡文末边界变更记录）。V1.0 已确认正文除本节与版本头外零改动。
 >
 > **V1.1 勘误行（2026-10-17，4 视角评审循环 1 修复批）**：以下条款**被 §3-bis 与任务卡文末边界变更记录取代**（按"实现与本契约不一致 = 打回项"口径登记；已确认正文不二次改动）：① §1 交付物清单 #2 约束列"除该位与 changeLog/version 外逐字不变"——实际 config 改动面 = `enabled` 一位 + `timeoutSeconds` 新增键 + 移除 `status` + note + changeLog/version（裁定 C 授权范围④）；② §3①"selftest.ps1 十五场景 94 断言自此随每轮门禁执行（分钟级）"——翻位本身不产生执行（须运行器执行器，见 §3-bis），实为**十六场景 125 断言、秒级**（32s 独立单发 / 41s 门禁内双口径）；③ §2.2 步 6/7"报告尾部结论行"——报告实为**头部 `Result` 行**含五态计数与终态（workflow 按头部字段提取，功能等价）；④ §2.2 步 2/步 8 与 §5 的 `run-gates.ps1` 行号引用已随执行器插入与函数上移漂移——一律改**锚点名**（"toolchain 段的 `$env:JAVA_HOME` 优先分支" / "报告目标区的目录自动创建"），行号不再作为契约要素。
+>
+> **V1.2 变更记录（2026-10-17，编排师裁决：修复扩面批准 + Docker 策略 B）**：V4 真实 PR 首跑（run `39012488535`）结论 RED（`ExitCode 1`，PASS=8 / FAIL=6 / ERROR=1），定性四项根因（前端依赖未装 / sast 裸 `docker image inspect` 在 Stop 策略下中止 / 报告兜底未建目录 / 托管 Windows 无 Docker daemon）+ 三项待定性失败（gateSelfTest 5 断言 / coverage exit 1 / mutationTest classpath）。本版新增 **§2-bis**（workflow 增补：`npm ci`、semgrep 原生安装、失败证据上传、Docker 探测措辞）与 **§3-ter**（sast 免 Docker 形态：原生优先 + docker 本地回退、单解析段、扫描面与判定语义零改动）；同时授权 `run-gates.ps1` 两处健壮性（sast 探测不中止、报告兜底先建目录）。**三项待定性失败不在本版给结论**：按"先取证后修"原则，待 §2-bis 失败证据上传生效后由复跑日志逐条定性再修（不得凭猜改断言）。

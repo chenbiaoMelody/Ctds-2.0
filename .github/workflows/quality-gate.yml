@@ -1,9 +1,12 @@
 name: quality-gate
 
 # DB-07 CI 门禁自动化（2026-10-16，编排师一次确认 Q1~Q7 均采 A + 编码段裁定 C）
-# 编码契约 docs/designs/DB-07-hifi.md（V1.1）§2/§3-bis；变更留痕见 scripts/gates/README.md 与
-# ADR-018 V1.5。原则：门禁脚本零改造（D-3 切换接口首次落地——CI 只调用 run-gates.ps1 并按退出码
-# 判定）；判定逻辑只归 run-gates.ps1，本文件不复刻任何判定；零 secret、零三方 action。
+# V1.2（2026-10-17，编排师裁决：修复扩面批准 + Docker 策略 B）——增 npm ci / semgrep 原生 CLI /
+# 失败证据上传；契约见 docs/designs/DB-07-hifi.md §2-bis / §3-ter，变更留痕见 ADR-018 V1.6。
+# 编码契约 docs/designs/DB-07-hifi.md（V1.2）§2 / §2-bis / §3-bis / §3-ter；变更留痕见
+# scripts/gates/README.md 与 ADR-018 V1.5 / V1.6。原则：门禁脚本零改造（D-3 切换接口首次落地——
+# CI 只调用 run-gates.ps1 并按退出码判定）；判定逻辑只归 run-gates.ps1，本文件不复刻任何判定；
+# 零 secret、零三方 action。
 # 安全边界登记（评审② P2-2）：pull_request 全分支触发下，同仓库分支 PR 的 GITHUB_TOKEN 保留
 # pull-requests: write，且本 job 执行的是 PR 版本的门禁脚本——属触发模型固有面（fork PR 已按
 # head.repo 同仓判断跳过评论步骤、届时令牌只读）。缓解 = 仓库设置对外部协作者 PR 要求审批
@@ -46,8 +49,27 @@ jobs:
         with:
           node-version: '20'
 
-      # 4. Docker 探测（continue-on-error；结果仅记入摘要，探测不判定——
-      #    sast/Testcontainers 的可用性由门禁段自身 ERROR/SKIP 语义承担）
+      # 3b. 前端依赖安装（DB-07 V1.2 / 编排师裁决①：V4 首跑缺 node_modules 使 typecheck/lint/test
+      #     三段以"命令不存在"假红；npm ci 依 package-lock 安装，失败即红——真实原因优先于下游假红）
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci --no-audit --no-fund
+
+      # 3c. SAST 引擎（DB-07 V1.2 §3-ter：CI 免 Docker 形态——托管 Windows 无 Docker daemon 已由
+      #     V4 首跑实证；PyPI semgrep 1.177.0 与本地 docker 镜像同版同 ruleset〔p/java〕，判定与解析
+      #     在 run-gates.ps1 只有一份实现。安装失败不阻塞门禁：由 sast 段按工具缺失记 ERROR 并判红
+      #     〔fail-closed〕，同时保证其它阶段的失败证据仍可取回）
+      - name: Set up Python 3.12 (semgrep CLI)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install semgrep 1.177.0 (no Docker needed for SAST)
+        run: python -m pip install semgrep==1.177.0
+        continue-on-error: true
+
+      # 4. Docker 探测（continue-on-error；sast 已不依赖 Docker〔§3-ter〕，本探测仅记录
+      #    Testcontainers 等可能的运行期需求——探测不判定，可用性由门禁段自身 ERROR/SKIP 语义承担）
       - name: Docker probe (informational only)
         run: docker version
         continue-on-error: true
@@ -146,6 +168,21 @@ jobs:
         with:
           name: gate-report-${{ github.run_id }}
           path: scripts/gates/reports/*.md
+
+      # 8b. 上传失败证据（DB-07 V1.2 §2-bis #3 / 编排师裁决①：V4 首跑报告未写出、artifact 为空，
+      #     三项待定性失败〔gateSelfTest 5 断言 / coverage / mutationTest〕无取证可用。本步骤只取
+      #     证据，不改变任何判定与退出码语义；无文件时 warn 不失败）
+      - name: Upload failure evidence (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gate-evidence-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/ctds-gate-*-out.log
+            ${{ runner.temp }}/ctds-gates-selftest-*/
+            scripts/gates/reports/
+          if-no-files-found: warn
+          retention-days: 14
 
       # 9. 终态判定（fail-closed：退出码 1〔RED〕与 2〔环境/配置错〕一律判 job 失败；
       #    摘要已区分语义，不得把 2 放行）
