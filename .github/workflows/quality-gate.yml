@@ -43,11 +43,13 @@ jobs:
           java-version: '17'
           cache: maven
 
-      # 3. Node 20（前端四段 npm 运行期；package.json 无 engines，故在此显式钉版本）
-      - name: Set up Node 20
+      # 3. Node 22（V1.2 修复：Node 20 下 vitest/jsdom 加载 undici 报
+      #    "webidl.util.markAsUncloneable is not a function"——前端依赖实际要求 Node 22+，本地开发为
+      #    Node 24；package.json 无 engines，故在此显式钉版本）
+      - name: Set up Node 22
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       # 3b. 前端依赖安装（DB-07 V1.2 / 编排师裁决①：V4 首跑缺 node_modules 使 typecheck/lint/test
       #     三段以"命令不存在"假红；npm ci 依 package-lock 安装，失败即红——真实原因优先于下游假红）

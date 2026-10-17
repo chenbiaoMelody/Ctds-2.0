@@ -58,6 +58,29 @@ if (-not (Test-Path $RepoRoot)) {
     Write-Output "[CONFIG-ERROR] RepoRoot not found: $RepoRoot"
     exit 2
 }
+# DB-07 V1.2（2026-10-17，CI 取证修复）：Windows 8.3 短路径（CI 的 C:\Users\RUNNER~1\...）与
+# Get-ChildItem 返回的长路径（C:\Users\runneradmin\...）混用，会让"按根长度截断"的相对化错位
+# （实证：相对路径变成 "-s2/docs/..."——S2 锁定文件被判"未入库"降级 SKIP、S6 扫描命中路径对不上）。
+# 入口统一把 RepoRoot 展开为长路径；相对化改为前缀剥离 + 兜底，绝不静默截断。
+function Resolve-LongDirPath([string]$path) {
+    try {
+        $out = @(cmd.exe /c ("cd /d """ + $path + """ && cd"))
+        if ($LASTEXITCODE -eq 0 -and $out.Count -gt 0) {
+            $p = ([string]$out[0]).Trim().TrimEnd('\')
+            if ($p -ne "" -and (Test-Path -LiteralPath $p)) { return $p }
+        }
+    } catch { }
+    return $path
+}
+function Get-RelRepoPath([string]$fullPath) {
+    $r = $RepoRoot.TrimEnd('\', '/')
+    if ($fullPath.StartsWith($r + '\', [System.StringComparison]::OrdinalIgnoreCase)) {
+        return ($fullPath.Substring($r.Length + 1) -replace '\\', '/')
+    }
+    return ($fullPath -replace '\\', '/')
+}
+$RepoRoot = Resolve-LongDirPath $RepoRoot
+
 $cfgPath = $ConfigPath
 if ($cfgPath -eq "") { $cfgPath = Join-Path $PSScriptRoot "gates-config.json" }
 if (-not (Test-Path $cfgPath)) {
@@ -288,7 +311,7 @@ if ($cfg.stages.secretsScan.enabled) {
     $oversizedUntracked = 0
     $files = New-Object System.Collections.Generic.List[object]
     foreach ($f in $all) {
-        $rel = $f.FullName.Substring($RepoRoot.Length).TrimStart('\', '/') -replace '\\', '/'
+        $rel = Get-RelRepoPath $f.FullName
         if (Test-Excluded $rel $exclude) { $excludedCount++; continue }
         if ($f.Length -ge 1MB) {
             if ($tracked.Contains($rel)) { $oversized.Add($rel) } else { $oversizedUntracked++ }
@@ -297,7 +320,7 @@ if ($cfg.stages.secretsScan.enabled) {
         $files.Add($f)
     }
     foreach ($f in $files) {
-        $rel = $f.FullName.Substring($RepoRoot.Length).TrimStart('\', '/') -replace '\\', '/'
+        $rel = Get-RelRepoPath $f.FullName
         # WBS-2.2.7: 单文件不可读（被占用/权限）不得中断整个门禁；
         # R3: 但"不能扫"与"扫过且干净"必须区分——入库文件不可读 = 扫描缺口 -> ERROR（退出码 2）。
         try {
@@ -673,7 +696,21 @@ if ($mutStage -and $mutStage.enabled) {
                 if (-not (Test-Path (Join-Path $modDir "target\classes"))) {
                     $badMods += ($m.name + ": classes not found (compile stage must run first)"); continue
                 }
-                $rCp = Invoke-MetricProcess "cmd.exe" ("/c " + $toolMavenBin + " dependency:build-classpath -Dmdep.outputFile=target/pit-cp.txt -B -ntp -q") $modDir 300 "mutationTest.classpath"
+                $cpCmd = "/c " + $toolMavenBin + " dependency:build-classpath -Dmdep.outputFile=target/pit-cp.txt -B -ntp -q"
+                $rCp = Invoke-MetricProcess "cmd.exe" $cpCmd $modDir 300 "mutationTest.classpath"
+                if ($rCp.ExitCode -ne 0) {
+                    # CI 适配（DB-07 V1.2）：CI 工作流只跑 compile/test，不会把兄弟模块 SNAPSHOT 装进
+                    # 本地仓库，dependency:build-classpath 因此解析失败（V4 第二轮实证：did 找不到
+                    # common-*/std-adapter 的 2.0.0-SNAPSHOT）。先以 reactor 方式安装该模块及其依赖
+                    # （-am，跳过测试）再重试一次；判定语义不变——仍以最终 classpath 与 PIT 结论为准，
+                    # 重试后仍失败照记 classpath failed。
+                    $mutLogs += ("==== " + $m.name + " classpath (first attempt) ====" + [Environment]::NewLine + $rCp.Output)
+                    $prepArgs = "/c " + $toolMavenBin + " -B -ntp -q -DskipTests -pl " + $m.moduleDir + " -am install"
+                    $rPrep = Invoke-MetricProcess "cmd.exe" $prepArgs $RepoRoot 1800 ("mutationTest." + $m.name + ".classpath-prep")
+                    $mutLogs += ("==== " + $m.name + " classpath prep (install -am, exit " + $rPrep.ExitCode + ") ====" + [Environment]::NewLine + $rPrep.Output)
+                    if ($rPrep.ExitCode -ne 0) { $badMods += ($m.name + ": classpath generation failed (module install -am exit " + $rPrep.ExitCode + ")"); continue }
+                    $rCp = Invoke-MetricProcess "cmd.exe" $cpCmd $modDir 300 "mutationTest.classpath"
+                }
                 if ($rCp.ExitCode -ne 0) { $badMods += ($m.name + ": classpath generation failed"); $mutLogs += ("==== " + $m.name + " classpath ====" + [Environment]::NewLine + $rCp.Output); continue }
                 $cpText = ([System.IO.File]::ReadAllText((Join-Path $modDir "target\pit-cp.txt"), [System.Text.Encoding]::UTF8)).Trim()
                 $fullCp = "target/classes;target/test-classes;" + $cpText + ";" + ((Join-Path $RepoRoot "target\precheck\pit-bundle") + "\*")
@@ -767,7 +804,7 @@ if ($sastStage -and $sastStage.enabled) {
                     if (Test-Path $mpath) { $srcDirs += $mpath }
                 }
                 foreach ($src in $srcDirs) {
-                    $rel = $src.Substring($RepoRoot.Length).TrimStart("\")
+                    $rel = Get-RelRepoPath $src
                     $dst = Join-Path $scanTemp $rel
                     New-Item -ItemType Directory -Path (Split-Path -Parent $dst) -Force | Out-Null
                     Copy-Item $src $dst -Recurse -Force
