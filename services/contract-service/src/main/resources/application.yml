@@ -38,6 +38,9 @@ ctds:
       # 仅 gateway-internal 持有 contract.internal.read；provider/admin 业务角色均不持有
       # ——判定面只对交付链服务身份开放，防按编号枚举判定（沿 subject/catalog internal 先例）。
       gateway-internal: contract.internal.read
+      # WBS-3.5.3 文件交付准入专用（ADR-016 §6 第 8 消费方 = delivery-service）：
+      # 同一内部只读权限点，仅追加服务身份；业务角色仍不持有。
+      delivery-internal: contract.internal.read
   # 合约服务参数（WBS-3.4.2 hifi §9 + WBS-3.4.3 hifi §9）
   contract:
     # 主体服务衔接（资格判定只读通道，subject yml 已加 contract-internal 1 行授权）：

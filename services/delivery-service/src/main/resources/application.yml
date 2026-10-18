@@ -1,0 +1,53 @@
+spring:
+  application:
+    name: delivery-service
+  # 默认 profile 不装载数据源（沿 catalog/contract 先例）：classpath 有 spring-boot-starter-jdbc 会激活
+  # DataSourceAutoConfiguration 并要求配置数据源；演示与服务一律 mysql profile（application-mysql.yml）。
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+
+server:
+  port: 8087
+  # 演示期安全边界（ADR-016 §2.7）：服务仅绑定回环，不得对外暴露。
+  address: 127.0.0.1
+
+logging:
+  file:
+    name: logs/app.log
+  structured:
+    format:
+      console: logstash
+      file: logstash
+
+ctds:
+  # 交付域角色点（WBS-3.5.3 hifi §1/§7）：需求方发起 + 读 + 领取；提供方只读；运营方治理读面。
+  auth:
+    permissions:
+      requester: delivery.request,delivery.read,delivery.package.download
+      provider: delivery.read
+      admin: delivery.governance
+  # 交付服务参数（hifi §1/§4/§5）
+  delivery:
+    contract:
+      base-url: ${CTDS_DELIVERY_CONTRACT_BASEURL:}
+      timeout: 3s
+    catalog:
+      base-url: ${CTDS_DELIVERY_CATALOG_BASEURL:}
+      timeout: 3s
+    source-root: ${CTDS_DELIVERY_SOURCE_ROOT:}
+    storage-root: ${CTDS_DELIVERY_STORAGE_ROOT:}
+    file:
+      key-ref: ${CTDS_DELIVERY_FILE_KEY_REF:delivery-file}
+      max-bytes: 67108864
+    # 文件源清单（Q3-A）：fileId 仅精确键；path 相对 source-root；启动校验 fail-fast。
+    files: []
+  # 国密组件（ADR-006）：密钥仅环境变量/KeyProvider；未配置 = 文件交付 fail-closed。
+  crypto:
+    local:
+      key-file: ${CTDS_SM4_KEY_FILE:}
+  # 单实例演示（多实例换 Redis，登记演进）
+  idempotency:
+    mode: memory
+  lock:
+    mode: memory

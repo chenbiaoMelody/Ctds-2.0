@@ -27,10 +27,11 @@ import org.springframework.test.web.servlet.MvcResult;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
- * 目录服务间内部只读端点集成测试（WBS-3.4.3 随卡测试，Q6-A；hifi §9 既有服务改动①）：
- * 权限矩阵（contract-internal 过 / provider·admin 业务角色 403 / 未认证 401——专用权限点
- * catalog.internal.read 仅 contract-internal 持有）；最小暴露 6 字段锚定 + **原始状态值**
- * 透传（DELISTED 等——contract 发起门槛判定源）；不存在 → 1007C0011 同形（零新增码）。
+ * 目录服务间内部只读端点集成测试（WBS-3.4.3 随卡测试，Q6-A；WBS-3.5.3 增 productType；
+ * hifi §9 既有服务改动①）：权限矩阵（contract-internal / delivery-internal 过 /
+ * provider·admin 业务角色 403 / 未认证 401——专用权限点 catalog.internal.read 仅服务身份持有）；
+ * 最小暴露 7 字段锚定 + **原始状态值**透传（DELISTED 等——contract 发起门槛判定源）+
+ * productType（delivery 形态校验源）；不存在 → 1007C0011 同形（零新增码）。
  * 真实 MySQL 8 容器实跑；造数沿 jdbc 直插先例；无 Docker 整类跳过（门禁不红）。
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
@@ -61,16 +62,18 @@ class InternalProductEndpointIntegrationTest {
     }
 
     @Test
-    void contractInternalReadsRawStatusWithSixAnchoredFields() throws Exception {
+    void contractInternalReadsRawStatusWithSevenAnchoredFields() throws Exception {
         final long listedId = insertProduct("内部端点在架产品", "LISTED", "1.50");
         final long delistedId = insertProduct("内部端点下架产品", "DELISTED", null);
-        // 在架产品：6 字段全量
+        // 在架产品：7 字段全量
         final JsonNode listed = payload(mockMvc.perform(getFor(listedId, "contract-service",
                 "contract-internal")).andReturn());
         assertThat(listed.fieldNames()).toIterable().containsExactlyInAnyOrder("productId",
-                "productName", "status", "providerSubjectNo", "pricingModel", "priceAmount");
+                "productName", "productType", "status", "providerSubjectNo", "pricingModel",
+                "priceAmount");
         assertThat(listed.path("productId").asLong()).isEqualTo(listedId);
         assertThat(listed.path("productName").asText()).isEqualTo("内部端点在架产品");
+        assertThat(listed.path("productType").asText()).isEqualTo("DATASET");
         assertThat(listed.path("status").asText()).isEqualTo("LISTED");
         assertThat(listed.path("providerSubjectNo").asText()).isEqualTo("S-prov-internal");
         assertThat(listed.path("pricingModel").asText()).isEqualTo("PER_CALL");
@@ -95,6 +98,9 @@ class InternalProductEndpointIntegrationTest {
     @Test
     void businessRolesAreRejectedWithoutInternalPermission() throws Exception {
         final long productId = insertProduct("内部端点越权对照", "LISTED", "1.00");
+        // WBS-3.5.3：delivery-internal 服务身份可读（同一内部权限点追加授权）
+        assertThat(mockMvc.perform(getFor(productId, "delivery-service", "delivery-internal"))
+                .andReturn().getResponse().getStatus()).isEqualTo(200);
         // provider / admin 业务角色均不持 catalog.internal.read → 注解层 403（防状态枚举）
         assertThat(mockMvc.perform(getFor(productId, "S-provider", "provider"))
                 .andReturn().getResponse().getStatus()).isEqualTo(403);
