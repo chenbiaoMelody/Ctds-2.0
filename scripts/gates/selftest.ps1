@@ -502,10 +502,20 @@ public class Boot {
   }
 }
 '@, $utf8NoBom)
-# 编译探针类（真 JAVA_HOME 的 javac；失败 = 探针无效，显式红灯而非恒真放行）。
-# 注意：本场景先于 S14 段的 $realJavaHome 定义执行（S18 位于 S17 之后），故此处按同口径内联读取。
-$realJavaHome18 = (ConvertFrom-Json -InputObject ([System.IO.File]::ReadAllText($realConfig, [System.Text.Encoding]::UTF8))).toolchain.javaHome
-$javac18 = Join-Path $realJavaHome18 "bin\javac.exe"
+# 编译探针类（真 javac；失败 = 探针无效，显式红灯而非恒真放行）。
+# 注意：本场景先于 S12 段的 $realJavaHome 定义执行（S18 位于 S17 之后），故此处内联解析——
+# 且口径与运行器一致（run-gates.ps1:493-494：**env JAVA_HOME 优先、config toolchain.javaHome
+# 兜底**）：CI runner 无本机 config 路径（Temurin 经 env JAVA_HOME 暴露），只读 config 会把
+# "探针在该环境未编译成功"误判为探针无效（PR #4 首跑 RED 实证：3 条有效性锚按设计显式红）；
+# 两者皆空时退化为 PATH 上的 javac（Get-Command 语义），解析失败仍走下方显式红灯。诚实边界：
+# 与运行器唯一口径差 = 运行器两皆空记 ERROR（exit 2）而本处仍尝试 PATH；该差只会更易落到红
+# （runner 记 ERROR 时下方 exit 1 / lint PASS 断言必红），不产生假绿。
+$realJavaHome18 = $env:JAVA_HOME
+if (-not $realJavaHome18) {
+    $realJavaHome18 = (ConvertFrom-Json -InputObject ([System.IO.File]::ReadAllText($realConfig, [System.Text.Encoding]::UTF8))).toolchain.javaHome
+}
+$javac18 = "javac"
+if ($realJavaHome18) { $javac18 = Join-Path $realJavaHome18 "bin\javac.exe" }
 $javacOk18 = $false
 try {
     & $javac18 -encoding UTF-8 -d $sfClsDir18 (Join-Path $surefireDir18 "Middle.java") (Join-Path $surefireDir18 "Boot.java") 2>&1 | Out-Null
