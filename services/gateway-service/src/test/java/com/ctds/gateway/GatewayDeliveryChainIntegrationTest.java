@@ -14,6 +14,7 @@ import com.ctds.gateway.support.TestTokens;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.List;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -37,6 +38,13 @@ import org.springframework.web.util.UriUtils;
  *
  * <p><b>策略要素编码（hifi §5-2，CHG-WBS-3.5.2-hifi-V1.1）</b>：非 ASCII 要素头由测试<b>显式
  * 百分号编码</b>发送并断言判定收到解码后原值；另含非法编码 / 解码后超长两类负向。</p>
+ *
+ * <p><b>事件最终一致不变式（DB-46⑩ 修复，卡2a）</b>：计量/拒绝留痕记录于响应链完成后的续段
+ * （{@code DeliveryMeteringGlobalFilter} 的 {@code chain.filter(exchange).then(Mono.deferContextual(...))}），
+ * 与 {@code exchange()} 返回无时序保证。故<strong>每个产事件的测试在结束前都已通过有界等待
+ * （{@link #awaitEventsOf} / {@link #awaitAllEvents}）等待其事件到达</strong>——等待预算 5s
+ * （录制替身为进程内内存列表，只覆盖"续段尚未执行"的调度窗口；到点未达即按实际计数失败，
+ * 绝不等同于放宽）。由此，后续测试中的"事件为空"断言不可能被上一测试的迟到事件污染。</p>
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = {
@@ -50,6 +58,10 @@ class GatewayDeliveryChainIntegrationTest {
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final StubServer UPSTREAM = new StubServer();
     private static final StubServer JUDGE = new StubServer();
+
+    /** 有界等待预算（DB-46⑩）：截止期 5s、步进 20ms——覆盖续段调度窗口，到点未达即红。 */
+    private static final long AWAIT_BUDGET_NANOS = Duration.ofSeconds(5).toNanos();
+    private static final long AWAIT_STEP_MILLIS = 20;
 
     private static final String REQUESTER = "S-req-352";
     private static final String PROVIDER = "S-prov-352";
@@ -160,6 +172,8 @@ class GatewayDeliveryChainIntegrationTest {
         assertThat(UPSTREAM.subjectHeaders()).as("伪造主体头必须被剥离，下游只见网关注入值")
                 .containsExactly(REQUESTER);
         assertThat(UPSTREAM.rolesHeaders()).containsExactly("provider,reviewer");
+        assertThat(awaitAllEvents(1)).as("放行即计量 1:1（DB-46⑩ 不变式：产事件测试必先等待其事件到达）")
+                .hasSize(1);
     }
 
     @Test
@@ -172,6 +186,8 @@ class GatewayDeliveryChainIntegrationTest {
 
         assertThat(UPSTREAM.rolesHeaders()).as("非字符串角色项跳过，不注入角色头")
                 .containsExactly("provider");
+        assertThat(awaitAllEvents(1)).as("放行即计量 1:1（DB-46⑩ 不变式：产事件测试必先等待其事件到达）")
+                .hasSize(1);
     }
 
     // ==== T5 策略执行点（双向）====
@@ -194,7 +210,7 @@ class GatewayDeliveryChainIntegrationTest {
                 .contains("\"purpose\":\"" + PURPOSE_CN + "\"")
                 .contains("\"territory\":\"" + TERRITORY_CN + "\"");
         assertThat(UPSTREAM.requestCount()).as("放行后触达数据源一次").isEqualTo(1);
-        final List<AuditEvent> metering = meteringEvents();
+        final List<AuditEvent> metering = awaitEventsOf(GatewayAuditActions.DELIVERY_METERING, 1);
         assertThat(metering).hasSize(1);
         final AuditEvent event = metering.get(0);
         assertThat(event.outcome()).isEqualTo(AuditOutcome.SUCCESS);
@@ -218,7 +234,7 @@ class GatewayDeliveryChainIntegrationTest {
         assertThat(body.path("message").asText()).isEqualTo(OVER_LIMIT_MESSAGE);
         assertThat(UPSTREAM.requestCount()).as("越界不触达数据源").isZero();
         assertThat(meteringEvents()).as("越界不产生计量事件").isEmpty();
-        assertThat(deniedEvents()).hasSize(1);
+        assertThat(awaitEventsOf(GatewayAuditActions.DELIVERY_DENIED, 1)).hasSize(1);
         assertThat(deniedEvents().get(0).detail().get("result")).isEqualTo(OVER_LIMIT_CODE);
     }
 
@@ -294,7 +310,7 @@ class GatewayDeliveryChainIntegrationTest {
         deliveryBody(HttpStatus.OK, REQUESTER);
 
         assertThat(UPSTREAM.requestCount()).isEqualTo(1);
-        assertThat(meteringEvents()).hasSize(1);
+        assertThat(awaitEventsOf(GatewayAuditActions.DELIVERY_METERING, 1)).hasSize(1);
     }
 
     @Test
@@ -344,8 +360,8 @@ class GatewayDeliveryChainIntegrationTest {
             deliveryBody(HttpStatus.FORBIDDEN, "S-denied-" + i);
         }
 
-        assertThat(meteringEvents()).as("放行 3 次 ≡ 计量事件 3 条").hasSize(3);
-        assertThat(deniedEvents()).as("拒绝 2 次 ≡ 计量 0 条（拒绝留痕独立）").hasSize(2);
+        assertThat(awaitEventsOf(GatewayAuditActions.DELIVERY_METERING, 3)).as("放行 3 次 ≡ 计量事件 3 条").hasSize(3);
+        assertThat(awaitEventsOf(GatewayAuditActions.DELIVERY_DENIED, 2)).as("拒绝 2 次 ≡ 计量 0 条（拒绝留痕独立）").hasSize(2);
         assertThat(UPSTREAM.requestCount()).isEqualTo(3);
     }
 
@@ -358,7 +374,7 @@ class GatewayDeliveryChainIntegrationTest {
                 .header("X-Ctds-Contract-No", CONTRACT_NO)
                 .exchange().expectStatus().isOk();
 
-        final List<AuditEvent> events = recorder().events();
+        final List<AuditEvent> events = awaitAllEvents(1);
         assertThat(events).hasSize(1);
         assertThat(events.get(0).detail().keySet())
                 .containsExactlyInAnyOrder("traceId", "subject", "contractNo", "resource", "result");
@@ -408,6 +424,41 @@ class GatewayDeliveryChainIntegrationTest {
 
     private List<AuditEvent> deniedEvents() {
         return recorder().eventsOf(GatewayAuditActions.DELIVERY_DENIED);
+    }
+
+    /**
+     * 有界等待（DB-46⑩）：截止期（{@link #AWAIT_BUDGET_NANOS}，步进 {@link #AWAIT_STEP_MILLIS}）
+     * 轮询直到指定 action 的事件数达到 {@code expected}。到点未达<strong>不抛异常、不阻塞</strong>，
+     * 原样返回当前快照——由调用方断言语义以<strong>实际计数</strong>失败（等待只吸收"续段尚未
+     * 执行"的调度窗口，绝不等同于放宽：等不到照样红）。
+     */
+    private List<AuditEvent> awaitEventsOf(final String action, final int expected) {
+        final long deadline = System.nanoTime() + AWAIT_BUDGET_NANOS;
+        List<AuditEvent> snapshot = recorder().eventsOf(action);
+        while (snapshot.size() < expected && System.nanoTime() < deadline) {
+            sleepQuietly(AWAIT_STEP_MILLIS);
+            snapshot = recorder().eventsOf(action);
+        }
+        return snapshot;
+    }
+
+    /** 有界等待全部事件（同 {@link #awaitEventsOf} 口径，不过滤 action）。 */
+    private List<AuditEvent> awaitAllEvents(final int expected) {
+        final long deadline = System.nanoTime() + AWAIT_BUDGET_NANOS;
+        List<AuditEvent> snapshot = recorder().events();
+        while (snapshot.size() < expected && System.nanoTime() < deadline) {
+            sleepQuietly(AWAIT_STEP_MILLIS);
+            snapshot = recorder().events();
+        }
+        return snapshot;
+    }
+
+    private static void sleepQuietly(final long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (final InterruptedException ex) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private static JsonNode readTree(final byte[] body) {

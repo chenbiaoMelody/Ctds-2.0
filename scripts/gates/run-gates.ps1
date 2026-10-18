@@ -52,6 +52,15 @@
 # 未达标项 + 降级原因 + 权威判定归属本地门禁）；本地无 Docker → 维持 FAIL（可修复环境不开口子）。
 # 执行层失败（exit≠0 / 无报告 / 超时）不降级。机器护栏 = selftest S17 三探针；判定阈值 / 阶段范围 /
 # 扫描面 / 退出码语义 / 五态语义零改动（降级复用既有 SKIP 态——"no FAIL; PENDING/SKIP allowed"）。
+# DB-46+DB-45（2026-10-18，卡2a〔DB-46+DB-45 门禁可信性〕，gates-config.json 零改动 =
+# ConfigSha256 315264e1…1304 逐字不变自证）record: ① DB-46/⑩ 为测试缺陷修复（幂等测试配置
+# 分离 + 网关审计计数最终一致断言，纯测试侧零产品代码，run-gates.ps1 无涉）；② DB-45 阶段
+# 超时后新增 Stop-DetachedStageProcesses 脱缰孙进程兜底清扫（挂接于 Stop-ProcessTree 的
+# taskkill 之后 = 三个超时分支全覆盖；双特征窄匹配 RepoRoot + \target\surefire\ + 自身/祖先链
+# 排除；best-effort 失败静默）。判定阈值 / 阶段范围 / 扫描面 / 报告五态与退出码语义零改动；
+# PASS/FAIL 行格式零改动（不追加清扫计数——取证走 selftest S18 探针）。
+# 依据：任务卡 docs/tasks/DB-46-DB-45-门禁可信性-2026-10-17.md + 两级设计
+# docs/designs/DB-46-DB-45-{lofi,hifi}.md（V1.0 已确认）+ ADR-018 修订记录 V1.9。
 param(
     [string]$RepoRoot = "",
     [string]$ReportPath = "",
@@ -150,10 +159,65 @@ function Write-StageOutLog([string]$stage, [string]$command, [string]$body, [int
 # ---------- DB-43（Q1-A / 跟踪-23 剩余）：阶段超时后清理整个进程树 ----------
 # 背景：2026-10-09 实测"unitTest 超时被杀后残留 cmd 孤儿进程"污染 coverage/frontendTest。
 # taskkill /T 按父子快照清理（Windows 定位脚本，系统内置零新依赖）；"已脱离父链的孙进程"
-# 可能漏网（罕见，诚实边界见 README 变更条目）。进程已退出时不再补 Kill。
+# 原记"可能漏网（罕见）"——2026-10-16 已实证发生（DB-45：coverage 段超时后 surefire fork
+# 孙进程幸存，继续写 target 把 frontendTest 挤到 39 例超时 = 级联假红）；surefire/jacoco
+# 形态兜底清扫见下方 Stop-DetachedStageProcesses（DB-45/卡2a），非 surefire 形态与误伤面为
+# 诚实边界（README 已知特性段同步登记）。进程已退出时不再补 Kill。
 function Stop-ProcessTree([System.Diagnostics.Process]$proc) {
     try { $null = & taskkill /PID $proc.Id /T /F 2>&1 } catch { }
+    # DB-45（卡2a Q3-A）：taskkill /T 之后的脱缰孙进程兜底清扫（单挂接点——本函数三个调用点
+    # 均在超时分支，正常完成路径不经此处 → 仅超时触发）。详见下方函数注释。
+    Stop-DetachedStageProcesses
     try { if (-not $proc.HasExited) { $proc.Kill() } } catch { }
+}
+
+# ---------- DB-45（2026-10-18，卡2a Q3-A，变更流程留痕〔红线 3〕）：脱缰孙进程兜底清扫 ----------
+# 背景（2026-10-16 实证，DB-45）：coverage 段超时后，已"脱离父链"的孙进程幸存——taskkill /T
+# 按父子快照清理，中间层（maven JVM）退出后，孙进程（surefire fork booter）不在 cmd 进程树
+# 快照内即漏网，继续写构建产物把后续 frontendTest 挤到 39 例超时 = 级联假红。
+# 识别特征（双条件 -like，大小写不敏感）：命令行同时含
+#   ① 本次运行的 $RepoRoot（TrimEnd('\','/') 后作路径前缀段匹配——含 "<RepoRoot>\" 段，
+#      避免 "C:\RepoRootOther\" 类误命中），且
+#   ② \target\surefire\（surefire 分支 JVM 的 booter jar 绝对路径段；jacoco 插桩分支同样
+#      命中，因其即 surefire fork）。
+# 保护面：枚举前先沿 Win32_Process.ParentProcessId 上溯构建自身 + 祖先链（自 $PID 起，上限
+# 64 层防环），链内进程一律不杀（防误杀运行器 / 外层门禁 / selftest / IDE 等同链进程）。
+# best-effort：逐进程 Stop-Process -Force 包 try/catch，整体再包 try/catch——任何失败静默，
+# 不影响段判定（超时段结论已由既有逻辑判 FAIL；清扫是保险不是判定，沿"记录是加菜"原则）。
+# 报告行格式零改动（不往 FAIL 行追加清扫计数——避免行文口径漂移，取证走 selftest S18 探针）。
+# 诚实边界：非 surefire 形态的脱缰进程（如 detached node/vitest worker）不在本特征面内——
+# 本卡只兑现实证造成假红的 surefire/jacoco 形态；其余形态如后续实证需要，另行登记
+# （README 已知特性段同步勘正）。
+# PS 5.1 兼容：只用 Get-CimInstance Win32_Process（CIM cmdlets 内置）+ Stop-Process，
+# 无新模块无新依赖；$RepoRoot 为脚本级参数直接可见。
+function Stop-DetachedStageProcesses() {
+    try {
+        $selfAndAncestors = New-Object System.Collections.Generic.HashSet[string]
+        $walker = $PID
+        $guard = 0
+        while ($walker -and $walker -gt 0 -and $guard -lt 64) {
+            $guard++
+            $null = $selfAndAncestors.Add([string]$walker)
+            $parentOf = $null
+            try {
+                $node = Get-CimInstance Win32_Process -Filter ("ProcessId = " + $walker) -ErrorAction SilentlyContinue
+                if ($node) { $parentOf = $node.ParentProcessId }
+            } catch { $parentOf = $null }
+            if ($null -eq $parentOf -or $parentOf -le 0) { break }
+            $walker = $parentOf
+        }
+        $rootPrefix = $RepoRoot.TrimEnd('\', '/')
+        $victims = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+            Where-Object {
+                $_.CommandLine -ne $null -and
+                $_.CommandLine -like ('*' + $rootPrefix + '\*') -and
+                $_.CommandLine -like '*\target\surefire\*' -and
+                (-not $selfAndAncestors.Contains([string]$_.ProcessId))
+            }
+        foreach ($victim in $victims) {
+            try { Stop-Process -Id $victim.ProcessId -Force -ErrorAction SilentlyContinue } catch { }
+        }
+    } catch { }
 }
 
 # ---------- 通用辅助：按超时运行进程（不经 cmd 拼接，参数直接传递，无 shell 注入面） ----------
