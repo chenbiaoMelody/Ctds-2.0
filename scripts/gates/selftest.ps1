@@ -463,6 +463,11 @@ try {
 Write-Output ""
 Write-Output "S18 [detached stage-process sweep] expect: timeout FAIL + detached surefire-form grandchild CLEANED + bystander SURVIVES"
 $fix = New-Fixture "s18"
+# CI 的 %TEMP% 为 8.3 短路径（C:\Users\RUNNER~1\...）：fixture 根先解析为长路径再派生全部探针
+# 路径——运行器入口会把 -RepoRoot 展开为长路径（Resolve-LongDirPath，DB-07 V1.3），若孙进程
+# 命令行持短路径，兜底清扫双特征（含 <RepoRoot>\ 段）将失配 → 孙进程持 cmd stdout 管道 →
+# 运行器 ReadToEnd 永不 EOF、挂死至 gateSelfTest 段 300s 超时（PR #4 第二次 CI 复跑实证）。
+$fix = (Get-Item -LiteralPath $fix).FullName
 Initialize-FixtureGit $fix
 $stubDir18 = Join-Path $fix "stub-bin"
 New-Item -ItemType Directory -Path $stubDir18 -Force | Out-Null
