@@ -49,7 +49,7 @@
 | C1 | README CI 接入节"承接方显式声明" | **A** | README CI 接入节新增：CI coverage 阈值为**降级形态**（SKIP），权威判定 = 有 Linux Docker 的本地门禁；承接方必须保留 `Test-CiEnvironment`/`Test-LinuxDockerDaemon` 双条件、S17 探针与 SKIP 四要素；不得关闭 coverage 段或放宽阈值 | README 条目可逐字核对；S17 探针仍全绿 |
 | C2 | 「执行层失败不降级」CI 组合探针 | **A** | `selftest.ps1` S17 新增探针 D：CI 环境 + 无 Linux Docker + stub mvn `exit 3` → coverage **FAIL**（不是 SKIP/DEFERRED），exit 1/RED | S17-D 断言：`| coverage | FAIL |`、`mvn coverage exit 3`、无 `DEFERRED`、RED |
 | C3 | README selftest 时长 V5 数据点补秒数 | **A** | README 自检段：`V5 口径批独立单发实测〔148 断言〕` → `34s〔148 断言〕`（附 CI 30s 历史数据点） | README 逐字核对；与日志 `-2050` 证据一致（本地 34s / CI 30s） |
-| C4 | `gateSelfTest.note` 第三数据点 + 余量口径 | **A** | `gates-config.json` V1.12：note 补 `58s〔125 断言，V3.3〕`；补本卡后最终数据点；余量明示 `300/58=5.2 倍`、最差 `300/70≈4.3 倍`（历史"7 倍以上"不再成立）；场景/断言计数更新为最终值（S1~S19 + S11b/S11c，<N> 断言） | JSON 可解析；note 数字与 selftest 末行一致；ConfigSha256 新基线外部登记 |
+| C4 | `gateSelfTest.note` 第三数据点 + 余量口径 | **A** | `gates-config.json` V1.12：note 补 `58s〔125 断言，V3.3〕`；补本卡后最终数据点；余量按实测 105~106s = 约 `300/106≈2.8 倍`（历史 5.2/4.3 倍基于 58s/70s，见 §6.6 编码段实测补记；历史"7 倍以上"不再成立）；场景/断言计数更新为最终值（S1~S19 + S11b/S11c，196 断言） | JSON 可解析；note 数字与 selftest 末行一致；ConfigSha256 新基线外部登记 |
 | C5 | OSTYPE/OSType 大小写统一 | **A** | 统一为 **`OSType`**（`docker info --format '{{.OSType}}'` 模板字段名）：README 当前 prose 两处改 `OSType`；config 当前 `coverage.note` 已用 `OSType`，V1.12 changeLog 记录统一口径；历史 changeLog 条目保留原文 | `git grep "OSTYPE"` 仅历史条目命中（或零命中）；README 当前 prose 全部 `OSType` |
 | C6 | OSType 比较反向锚 | **A** | `selftest.ps1` S17 新增探针 E：CI + docker stub 输出 `Linux`（大小写混写）+ 45% coverage → **FAIL**（`-ieq` 命中，不降级） | S17-E 断言：coverage FAIL、`overall 45% < 70%`、无 `DEFERRED`、RED |
 | C7 | CI 变量单形态 OR 语义锚（可选） | **A** | `selftest.ps1` S17 新增探针 F：仅 `CI=true`（无 `GITHUB_ACTIONS`）+ 无 Docker → SKIP/GREEN；与探针 A（仅 `GITHUB_ACTIONS`）共同锚定 OR 语义 | S17-F 断言：coverage SKIP、`threshold verdict DEFERRED`、GREEN/0 |
@@ -121,7 +121,7 @@ workflow 写法：`uses: actions/checkout@<sha> # v4`（保留 tag 注释便于�
 
 ## 6. selftest 改动契约（selftest.ps1）
 
-> **断言只增不减**：现有 163 断言零删改；新增断言预计 +30 左右，最终数 `<N>` 以实测末行为准；场景 S1~S18 保留，新增 **S19**（B4/B10）。
+> **断言只增不减**：现有 163 断言零删改；新增 33 条（163→196，以实测末行为准）；场景 S1~S18 保留，新增 **S19**（B4/B10）。
 
 ### 6.1 开场自愈清扫（N5）
 
@@ -161,8 +161,9 @@ workflow 写法：`uses: actions/checkout@<sha> # v4`（保留 tag 注释便于�
 
 ### 6.6 计数与时长
 
-- 最终断言数 `<N>` = 163 + S15 illegal + S17 D/E/F + S18 N1 + S19（以实测末行为准）；场景数 = 21（S1~S18 + S19，S11b/S11c 作为子场景）。
-- 本卡后独立单发实测 `<T>s`；config V1.12 note 与 README 同步该数据点。
+- 最终断言数 **196** = 163 + S15 illegal + S17 D/E/F + S18 N1 + S19（实测末行 196，0 失败）；场景数 = 21（S1~S18 + S19，S11b/S11c 作为子场景）。
+- 本卡后独立单发实测 **105~106s**（196 断言，二十一场景）；config V1.12 note 与 README 同步该数据点。
+- **编码段实测补记（2026-10-18）**：最终断言数 = **196**（二十一场景）；独立单发 105~106s；余量按实测 300/106≈**2.8 倍**——本节原稿的 5.2 倍（58s）/4.3 倍（70s）来自历史数据点，已被本卡新数据点取代；预算 300s 未改。
 
 ## 7. 其他文件改动契约
 
@@ -193,7 +194,7 @@ workflow 写法：`uses: actions/checkout@<sha> # v4`（保留 tag 注释便于�
 
 - `version`: `V1.12`。
 - `changeLog`: 新条目置首（C4/C5 + B3 当前 note 改锚 + 零判定面改动声明 + 当前哈希不内嵌原则）。
-- `stages.gateSelfTest.note`: 当前 note 的"WBS-2.2.7"改"DB-07"；场景/断言计数改最终值；补 `58s〔125 断言〕`/`70s〔163 断言〕`/本卡 `<T>s〔<N> 断言〕`；余量 `5.2 倍（58s）/约 4.3 倍（70s）`。
+- `stages.gateSelfTest.note`: 当前 note 的"WBS-2.2.7"改"DB-07"；场景/断言计数改最终值；补 `58s〔125 断言〕`/`70s〔163 断言〕`/本卡 `105~106s〔196 断言〕`；余量按实测 105~106s = 约 2.8 倍（`300/106`；历史 5.2/4.3 倍基于 58s/70s，见 §6.6 编码段实测补记）。
 - `stages.coverage.note`: 保持 `OSType`；S17 护栏描述补 D/E/F（执行层失败不降级/大小写/单形态 OR）。
 - **零键位、零阈值、零阶段范围、零扫描面、零五态/退出码语义改动**；ConfigSha256 新基线在 README/ADR-018/任务卡/日志四处登记。
 
@@ -211,7 +212,7 @@ workflow 写法：`uses: actions/checkout@<sha> # v4`（保留 tag 注释便于�
    - B10/B4：S19-a/S19-b 在旧运行器上失败（无 ERROR/SKIP 行）→ 归档（若旧行为已满足，则记录"锚定非红相"并如实说明）。
 2. **实现顺序**：B6 helper 语义 → B2 收敛（先跑 selftest 基线）→ B1 → B4/B10 → N1 → N5 → N4 → S15/S17/S18/S19 探针 → N2 → B7 workflow → 文档/配置。
 3. **回归口径**：
-   - `selftest.ps1` 全量 0 失败，断言 163 → `<N>` 只增不减；双解释器语法 0 错误（PS 5.1 + pwsh 7 ParseFile）；
+   - `selftest.ps1` 全量 0 失败，断言 163 → 196 只增不减；双解释器语法 0 错误（PS 5.1 + pwsh 7 ParseFile）；
    - 全仓门禁单发 GREEN（`run-gates.ps1`），新红项逐项定性；ConfigSha256 与 V1.12 登记值逐字一致；
    - workflow YAML 结构校验（pyyaml 或等效）+ 六处 SHA 与 §4 表逐字一致；
    - 网关测试类（含 N2 新例）全绿；`mvn -pl services/gateway-service test` 或等效命令；

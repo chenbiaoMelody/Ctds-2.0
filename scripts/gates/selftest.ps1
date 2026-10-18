@@ -1,4 +1,4 @@
-﻿# C-TDS gate runner selftest (WBS-2.2.7 deliverable #5, round-2 fix R7).
+﻿# C-TDS gate runner selftest (DB-07 + ADR-018；历史条目 WBS-2.2.7 编号保留原文).
 # Purpose: prove - reproducibly and in seconds, not by a one-off manual probe - that the runner
 # really keeps its robustness promises:
 #   S1 untracked locked file      -> SKIP row, later stages still run, report produced, exit 0
@@ -91,6 +91,21 @@
 #                                    evidence (old runner: grandchild survives AND hangs the runner
 #                                    on the inherited stdout pipe) is taken by a one-off script and
 #                                    archived under build-output/ - see the S18 block comment.
+#                                   卡2b N1/N4: a SECOND bystander (node, cmdline carries RepoRoot AND
+#                                    \target\surefire\) is started BEFORE the runner -> it must SURVIVE
+#                                    the sweep (pre-existing snapshot + creation-time window; old
+#                                    runner killed it = red archive); S18 fixture config now uses
+#                                    $realJavaHome18 (the old code passed the not-yet-defined
+#                                    $realJavaHome, i.e. an empty javaHome on machines without env).
+#   S19 config visibility (卡2b B4/B10) -> S19-a: fixture config with stages.structureCheck removed ->
+#                                    config.stages.structureCheck ERROR + "missing stage section" +
+#                                    exit 2 + report still written; S19-b: ordinary fixture (many
+#                                    stages disabled WITHOUT a PENDING status) -> frontendTest.disabled
+#                                    SKIP + "visible by policy" + exit 0/GREEN.
+#   Opening self-heal sweep (卡2b N5) -> before S1, Remove-StaleSelftestProcesses kills leftovers whose
+#                                    cmdline carries ctds-gates-selftest- AND \target\surefire\ (ancestor
+#                                    chain excluded, best-effort); concurrent selftest runs are NOT
+#                                    supported (honest boundary).
 # How: every scenario builds a hermetic fixture repo under %TEMP% (git init + git add, cheap stages
 # only), generates its config FROM THE REAL gates-config.json (so the real exclude list is what gets
 # exercised), runs scripts/gates/run-gates.ps1 against it and asserts on the report file / stdout /
@@ -207,6 +222,49 @@ function Invoke-Runner([string]$repo, [string]$cfgPath, [string]$reportPath, [st
     return [pscustomobject]@{ ExitCode = $code; Stdout = $text }
 }
 
+# ---------- 卡2b N5：开场自愈清扫（外部中断遗留的 selftest 孙进程） ----------
+# 背景：selftest 被外部中断（关闭窗口 / 杀父进程）时，fixture 内脱缰的 surefire 形态进程可能存活；
+# 旧实现无兜底（2026-10-18 实证 PID 1052）。治疗 = 每次开场清扫：命令行同时含
+# "ctds-gates-selftest-"（本 harness 的 fixture 工作目录前缀）与 "\target\surefire\"；沿
+# ParentProcessId 上溯排除自身/祖先链（上限 64 层）；best-effort 强杀并返回清理计数。
+# 诚实边界：并发 selftest 不受支持（可能互相清扫 Boot）；非 surefire 形态残留不在本卡范围。
+function Remove-StaleSelftestProcesses() {
+    $cleaned = 0
+    try {
+        $selfAndAncestors = New-Object System.Collections.Generic.HashSet[string]
+        $walker = $PID
+        $guard = 0
+        while ($walker -and $walker -gt 0 -and $guard -lt 64) {
+            $guard++
+            $null = $selfAndAncestors.Add([string]$walker)
+            $parentOf = $null
+            try {
+                $node = Get-CimInstance Win32_Process -Filter ("ProcessId = " + $walker) -ErrorAction SilentlyContinue
+                if ($node) { $parentOf = $node.ParentProcessId }
+            } catch { $parentOf = $null }
+            if ($null -eq $parentOf -or $parentOf -le 0) { break }
+            $walker = $parentOf
+        }
+        $stale = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+            Where-Object {
+                $_.CommandLine -ne $null -and
+                $_.CommandLine -like '*ctds-gates-selftest-*' -and
+                $_.CommandLine -like '*\target\surefire\*' -and
+                (-not $selfAndAncestors.Contains([string]$_.ProcessId))
+            }
+        foreach ($victim in $stale) {
+            try {
+                $alive = Get-Process -Id $victim.ProcessId -ErrorAction SilentlyContinue
+                if ($alive) {
+                    Stop-Process -Id $victim.ProcessId -Force -ErrorAction SilentlyContinue
+                    $cleaned++
+                }
+            } catch { }
+        }
+    } catch { }
+    return $cleaned
+}
+
 # ================= harness =================
 if (-not (Test-Path $runner)) { Write-Output ("[HARNESS-ERROR] runner not found: " + $runner); exit 2 }
 if (-not (Test-Path $realConfig)) { Write-Output ("[HARNESS-ERROR] config not found: " + $realConfig); exit 2 }
@@ -224,6 +282,12 @@ Write-Output ("C-TDS gate runner selftest - scenario workdir: " + $script:workDi
 Write-Output ("runner: " + $runner)
 
 try {
+
+# ---------- 卡2b N5：开场自愈清扫（workDir 创建后、场景前；清理数 > 0 时显式输出） ----------
+$staleCleaned = Remove-StaleSelftestProcesses
+if ($staleCleaned -gt 0) {
+    Write-Output ("opening self-heal sweep: cleaned " + $staleCleaned + " stale selftest process(es)")
+}
 
 # ---------- S1: untracked locked file -> SKIP, gate not aborted ----------
 Write-Output ""
@@ -435,6 +499,47 @@ try {
     Assert-Contains $rep17cText "| coverage | FAIL |" "S17-c CI WITH Linux Docker does NOT defer"
     Assert-Contains $rep17cText "overall 45% < 70%" "S17-c the threshold verdict applies unchanged"
     Assert-Contains $rep17cText "-> RED" "S17-c verdict RED"
+    # 卡2b C2/C6/C7 —— 三个新探针（D 执行层失败不降级 / E OSType 大小写反向锚 / F CI 变量单形态 OR）
+    $binDir17Fail = Join-Path $fix17 "bin-fail"
+    New-Item -ItemType Directory -Path $binDir17Fail -Force | Out-Null
+    [System.IO.File]::WriteAllText((Join-Path $binDir17Fail "mvn.cmd"), ("@echo off" + [Environment]::NewLine + "exit /b 3" + [Environment]::NewLine), $utf8NoBom)
+    [System.IO.File]::WriteAllText((Join-Path $binDir17Fail "docker.cmd"), ("@echo off" + [Environment]::NewLine + "exit /b 1" + [Environment]::NewLine), $utf8NoBom)
+    # 探针 D：CI 环境 + 无 Linux Docker，但 coverage 执行层失败（stub mvn exit 3）→ FAIL 不降级
+    $env:PATH = $binDir17Fail + ";" + $s17Saved.PATH
+    $env:GITHUB_ACTIONS = "true"
+    Remove-Item Env:CI -ErrorAction SilentlyContinue
+    $rep17d = Join-Path $script:workDir "s17-d-report.md"
+    $r17d = Invoke-Runner $fix17 $cfg17 $rep17d "selftest-s17-ci-exec-failure"
+    Assert-True ($r17d.ExitCode -eq 1) ("S17-d exit code 1 (got " + $r17d.ExitCode + ")")
+    $rep17dText = Read-Report $rep17d
+    Assert-Contains $rep17dText "| coverage | FAIL |" "S17-d execution-layer failure is NEVER deferred to SKIP"
+    Assert-Contains $rep17dText "mvn coverage exit 3" "S17-d the FAIL names the real Maven exit code"
+    Assert-NotContains $rep17dText "DEFERRED" "S17-d no deferral text on an execution-layer failure"
+    Assert-Contains $rep17dText "-> RED" "S17-d verdict RED"
+    # 探针 E：CI + Docker 探测输出 "Linux"（大小写混写）→ -ieq 命中、不降级；45% 阈值 FAIL
+    $env:PATH = $binDir17 + ";" + $s17Saved.PATH
+    [System.IO.File]::WriteAllText((Join-Path $binDir17 "docker.cmd"), ("@echo off" + [Environment]::NewLine + "echo Linux" + [Environment]::NewLine + "exit /b 0" + [Environment]::NewLine), $utf8NoBom)
+    $env:GITHUB_ACTIONS = "true"
+    Remove-Item Env:CI -ErrorAction SilentlyContinue
+    $rep17e = Join-Path $script:workDir "s17-e-report.md"
+    $r17e = Invoke-Runner $fix17 $cfg17 $rep17e "selftest-s17-ci-docker-linux-mixedcase"
+    Assert-True ($r17e.ExitCode -eq 1) ("S17-e exit code 1 (got " + $r17e.ExitCode + ")")
+    $rep17eText = Read-Report $rep17e
+    Assert-Contains $rep17eText "| coverage | FAIL |" "S17-e OSType comparison is case-insensitive (-ieq): mixed case 'Linux' still means usable"
+    Assert-Contains $rep17eText "overall 45% < 70%" "S17-e the threshold verdict applies unchanged"
+    Assert-NotContains $rep17eText "DEFERRED" "S17-e no deferral when a Linux Docker daemon IS available"
+    Assert-Contains $rep17eText "-> RED" "S17-e verdict RED"
+    # 探针 F：仅 CI=true（无 GITHUB_ACTIONS）+ 无 Docker → SKIP/GREEN（OR 语义单形态锚）
+    [System.IO.File]::WriteAllText((Join-Path $binDir17 "docker.cmd"), ("@echo off" + [Environment]::NewLine + "exit /b 1" + [Environment]::NewLine), $utf8NoBom)
+    Remove-Item Env:GITHUB_ACTIONS -ErrorAction SilentlyContinue
+    $env:CI = "true"
+    $rep17f = Join-Path $script:workDir "s17-f-report.md"
+    $r17f = Invoke-Runner $fix17 $cfg17 $rep17f "selftest-s17-ci-var-only"
+    Assert-True ($r17f.ExitCode -eq 0) ("S17-f exit code 0 (got " + $r17f.ExitCode + ")")
+    $rep17fText = Read-Report $rep17f
+    Assert-Contains $rep17fText "| coverage | SKIP |" "S17-f CI=true alone triggers the CI form (OR semantics anchored)"
+    Assert-Contains $rep17fText "threshold verdict DEFERRED" "S17-f the deferral is explicit on the row"
+    Assert-Contains $rep17fText "-> GREEN" "S17-f a deferred coverage does not block GREEN"
 } finally {
     $env:PATH = $s17Saved.PATH
     if ($null -eq $s17Saved.GH) { Remove-Item Env:GITHUB_ACTIONS -ErrorAction SilentlyContinue } else { $env:GITHUB_ACTIONS = $s17Saved.GH }
@@ -481,6 +586,9 @@ $booterPidFile18 = Join-Path $fix "booter.pid"
 $booterOutFile18 = Join-Path $fix "booter-out.txt"
 $booterErrFile18 = Join-Path $fix "booter-err.txt"
 $bystanderJs18 = Join-Path $fix "bystander.js"
+# 卡2b N1：并行 surefire 形态 bystander——命令行含 RepoRoot + \target\surefire\，且在运行器
+# **启动之前**创建（模拟开发者同时手动 mvn test）；新运行器必须靠运行前快照/时间窗放过它。
+$parallelJs18 = Join-Path $surefireDir18 "parallel.js"
 $stubMarker18 = "DB45-S18-STUB-MARKER"
 # Middle（maven JVM 模拟）：ProcessBuilder 显式重定向 std 到文件起孙进程（Boot）后立即退出
 # ——中间层退出后孙进程脱离 cmd 进程树，taskkill /T 漏网（DB-45 实证形态）。单引号 here-string：
@@ -529,6 +637,7 @@ try {
 Assert-True $javacOk18 "S18 javac compiled Middle/Boot into <RepoRoot>\target\surefire\classes (probe valid)"
 # bystander（反探针）：命令行含 RepoRoot 但不含 \target\surefire\ —— 双特征不命中，必须幸存
 [System.IO.File]::WriteAllText($bystanderJs18, "setInterval(function () {}, 1000);" + [Environment]::NewLine, $utf8NoBom)
+[System.IO.File]::WriteAllText($parallelJs18, "setInterval(function () {}, 1000);" + [Environment]::NewLine, $utf8NoBom)
 [System.IO.File]::WriteAllText((Join-Path $stubDir18 "mvn.cmd"),
     ("@echo off" + [Environment]::NewLine +
      "echo " + $stubMarker18 + [Environment]::NewLine +
@@ -538,7 +647,7 @@ Assert-True $javacOk18 "S18 javac compiled Middle/Boot into <RepoRoot>\target\su
      "ping -n 61 127.0.0.1 >nul 2>&1" + [Environment]::NewLine +
      "exit /b 0" + [Environment]::NewLine),
     $utf8NoBom)
-$cfg18 = New-FixtureConfig $fix "cfg-s18.json" $true $realJavaHome $null
+$cfg18 = New-FixtureConfig $fix "cfg-s18.json" $true $realJavaHome18 $null
 $cfgObj18 = ConvertFrom-Json -InputObject ([System.IO.File]::ReadAllText($cfg18, [System.Text.Encoding]::UTF8))
 # compile 段在真配置中无 timeoutSeconds 属性——先补属性再设值（同 S14 模式）
 Add-Member -InputObject $cfgObj18.stages.compile -MemberType NoteProperty -Name timeoutSeconds -Value 2 -Force
@@ -547,6 +656,9 @@ $rep18 = Join-Path $script:workDir "s18-report.md"
 $outLog18 = Join-Path $env:TEMP "ctds-gate-compile-out.log"
 # bystander 在调用运行器前启动（独立进程；双特征保证其不被清扫，祖先链保护为双保险）
 $bystander18 = Start-Process -FilePath "node" -ArgumentList $bystanderJs18 -WindowStyle Hidden -PassThru
+# 卡2b N1：并行 surefire 形态 bystander 同样在运行器启动前创建——它命中双特征，但属于"运行前
+# 已存在"，新运行器必须放过（旧运行器会把它当脱缰孙进程清掉 = 红相，归档见 build-output/）。
+$parallel18 = Start-Process -FilePath "node" -ArgumentList $parallelJs18 -WindowStyle Hidden -PassThru
 $savedPath18 = $env:PATH
 try {
     $env:PATH = $stubDir18 + ";" + $env:PATH
@@ -585,9 +697,18 @@ Assert-True ($bystanderCmd18 -like "*$fix*") ("S18 bystander cmdline carries the
 Assert-True ($bystanderCmd18 -notlike '*\target\surefire\*') ("S18 bystander cmdline has NO surefire segment (probe valid; got: [" + $bystanderCmd18 + "])")
 try { $bystanderAlive18 = $null -ne (Get-Process -Id $bystander18.Id -ErrorAction SilentlyContinue) } catch { }
 Assert-True $bystanderAlive18 ("S18 bystander (repo-root-only cmdline, no surefire segment) SURVIVES (pid " + $bystander18.Id + " alive=" + $bystanderAlive18 + ")")
+# 卡2b N1 反探针：运行前已存在的"并行 surefire 形态"进程必须幸存（旧运行器把它当脱缰进程清掉）。
+# 有效性锚：CIM 实读其命令行确实同时携带 RepoRoot 段与 \target\surefire\ 段——否则"幸存"恒真。
+$parallelCmd18 = ""
+try { $parallelCmd18 = (Get-CimInstance Win32_Process -Filter ("ProcessId = " + $parallel18.Id) -ErrorAction SilentlyContinue).CommandLine } catch { }
+Assert-True ($parallelCmd18 -like "*$fix*") ("S18/N1 pre-existing parallel bystander cmdline carries the repo-root segment (probe valid; got: [" + $parallelCmd18 + "])")
+Assert-True ($parallelCmd18 -like '*\target\surefire\*') ("S18/N1 pre-existing parallel bystander cmdline carries the surefire segment (probe valid; got: [" + $parallelCmd18 + "])")
+$parallelAlive18 = $null -ne (Get-Process -Id $parallel18.Id -ErrorAction SilentlyContinue)
+Assert-True $parallelAlive18 ("S18/N1 PRE-EXISTING surefire-form parallel build SURVIVES the timeout sweep (pid " + $parallel18.Id + " alive=" + $parallelAlive18 + ")")
 # 兜底：红相期旧实现漏网时由 selftest 收杀，绝不留孤儿进程（同 S14 先例）
 if ($booterAlive18) { try { Stop-Process -Id $booterPid18 -Force -ErrorAction SilentlyContinue } catch { } }
 try { Stop-Process -Id $bystander18.Id -Force -ErrorAction SilentlyContinue } catch { }
+try { Stop-Process -Id $parallel18.Id -Force -ErrorAction SilentlyContinue } catch { }
 foreach ($f in @("booter.pid", "booter-out.txt", "booter-err.txt")) {
     $p = Join-Path $fix $f
     if (Test-Path $p) { Remove-Item $p -Force -ErrorAction SilentlyContinue }
@@ -949,12 +1070,14 @@ Assert-True ($r14.ExitCode -eq 1) ("S14 exit code 1 (got " + $r14.ExitCode + ")"
 $rep14Text = Read-Report $rep14
 Assert-Contains $rep14Text "| compile | FAIL |" "S14 compile FAIL on timeout"
 Assert-Contains $rep14Text "timed out after 2s" "S14 the FAIL names the timeout budget"
+Assert-Contains $rep14Text "timeout sentinel -1 is NOT a process exit code" "S14 the timeout row explicitly separates the -1 sentinel from a process exit code"
 Assert-Contains $rep14Text "full output:" "S14 the timeout FAIL row carries the full-output path"
 Assert-Contains $rep14Text "| lint | PASS |" "S14 the other Maven stages still ran (gate was NOT aborted)"
 Assert-True (Test-Path $outLog14) "S14 out.log EXISTS for the timeout state"
 $out14 = ""
 if (Test-Path $outLog14) { $out14 = [System.IO.File]::ReadAllText($outLog14, [System.Text.Encoding]::UTF8) }
 Assert-Contains $out14 "(TIMED OUT)" "S14 out.log marks the TIMED OUT state"
+Assert-Contains $out14 "[sentinel: -1 is not a process exit code]" "S14 out.log separates the -1 sentinel from a real process exit code"
 Assert-Contains $out14 $stubMarker14 "S14 out.log carries the partial output captured before the timeout"
 $childPid14 = 0
 if (Test-Path $childPidFile14) {
@@ -984,7 +1107,8 @@ $s15Probes = @(
     @{ Name = "red";     Code = 1;    Verdict = "FAIL" },
     @{ Name = "error";   Code = 2;    Verdict = "ERROR" },
     @{ Name = "hang";    Code = 1;    Verdict = "FAIL" },
-    @{ Name = "missing"; Code = $null; Verdict = "ERROR" }
+    @{ Name = "missing"; Code = $null; Verdict = "ERROR" },
+    @{ Name = "illegal"; Code = 2;    Verdict = "ERROR" }
 )
 foreach ($probe in $s15Probes) {
     $fix15 = New-Fixture ("s15-" + $probe.Name)
@@ -1009,6 +1133,10 @@ foreach ($probe in $s15Probes) {
     } elseif ($probe.Name -eq "missing") {
         # 缺文件探针：tool 指向不存在的脚本（fixture 内连 stub 都不放）
         $cfg15Obj.stages.gateSelfTest.tool = "scripts/gates/zz-no-such-selftest.ps1"
+    } elseif ($probe.Name -eq "illegal") {
+        # 卡2b B1：tool 含非法字符 '&'——白名单必须早于 Join-Path/Test-Path/进程启动；
+        # 不放置 stub（若校验顺序被回退，旧行为会是 "selftest script not found" 而非 "NOT executed"）。
+        $cfg15Obj.stages.gateSelfTest.tool = "scripts/gates/selftest.ps1 & whoami"
     } else {
         $stubMarker15 = ("DB07-S15-STUB-" + $probe.Name.ToUpper())
         $stubBody15 = "Write-Output '" + $stubMarker15 + "'" + [Environment]::NewLine
@@ -1042,6 +1170,13 @@ foreach ($probe in $s15Probes) {
         Assert-True ($r15.ExitCode -eq 2) ("S15 missing probe exit code 2 (got " + $r15.ExitCode + ")")
         Assert-Contains $rep15Text "| gateSelfTest | ERROR |" "S15 missing probe: gateSelfTest reports ERROR"
         Assert-Contains $rep15Text "selftest script not found" "S15 missing probe: the ERROR names the missing script"
+    } elseif ($probe.Name -eq "illegal") {
+        # 卡2b B1：非法 tool 字符 = 拒绝执行（ERROR/2），且行文必须证明"命令没有启动"
+        Assert-True ($r15.ExitCode -eq 2) ("S15 illegal probe exit code 2 (got " + $r15.ExitCode + ")")
+        Assert-Contains $rep15Text "| gateSelfTest | ERROR |" "S15 illegal probe: gateSelfTest reports ERROR"
+        Assert-Contains $rep15Text "Illegal characters" "S15 illegal probe: the ERROR names the illegal-character cause"
+        Assert-Contains $rep15Text "stage SKIPPED, command NOT executed" "S15 illegal probe: the R5 promise - no command is launched from an illegal tool value"
+        Assert-NotContains $rep15Text "selftest script not found" "S15 illegal probe: the whitelist runs BEFORE path resolution (old order regression would print 'not found')"
     } else {
         Assert-True ($r15.ExitCode -eq $probe.Code) ("S15 " + $probe.Name + " probe exit code " + $probe.Code + " (got " + $r15.ExitCode + ")")
         Assert-Contains $rep15Text ("| gateSelfTest | " + $probe.Verdict + " |") ("S15 " + $probe.Name + " probe: gateSelfTest reports " + $probe.Verdict)
@@ -1081,6 +1216,37 @@ foreach ($probe in $s15Probes) {
         }
     }
 }
+
+# ---------- S19: config visibility (卡2b B4 + B10) ----------
+# B10：缺段必须 fail-closed（config.stages.<name> ERROR + exit 2 + 报告照写），不得静默跳过；
+# B4：enabled=false 且无 PENDING* 状态必须有 <name>.disabled SKIP 可见行（GREEN 语义不变）。
+# 旧运行器两者都静默（红相归档见 build-output/card2b-red-b10-*.log / -b4-*.log）。
+Write-Output ""
+Write-Output "S19 [config visibility] expect: S19-a missing stage -> ERROR/exit 2; S19-b disabled-without-PENDING -> visible SKIP/GREEN"
+$fix19a = New-Fixture "s19a"
+Initialize-FixtureGit $fix19a
+$cfg19a = New-FixtureConfig $fix19a "cfg-s19a.json" $false "" $null
+$cfg19aObj = ConvertFrom-Json -InputObject ([System.IO.File]::ReadAllText($cfg19a, [System.Text.Encoding]::UTF8))
+$cfg19aObj.stages.PSObject.Properties.Remove("structureCheck")
+[System.IO.File]::WriteAllText($cfg19a, ($cfg19aObj | ConvertTo-Json -Depth 10), $utf8NoBom)
+$rep19a = Join-Path $script:workDir "s19a-report.md"
+$r19a = Invoke-Runner $fix19a $cfg19a $rep19a "selftest-s19a-missing-stage"
+Assert-True ($r19a.ExitCode -eq 2) ("S19-a exit code 2 (got " + $r19a.ExitCode + ")")
+Assert-True (Test-Path $rep19a) "S19-a the report is still written for a broken config (evidence is never lost)"
+$rep19aText = Read-Report $rep19a
+Assert-Contains $rep19aText "config.stages.structureCheck | ERROR |" "S19-a a missing stage section is reported as config.stages.<name> ERROR"
+Assert-Contains $rep19aText "missing stage section" "S19-a the ERROR explains that the stage would have been silently skipped"
+Assert-Contains $rep19aText "-> ERROR" "S19-a verdict ERROR (environment/config, exit 2)"
+$fix19b = New-Fixture "s19b"
+Initialize-FixtureGit $fix19b
+$cfg19b = New-FixtureConfig $fix19b "cfg-s19b.json" $false "" $null
+$rep19b = Join-Path $script:workDir "s19b-report.md"
+$r19b = Invoke-Runner $fix19b $cfg19b $rep19b "selftest-s19b-disabled-visible"
+Assert-True ($r19b.ExitCode -eq 0) ("S19-b exit code 0 (got " + $r19b.ExitCode + ")")
+$rep19bText = Read-Report $rep19b
+Assert-Contains $rep19bText "frontendTest.disabled | SKIP |" "S19-b a disabled stage without PENDING status is visible as <name>.disabled SKIP"
+Assert-Contains $rep19bText "visible by policy" "S19-b the SKIP row explains the policy (no silent disables)"
+Assert-Contains $rep19bText "-> GREEN" "S19-b the visibility row does not change the GREEN semantics"
 
 # ---------- S15 收尾护栏（④ F-8）：把递归守卫从"约定"升级为"机器强制" ----------
 # New-FixtureConfig 集中强制关闭 + 补回 status；若未来新场景绕过该 helper 直接复制真实 config
