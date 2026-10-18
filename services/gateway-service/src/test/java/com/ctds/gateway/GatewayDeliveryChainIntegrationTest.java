@@ -172,6 +172,8 @@ class GatewayDeliveryChainIntegrationTest {
         assertThat(UPSTREAM.subjectHeaders()).as("伪造主体头必须被剥离，下游只见网关注入值")
                 .containsExactly(REQUESTER);
         assertThat(UPSTREAM.rolesHeaders()).containsExactly("provider,reviewer");
+        assertThat(awaitAllEvents(1)).as("放行即计量 1:1（DB-46⑩ 不变式：产事件测试必先等待其事件到达）")
+                .hasSize(1);
     }
 
     @Test
@@ -184,6 +186,8 @@ class GatewayDeliveryChainIntegrationTest {
 
         assertThat(UPSTREAM.rolesHeaders()).as("非字符串角色项跳过，不注入角色头")
                 .containsExactly("provider");
+        assertThat(awaitAllEvents(1)).as("放行即计量 1:1（DB-46⑩ 不变式：产事件测试必先等待其事件到达）")
+                .hasSize(1);
     }
 
     // ==== T5 策略执行点（双向）====

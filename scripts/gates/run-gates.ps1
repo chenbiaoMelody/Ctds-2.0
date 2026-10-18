@@ -159,7 +159,10 @@ function Write-StageOutLog([string]$stage, [string]$command, [string]$body, [int
 # ---------- DB-43（Q1-A / 跟踪-23 剩余）：阶段超时后清理整个进程树 ----------
 # 背景：2026-10-09 实测"unitTest 超时被杀后残留 cmd 孤儿进程"污染 coverage/frontendTest。
 # taskkill /T 按父子快照清理（Windows 定位脚本，系统内置零新依赖）；"已脱离父链的孙进程"
-# 可能漏网（罕见，诚实边界见 README 变更条目）。进程已退出时不再补 Kill。
+# 原记"可能漏网（罕见）"——2026-10-16 已实证发生（DB-45：coverage 段超时后 surefire fork
+# 孙进程幸存，继续写 target 把 frontendTest 挤到 39 例超时 = 级联假红）；surefire/jacoco
+# 形态兜底清扫见下方 Stop-DetachedStageProcesses（DB-45/卡2a），非 surefire 形态与误伤面为
+# 诚实边界（README 已知特性段同步登记）。进程已退出时不再补 Kill。
 function Stop-ProcessTree([System.Diagnostics.Process]$proc) {
     try { $null = & taskkill /PID $proc.Id /T /F 2>&1 } catch { }
     # DB-45（卡2a Q3-A）：taskkill /T 之后的脱缰孙进程兜底清扫（单挂接点——本函数三个调用点

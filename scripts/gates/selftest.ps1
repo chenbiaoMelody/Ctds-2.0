@@ -458,6 +458,8 @@ try {
 # （窄匹配不误伤）。红相期幸存进程由 selftest 收杀防泄漏（同 S14 先例）。
 # 孙进程 PID 由孙进程自写（Boot.java 写 ProcessHandle pid）；pid 文件缺失即探针无效，断言显式
 # 失败而非恒真放行。javac 用真 JAVA_HOME 编译（失败同样显式红灯——探针无效不放行）。
+# bystander 命令行由 CIM 实读校验（须含 RepoRoot 路径段且不含 \target\surefire\ 段——防"幸存"
+# 断言恒真：若某种环境不记录 node 命令行，该进程本就不在特征面内，须显式失败而非放行）。
 Write-Output ""
 Write-Output "S18 [detached stage-process sweep] expect: timeout FAIL + detached surefire-form grandchild CLEANED + bystander SURVIVES"
 $fix = New-Fixture "s18"
@@ -559,6 +561,13 @@ $booterAlive18 = $false
 if ($booterPid18 -gt 0) { $booterAlive18 = $null -ne (Get-Process -Id $booterPid18 -ErrorAction SilentlyContinue) }
 Assert-True (-not $booterAlive18) ("S18 the detached surefire-form grandchild was swept (pid " + $booterPid18 + " alive=" + $booterAlive18 + ")")
 $bystanderAlive18 = $false
+# 反探针有效性锚：bystander 命令行必须确实携带特征①（fixture RepoRoot 路径段）且不携带特征②
+# （\target\surefire\）——否则"幸存"断言恒真（该进程本就不在特征面内、未被杀也不为过），
+# 必须显式失败（与孙进程 PID 自报锚同纪律：探针无效即红灯，红相纪律不放行）
+$bystanderCmd18 = ""
+try { $bystanderCmd18 = (Get-CimInstance Win32_Process -Filter ("ProcessId = " + $bystander18.Id) -ErrorAction SilentlyContinue).CommandLine } catch { }
+Assert-True ($bystanderCmd18 -like "*$fix*") ("S18 bystander cmdline carries the repo-root segment (probe valid; got: [" + $bystanderCmd18 + "])")
+Assert-True ($bystanderCmd18 -notlike '*\target\surefire\*') ("S18 bystander cmdline has NO surefire segment (probe valid; got: [" + $bystanderCmd18 + "])")
 try { $bystanderAlive18 = $null -ne (Get-Process -Id $bystander18.Id -ErrorAction SilentlyContinue) } catch { }
 Assert-True $bystanderAlive18 ("S18 bystander (repo-root-only cmdline, no surefire segment) SURVIVES (pid " + $bystander18.Id + " alive=" + $bystanderAlive18 + ")")
 # 兜底：红相期旧实现漏网时由 selftest 收杀，绝不留孤儿进程（同 S14 先例）

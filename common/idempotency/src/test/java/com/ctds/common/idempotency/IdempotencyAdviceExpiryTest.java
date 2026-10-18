@@ -19,8 +19,8 @@ import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
  * 验证"窗口过期重执行"——该语义必须依赖短窗口，故独立成类、自含夹具。
  *
  * <p>稳健性口径：测试体沿用 over-wait sleep（TTL + 200ms，只会多等不会少等）——负载下更慢
- * 也只使过期更确定，无反向脆性；窗口长度本身由 {@link IdempotencyProperties} 默认值派生
- * （不复制字面量，属性默认值变化时本类随动、语义仍成立）。
+ * 也只使过期更确定，无反向脆性；短窗口 1s/1s 为本类<strong>显式覆写的字面量</strong>（"过期
+ * 重执行"语义的前提即短窗口，与主类形成对照：主类不复制字面量、持生产默认，本类显式覆写）。
  */
 @SpringJUnitConfig(IdempotencyAdviceExpiryTest.ExpiryTestConfig.class)
 @EnableAspectJAutoProxy
@@ -70,10 +70,6 @@ class IdempotencyAdviceExpiryTest {
         @Idempotent(key = "#orderNo")
         public String submit(final String orderNo) {
             return "result-" + submitCalls.incrementAndGet() + "-" + orderNo;
-        }
-
-        public int submitCallCount() {
-            return submitCalls.get();
         }
     }
 
