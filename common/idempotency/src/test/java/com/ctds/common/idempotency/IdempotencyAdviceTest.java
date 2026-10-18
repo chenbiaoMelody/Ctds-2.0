@@ -13,7 +13,6 @@ import static org.mockito.Mockito.when;
 import com.ctds.common.errorcode.BizException;
 import com.ctds.common.errorcode.ErrorCodes;
 import java.lang.reflect.Method;
-import java.time.Duration;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -32,7 +31,13 @@ import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
 
 /**
  * 幂等切面契约测试（hifi B2-B5）：Spring AOP 代理 + InMemory 实现，断言
- * 首次执行/结果复用/互不影响/异常重试/处理中错误/过期重执行/空键拒绝。
+ * 首次执行/结果复用/互不影响/异常重试/处理中错误/空键拒绝。
+ *
+ * <p>窗口口径（DB-46 修复，卡2a Q2-A）：本类<strong>持生产默认窗口</strong>
+ * （{@link IdempotencyProperties} 默认 60s/600s）——"窗口内去重"语义断言不依赖窗口长度，
+ * 同一上下文内的二次调用必在默认窗口内命中缓存，脆性面（机器停顿导致假设失效）消除。
+ * "结果过期后同键重新执行"语义由 {@link IdempotencyAdviceExpiryTest} 以短窗口（1s）
+ * 独立承载，与本类形成对照。
  */
 @SpringJUnitConfig(IdempotencyAdviceTest.AdviceTestConfig.class)
 @EnableAspectJAutoProxy
@@ -46,9 +51,6 @@ class IdempotencyAdviceTest {
 
     @Autowired
     private IdempotencyProperties properties;
-
-    private static final Duration PROCESSING_TTL = Duration.ofSeconds(1);
-    private static final long RESULT_EXPIRE_SECONDS = 1;
 
     @Configuration
     static class AdviceTestConfig {
@@ -67,8 +69,6 @@ class IdempotencyAdviceTest {
         IdempotencyProperties idempotencyProperties() {
             final IdempotencyProperties props = new IdempotencyProperties();
             props.setMode("memory");
-            props.setProcessingTtlSeconds(PROCESSING_TTL);
-            props.setDefaultExpireSeconds(RESULT_EXPIRE_SECONDS);
             props.setAuditEnabled(false);
             return props;
         }
@@ -220,13 +220,6 @@ class IdempotencyAdviceTest {
         } finally {
             pool.shutdownNow();
         }
-    }
-
-    @Test
-    void 结果过期后同键重新执行() throws InterruptedException {
-        assertEquals("result-1-A", service.submit("A"));
-        Thread.sleep(RESULT_EXPIRE_SECONDS * 1000L + 200);
-        assertEquals("result-2-A", service.submit("A"));
     }
 
     @Test

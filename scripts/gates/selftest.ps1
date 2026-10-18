@@ -76,6 +76,21 @@
 #                                    Docker = FAIL row + exit 1/RED with NO deferral text (local
 #                                    verdict semantics unchanged); CI + Linux Docker = FAIL row +
 #                                    exit 1 (no deferral when a real verdict is measurable)
+#   S18 detached stage-process sweep (DB-45, 卡2a Q3-A, ADR-018 V1.9) -> stub mvn starts a middle
+#                                    JVM (Middle.java, maven-JVM stand-in) which spawns a DETACHED
+#                                    grandchild JVM (Boot.java, surefire-booter stand-in: its cmdline
+#                                    carries <RepoRoot>\target\surefire\classes = the double feature)
+#                                    and exits; compile timeoutSeconds=2 -> the runner times out and
+#                                    must sweep the detached grandchild (taskkill /T misses it: the
+#                                    middle layer already exited, so the grandchild is outside the
+#                                    parent-child snapshot - the 2026-10-16 cascade false-red form).
+#                                    Reverse probe: a bystander node whose cmdline carries RepoRoot
+#                                    but NOT the surefire segment must SURVIVE (narrow match, no
+#                                    collateral). The selftest kills any surviving stub itself so a
+#                                    run never leaks an orphan process (S14 precedent). Red-phase
+#                                    evidence (old runner: grandchild survives AND hangs the runner
+#                                    on the inherited stdout pipe) is taken by a one-off script and
+#                                    archived under build-output/ - see the S18 block comment.
 # How: every scenario builds a hermetic fixture repo under %TEMP% (git init + git add, cheap stages
 # only), generates its config FROM THE REAL gates-config.json (so the real exclude list is what gets
 # exercised), runs scripts/gates/run-gates.ps1 against it and asserts on the report file / stdout /
@@ -425,6 +440,137 @@ try {
     if ($null -eq $s17Saved.GH) { Remove-Item Env:GITHUB_ACTIONS -ErrorAction SilentlyContinue } else { $env:GITHUB_ACTIONS = $s17Saved.GH }
     if ($null -eq $s17Saved.CI) { Remove-Item Env:CI -ErrorAction SilentlyContinue } else { $env:CI = $s17Saved.CI }
     Remove-Item (Join-Path $env:TEMP "ctds-gate-coverage-out.log") -Force -ErrorAction SilentlyContinue
+}
+
+# ---------- S18: detached stage-process sweep (DB-45, 卡2a Q3-A 双特征窄匹配兜底清扫) ----------
+# 背景（DB-45，2026-10-16 实证）：coverage 段超时后，已脱离父链的 surefire fork 孙进程幸存，
+# 继续写 target 产物把后续 frontendTest 挤到 39 例超时 = 级联假红。taskkill /T 只按父子快照
+# 清理——中间层（maven JVM）退出后，孙进程（surefire booter）不在 cmd 进程树内即漏网。
+# 本场景忠实复刻该形态：stub mvn 起中间层 Middle.java（maven JVM 模拟，JVM 进程），Middle 用
+# ProcessBuilder 显式重定向 std 起孙进程 Boot.java（surefire booter 模拟，同为 JVM；boot class
+# 路径天然含 <RepoRoot>\target\surefire\classes = 双特征②，特征① = 命令行含本次运行 RepoRoot）
+# 后立即退出；stub mvn 随后挂起至 compile 超时。旧实现：孙进程幸存（红相，且孙进程经 cmd 链
+# 继承运行器 stdout 管道写端——Windows 句柄继承硬约束（cmd/libuv/.NET/Java 的 CreateProcess 均
+# bInheritHandles=TRUE），node spawn / PowerShell Start-Process / 原生 .NET / Java ProcessBuilder
+# 四种构造均已实测无法阻断——运行器 .Result 挂死，红相取证见一次性脚本与归档日志）；新实现
+# （Stop-DetachedStageProcesses 双特征窄匹配）：孙进程在 WaitForExit 续段等待前被清（绿相）。
+# 反探针（bystander）：命令行含 RepoRoot 但不含 \target\surefire\ —— 双特征不命中，必须幸存
+# （窄匹配不误伤）。红相期幸存进程由 selftest 收杀防泄漏（同 S14 先例）。
+# 孙进程 PID 由孙进程自写（Boot.java 写 ProcessHandle pid）；pid 文件缺失即探针无效，断言显式
+# 失败而非恒真放行。javac 用真 JAVA_HOME 编译（失败同样显式红灯——探针无效不放行）。
+Write-Output ""
+Write-Output "S18 [detached stage-process sweep] expect: timeout FAIL + detached surefire-form grandchild CLEANED + bystander SURVIVES"
+$fix = New-Fixture "s18"
+Initialize-FixtureGit $fix
+$stubDir18 = Join-Path $fix "stub-bin"
+New-Item -ItemType Directory -Path $stubDir18 -Force | Out-Null
+# surefire fork 形态：孙进程 boot class 路径段 = <RepoRoot>\target\surefire\classes（双特征之②，
+# 特征之① = 命令行含本次运行 RepoRoot——class 目录位于 fixture 内，绝对路径天然满足）
+$surefireDir18 = Join-Path $fix "target\surefire"
+$sfClsDir18 = Join-Path $surefireDir18 "classes"
+New-Item -ItemType Directory -Path $surefireDir18 -Force | Out-Null
+New-Item -ItemType Directory -Path $sfClsDir18 -Force | Out-Null
+$booterPidFile18 = Join-Path $fix "booter.pid"
+$booterOutFile18 = Join-Path $fix "booter-out.txt"
+$booterErrFile18 = Join-Path $fix "booter-err.txt"
+$bystanderJs18 = Join-Path $fix "bystander.js"
+$stubMarker18 = "DB45-S18-STUB-MARKER"
+# Middle（maven JVM 模拟）：ProcessBuilder 显式重定向 std 到文件起孙进程（Boot）后立即退出
+# ——中间层退出后孙进程脱离 cmd 进程树，taskkill /T 漏网（DB-45 实证形态）。单引号 here-string：
+# Java 源码含双引号，绝不能被 selftest 侧变量展开污染。
+[System.IO.File]::WriteAllText((Join-Path $surefireDir18 "Middle.java"), @'
+import java.io.File;
+public class Middle {
+  public static void main(String[] args) throws Exception {
+    ProcessBuilder pb = new ProcessBuilder("java", "-cp", System.getProperty("java.class.path"), "Boot", args[0]);
+    pb.redirectOutput(new File(args[1]));
+    pb.redirectError(new File(args[2]));
+    pb.start();
+    System.exit(0);
+  }
+}
+'@, $utf8NoBom)
+# Boot（surefire booter 模拟）：自报 PID（ProcessHandle，Java 9+）后永久挂起
+[System.IO.File]::WriteAllText((Join-Path $surefireDir18 "Boot.java"), @'
+import java.nio.file.*;
+public class Boot {
+  public static void main(String[] args) throws Exception {
+    Files.write(Paths.get(args[0]), String.valueOf(ProcessHandle.current().pid()).getBytes());
+    Thread.currentThread().join();
+  }
+}
+'@, $utf8NoBom)
+# 编译探针类（真 JAVA_HOME 的 javac；失败 = 探针无效，显式红灯而非恒真放行）。
+# 注意：本场景先于 S14 段的 $realJavaHome 定义执行（S18 位于 S17 之后），故此处按同口径内联读取。
+$realJavaHome18 = (ConvertFrom-Json -InputObject ([System.IO.File]::ReadAllText($realConfig, [System.Text.Encoding]::UTF8))).toolchain.javaHome
+$javac18 = Join-Path $realJavaHome18 "bin\javac.exe"
+$javacOk18 = $false
+try {
+    & $javac18 -encoding UTF-8 -d $sfClsDir18 (Join-Path $surefireDir18 "Middle.java") (Join-Path $surefireDir18 "Boot.java") 2>&1 | Out-Null
+    $javacOk18 = ($LASTEXITCODE -eq 0)
+} catch { $javacOk18 = $false }
+Assert-True $javacOk18 "S18 javac compiled Middle/Boot into <RepoRoot>\target\surefire\classes (probe valid)"
+# bystander（反探针）：命令行含 RepoRoot 但不含 \target\surefire\ —— 双特征不命中，必须幸存
+[System.IO.File]::WriteAllText($bystanderJs18, "setInterval(function () {}, 1000);" + [Environment]::NewLine, $utf8NoBom)
+[System.IO.File]::WriteAllText((Join-Path $stubDir18 "mvn.cmd"),
+    ("@echo off" + [Environment]::NewLine +
+     "echo " + $stubMarker18 + [Environment]::NewLine +
+     "echo %* | findstr /c:`"compile`" >nul" + [Environment]::NewLine +
+     "if errorlevel 1 exit /b 0" + [Environment]::NewLine +
+     "start /b java -cp `"" + $sfClsDir18 + "`" Middle `"" + $booterPidFile18 + "`" `"" + $booterOutFile18 + "`" `"" + $booterErrFile18 + "`" >nul 2>&1" + [Environment]::NewLine +
+     "ping -n 61 127.0.0.1 >nul 2>&1" + [Environment]::NewLine +
+     "exit /b 0" + [Environment]::NewLine),
+    $utf8NoBom)
+$cfg18 = New-FixtureConfig $fix "cfg-s18.json" $true $realJavaHome $null
+$cfgObj18 = ConvertFrom-Json -InputObject ([System.IO.File]::ReadAllText($cfg18, [System.Text.Encoding]::UTF8))
+# compile 段在真配置中无 timeoutSeconds 属性——先补属性再设值（同 S14 模式）
+Add-Member -InputObject $cfgObj18.stages.compile -MemberType NoteProperty -Name timeoutSeconds -Value 2 -Force
+[System.IO.File]::WriteAllText($cfg18, ($cfgObj18 | ConvertTo-Json -Depth 10), $utf8NoBom)
+$rep18 = Join-Path $script:workDir "s18-report.md"
+$outLog18 = Join-Path $env:TEMP "ctds-gate-compile-out.log"
+# bystander 在调用运行器前启动（独立进程；双特征保证其不被清扫，祖先链保护为双保险）
+$bystander18 = Start-Process -FilePath "node" -ArgumentList $bystanderJs18 -WindowStyle Hidden -PassThru
+$savedPath18 = $env:PATH
+try {
+    $env:PATH = $stubDir18 + ";" + $env:PATH
+    $r18 = Invoke-Runner $fix $cfg18 $rep18 "selftest-s18-detached-sweep" -detached
+} finally { $env:PATH = $savedPath18 }
+Assert-True ($r18.ExitCode -eq 1) ("S18 exit code 1 (got " + $r18.ExitCode + ")")
+$rep18Text = Read-Report $rep18
+Assert-Contains $rep18Text "| compile | FAIL |" "S18 compile FAIL on timeout (the sweep hooks the timeout branch)"
+Assert-Contains $rep18Text "timed out after 2s" "S18 the FAIL names the timeout budget"
+Assert-Contains $rep18Text "full output:" "S18 the timeout FAIL row carries the full-output path"
+Assert-Contains $rep18Text "| lint | PASS |" "S18 the other Maven stages still ran (gate was NOT aborted)"
+Assert-True (Test-Path $outLog18) "S18 out.log EXISTS for the timeout state"
+$out18 = ""
+if (Test-Path $outLog18) { $out18 = [System.IO.File]::ReadAllText($outLog18, [System.Text.Encoding]::UTF8) }
+Assert-Contains $out18 "(TIMED OUT)" "S18 out.log marks the TIMED OUT state"
+Assert-Contains $out18 $stubMarker18 "S18 out.log carries the partial output captured before the timeout"
+$booterPid18 = 0
+# 探针有效性锚：PID 文件由孙进程自写（启动后第一件事）——缺失 = 孙进程从未成功启动，
+# 此时"已死"断言恒真（假绿），必须显式失败而不是放行（红相纪律：探针无效即红灯）
+Assert-True (Test-Path $booterPidFile18) "S18 the grandchild wrote its own PID file (probe valid: the detached process really started)"
+if (Test-Path $booterPidFile18) {
+    $booterPidText18 = ([System.IO.File]::ReadAllText($booterPidFile18, [System.Text.Encoding]::UTF8)).Trim()
+    $null = [int]::TryParse($booterPidText18, [ref]$booterPid18)
+}
+Assert-True ($booterPid18 -gt 0) ("S18 the grandchild PID is a positive integer (got " + $booterPid18 + ")")
+$booterAlive18 = $false
+if ($booterPid18 -gt 0) { $booterAlive18 = $null -ne (Get-Process -Id $booterPid18 -ErrorAction SilentlyContinue) }
+Assert-True (-not $booterAlive18) ("S18 the detached surefire-form grandchild was swept (pid " + $booterPid18 + " alive=" + $booterAlive18 + ")")
+$bystanderAlive18 = $false
+try { $bystanderAlive18 = $null -ne (Get-Process -Id $bystander18.Id -ErrorAction SilentlyContinue) } catch { }
+Assert-True $bystanderAlive18 ("S18 bystander (repo-root-only cmdline, no surefire segment) SURVIVES (pid " + $bystander18.Id + " alive=" + $bystanderAlive18 + ")")
+# 兜底：红相期旧实现漏网时由 selftest 收杀，绝不留孤儿进程（同 S14 先例）
+if ($booterAlive18) { try { Stop-Process -Id $booterPid18 -Force -ErrorAction SilentlyContinue } catch { } }
+try { Stop-Process -Id $bystander18.Id -Force -ErrorAction SilentlyContinue } catch { }
+foreach ($f in @("booter.pid", "booter-out.txt", "booter-err.txt")) {
+    $p = Join-Path $fix $f
+    if (Test-Path $p) { Remove-Item $p -Force -ErrorAction SilentlyContinue }
+}
+foreach ($n in @("compile", "lint", "unitTest")) {
+    $p = Join-Path $env:TEMP ("ctds-gate-" + $n + "-out.log")
+    if (Test-Path $p) { Remove-Item $p -Force -ErrorAction SilentlyContinue }
 }
 
 # ---------- S7: a stage throwing -> outer fallback: runner ERROR, report still produced, exit 2 ----------
