@@ -138,7 +138,9 @@ class ContractTemplateLifecycleIntegrationTest {
 
     @Test
     void t1_sameTypeAndNameRejected() throws Exception {
-        final String name = unique("重名模板");
+        // 名称须含可大小写变化的拉丁字母：unique() 的 UUID 前缀有小概率全为数字，此时
+        // name.toUpperCase() 与原值相同 → 幂等键相同 → 第二次请求被幂等重放 201（假红）。
+        final String name = unique("重名Template");
         mockMvc.perform(post(BASE).header("X-Ctds-Subject", "S-admin").header("X-Ctds-Roles", ADMIN)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(createBody(name, "PUBLIC_DATA_AUTHORIZATION", publicAuthFramework())))

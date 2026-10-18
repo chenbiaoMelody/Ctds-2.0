@@ -1,6 +1,7 @@
 package com.ctds.gateway;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.ctds.common.auth.AuthAdvice;
 import com.ctds.common.logging.AuditEvent;
@@ -16,6 +17,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -383,6 +385,27 @@ class GatewayDeliveryChainIntegrationTest {
     }
 
     // ==== 辅助 ====
+
+    /**
+     * 负向锚（DB-46+DB-45 卡2b N2）：无事件时 {@link #awaitAllEvents} 必须把"等不到"暴露给调用方
+     * 断言，而不是退化成"立刻返回快照"仍让测试假绿。两条断言钉死语义：① 返回的空快照使
+     * {@code hasSize(1)} 抛 {@link AssertionError}；② 该等待真的耗掉有界预算（≥4.5s；退化实现
+     * 会在毫秒级返回 → 耗时断言失败）。本用例不产生任何事件，recorder 在结束时必须仍为空。
+     */
+    @Test
+    void awaitAllEventsFailsTheCallerWhenNothingArrivesAndReallyWaits() {
+        final long startedAt = System.nanoTime();
+
+        assertThatThrownBy(() -> assertThat(awaitAllEvents(1)).hasSize(1))
+                .as("无事件时 awaitAllEvents 返回空快照，调用方断言必须失败（不得静默放行）")
+                .isInstanceOf(AssertionError.class);
+
+        final long elapsedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
+        assertThat(elapsedMillis)
+                .as("有界等待预算确实生效（5s 预算、20ms 步进；允许 0.5s 调度误差；即时快照退化会在此失败）")
+                .isBetween(4500L, 15000L);
+        assertThat(recorder().events()).as("无事件场景下 recorder 保持为空").isEmpty();
+    }
 
     /** 交付调用（带合法令牌与凭据），断言期望状态并回读响应体。 */
     private JsonNode deliveryBody(final HttpStatus expected, final String subject) {

@@ -1,4 +1,5 @@
-﻿# C-TDS quality gate runner (WBS 2.2.2/2.2.4).
+﻿# C-TDS quality gate runner (DB-07 CI 门禁自动化 + ADR-018；历史条目的 WBS 编号保留原文)。
+# 阶段注释中的 WBS-2.2.7 / WBS-2.2.2 等编号为历史锚点（保留原文）；当前维护锚点 = DB-07 + ADR-018。
 # Design: CI-platform-agnostic (D-3 "switch interface reserved") - any future CI
 # system only needs to execute this script and check the exit code.
 # Usage:
@@ -9,7 +10,7 @@
 #                              and change verification - a normal run must NOT point elsewhere. The
 #                              report records the resolved path and its SHA256 so any run is auditable.)
 #          -Scenario <label>  (default: "default"; the selftest labels its runs, shown in the report)
-# Exit codes (WBS-2.2.7): 0 = GREEN (no FAIL; PENDING/SKIP stages allowed),
+# Exit codes (DB-07 + ADR-018；历史条目 WBS-2.2.7 编号保留原文): 0 = GREEN (no FAIL; PENDING/SKIP stages allowed),
 #                          1 = RED (any FAIL -> code not acceptable; RED takes priority over ERROR),
 #                          2 = config/environment error (bad config, unwritable report, or the runner
 #                              itself crashed - NOT a code verdict).
@@ -61,6 +62,20 @@
 # PASS/FAIL 行格式零改动（不追加清扫计数——取证走 selftest S18 探针）。
 # 依据：任务卡 docs/tasks/DB-46-DB-45-门禁可信性-2026-10-17.md + 两级设计
 # docs/designs/DB-46-DB-45-{lofi,hifi}.md（V1.0 已确认）+ ADR-018 修订记录 V1.9。
+# DB-46+DB-45（2026-10-18，卡2b B/C 组承接清算，编排师一次确认 Q1~Q5+D1 全按建议；hifi V1.0
+# 编码契约 §5）record: ① B6 超时哨兵语义区分——Invoke-MetricProcess 返回 TimedOut/RawOutput，
+# 所有超时分支改判 TimedOut（不再以 ExitCode -eq -1 推断），超时报告行与 out.log 头注明
+# "timeout sentinel -1 is NOT a process exit code"（out.log 头保持 exitCode: -1 (TIMED OUT)）；
+# ② B2 mvn/npm 内联 ProcessStartInfo 收敛到 Invoke-MetricProcess（新增 -PlatformEncoding 保持 mvn
+# 平台编码、npm 保持 UTF-8；报告行/退出码/超时判定零变更）；③ B1 gateSelfTest.tool 字符白名单
+# （非法 → ERROR + "stage SKIPPED, command NOT executed"，不 Join-Path/不启动进程）；
+# ④ B4/B10 配置可见性——已知 19 阶段缺段/缺 enabled → config.stages.<name> ERROR（exit 2），
+# enabled=false 且无 PENDING* → <name>.disabled SKIP（不再静默），真实 config 预期零新增行；
+# ⑤ N1 误伤面增强排除——运行前快照已存在的 surefire 形态 PID + runStartedAt 启动时间窗
+# （CreationDate 早于开始 -2s 或为空不杀），残余 = 运行开始后才启动的并行构建仍可能被清扫。
+# 判定阈值 / 阶段范围 / 扫描面 / 报告五态与退出码语义 / PASS-FAIL 行格式零改动（B4 新增 SKIP
+# 可见行不改变 GREEN 语义；B10 仅对缺段配置 fail-closed）。依据：卡2b 任务卡 + hifi V1.0 +
+# ADR-018 V1.10。
 param(
     [string]$RepoRoot = "",
     [string]$ReportPath = "",
@@ -130,6 +145,62 @@ function Add-Result([string]$stage, [string]$verdict, [string]$detail) {
     $script:results.Add([pscustomobject]@{ Stage = $stage; Verdict = $verdict; Detail = $detail })
 }
 
+# ---------- DB-46+DB-45 卡2b（N1）：运行前 surefire 形态快照（误伤面增强排除） ----------
+# 背景（卡2a 评审③④ 登记）：Stop-DetachedStageProcesses 的双特征窄匹配会把"同仓、与本门禁无
+# 祖先关系的并行 surefire/jacoco fork"（如开发者同时手动 mvn test）在超时清扫时一并强杀。
+# 治疗 = 运行开始时快照已存在的双特征 PID + 记录 runStartedAt；清扫时三者任一命中即不杀：
+#   ① PID 在运行前快照内；② CreationDate 早于 runStartedAt - 2s（时钟容差）；③ CreationDate 为空
+#   （无法证明是本轮产生）。残余风险（诚实边界，README/ADR-018 登记）：本次运行开始后才启动的
+#   并行构建仍可能被清扫。best-effort：快照失败 = 空集（退回卡2a 行为，不引入新失败面）。
+$script:runStartedAt = Get-Date
+$script:preExistingSurefirePids = New-Object System.Collections.Generic.HashSet[string]
+try {
+    $preRootPrefix = $RepoRoot.TrimEnd('\', '/')
+    foreach ($pre in (Get-CimInstance Win32_Process -ErrorAction SilentlyContinue)) {
+        if ($pre.CommandLine -ne $null -and
+            $pre.CommandLine -like ('*' + $preRootPrefix + '\*') -and
+            $pre.CommandLine -like '*\target\surefire\*') {
+            $null = $script:preExistingSurefirePids.Add([string]$pre.ProcessId)
+        }
+    }
+} catch { }
+
+# ---------- DB-46+DB-45 卡2b（B4 + B10）：配置缺段/关闭态的可见性强制 ----------
+# 旧行为：缺段或 enabled=false 无 PENDING 状态时阶段循环静默 continue（报告无任何行）；
+# 新行为：缺段/缺 enabled → config.stages.<name> ERROR（退出码 2，fail-closed）；关闭但无 PENDING
+# → <name>.disabled SKIP（GREEN 语义不变，只是"关掉一个检查"必须可见）。真实 config 19 段齐全、
+# 5 个关闭段均有 PENDING* → 预期零新增行；fixture 会新增若干 .disabled SKIP 行（详 S19）。
+# 校验块自身包 try/catch：任何异常记 config.stages.guard ERROR，不得无报告崩溃。
+try {
+    $knownStageNames = @(
+        "gateSelfTest", "secretsScan", "structureCheck", "devLogNamingCheck", "adrFieldsCheck",
+        "compile", "lint", "unitTest", "frontendTypeCheck", "frontendLint", "frontendTest",
+        "frontendE2E", "coverage", "mutationTest", "sast", "dependencyScan", "duplication",
+        "complexity", "moduleDependency"
+    )
+    if ($null -eq $cfg.stages) {
+        Add-Result "config.stages" "ERROR" "gates-config.json has NO 'stages' section - every stage would be silently skipped; never silently skipped (add the section with explicit enabled flags)"
+    } else {
+        foreach ($known in $knownStageNames) {
+            $knownProp = $cfg.stages.PSObject.Properties[$known]
+            if ($null -eq $knownProp -or $null -eq $knownProp.Value) {
+                Add-Result ("config.stages." + $known) "ERROR" ("missing stage section 'stages." + $known + "' - the stage would be silently skipped; never silently skipped (restore the section, or register it with enabled=false + status PENDING-*)")
+                continue
+            }
+            $knownStage = $knownProp.Value
+            if ($null -eq $knownStage.PSObject.Properties['enabled']) {
+                Add-Result ("config.stages." + $known) "ERROR" ("stage section 'stages." + $known + "' has no 'enabled' flag - the stage state is ambiguous; never silently skipped (add enabled=true/false)")
+                continue
+            }
+            if ($knownStage.enabled -eq $false -and ($knownStage.status -notlike "PENDING*")) {
+                Add-Result ($known + ".disabled") "SKIP" ("enabled=false without a PENDING status - visible by policy; enable it or register status PENDING-* (silent disables are not allowed)")
+            }
+        }
+    }
+} catch {
+    Add-Result "config.stages.guard" "ERROR" ("configuration visibility guard failed: " + $_.Exception.Message)
+}
+
 # ---------- DB-43（2026-10-14，门禁变更流程留痕，config 零改动）：阶段原始输出落盘 ----------
 # ① mvn 三段（compile/lint/unitTest）成功/失败/超时三态都落盘（WBS-3.4.7"0 字节日志"教训：
 #    成功态也必须有机器可核证据）；③ npm / coverage / mutationTest / sast 段失败/超时落盘
@@ -147,7 +218,11 @@ function Write-StageOutLog([string]$stage, [string]$command, [string]$body, [int
         "# ctds-gate stage output",
         ("stage: " + $stage),
         ("command: " + $command),
-        ("exitCode: " + $exitCode + $exitSuffix),
+        ("exitCode: " + $exitCode + $exitSuffix)
+    )
+    # 卡2b B6：-1 在超时路径上是哨兵展示值，不是进程退出码——日志头显式分离（报告行同注记）。
+    if ($timedOut) { $headLines += "[sentinel: -1 is not a process exit code]" }
+    $headLines += @(
         ("elapsedSec: " + $elapsedSec),
         ("time: " + (Get-Date -Format "yyyy-MM-dd HH:mm:ss")),
         (([string][char]0x2500) * 40)
@@ -180,8 +255,10 @@ function Stop-ProcessTree([System.Diagnostics.Process]$proc) {
 #      避免 "C:\RepoRootOther\" 类误命中），且
 #   ② \target\surefire\（surefire 分支 JVM 的 booter jar 绝对路径段；jacoco 插桩分支同样
 #      命中，因其即 surefire fork）。
-# 保护面：枚举前先沿 Win32_Process.ParentProcessId 上溯构建自身 + 祖先链（自 $PID 起，上限
-# 64 层防环），链内进程一律不杀（防误杀运行器 / 外层门禁 / selftest / IDE 等同链进程）。
+# 保护面：① 枚举前先沿 Win32_Process.ParentProcessId 上溯构建自身 + 祖先链（自 $PID 起，上限
+# 64 层防环），链内进程一律不杀（防误杀运行器 / 外层门禁 / selftest / IDE 等同链进程）；
+# ② 卡2b N1：PID 在运行前快照内 / CreationDate 早于 runStartedAt-2s / CreationDate 为空
+# 一律不杀（同仓并行 surefire 形态的误伤面增强排除；残余见 README 已知特性）。
 # best-effort：逐进程 Stop-Process -Force 包 try/catch，整体再包 try/catch——任何失败静默，
 # 不影响段判定（超时段结论已由既有逻辑判 FAIL；清扫是保险不是判定，沿"记录是加菜"原则）。
 # 报告行格式零改动（不往 FAIL 行追加清扫计数——避免行文口径漂移，取证走 selftest S18 探针）。
@@ -207,12 +284,18 @@ function Stop-DetachedStageProcesses() {
             $walker = $parentOf
         }
         $rootPrefix = $RepoRoot.TrimEnd('\', '/')
+        # 卡2b N1：双特征命中之外，再排除"运行前已存在 / 早于本次运行窗口 / 创建时间不可知"三类
+        # ——它们无法被证明是本轮产生的脱缰进程；残余 = 运行开始后才启动的并行构建仍可能被清扫
+        # （诚实边界，README/ADR-018 登记）。
         $victims = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
             Where-Object {
                 $_.CommandLine -ne $null -and
                 $_.CommandLine -like ('*' + $rootPrefix + '\*') -and
                 $_.CommandLine -like '*\target\surefire\*' -and
-                (-not $selfAndAncestors.Contains([string]$_.ProcessId))
+                (-not $selfAndAncestors.Contains([string]$_.ProcessId)) -and
+                (-not $script:preExistingSurefirePids.Contains([string]$_.ProcessId)) -and
+                ($_.CreationDate -ne $null) -and
+                ($_.CreationDate -ge $script:runStartedAt.AddSeconds(-2))
             }
         foreach ($victim in $victims) {
             try { Stop-Process -Id $victim.ProcessId -Force -ErrorAction SilentlyContinue } catch { }
@@ -225,7 +308,7 @@ function Stop-DetachedStageProcesses() {
 # （selftest 开场/收尾清理及其 fixture 运行均写 %TEMP% 固定名 ctds-gate-*-out.log，置首避免
 # 删除/覆盖本运行先前阶段的失败取证），故本函数由原"质量度量段"位置纯上移至此：
 # 函数体内容零改动，diff 呈现为迁移（留痕见 ADR-018 V1.5 与 hifi §3-bis）。
-function Invoke-MetricProcess([string]$exe, [string]$argLine, [string]$workDir, [int]$timeoutSec, [string]$stage) {
+function Invoke-MetricProcess([string]$exe, [string]$argLine, [string]$workDir, [int]$timeoutSec, [string]$stage, [switch]$PlatformEncoding) {
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $exe
     $psi.Arguments = $argLine
@@ -233,9 +316,13 @@ function Invoke-MetricProcess([string]$exe, [string]$argLine, [string]$workDir, 
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true
     $psi.WorkingDirectory = $workDir
-    # DB-19 同款口径：JVM 系工具输出按 UTF-8 解码（中文 Windows 默认 GBK 会乱码红灯明细）
-    $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
-    $psi.StandardErrorEncoding = [System.Text.Encoding]::UTF8
+    # DB-19 同款口径：Node 系工具输出恒为 UTF-8（中文 Windows 默认 GBK 会乱码红灯明细）。
+    # 卡2b B2：mvn 段传 -PlatformEncoding 保持 JDK 平台编码（GBK），与旧内联实现逐字一致；
+    # 其余调用方（npm/coverage/mutationTest/sast/docker 探测）保持 UTF-8，行为零变更。
+    if (-not $PlatformEncoding) {
+        $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
+        $psi.StandardErrorEncoding = [System.Text.Encoding]::UTF8
+    }
     $proc = [System.Diagnostics.Process]::Start($psi)
     $outTask = $proc.StandardOutput.ReadToEndAsync()
     $errTask = $proc.StandardError.ReadToEndAsync()
@@ -244,12 +331,15 @@ function Invoke-MetricProcess([string]$exe, [string]$argLine, [string]$workDir, 
         Stop-ProcessTree $proc
         $null = $outTask.Wait(5000)
         $null = $errTask.Wait(5000)
-        $timedOutBody = ("<timed out after " + $timeoutSec + "s>")
-        try { $timedOutBody = ("<timed out after " + $timeoutSec + "s>") + [Environment]::NewLine + $outTask.Result + $errTask.Result } catch { }
-        return @{ ExitCode = -1; Output = $timedOutBody }
+        $raw = ""
+        try { $raw = $outTask.Result + $errTask.Result } catch { }
+        # 卡2b B6：超时是显式的 TimedOut 语义，-1 仅为 out.log 头的哨兵展示值——不是进程退出码。
+        $timedOutBody = ("<timed out after " + $timeoutSec + "s; timeout sentinel -1 is NOT a process exit code>") + [Environment]::NewLine + $raw
+        return @{ ExitCode = -1; TimedOut = $true; RawOutput = $raw; Output = $timedOutBody }
     }
     $null = $outTask.Wait(10000); $null = $errTask.Wait(10000)
-    return @{ ExitCode = $proc.ExitCode; Output = ($outTask.Result + [Environment]::NewLine + $errTask.Result) }
+    $raw = $outTask.Result + [Environment]::NewLine + $errTask.Result
+    return @{ ExitCode = $proc.ExitCode; TimedOut = $false; RawOutput = $raw; Output = $raw }
 }
 
 # ---------- Git-tracked index (WBS-2.2.7 V1.2 / R1+R3) ----------
@@ -310,44 +400,51 @@ $gstStage = $cfg.stages.gateSelfTest
 if ($gstStage -and $gstStage.enabled) {
     $gstTool = "scripts/gates/selftest.ps1"
     if ($gstStage.tool) { $gstTool = $gstStage.tool }
-    $gstScript = Join-Path $RepoRoot $gstTool
-    if (-not (Test-Path $gstScript)) {
-        Add-Result "gateSelfTest" "ERROR" ("selftest script not found: " + $gstTool + " (resolved under RepoRoot) - fix stages.gateSelfTest.tool or restore the script")
-    } elseif (-not (Get-Command powershell -ErrorAction SilentlyContinue)) {
-        Add-Result "gateSelfTest" "ERROR" "powershell executable not found on PATH (required to run selftest.ps1)"
+    # 卡2b B1（R5 同款护栏）：tool 值会被拼进 powershell 命令行——字符白名单必须早于
+    # Join-Path/Test-Path/进程启动；非法即 ERROR 且"命令未执行"（不得先解析路径再拒绝）。
+    if ($gstTool -notmatch '^[A-Za-z0-9:._\-\s/\\]+$') {
+        Add-Result "gateSelfTest" "ERROR" ("Illegal characters in stages.gateSelfTest.tool (allowed: A-Za-z0-9 : . _ - space / \) - stage SKIPPED, command NOT executed")
     } else {
-        $gstTimeout = 300; if ($gstStage.timeoutSeconds) { $gstTimeout = [int]$gstStage.timeoutSeconds }
-        # 引号包裹（同 mutationTest pitArgs 惯例）：仓库路径含空格（E:\AI Projects\...），未加引号的
-        # -File 路径会被 powershell 命令行解析截断——S15 "spaces" 探针锚定该风险面。
-        # 单变量构造（③ F-c2：$gstCmd 与 argLine 原为同串构建两次）
-        $gstArgLine = "-NoProfile -ExecutionPolicy Bypass -File `"" + $gstScript + "`""
-        $gstCmd = "powershell " + $gstArgLine
-        $gstSw = [System.Diagnostics.Stopwatch]::StartNew()
-        $gstRun = Invoke-MetricProcess "powershell" $gstArgLine $RepoRoot $gstTimeout "gateSelfTest"
-        $gstElapsed = [int]$gstSw.Elapsed.TotalSeconds
-        $gstTail = ($gstRun.Output -split "`r?`n" | Where-Object { $_.Trim() -ne "" } | Select-Object -Last 3) -join " | "
-        if ($gstRun.ExitCode -eq -1) {
-            $p = $null
-            try { $p = Write-StageOutLog "gateSelfTest" $gstCmd $gstRun.Output -1 $true $gstElapsed } catch { }
-            if ($p) { Add-Result "gateSelfTest" "FAIL" ("selftest timed out after " + $gstTimeout + "s | full output: " + $p) }
-            else { Add-Result "gateSelfTest" "FAIL" ("selftest timed out after " + $gstTimeout + "s") }
-        } elseif ($gstRun.ExitCode -eq 0) {
-            # 成功态详情摘录 selftest 末行摘要（"SELFTEST PASS - N assertion(s), 0 failure(s)"）——机器可核
-            $gstSummary = "exit 0"
-            if ($gstRun.Output -match "SELFTEST PASS - (\d+) assertion\(s\), (\d+) failure\(s\)") {
-                $gstSummary = ("exit 0, " + $Matches[1] + " assertions, " + $Matches[2] + " failures")
-            }
-            Add-Result "gateSelfTest" "PASS" ("selftest.ps1 " + $gstSummary + " in " + $gstElapsed + "s")
-        } elseif ($gstRun.ExitCode -eq 2) {
-            $p = $null
-            try { $p = Write-StageOutLog "gateSelfTest" $gstCmd $gstRun.Output 2 $false $gstElapsed } catch { }
-            if ($p) { Add-Result "gateSelfTest" "ERROR" ("selftest harness error (exit 2 = fixture/env problem, NOT a code verdict): " + $gstTail + " | full output: " + $p) }
-            else { Add-Result "gateSelfTest" "ERROR" ("selftest harness error (exit 2 = fixture/env problem, NOT a code verdict): " + $gstTail) }
+        $gstScript = Join-Path $RepoRoot $gstTool
+        if (-not (Test-Path $gstScript)) {
+            Add-Result "gateSelfTest" "ERROR" ("selftest script not found: " + $gstTool + " (resolved under RepoRoot) - fix stages.gateSelfTest.tool or restore the script")
+        } elseif (-not (Get-Command powershell -ErrorAction SilentlyContinue)) {
+            Add-Result "gateSelfTest" "ERROR" "powershell executable not found on PATH (required to run selftest.ps1)"
         } else {
-            $p = $null
-            try { $p = Write-StageOutLog "gateSelfTest" $gstCmd $gstRun.Output $gstRun.ExitCode $false $gstElapsed } catch { }
-            if ($p) { Add-Result "gateSelfTest" "FAIL" ("selftest exit " + $gstRun.ExitCode + " (runner self-check FAILED - the gate cannot vouch for this run): " + $gstTail + " | full output: " + $p) }
-            else { Add-Result "gateSelfTest" "FAIL" ("selftest exit " + $gstRun.ExitCode + " (runner self-check FAILED): " + $gstTail) }
+            $gstTimeout = 300; if ($gstStage.timeoutSeconds) { $gstTimeout = [int]$gstStage.timeoutSeconds }
+            # 引号包裹（同 mutationTest pitArgs 惯例）：仓库路径含空格（E:\AI Projects\...），未加引号的
+            # -File 路径会被 powershell 命令行解析截断——S15 "spaces" 探针锚定该风险面。
+            # 单变量构造（③ F-c2：$gstCmd 与 argLine 原为同串构建两次）
+            $gstArgLine = "-NoProfile -ExecutionPolicy Bypass -File `"" + $gstScript + "`""
+            $gstCmd = "powershell " + $gstArgLine
+            $gstSw = [System.Diagnostics.Stopwatch]::StartNew()
+            $gstRun = Invoke-MetricProcess "powershell" $gstArgLine $RepoRoot $gstTimeout "gateSelfTest"
+            $gstElapsed = [int]$gstSw.Elapsed.TotalSeconds
+            $gstTail = ($gstRun.Output -split "`r?`n" | Where-Object { $_.Trim() -ne "" } | Select-Object -Last 3) -join " | "
+            if ($gstRun.TimedOut) {
+                $p = $null
+                try { $p = Write-StageOutLog "gateSelfTest" $gstCmd $gstRun.RawOutput -1 $true $gstElapsed } catch { }
+                $gstTimeoutDetail = "selftest timed out after " + $gstTimeout + "s (timeout sentinel -1 is NOT a process exit code)"
+                if ($p) { Add-Result "gateSelfTest" "FAIL" ($gstTimeoutDetail + " | full output: " + $p) }
+                else { Add-Result "gateSelfTest" "FAIL" $gstTimeoutDetail }
+            } elseif ($gstRun.ExitCode -eq 0) {
+                # 成功态详情摘录 selftest 末行摘要（"SELFTEST PASS - N assertion(s), 0 failure(s)"）——机器可核
+                $gstSummary = "exit 0"
+                if ($gstRun.Output -match "SELFTEST PASS - (\d+) assertion\(s\), (\d+) failure\(s\)") {
+                    $gstSummary = ("exit 0, " + $Matches[1] + " assertions, " + $Matches[2] + " failures")
+                }
+                Add-Result "gateSelfTest" "PASS" ("selftest.ps1 " + $gstSummary + " in " + $gstElapsed + "s")
+            } elseif ($gstRun.ExitCode -eq 2) {
+                $p = $null
+                try { $p = Write-StageOutLog "gateSelfTest" $gstCmd $gstRun.Output 2 $false $gstElapsed } catch { }
+                if ($p) { Add-Result "gateSelfTest" "ERROR" ("selftest harness error (exit 2 = fixture/env problem, NOT a code verdict): " + $gstTail + " | full output: " + $p) }
+                else { Add-Result "gateSelfTest" "ERROR" ("selftest harness error (exit 2 = fixture/env problem, NOT a code verdict): " + $gstTail) }
+            } else {
+                $p = $null
+                try { $p = Write-StageOutLog "gateSelfTest" $gstCmd $gstRun.Output $gstRun.ExitCode $false $gstElapsed } catch { }
+                if ($p) { Add-Result "gateSelfTest" "FAIL" ("selftest exit " + $gstRun.ExitCode + " (runner self-check FAILED - the gate cannot vouch for this run): " + $gstTail + " | full output: " + $p) }
+                else { Add-Result "gateSelfTest" "FAIL" ("selftest exit " + $gstRun.ExitCode + " (runner self-check FAILED): " + $gstTail) }
+            }
         }
     }
 }
@@ -523,13 +620,6 @@ foreach ($stageName in @("compile", "lint", "unitTest")) {
     }
     $oldJavaHome = $env:JAVA_HOME
     $env:JAVA_HOME = $toolJavaHome
-    $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = "cmd.exe"
-    $psi.Arguments = "/c " + $toolMavenBin + " " + $toolMavenArgs + " " + $s.goals
-    $psi.UseShellExecute = $false
-    $psi.RedirectStandardOutput = $true
-    $psi.RedirectStandardError = $true
-    $psi.WorkingDirectory = $RepoRoot
     # V1.5 (2026-10-09, WBS-3.4.6 跟踪-23 处置, 编排师裁决 A): mvn 阶段超时可经 stages.<name>.timeoutSeconds
     # 覆盖（与 coverage/mutationTest/sast 同一配置键），未配置时默认 600s 不变（compile/lint 未设值 = 行为零变化）。
     # 留痕: gates-config.json changeLog V1.5 + docs/tasks/WBS-3.4.6-策略模拟器与测试台-2026-10-08.md §五 跟踪-23。
@@ -539,34 +629,30 @@ foreach ($stageName in @("compile", "lint", "unitTest")) {
     }
     # DB-43 ①：三态（成功/失败/超时）都落盘 %TEMP%\ctds-gate-<stage>-out.log（摘要行含
     # stage/command/exitCode/elapsedSec/time + 完整原始输出）；报告行仅失败/超时追加路径。
+    # 卡2b B2：内联 ProcessStartInfo 收敛到 Invoke-MetricProcess（-PlatformEncoding 保持 JDK 平台
+    # 编码 GBK，与旧实现一致）；报告行/退出码/超时判定零变更。
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
     $cmdLine = "mvn " + $toolMavenArgs + " " + $s.goals
-    $proc = [System.Diagnostics.Process]::Start($psi)
-    $outTask = $proc.StandardOutput.ReadToEndAsync()
-    $errTask = $proc.StandardError.ReadToEndAsync()
-    if (-not $proc.WaitForExit($stageTimeoutSec * 1000)) {
-        Stop-ProcessTree $proc
-        $null = $outTask.Wait(5000)
-        $null = $errTask.Wait(5000)
+    $mvnArgLine = "/c " + $toolMavenBin + " " + $toolMavenArgs + " " + $s.goals
+    $r = Invoke-MetricProcess "cmd.exe" $mvnArgLine $RepoRoot $stageTimeoutSec $stageName -PlatformEncoding
+    $elapsedSec = [int]$sw.Elapsed.TotalSeconds
+    if ($r.TimedOut) {
         $p = $null
-        try { $p = Write-StageOutLog $stageName $cmdLine ($outTask.Result + $errTask.Result) -1 $true ([int]$sw.Elapsed.TotalSeconds) } catch { }
-        if ($p) { Add-Result $stageName "FAIL" ("mvn " + $s.goals + " timed out after " + $stageTimeoutSec + "s | full output: " + $p) }
-        else { Add-Result $stageName "FAIL" ("mvn " + $s.goals + " timed out after " + $stageTimeoutSec + "s") }
-    } elseif ($proc.ExitCode -eq 0) {
-        $null = $outTask.Wait(10000)
-        $null = $errTask.Wait(10000)
+        try { $p = Write-StageOutLog $stageName $cmdLine $r.RawOutput -1 $true $elapsedSec } catch { }
+        $mvnTimeoutDetail = "mvn " + $s.goals + " timed out after " + $stageTimeoutSec + "s (timeout sentinel -1 is NOT a process exit code)"
+        if ($p) { Add-Result $stageName "FAIL" ($mvnTimeoutDetail + " | full output: " + $p) }
+        else { Add-Result $stageName "FAIL" $mvnTimeoutDetail }
+    } elseif ($r.ExitCode -eq 0) {
         # ① 的核心：成功态也落盘（"0 字节日志"教训的结构性根治）；PASS 报告行保持原格式（不加路径）
-        try { $null = Write-StageOutLog $stageName $cmdLine ($outTask.Result + $errTask.Result) 0 $false ([int]$sw.Elapsed.TotalSeconds) } catch { }
+        try { $null = Write-StageOutLog $stageName $cmdLine $r.RawOutput 0 $false $elapsedSec } catch { }
         Add-Result $stageName "PASS" ("mvn " + $s.goals + " exit 0")
     } else {
-        $null = $outTask.Wait(10000)
-        $null = $errTask.Wait(10000)
-        $allOut = ($outTask.Result + [Environment]::NewLine + $errTask.Result) -split "`r?`n" | Where-Object { $_.Trim() -ne "" }
+        $allOut = ($r.RawOutput -split "`r?`n") | Where-Object { $_.Trim() -ne "" }
         $tail = ($allOut | Select-Object -Last 6) -join " | "
         $p = $null
-        try { $p = Write-StageOutLog $stageName $cmdLine ($outTask.Result + $errTask.Result) $proc.ExitCode $false ([int]$sw.Elapsed.TotalSeconds) } catch { }
-        if ($p) { Add-Result $stageName "FAIL" ("mvn " + $s.goals + " exit " + $proc.ExitCode + ": " + $tail + " | full output: " + $p) }
-        else { Add-Result $stageName "FAIL" ("mvn " + $s.goals + " exit " + $proc.ExitCode + ": " + $tail) }
+        try { $p = Write-StageOutLog $stageName $cmdLine $r.RawOutput $r.ExitCode $false $elapsedSec } catch { }
+        if ($p) { Add-Result $stageName "FAIL" ("mvn " + $s.goals + " exit " + $r.ExitCode + ": " + $tail + " | full output: " + $p) }
+        else { Add-Result $stageName "FAIL" ("mvn " + $s.goals + " exit " + $r.ExitCode + ": " + $tail) }
     }
     if ($oldJavaHome) { $env:JAVA_HOME = $oldJavaHome } else { Remove-Item Env:JAVA_HOME -ErrorAction SilentlyContinue }
 }
@@ -599,42 +685,29 @@ foreach ($stageName in @("frontendTypeCheck", "frontendLint", "frontendTest", "f
         Add-Result $stageName "ERROR" "npm executable not found on PATH (Node.js/npm required for frontend stages)"
         continue
     }
-    $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = "cmd.exe"
-    $psi.Arguments = "/c npm " + $s.goals
-    $psi.UseShellExecute = $false
-    $psi.RedirectStandardOutput = $true
-    $psi.RedirectStandardError = $true
     # DB-19：Node.js/npm 的输出恒为 UTF-8，不显式指定时 .NET 按系统默认（中文 Windows=GBK）解码，
-    # 报告 FAIL 明细的中文变乱码（红灯不丢，但人工复核"为什么红"失效）。Maven 段不改——JDK 17 于
-    # 中文 Windows 的输出为平台编码（GBK），与默认解码一致，强行 UTF-8 反而引入乱码。
-    $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
-    $psi.StandardErrorEncoding = [System.Text.Encoding]::UTF8
-    $psi.WorkingDirectory = $workdir
-    $proc = [System.Diagnostics.Process]::Start($psi)
-    $outTask = $proc.StandardOutput.ReadToEndAsync()
-    $errTask = $proc.StandardError.ReadToEndAsync()
-    # DB-43 ③：npm 段失败/超时落盘完整原始输出（③ 的处置要求原文 = "失败时落盘"；成功态不落）
+    # 报告 FAIL 明细的中文变乱码（红灯不丢，但人工复核"为什么红"失效）。Maven 段保持平台编码。
+    # 卡2b B2：内联 ProcessStartInfo 收敛到 Invoke-MetricProcess（默认 UTF-8，不加 -PlatformEncoding）；
+    # 三态报告/日志与现行为一致。
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
-    if (-not $proc.WaitForExit(300000)) {
-        Stop-ProcessTree $proc
-        $null = $outTask.Wait(5000)
-        $null = $errTask.Wait(5000)
+    $npmArgLine = "/c npm " + $s.goals
+    $r = Invoke-MetricProcess "cmd.exe" $npmArgLine $workdir 300 $stageName
+    $npmElapsedSec = [int]$sw.Elapsed.TotalSeconds
+    if ($r.TimedOut) {
         $p = $null
-        try { $p = Write-StageOutLog $stageName ("npm " + $s.goals) ($outTask.Result + $errTask.Result) -1 $true ([int]$sw.Elapsed.TotalSeconds) } catch { }
-        if ($p) { Add-Result $stageName "FAIL" ("npm " + $s.goals + " timed out after 300s | full output: " + $p) }
-        else { Add-Result $stageName "FAIL" ("npm " + $s.goals + " timed out after 300s") }
-    } elseif ($proc.ExitCode -eq 0) {
+        try { $p = Write-StageOutLog $stageName ("npm " + $s.goals) $r.RawOutput -1 $true $npmElapsedSec } catch { }
+        $npmTimeoutDetail = "npm " + $s.goals + " timed out after 300s (timeout sentinel -1 is NOT a process exit code)"
+        if ($p) { Add-Result $stageName "FAIL" ($npmTimeoutDetail + " | full output: " + $p) }
+        else { Add-Result $stageName "FAIL" $npmTimeoutDetail }
+    } elseif ($r.ExitCode -eq 0) {
         Add-Result $stageName "PASS" ("npm " + $s.goals + " exit 0")
     } else {
-        $null = $outTask.Wait(10000)
-        $null = $errTask.Wait(10000)
-        $allOut = ($outTask.Result + [Environment]::NewLine + $errTask.Result) -split "`r?`n" | Where-Object { $_.Trim() -ne "" }
+        $allOut = ($r.RawOutput -split "`r?`n") | Where-Object { $_.Trim() -ne "" }
         $tail = ($allOut | Select-Object -Last 6) -join " | "
         $p = $null
-        try { $p = Write-StageOutLog $stageName ("npm " + $s.goals) ($outTask.Result + $errTask.Result) $proc.ExitCode $false ([int]$sw.Elapsed.TotalSeconds) } catch { }
-        if ($p) { Add-Result $stageName "FAIL" ("npm " + $s.goals + " exit " + $proc.ExitCode + ": " + $tail + " | full output: " + $p) }
-        else { Add-Result $stageName "FAIL" ("npm " + $s.goals + " exit " + $proc.ExitCode + ": " + $tail) }
+        try { $p = Write-StageOutLog $stageName ("npm " + $s.goals) $r.RawOutput $r.ExitCode $false $npmElapsedSec } catch { }
+        if ($p) { Add-Result $stageName "FAIL" ("npm " + $s.goals + " exit " + $r.ExitCode + ": " + $tail + " | full output: " + $p) }
+        else { Add-Result $stageName "FAIL" ("npm " + $s.goals + " exit " + $r.ExitCode + ": " + $tail) }
     }
 }
 
@@ -655,7 +728,8 @@ function Test-LinuxDockerDaemon {
     # Windows 容器，OSType=windows 同样判不可用）；无 CLI / daemon 不可达 / 探测超时均判 false。
     if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { return $false }
     $probe = Invoke-MetricProcess "cmd.exe" "/c docker info --format {{.OSType}}" $RepoRoot 60 "coverage-docker-probe"
-    if ($probe.ExitCode -ne 0) { return $false }
+    # 卡2b B6：超时是显式 TimedOut（不再以 ExitCode -1 推断）；探测超时与不可达同样判不可用。
+    if ($probe.TimedOut -or $probe.ExitCode -ne 0) { return $false }
     return (($probe.Output.Trim()) -ieq "linux")
 }
 
@@ -681,7 +755,7 @@ if ($covStage -and $covStage.enabled) {
         # 报告行尾附路径（PASS 不落——③ 的原文口径 = "失败时落盘"）
         $covFail = $false
         $covDetail = ""
-        if ($r.ExitCode -eq -1) {
+        if ($r.TimedOut) {
             $covFail = $true
             $covDetail = $r.Output
         } elseif ($r.ExitCode -ne 0) {
@@ -743,7 +817,7 @@ if ($covStage -and $covStage.enabled) {
         }
         if ($covFail) {
             $p = $null
-            try { $p = Write-StageOutLog "coverage" $argLine $r.Output $r.ExitCode ($r.ExitCode -eq -1) ([int]$swCov.Elapsed.TotalSeconds) } catch { }
+            try { $p = Write-StageOutLog "coverage" $argLine $r.Output $r.ExitCode $r.TimedOut ([int]$swCov.Elapsed.TotalSeconds) } catch { }
             if ($p) { Add-Result "coverage" "FAIL" ($covDetail + " | full output: " + $p) }
             else { Add-Result "coverage" "FAIL" $covDetail }
         }
@@ -819,8 +893,8 @@ if ($mutStage -and $mutStage.enabled) {
                 $pitArgs = "-cp `"" + $fullCp + "`" org.pitest.mutationtest.commandline.MutationCoverageReport --reportDir=target/pit-reports --outputFormats=XML,CSV --targetClasses=`"" + $m.targetPackages + "`" --targetTests=`"" + $mutTargetTests + "`" --excludedTestClasses=`"" + $mutExc + "`" --sourceDirs=`"" + $m.sourceDir + "`""
                 $r = Invoke-MetricProcess $javaExe $pitArgs $modDir $mutTimeout ("mutationTest." + $m.name)
                 $xmlPath = Join-Path $modDir "target\pit-reports\mutations.xml"
-                if ($r.ExitCode -eq -1) {
-                    $badMods += ($m.name + ": timed out after " + $mutTimeout + "s"); $mutLogs += ("==== " + $m.name + " (timed out) ====" + [Environment]::NewLine + $r.Output); continue
+                if ($r.TimedOut) {
+                    $badMods += ($m.name + ": timed out after " + $mutTimeout + "s (timeout sentinel -1 is NOT a process exit code)"); $mutLogs += ("==== " + $m.name + " (timed out) ====" + [Environment]::NewLine + $r.Output); continue
                 }
                 if (-not (Test-Path $xmlPath)) {
                     $why = (($r.Output -split "`r?`n") | Where-Object { $_ -match "PitHelpError|SEVERE" } | Select-Object -First 1)
@@ -931,7 +1005,7 @@ if ($sastStage -and $sastStage.enabled) {
                 $sastFail = $false
                 $sastVerdict = "FAIL"
                 $sastDetail = ""
-                if ($r.ExitCode -eq -1) {
+                if ($r.TimedOut) {
                     $sastFail = $true
                     $sastDetail = $r.Output
                 } elseif ($r.ExitCode -ne 0) {
@@ -969,7 +1043,7 @@ if ($sastStage -and $sastStage.enabled) {
                     $p = $null
                     $sastCmdLabel = "semgrep --config " + $ruleset + " --json --quiet <scanTemp>"
                     if ($sastEngine -eq "docker") { $sastCmdLabel = "docker run --rm -v <scanTemp>:/src " + $image + " semgrep --config " + $ruleset + " /src" }
-                    try { $p = Write-StageOutLog "sast" $sastCmdLabel $r.Output $r.ExitCode ($r.ExitCode -eq -1) ([int]$swSast.Elapsed.TotalSeconds) } catch { }
+                    try { $p = Write-StageOutLog "sast" $sastCmdLabel $r.Output $r.ExitCode $r.TimedOut ([int]$swSast.Elapsed.TotalSeconds) } catch { }
                     if ($p) { Add-Result "sast" $sastVerdict ($sastDetail + " | full output: " + $p) }
                     else { Add-Result "sast" $sastVerdict $sastDetail }
                 }

@@ -85,3 +85,19 @@
 | `org.pitest:pitest-junit5-plugin` | 1.2.1（PIT 1.30.0 同期配套线） | PIT 的 JUnit 5 平台适配（缺它 `Ran 0 tests` 全 NO_COVERAGE——3.1.12 §11-1 实证教训） | Apache-2.0 | 阿里云镜像 maven-metadata 实测版本线 1.1.1~1.2.3，2026-09-26 | 同上 | 清债卡1 / DB-06 |
 | `semgrep/semgrep`（docker 镜像） | 1.177.0（版本 tag 锁定 = 接入实测引擎版，禁 latest 漂移——沿本簿容器镜像纪律） | sast 段 Java 静态安全扫描（p/java 社区规则集，热点=0 判定）；docker 形态 = **本地回退**（CI 托管 Windows 无 Docker daemon，V4 首跑实证） | LGPL-2.1（semgrep OSS） | docker pull 实测成功（2026-09-26，本机直连 Docker Hub，tag 1.177.0 与 latest 引擎版本一致实测核验）+ 规则源 registry 可达实测（--config p/java 扫描返回正常 JSON） | 同上 | 清债卡1 / DB-06 |
 | `semgrep`（PyPI 包，`win_amd64` wheel） | 1.177.0（与 docker 镜像 tag 同版，禁 latest 漂移） | sast 段 Java 静态安全扫描的 **CI 主路径**（免 Docker 原生 CLI；ruleset 与判定解析同镜像形态同一套） | LGPL-2.1-or-later（Semgrep OSS） | PyPI 官方注册表 JSON 实测（2026-10-17）：1.177.0 存在、`yanked=false`、无已标漏洞、`requires_python>=3.10`、含 `semgrep-1.177.0-…-none-win_amd64.whl`（58,158,477 B）；Semgrep 官方文档平台表列 Windows (beta) | 编排师裁决 B（2026-10-17，DB-07 V4 首跑 RED；留痕 = ADR-018 V1.6 + 任务卡边界变更记录） | DB-07 |
+
+## 本地开发工具（非项目依赖）
+
+> 卡2b B9/N3（2026-10-18）。以下为本地开发/门禁运行所需环境工具，**不入 pom / 不改 package-lock / 不构成项目依赖**，故不走依赖变更流程；版本以本机实测（2026-10-18）登记，CI 侧版本一律以 `.github/workflows/quality-gate.yml` 为准。门禁脚本自身对这些工具做前置探测（缺失记 ERROR/exit 2，不伪装成代码结论）。
+>
+> | 工具 | 本机实测版本 | 用途 | 备注 |
+> | --- | --- | --- | --- |
+> | JDK | 17.0.12（JAVA_HOME=`C:\Program Files\Java\jdk-17`） | Maven 阶段 / coverage / PIT / S18 javac | CI 用 temurin 17（workflow） |
+> | Maven | 3.9.16 | compile/lint/unitTest/coverage/mutationTest | 用户级 `%USERPROFILE%\.m2\settings.xml`（阿里云镜像） |
+> | Node.js | 24.14.0（CI 22） | 前端阶段 / selftest fixture 进程形态替身 | **N3 口径**：fixture 的 `node` 仅作进程形态替身（S14 孙进程 / S18 bystander），与前端测试共用运行时；Node 正式准入仍以 `docs/04-AI工具白名单-评估与发布.md` §2.3 为准（白名单维护责任在安全合规专员，本卡不修改白名单），零新工具 |
+> | npm | 11.9.0 | 前端阶段（typecheck/lint/test/e2e） | 随 Node 安装 |
+> | Git | 2.55.0.windows.5 | 门禁 git ls-files 索引 / fixture git init | 必需 |
+> | PowerShell | 5.1（Windows 内置）+ pwsh 7.6.7 | 门禁运行器与 selftest（双解释器语法校验） | 运行器以 `powershell`（5.1）调用 |
+> | GitHub CLI | 2.102.0 | action SHA 双源核验 / PR 操作 | 仅维护期使用，门禁不依赖 |
+> | semgrep | 1.177.0（PyPI 原生 CLI；本地 docker 镜像回退） | sast 段（CI 主路径） | 见上表门禁质量度量工具节 |
+> | Docker Desktop | 29.8.1（可选） | coverage 真值判定面（Linux 容器）/ sast 本地回退 | 无 Linux Docker 时 coverage 按 DB-07 V5 口径降级 SKIP（本地无 Docker 维持 FAIL） |
