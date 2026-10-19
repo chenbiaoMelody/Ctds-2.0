@@ -55,31 +55,43 @@ public class DeliveryQueryService {
     /** 加密包领取（仅需求方；提供方/其他参与方不返回数据）。 */
     public PackageDownload download(final String deliveryNo, final String callerNo) {
         final Delivery delivery = repository.findByDeliveryNo(deliveryNo).orElseThrow(() -> {
-            audit.denied(DeliveryAuditActions.PACKAGE_DOWNLOAD, null, null, callerNo, "1009C0007");
+            audit.denied(DeliveryAuditActions.PACKAGE_DOWNLOAD, deliveryNo, null, callerNo,
+                    DeliveryErrorCodes.DELIVERY_NOT_VISIBLE.value());
             return notVisible();
         });
         if (!callerNo.equals(delivery.requesterNo())) {
             final boolean participant = callerNo.equals(delivery.providerNo());
             final DeliveryBizException ex = participant ? notAllowedPackage() : notVisible();
             audit.denied(DeliveryAuditActions.PACKAGE_DOWNLOAD, deliveryNo, delivery.contractNo(),
-                    callerNo, ex.getErrorCode().value());
+                    callerNo, ex.getErrorCode().value(), delivery.deliveryType().name());
             throw ex;
         }
         if (delivery.deliveryType() != DeliveryType.FILE || delivery.packageId() == null) {
             audit.denied(DeliveryAuditActions.PACKAGE_DOWNLOAD, deliveryNo, delivery.contractNo(),
-                    callerNo, DeliveryErrorCodes.DELIVERY_SCOPE_MISMATCH.value());
+                    callerNo, DeliveryErrorCodes.DELIVERY_SCOPE_MISMATCH.value(),
+                    delivery.deliveryType().name());
             throw new DeliveryBizException(DeliveryErrorCodes.DELIVERY_SCOPE_MISMATCH,
                     DeliveryErrorCodes.DELIVERY_SCOPE_MISMATCH_MESSAGE);
         }
-        final Path path = packageStore.requirePath(delivery.packageId());
+        final Path path;
+        try {
+            path = packageStore.requirePath(delivery.packageId());
+        } catch (final DeliveryBizException e) {
+            audit.failure(DeliveryAuditActions.PACKAGE_DOWNLOAD, deliveryNo, delivery.contractNo(),
+                    callerNo, e.getErrorCode().value(), delivery.deliveryType().name());
+            throw e;
+        }
         audit.success(DeliveryAuditActions.PACKAGE_DOWNLOAD, deliveryNo, delivery.contractNo(), callerNo);
         return new PackageDownload(path, delivery.fileName(), delivery.checksum());
     }
 
     /** 治理详情（运营方；读即留痕）。 */
     public DeliveryView governanceGet(final String deliveryNo, final String operatorNo) {
-        final Delivery delivery = repository.findByDeliveryNo(deliveryNo)
-                .orElseThrow(DeliveryQueryService::notVisible);
+        final Delivery delivery = repository.findByDeliveryNo(deliveryNo).orElseThrow(() -> {
+            audit.denied(DeliveryAuditActions.DENIED, deliveryNo, null, operatorNo,
+                    DeliveryErrorCodes.DELIVERY_NOT_VISIBLE.value());
+            return notVisible();
+        });
         audit.success(DeliveryAuditActions.GOVERNANCE_READ, delivery.deliveryNo(),
                 delivery.contractNo(), operatorNo);
         return DeliveryView.from(delivery);
@@ -96,9 +108,14 @@ public class DeliveryQueryService {
     }
 
     private Delivery visibleRecord(final String deliveryNo, final String callerNo) {
-        final Delivery delivery = repository.findByDeliveryNo(deliveryNo)
-                .orElseThrow(DeliveryQueryService::notVisible);
+        final Delivery delivery = repository.findByDeliveryNo(deliveryNo).orElseThrow(() -> {
+            audit.denied(DeliveryAuditActions.DENIED, deliveryNo, null, callerNo,
+                    DeliveryErrorCodes.DELIVERY_NOT_VISIBLE.value());
+            return notVisible();
+        });
         if (!callerNo.equals(delivery.requesterNo()) && !callerNo.equals(delivery.providerNo())) {
+            audit.denied(DeliveryAuditActions.DENIED, deliveryNo, delivery.contractNo(), callerNo,
+                    DeliveryErrorCodes.DELIVERY_NOT_VISIBLE.value(), delivery.deliveryType().name());
             throw notVisible();
         }
         return delivery;

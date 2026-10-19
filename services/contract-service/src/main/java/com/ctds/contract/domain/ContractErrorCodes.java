@@ -109,6 +109,7 @@ public final class ContractErrorCodes {
 
     /** 请求参数不合法（1008C0008 同码同文复用别名——不新增码位，hifi §3；治理理由缺失/超长等）。→ 400 */
     public static final ErrorCode CONTRACT_PARAM_INVALID = ErrorCode.of("1008C0008");
+    public static final String CONTRACT_PARAM_INVALID_MESSAGE = "请求参数不合法";
     /**
      * 错误码尾号（contract_template_action_log.reason_code 口径，hifi §4：DENIED 时落错误码尾号，
      * 如 1008C0002 → C0002；服务端常量，不含用户输入）。

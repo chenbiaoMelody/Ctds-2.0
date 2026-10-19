@@ -111,6 +111,16 @@ class InternalProductEndpointIntegrationTest {
                 .andReturn().getResponse().getStatus()).isEqualTo(401);
     }
 
+    @Test
+    void allFourProductTypesAreReturned() throws Exception {
+        for (final String type : java.util.List.of("API", "DATASET", "REPORT", "MODEL")) {
+            final long id = insertProduct("形态-" + type, "LISTED", "1.00", type);
+            final JsonNode data = payload(mockMvc.perform(getFor(id, "delivery-service",
+                    "delivery-internal")).andReturn());
+            assertThat(data.path("productType").asText()).isEqualTo(type);
+        }
+    }
+
     // ==== 支撑 ====
 
     private static org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder getFor(
@@ -141,11 +151,17 @@ class InternalProductEndpointIntegrationTest {
 
     private long insertProduct(final String productName, final String status,
             final String priceAmount) {
+        return insertProduct(productName, status, priceAmount, "DATASET");
+    }
+
+    private long insertProduct(final String productName, final String status,
+            final String priceAmount, final String productType) {
         jdbc.update("INSERT INTO data_product (product_name, intro, product_type, pricing_model, "
                         + "status, price_amount, provider_subject_no, dataset_id, category_code, "
-                        + "listed_at) VALUES (?, '内部端点测试简介', 'DATASET', 'PER_CALL', ?, ?, "
+                        + "listed_at) VALUES (?, '内部端点测试简介', ?, 'PER_CALL', ?, ?, "
                         + "'S-prov-internal', 1, 'transport', ?)",
-                productName, status, priceAmount, Timestamp.valueOf(LocalDateTime.now()));
+                productName, productType, status, priceAmount,
+                Timestamp.valueOf(LocalDateTime.now()));
         return jdbc.queryForObject("SELECT id FROM data_product WHERE product_name = ?",
                 Long.class, productName);
     }

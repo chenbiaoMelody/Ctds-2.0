@@ -8,6 +8,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Locale;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -76,6 +78,53 @@ class FileSourceRegistryTest {
         assertThatThrownBy(() -> registry.require("a", 13))
                 .isInstanceOfSatisfying(DeliveryBizException.class,
                         ex -> assertThat(ex.getErrorCode().value()).isEqualTo("1009C0008"));
+    }
+
+    @Test
+    void exactLimitAcceptedAndOneByteOverRejected() throws Exception {
+        final Path file = temp.resolve("a.csv");
+        Files.write(file, new byte[1024]);
+        final FileSourceRegistry registry = registry(1024, entry("a", 13, "a.csv", "A.csv"));
+        registry.load();
+        assertThat(registry.require("a", 13).size()).isEqualTo(1024);
+        Files.write(file, new byte[1025]);
+        assertThatThrownBy(() -> registry.require("a", 13))
+                .isInstanceOfSatisfying(DeliveryBizException.class,
+                        ex -> assertThat(ex.getErrorCode().value()).isEqualTo("1009C0008"));
+    }
+
+    @Test
+    void cryptoHardLimitBoundaryAccepted() throws Exception {
+        final long max = 64L * 1024 * 1024;
+        Files.write(temp.resolve("max.csv"), new byte[(int) max]);
+        final FileSourceRegistry registry = registry(max, entry("a", 13, "max.csv", "A.csv"));
+        registry.load();
+        assertThat(registry.require("a", 13).size()).isEqualTo(max);
+    }
+
+    @Test
+    void uncPathFailsStartup() {
+        Assumptions.assumeTrue(
+                System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win"),
+                "UNC 路径仅 Windows 可测");
+        final FileSourceRegistry registry = registry(1024,
+                entry("a", 13, "\\\\server\\share\\a.csv", "A.csv"));
+        assertThatThrownBy(registry::load).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void symbolicLinkFailsStartup() throws Exception {
+        final Path target = temp.resolve("target.csv");
+        Files.writeString(target, "hello", StandardCharsets.UTF_8);
+        final Path link = temp.resolve("link.csv");
+        try {
+            Files.createSymbolicLink(link, target);
+        } catch (final Exception e) {
+            Assumptions.assumeTrue(false, "当前文件系统不支持符号链接");
+            return;
+        }
+        final FileSourceRegistry registry = registry(1024, entry("a", 13, "link.csv", "A.csv"));
+        assertThatThrownBy(registry::load).isInstanceOf(IllegalStateException.class);
     }
 
     @Test

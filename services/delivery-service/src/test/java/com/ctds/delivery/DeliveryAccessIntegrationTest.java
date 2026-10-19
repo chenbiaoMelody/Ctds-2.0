@@ -126,6 +126,10 @@ class DeliveryAccessIntegrationTest {
         assertThat(codeOf(other)).isEqualTo("1009C0007");
         assertThat(codeOf(missing)).isEqualTo("1009C0007");
         assertThat(messageOf(other)).isEqualTo(messageOf(missing));
+        final Integer deniedRows = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM delivery_action_log WHERE action = 'delivery.denied' "
+                        + "AND result = 'DENIED' AND reason_code = '1009C0007'", Integer.class);
+        assertThat(deniedRows).isEqualTo(2);
     }
 
     @Test
@@ -149,6 +153,11 @@ class DeliveryAccessIntegrationTest {
                 .header("X-Ctds-Subject", PROVIDER).header("X-Ctds-Roles", "requester")).andReturn();
         assertThat(result.getResponse().getStatus()).isEqualTo(403);
         assertThat(codeOf(result)).isEqualTo("1009C0009");
+        final Integer deniedRows = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM delivery_action_log "
+                        + "WHERE action = 'delivery.package.download' AND result = 'DENIED' "
+                        + "AND reason_code = '1009C0009'", Integer.class);
+        assertThat(deniedRows).isEqualTo(1);
     }
 
     @Test
@@ -158,6 +167,11 @@ class DeliveryAccessIntegrationTest {
                 .header("X-Ctds-Subject", OTHER).header("X-Ctds-Roles", "requester")).andReturn();
         assertThat(result.getResponse().getStatus()).isEqualTo(404);
         assertThat(codeOf(result)).isEqualTo("1009C0007");
+        final Integer deniedRows = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM delivery_action_log "
+                        + "WHERE action = 'delivery.package.download' AND result = 'DENIED' "
+                        + "AND reason_code = '1009C0007'", Integer.class);
+        assertThat(deniedRows).isEqualTo(1);
     }
 
     @Test
@@ -181,7 +195,7 @@ class DeliveryAccessIntegrationTest {
         final Integer auditCount = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM delivery_action_log WHERE action = 'delivery.governance.read'",
                 Integer.class);
-        assertThat(auditCount).isGreaterThanOrEqualTo(2);
+        assertThat(auditCount).isEqualTo(2);
         final MvcResult denied = mockMvc.perform(get("/api/v1/deliveries/governance/" + deliveryNo)
                 .header("X-Ctds-Subject", REQUESTER).header("X-Ctds-Roles", "requester")).andReturn();
         assertThat(denied.getResponse().getStatus()).isEqualTo(403);
@@ -200,6 +214,86 @@ class DeliveryAccessIntegrationTest {
         final MvcResult detail = getDelivery("DL000001", REQUESTER, "requester");
         assertThat(detail.getResponse().getContentAsString(StandardCharsets.UTF_8))
                 .doesNotContain(SECRET_MARKER);
+    }
+
+    @Test
+    void governanceMissingIsDeniedAndAudited() throws Exception {
+        final MvcResult result = mockMvc.perform(
+                get("/api/v1/deliveries/governance/DL999999")
+                        .header("X-Ctds-Subject", "S-admin").header("X-Ctds-Roles", "admin"))
+                .andReturn();
+        assertThat(result.getResponse().getStatus()).isEqualTo(404);
+        assertThat(codeOf(result)).isEqualTo("1009C0007");
+        final Integer deniedRows = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM delivery_action_log WHERE action = 'delivery.denied' "
+                        + "AND result = 'DENIED' AND reason_code = '1009C0007'", Integer.class);
+        assertThat(deniedRows).isEqualTo(1);
+    }
+
+    @Test
+    void missingPackageFailsClosed() throws Exception {
+        final String deliveryNo = createFileDelivery();
+        final String packageId = jdbc.queryForObject(
+                "SELECT package_id FROM delivery WHERE delivery_no = ?", String.class, deliveryNo);
+        Files.deleteIfExists(STORAGE_ROOT.resolve(packageId));
+        final MvcResult result = mockMvc.perform(
+                get("/api/v1/deliveries/" + deliveryNo + "/package")
+                        .header("X-Ctds-Subject", REQUESTER).header("X-Ctds-Roles", "requester"))
+                .andReturn();
+        assertThat(result.getResponse().getStatus()).isEqualTo(500);
+        assertThat(codeOf(result)).isEqualTo("1009S0003");
+    }
+
+    @Test
+    void listPaginationAndOrderBy() throws Exception {
+        createApiDelivery();
+        STUB.respondProduct(13, "DATASET");
+        createFileDelivery();
+        final MvcResult page100 = mockMvc.perform(get("/api/v1/deliveries")
+                .header("X-Ctds-Subject", REQUESTER).header("X-Ctds-Roles", "requester")
+                .param("pageSize", "100")).andReturn();
+        assertThat(page100.getResponse().getStatus()).isEqualTo(200);
+        final MvcResult page101 = mockMvc.perform(get("/api/v1/deliveries")
+                .header("X-Ctds-Subject", REQUESTER).header("X-Ctds-Roles", "requester")
+                .param("pageSize", "101")).andReturn();
+        assertThat(page101.getResponse().getStatus()).isEqualTo(400);
+        assertThat(codeOf(page101)).isEqualTo("1000C0001");
+        final MvcResult ordered = mockMvc.perform(get("/api/v1/deliveries")
+                .header("X-Ctds-Subject", REQUESTER).header("X-Ctds-Roles", "requester")
+                .param("orderBy", "deliveryType,asc")).andReturn();
+        assertThat(ordered.getResponse().getStatus()).isEqualTo(200);
+        final JsonNode list = MAPPER.readTree(
+                ordered.getResponse().getContentAsString(StandardCharsets.UTF_8))
+                .path("data").path("list");
+        assertThat(list.get(0).path("deliveryType").asText()).isEqualTo("API");
+        final MvcResult badOrder = mockMvc.perform(get("/api/v1/deliveries")
+                .header("X-Ctds-Subject", REQUESTER).header("X-Ctds-Roles", "requester")
+                .param("orderBy", "password")).andReturn();
+        assertThat(badOrder.getResponse().getStatus()).isEqualTo(400);
+        assertThat(codeOf(badOrder)).isEqualTo("1000C0001");
+        final MvcResult badType = mockMvc.perform(get("/api/v1/deliveries")
+                .header("X-Ctds-Subject", REQUESTER).header("X-Ctds-Roles", "requester")
+                .param("pageSize", "abc")).andReturn();
+        assertThat(badType.getResponse().getStatus()).isEqualTo(400);
+        assertThat(codeOf(badType)).isEqualTo("1000C0001");
+    }
+
+    @Test
+    void providerRoleIsRejectedAtPermissionLayer() throws Exception {
+        final MvcResult initiate = mockMvc.perform(post("/api/v1/deliveries")
+                .header("X-Ctds-Subject", PROVIDER).header("X-Ctds-Roles", "provider")
+                .header("X-Idempotency-Key", "idem-provider-role")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"contractNo\":\"CO000001\",\"deliveryType\":\"API\"}")).andReturn();
+        assertThat(initiate.getResponse().getStatus()).isEqualTo(403);
+        assertThat(codeOf(initiate)).isEqualTo("1000C0005");
+        final String deliveryNo = createFileDelivery();
+        final MvcResult download = mockMvc.perform(
+                get("/api/v1/deliveries/" + deliveryNo + "/package")
+                        .header("X-Ctds-Subject", PROVIDER).header("X-Ctds-Roles", "provider"))
+                .andReturn();
+        assertThat(download.getResponse().getStatus()).isEqualTo(403);
+        assertThat(codeOf(download)).isEqualTo("1000C0005");
     }
 
     private String createFileDelivery() throws Exception {

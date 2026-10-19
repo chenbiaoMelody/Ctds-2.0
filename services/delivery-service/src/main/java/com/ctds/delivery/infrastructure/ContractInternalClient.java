@@ -17,7 +17,9 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.Map;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -34,6 +36,8 @@ public class ContractInternalClient implements ContractPort {
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(2);
     private static final String INTERNAL_SUBJECT = "delivery-service";
     private static final String INTERNAL_ROLES = "delivery-internal";
+    private static final Set<String> PASS_THROUGH_CODES =
+            Set.of("1008C0008", "1008C0012", "1008C0013", "1008C0020");
 
     private final DeliveryProperties properties;
     private final ObjectMapper objectMapper;
@@ -55,12 +59,42 @@ public class ContractInternalClient implements ContractPort {
                 + encodePath(contractNo) + "?requesterNo="
                 + URLEncoder.encode(requesterNo, StandardCharsets.UTF_8);
         final JsonNode data = get(url, properties.getContract().getTimeout(), "合约摘要");
-        final String effectiveAt = data.path("effectiveAt").isNull() ? null
+        final String summaryContractNo = requireSummaryText(data, "contractNo", contractNo);
+        if (!contractNo.equals(summaryContractNo)) {
+            log.warn("合约摘要编号不匹配: requested={}", contractNo);
+            throw unavailable();
+        }
+        final long productId = data.path("productId").asLong(0);
+        if (productId <= 0) {
+            log.warn("合约摘要产品缺失: contractNo={}", contractNo);
+            throw unavailable();
+        }
+        final String effectiveAtText = data.path("effectiveAt").isNull() ? null
                 : data.path("effectiveAt").asText(null);
-        return new ContractSummary(data.path("contractNo").asText(), data.path("productId").asLong(),
-                data.path("productName").asText(), data.path("applicantNo").asText(),
-                data.path("providerNo").asText(), data.path("status").asText(),
-                effectiveAt == null ? null : LocalDateTime.parse(effectiveAt));
+        LocalDateTime effectiveAt = null;
+        if (effectiveAtText != null && !effectiveAtText.isBlank()) {
+            try {
+                effectiveAt = LocalDateTime.parse(effectiveAtText);
+            } catch (final DateTimeParseException e) {
+                log.warn("合约摘要 effectiveAt 解析失败: contractNo={}", contractNo);
+                throw unavailable();
+            }
+        }
+        return new ContractSummary(summaryContractNo, productId,
+                requireSummaryText(data, "productName", contractNo),
+                requireSummaryText(data, "applicantNo", contractNo),
+                requireSummaryText(data, "providerNo", contractNo),
+                requireSummaryText(data, "status", contractNo), effectiveAt);
+    }
+
+    private static String requireSummaryText(final JsonNode data, final String field,
+            final String contractNo) {
+        final String value = data.path(field).asText("");
+        if (value.isBlank()) {
+            log.warn("合约摘要字段缺失: contractNo={}, field={}", contractNo, field);
+            throw unavailable();
+        }
+        return value;
     }
 
     @Override
@@ -116,15 +150,28 @@ public class ContractInternalClient implements ContractPort {
     }
 
     private JsonNode parse(final HttpResponse<String> response, final boolean checkOnly) {
+        final String text = response.body();
+        if (text == null || text.isBlank()) {
+            log.warn("合约响应为空: status={}", response.statusCode());
+            throw unavailable();
+        }
         final JsonNode body;
         try {
-            body = objectMapper.readTree(response.body());
+            body = objectMapper.readTree(text);
         } catch (final IOException e) {
             log.warn("合约响应解析失败: status={}", response.statusCode(), e);
             throw unavailable();
         }
+        if (body == null || body.isNull()) {
+            log.warn("合约响应为空: status={}", response.statusCode());
+            throw unavailable();
+        }
         final String code = body.path("code").asText();
         if (code.startsWith("1008C")) {
+            if (!PASS_THROUGH_CODES.contains(code)) {
+                log.warn("合约结论码未登记: code={}", code);
+                throw unavailable();
+            }
             final String message = body.path("message").asText();
             throw new ContractPassThroughException(code, message, statusOf(code, response.statusCode()));
         }

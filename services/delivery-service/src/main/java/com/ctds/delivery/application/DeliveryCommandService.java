@@ -22,6 +22,7 @@ import com.ctds.delivery.infrastructure.FilePackageStore;
 import com.ctds.delivery.interfaces.dto.DeliveryViews.DeliveryView;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -81,10 +82,13 @@ public class DeliveryCommandService {
     public DeliveryView create(final DeliveryCommand cmd) {
         final String rawRequester = cmd == null || cmd.requesterNo() == null ? "" : cmd.requesterNo();
         final String rawContract = cmd == null || cmd.contractNo() == null ? "" : cmd.contractNo();
+        String deliveryNo = null;
+        String deliveryType = null;
         try {
             final String requester = requireText(rawRequester);
             final String contractNo = requireContractNo(rawContract);
             final DeliveryType type = parseType(cmd.deliveryType());
+            deliveryType = type.name();
             final String idempotencyKey = requireIdempotencyKey(cmd.idempotencyKey());
             final String fileId = validateFileId(type, cmd.fileId());
             final String purpose = validateElement(cmd.purpose());
@@ -109,7 +113,7 @@ public class DeliveryCommandService {
                 contractPort.check(contractNo, requester, purpose, territory);
             }
 
-            final String deliveryNo = repository.nextDeliveryNo();
+            deliveryNo = repository.nextDeliveryNo();
             String packageId = null;
             String checksum = null;
             String keyRef = null;
@@ -152,15 +156,24 @@ public class DeliveryCommandService {
                 throw new DeliveryBizException(DeliveryErrorCodes.PACKAGE_OPERATION_FAILED,
                         DeliveryErrorCodes.PACKAGE_OPERATION_FAILED_MESSAGE, e);
             }
-            audit.jsonOnly(DeliveryAuditActions.CREATE, deliveryNo, contractNo, requester);
+            audit.jsonOnly(DeliveryAuditActions.CREATE, deliveryNo, contractNo, requester,
+                    deliveryType);
             return repository.findByDeliveryNo(deliveryNo).map(DeliveryView::from)
                     .orElseGet(() -> DeliveryView.from(delivery));
         } catch (final ContractPassThroughException e) {
-            audit.denied(DeliveryAuditActions.DENIED, null, rawContract, rawRequester, e.getCode());
+            audit.denied(DeliveryAuditActions.DENIED, deliveryNo, rawContract, rawRequester,
+                    e.getCode(), deliveryType);
             throw e;
         } catch (final DeliveryBizException e) {
-            audit.denied(DeliveryAuditActions.DENIED, null, rawContract, rawRequester,
-                    e.getErrorCode().value());
+            final String code = e.getErrorCode().value();
+            // check 放行后（已取 deliveryNo）任何失败均为平台侧失败（hifi §5.4），不是用户拒绝
+            if (deliveryNo != null || code.startsWith("1009S")) {
+                audit.failure(DeliveryAuditActions.CREATE, deliveryNo, rawContract, rawRequester,
+                        code, deliveryType);
+            } else {
+                audit.denied(DeliveryAuditActions.DENIED, deliveryNo, rawContract, rawRequester,
+                        code, deliveryType);
+            }
             throw e;
         }
     }
@@ -233,8 +246,15 @@ public class DeliveryCommandService {
     }
 
     private byte[] readSource(final FileSource source) {
-        try {
-            return Files.readAllBytes(source.path());
+        final int limit = (int) properties.getFile().getMaxBytes() + 1;
+        try (var input = Files.newInputStream(source.path(), LinkOption.NOFOLLOW_LINKS)) {
+            // 有界读取：清单校验与打开之间文件可能被替换/增长，禁止无界 readAllBytes
+            final byte[] data = input.readNBytes(limit);
+            if (data.length > properties.getFile().getMaxBytes()) {
+                throw new DeliveryBizException(DeliveryErrorCodes.FILE_TOO_LARGE,
+                        DeliveryErrorCodes.FILE_TOO_LARGE_MESSAGE);
+            }
+            return data;
         } catch (final IOException e) {
             log.warn("文件源读取失败: fileId={}", source.fileId());
             throw new DeliveryBizException(DeliveryErrorCodes.DELIVERY_DEPENDENCY_UNAVAILABLE,

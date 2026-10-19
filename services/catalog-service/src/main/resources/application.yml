@@ -34,7 +34,7 @@ ctds:
     permissions:
       provider: dataset.register,dataset.update,dataset.cancel,dataset.read,vocabulary.read,catalog.read,catalog.interact,catalog.product
       admin: dataset.read,vocabulary.read,catalog.read,catalog.governance
-      # 服务间内部只读专用（WBS-3.4.3 Q6-A 衔接，ADR-016 §6 第 6 消费方）：仅 contract-internal 持有，
+      # 服务间内部只读专用（WBS-3.4.3 Q6-A 衔接，ADR-016 §6 第 6 消费方）：contract-internal / delivery-internal 持有，
       # provider/admin 业务角色均不持有——防产品状态枚举（沿 subject.internal.read 先例）。
       contract-internal: catalog.internal.read
       # WBS-3.5.3 文件交付形态校验专用（ADR-016 §6 第 8 消费方 = delivery-service）：

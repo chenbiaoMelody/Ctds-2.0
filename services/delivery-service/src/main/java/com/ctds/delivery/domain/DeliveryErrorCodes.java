@@ -10,7 +10,7 @@ public final class DeliveryErrorCodes {
 
     /** 非合约需求方不可发起交付（与网关同值同义）。→ 403 */
     public static final ErrorCode REQUESTER_NOT_ALLOWED = ErrorCode.of("1009C0003");
-    public static final String REQUESTER_NOT_ALLOWED_MESSAGE = "非合约需求方不可发起交付";
+    public static final String REQUESTER_NOT_ALLOWED_MESSAGE = "非合约需求方不可发起交付调用";
 
     /** 交付请求参数非法（合约编号 / 类型 / 幂等键 / fileId 等）。→ 400 */
     public static final ErrorCode DELIVERY_PARAM_INVALID = ErrorCode.of("1009C0005");

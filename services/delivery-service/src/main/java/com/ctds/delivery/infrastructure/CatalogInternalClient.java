@@ -13,6 +13,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -28,6 +29,8 @@ public class CatalogInternalClient implements CatalogPort {
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(2);
     private static final String INTERNAL_SUBJECT = "delivery-service";
     private static final String INTERNAL_ROLES = "delivery-internal";
+    private static final Set<String> KNOWN_PRODUCT_TYPES =
+            Set.of("API", "DATASET", "REPORT", "MODEL");
 
     private final DeliveryProperties properties;
     private final ObjectMapper objectMapper;
@@ -64,15 +67,28 @@ public class CatalogInternalClient implements CatalogPort {
             log.warn("目录服务请求构造失败: productId={}", productId, e);
             throw unavailable();
         }
+        final String text = response.body();
+        if (text == null || text.isBlank()) {
+            log.warn("目录响应为空: productId={}, status={}", productId, response.statusCode());
+            throw unavailable();
+        }
         final JsonNode body;
         try {
-            body = objectMapper.readTree(response.body());
+            body = objectMapper.readTree(text);
         } catch (final IOException e) {
             log.warn("目录响应解析失败: productId={}, status={}", productId, response.statusCode(), e);
             throw unavailable();
         }
-        final String type = body.path("data").path("productType").asText("");
-        if (response.statusCode() != 200 || !"0".equals(body.path("code").asText()) || type.isBlank()) {
+        if (body == null || body.isNull()) {
+            log.warn("目录响应为空: productId={}, status={}", productId, response.statusCode());
+            throw unavailable();
+        }
+        final JsonNode data = body.path("data");
+        final String type = data.path("productType").asText("");
+        if (response.statusCode() != 200 || !"0".equals(body.path("code").asText()) || type.isBlank()
+                || data.path("productId").asLong(0) != productId
+                || !KNOWN_PRODUCT_TYPES.contains(type)) {
+            // hifi §4.2：产品不存在/未知形态 → 1009S0002（fail-closed，不冒充形态判定）
             log.warn("目录产品形态不可用: productId={}, status={}, code={}", productId,
                     response.statusCode(), body.path("code").asText());
             throw unavailable();

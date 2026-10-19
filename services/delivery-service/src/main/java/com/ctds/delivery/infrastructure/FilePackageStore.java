@@ -46,7 +46,8 @@ public class FilePackageStore {
         try {
             Files.createDirectories(root);
         } catch (final IOException e) {
-            throw new IllegalStateException("交付包存储根不可创建", e);
+            log.error("交付包存储根不可创建: cause={}", e.getClass().getSimpleName());
+            throw new IllegalStateException("交付包存储根不可创建");
         }
         if (!Files.isDirectory(root, LinkOption.NOFOLLOW_LINKS) || !Files.isWritable(root)) {
             throw new IllegalStateException("交付包存储根不可写");
@@ -61,6 +62,11 @@ public class FilePackageStore {
     /** 原子写入加密包；失败抛 1009S0003（不含内容/路径出站）。 */
     public void store(final String packageId, final byte[] envelope) {
         final Path target = resolve(packageId);
+        if (Files.exists(target, LinkOption.NOFOLLOW_LINKS)) {
+            // 包标识唯一（DL 编号），存在即异常；禁止覆盖既有包（DB 恢复/序号回绕时防误删）
+            throw new DeliveryBizException(DeliveryErrorCodes.PACKAGE_OPERATION_FAILED,
+                    DeliveryErrorCodes.PACKAGE_OPERATION_FAILED_MESSAGE);
+        }
         Path temp = null;
         try {
             temp = Files.createTempFile(root, "delivery-", ".tmp");
@@ -68,10 +74,11 @@ public class FilePackageStore {
             try {
                 Files.move(temp, target, StandardCopyOption.ATOMIC_MOVE);
             } catch (final AtomicMoveNotSupportedException e) {
-                Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING);
+                Files.move(temp, target);
             }
         } catch (final IOException e) {
-            log.error("交付包写入失败: packageId={}", packageId, e);
+            log.error("交付包写入失败: packageId={}, cause={}", packageId,
+                    e.getClass().getSimpleName());
             if (temp != null) {
                 try {
                     Files.deleteIfExists(temp);

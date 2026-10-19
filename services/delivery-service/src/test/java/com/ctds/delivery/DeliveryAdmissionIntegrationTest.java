@@ -1,9 +1,12 @@
 package com.ctds.delivery;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 import com.ctds.common.crypto.Sm3Service;
+import com.ctds.common.crypto.Sm4Service;
+import com.ctds.common.errorcode.BizException;
 import com.ctds.delivery.support.SharedMySqlContainer;
 import com.ctds.delivery.support.StubDependencyServer;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -12,6 +15,13 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Base64;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -99,19 +109,23 @@ class DeliveryAdmissionIntegrationTest {
     private JdbcTemplate jdbc;
     @Autowired
     private Sm3Service sm3Service;
+    @Autowired
+    private Sm4Service sm4Service;
 
     @BeforeEach
     void reset() throws Exception {
         jdbc.update("DELETE FROM delivery");
         jdbc.update("DELETE FROM delivery_action_log");
         jdbc.update("UPDATE delivery_no_seq SET next_no = 1 WHERE id = 1");
-        Files.list(STORAGE_ROOT).forEach(path -> {
-            try {
-                Files.deleteIfExists(path);
-            } catch (final Exception ignored) {
-                // 测试清理 best-effort
-            }
-        });
+        try (var stream = Files.list(STORAGE_ROOT)) {
+            stream.forEach(path -> {
+                try {
+                    Files.deleteIfExists(path);
+                } catch (final Exception ignored) {
+                    // 测试清理 best-effort
+                }
+            });
+        }
         resetSources();
         STUB.resetCounters();
         STUB.respondSummary("CO000001", 13, "演示数据集", REQUESTER, PROVIDER, "EFFECTIVE");
@@ -144,8 +158,15 @@ class DeliveryAdmissionIntegrationTest {
                 SOURCE_ROOT.resolve("sample.csv"))));
         final Path packageFile = STORAGE_ROOT.resolve(data.path("packageId").asText());
         assertThat(packageFile).exists();
-        assertThat(Files.readAllBytes(packageFile)).isNotEqualTo(
-                Files.readAllBytes(SOURCE_ROOT.resolve("sample.csv")));
+        final byte[] sourceBytes = Files.readAllBytes(SOURCE_ROOT.resolve("sample.csv"));
+        final byte[] envelope = Files.readAllBytes(packageFile);
+        assertThat(envelope).isNotEqualTo(sourceBytes);
+        assertThat(sm4Service.decrypt(envelope, "delivery-file")).isEqualTo(sourceBytes);
+        final byte[] tampered = envelope.clone();
+        tampered[tampered.length - 1] ^= 0x01;
+        assertThatThrownBy(() -> sm4Service.decrypt(tampered, "delivery-file"))
+                .isInstanceOfSatisfying(BizException.class,
+                        ex -> assertThat(ex.getErrorCode().value()).isEqualTo("1001C0002"));
         assertThat(countDeliveries()).isEqualTo(1);
         assertThat(STUB.checkCount()).isEqualTo(1);
         assertThat(STUB.lastCheckBody()).contains("风控建模", "本市域");
@@ -214,6 +235,77 @@ class DeliveryAdmissionIntegrationTest {
         assertThat(result.getResponse().getStatus()).isEqualTo(503);
         assertThat(codeOf(result)).isEqualTo("1009S0002");
         assertThat(countDeliveries()).isZero();
+    }
+
+    @Test
+    void emptyDependencyBodiesFailClosed() throws Exception {
+        STUB.respondSummaryRaw("", 200);
+        final MvcResult summary = postDelivery(
+                "{\"contractNo\":\"CO000001\",\"deliveryType\":\"API\"}",
+                "idem-empty-summary-1", REQUESTER, "requester");
+        assertThat(summary.getResponse().getStatus()).isEqualTo(503);
+        assertThat(codeOf(summary)).isEqualTo("1009S0002");
+        STUB.respondSummary("CO000001", 13, "演示数据集", REQUESTER, PROVIDER, "EFFECTIVE");
+        STUB.respondProductRaw("", 200);
+        final MvcResult product = postDelivery(
+                "{\"contractNo\":\"CO000001\",\"deliveryType\":\"API\"}",
+                "idem-empty-product-1", REQUESTER, "requester");
+        assertThat(product.getResponse().getStatus()).isEqualTo(503);
+        assertThat(codeOf(product)).isEqualTo("1009S0002");
+        assertThat(countDeliveries()).isZero();
+    }
+
+    @Test
+    void malformedDependencyMetadataFailsClosed() throws Exception {
+        STUB.respondProduct(13, "UNKNOWN");
+        final MvcResult unknownType = postDelivery(
+                "{\"contractNo\":\"CO000001\",\"deliveryType\":\"API\"}",
+                "idem-unknown-type-1", REQUESTER, "requester");
+        assertThat(unknownType.getResponse().getStatus()).isEqualTo(503);
+        assertThat(codeOf(unknownType)).isEqualTo("1009S0002");
+
+        STUB.respondProduct(13, "API");
+        STUB.respondSummaryError("1008C9999", "", 409);
+        final MvcResult unknownCode = postDelivery(
+                "{\"contractNo\":\"CO000001\",\"deliveryType\":\"API\"}",
+                "idem-unknown-code-1", REQUESTER, "requester");
+        assertThat(unknownCode.getResponse().getStatus()).isEqualTo(503);
+        assertThat(codeOf(unknownCode)).isEqualTo("1009S0002");
+
+        STUB.respondSummaryRaw("{\"code\":\"0\",\"message\":\"ok\",\"data\":{"
+                + "\"contractNo\":\"CO000001\",\"productId\":13,\"productName\":\"演示数据集\","
+                + "\"providerNo\":\"S-prov\",\"status\":\"EFFECTIVE\","
+                + "\"effectiveAt\":\"2026-10-01T00:00:00\"}}", 200);
+        final MvcResult missingField = postDelivery(
+                "{\"contractNo\":\"CO000001\",\"deliveryType\":\"API\"}",
+                "idem-missing-field-1", REQUESTER, "requester");
+        assertThat(missingField.getResponse().getStatus()).isEqualTo(503);
+        assertThat(codeOf(missingField)).isEqualTo("1009S0002");
+
+        STUB.respondSummaryRaw("{\"code\":\"0\",\"message\":\"ok\",\"data\":{"
+                + "\"contractNo\":\"CO000001\",\"productId\":13,\"productName\":\"演示数据集\","
+                + "\"applicantNo\":\"S-req\",\"providerNo\":\"S-prov\",\"status\":\"EFFECTIVE\","
+                + "\"effectiveAt\":\"not-a-date\"}}", 200);
+        final MvcResult badDate = postDelivery(
+                "{\"contractNo\":\"CO000001\",\"deliveryType\":\"API\"}",
+                "idem-bad-date-1", REQUESTER, "requester");
+        assertThat(badDate.getResponse().getStatus()).isEqualTo(503);
+        assertThat(codeOf(badDate)).isEqualTo("1009S0002");
+        assertThat(countDeliveries()).isZero();
+    }
+
+    @Test
+    void checkUnavailableFailsClosedWithNoRecordOrPackage() throws Exception {
+        STUB.respondCheckError("1008S0003", "", 500);
+        final MvcResult result = postDelivery(fileBody("sample-dataset"),
+                "idem-check-unavailable-1", REQUESTER, "requester");
+        assertThat(result.getResponse().getStatus()).isEqualTo(503);
+        assertThat(codeOf(result)).isEqualTo("1009S0002");
+        assertThat(STUB.checkCount()).isEqualTo(1);
+        assertThat(countDeliveries()).isZero();
+        try (var files = Files.list(STORAGE_ROOT)) {
+            assertThat(files.count()).isZero();
+        }
     }
 
     @Test
@@ -286,6 +378,78 @@ class DeliveryAdmissionIntegrationTest {
         assertThat(result.getResponse().getStatus()).isEqualTo(400);
         assertThat(codeOf(result)).isEqualTo("1009C0005");
         assertThat(STUB.summaryCount()).isZero();
+    }
+
+    @Test
+    void apiDeliveryReplayReturnsFirstResult() throws Exception {
+        STUB.respondProduct(13, "API");
+        final MvcResult first = postDelivery(
+                "{\"contractNo\":\"CO000001\",\"deliveryType\":\"API\"}",
+                "idem-api-replay-1", REQUESTER, "requester");
+        final MvcResult second = postDelivery(
+                "{\"contractNo\":\"CO000001\",\"deliveryType\":\"API\"}",
+                "idem-api-replay-1", REQUESTER, "requester");
+        assertThat(first.getResponse().getStatus()).isEqualTo(200);
+        assertThat(second.getResponse().getStatus()).isEqualTo(200);
+        assertThat(dataOf(second).path("deliveryNo").asText())
+                .isEqualTo(dataOf(first).path("deliveryNo").asText());
+        assertThat(countDeliveries()).isEqualTo(1);
+        assertThat(STUB.checkCount()).isZero();
+    }
+
+    @Test
+    void idempotencyKeyReuseReturnsFirstResultEvenWithDifferentBody() throws Exception {
+        STUB.respondProduct(13, "API");
+        final MvcResult first = postDelivery(
+                "{\"contractNo\":\"CO000001\",\"deliveryType\":\"API\"}",
+                "idem-reuse-1", REQUESTER, "requester");
+        final MvcResult second = postDelivery(fileBody("sample-dataset"), "idem-reuse-1",
+                REQUESTER, "requester");
+        assertThat(first.getResponse().getStatus()).isEqualTo(200);
+        assertThat(second.getResponse().getStatus()).isEqualTo(200);
+        assertThat(dataOf(second).path("deliveryType").asText()).isEqualTo("API");
+        assertThat(countDeliveries()).isEqualTo(1);
+        assertThat(STUB.checkCount()).isZero();
+    }
+
+    @Test
+    void malformedJsonRejectedAsParamInvalid() throws Exception {
+        final MvcResult result = mockMvc.perform(post("/api/v1/deliveries")
+                .header("X-Ctds-Subject", REQUESTER).header("X-Ctds-Roles", "requester")
+                .header("X-Idempotency-Key", "idem-malformed-1")
+                .contentType(MediaType.APPLICATION_JSON).content("{not-json")).andReturn();
+        assertThat(result.getResponse().getStatus()).isEqualTo(400);
+        assertThat(codeOf(result)).isEqualTo("1009C0005");
+        assertThat(countDeliveries()).isZero();
+    }
+
+    @Test
+    void concurrentSameKeyCreatesOneRecordAndOnePackage() throws Exception {
+        final String key = "idem-concurrent-1";
+        final ExecutorService pool = Executors.newFixedThreadPool(2);
+        final CountDownLatch start = new CountDownLatch(1);
+        try {
+            final Callable<MvcResult> call = () -> {
+                start.await();
+                return postDelivery(fileBody("sample-dataset"), key, REQUESTER, "requester");
+            };
+            final Future<MvcResult> first = pool.submit(call);
+            final Future<MvcResult> second = pool.submit(call);
+            start.countDown();
+            final MvcResult firstResult = first.get(30, TimeUnit.SECONDS);
+            final MvcResult secondResult = second.get(30, TimeUnit.SECONDS);
+            assertThat(firstResult.getResponse().getStatus()).isIn(200, 400);
+            assertThat(secondResult.getResponse().getStatus()).isIn(200, 400);
+            assertThat(Stream.of(firstResult, secondResult)
+                    .filter(result -> result.getResponse().getStatus() == 200).count())
+                    .isGreaterThanOrEqualTo(1);
+            assertThat(countDeliveries()).isEqualTo(1);
+            try (var files = Files.list(STORAGE_ROOT)) {
+                assertThat(files.count()).isEqualTo(1);
+            }
+        } finally {
+            pool.shutdownNow();
+        }
     }
 
     private MvcResult postDelivery(final String body, final String idempotencyKey,

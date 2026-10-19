@@ -31,6 +31,7 @@ public class FileSourceRegistry {
     private final DeliveryProperties properties;
     private final Map<String, FileSource> sources = new LinkedHashMap<>();
     private boolean enabled;
+    private Path realRoot;
 
     public FileSourceRegistry(final DeliveryProperties properties) {
         this.properties = properties;
@@ -55,7 +56,6 @@ public class FileSourceRegistry {
         if (!Files.isDirectory(root, LinkOption.NOFOLLOW_LINKS)) {
             throw new IllegalStateException("文件源根目录不存在或不是目录");
         }
-        final Path realRoot;
         try {
             realRoot = root.toRealPath();
         } catch (final IOException e) {
@@ -96,7 +96,13 @@ public class FileSourceRegistry {
                     DeliveryErrorCodes.DELIVERY_DEPENDENCY_UNAVAILABLE_MESSAGE);
         }
         try {
-            final long size = Files.size(path);
+            // 请求时复核真实路径：启动后若父目录/末级被替换为链接，fail-closed
+            final Path real = path.toRealPath();
+            if (!real.equals(path) || !real.startsWith(realRoot)) {
+                throw new DeliveryBizException(DeliveryErrorCodes.DELIVERY_DEPENDENCY_UNAVAILABLE,
+                        DeliveryErrorCodes.DELIVERY_DEPENDENCY_UNAVAILABLE_MESSAGE);
+            }
+            final long size = Files.size(real);
             if (size <= 0) {
                 throw new DeliveryBizException(DeliveryErrorCodes.DELIVERY_DEPENDENCY_UNAVAILABLE,
                         DeliveryErrorCodes.DELIVERY_DEPENDENCY_UNAVAILABLE_MESSAGE);

@@ -81,6 +81,12 @@ public final class StubDependencyServer {
         summaryBody = "{\"code\":\"" + code + "\",\"message\":\"" + message + "\"}";
     }
 
+    /** 原样返回摘要响应体（空体/畸形体负向测试）。 */
+    public void respondSummaryRaw(final String body, final int status) {
+        summaryStatus = status;
+        summaryBody = body;
+    }
+
     public void respondCheckAllowed() {
         checkStatus = 200;
         checkBody = "{\"code\":\"0\",\"message\":\"ok\",\"data\":{\"verdict\":{\"allowed\":true,"
@@ -105,6 +111,12 @@ public final class StubDependencyServer {
     public void respondProductError(final String code, final int status) {
         productStatus = status;
         productBody = "{\"code\":\"" + code + "\",\"message\":\"产品不存在或未在架\"}";
+    }
+
+    /** 原样返回产品响应体（空体/畸形体负向测试）。 */
+    public void respondProductRaw(final String body, final int status) {
+        productStatus = status;
+        productBody = body;
     }
 
     private void summary(final HttpExchange exchange) throws IOException {

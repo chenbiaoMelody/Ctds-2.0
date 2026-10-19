@@ -38,7 +38,7 @@ public class InternalContractSummaryService {
     private static String requireText(final String value) {
         if (value == null || value.isBlank()) {
             throw new ContractBizException(ContractErrorCodes.CONTRACT_PARAM_INVALID,
-                    ContractErrorCodes.TEMPLATE_PARAM_INVALID_MESSAGE);
+                    ContractErrorCodes.CONTRACT_PARAM_INVALID_MESSAGE);
         }
         return value.trim();
     }

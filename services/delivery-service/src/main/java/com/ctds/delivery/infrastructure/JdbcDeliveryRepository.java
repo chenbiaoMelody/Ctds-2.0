@@ -1,5 +1,7 @@
 package com.ctds.delivery.infrastructure;
 
+import com.ctds.common.errorcode.BizException;
+import com.ctds.common.errorcode.ErrorCodes;
 import com.ctds.common.pagination.PageQuery;
 import com.ctds.delivery.domain.Delivery;
 import com.ctds.delivery.domain.DeliveryActionLog;
@@ -23,6 +25,15 @@ public class JdbcDeliveryRepository implements DeliveryRepository {
     private static final String COLUMNS = "id, delivery_no, contract_no, product_id, product_name, "
             + "delivery_type, requester_no, provider_no, file_id, file_name, file_size, package_id, "
             + "checksum, key_ref, result, idempotency_key, created_at";
+    private static final Map<String, String> SORT_COLUMNS = Map.of(
+            "id", "id",
+            "createdAt", "created_at",
+            "created_at", "created_at",
+            "deliveryNo", "delivery_no",
+            "delivery_no", "delivery_no",
+            "deliveryType", "delivery_type",
+            "delivery_type", "delivery_type",
+            "result", "result");
 
     private final JdbcClient jdbc;
 
@@ -88,7 +99,7 @@ public class JdbcDeliveryRepository implements DeliveryRepository {
                 + "(requester_no = :caller OR provider_no = :caller)");
         params.put("caller", callerNo);
         appendFilters(sql, params, contractNo, type);
-        sql.append(" ORDER BY id DESC LIMIT :limit OFFSET :offset");
+        sql.append(orderClause(page)).append(" LIMIT :limit OFFSET :offset");
         params.put("limit", page.pageSize());
         params.put("offset", page.offset());
         final var spec = jdbc.sql(sql.toString());
@@ -115,7 +126,7 @@ public class JdbcDeliveryRepository implements DeliveryRepository {
         final Map<String, Object> params = new HashMap<>();
         final StringBuilder sql = new StringBuilder("SELECT " + COLUMNS + " FROM delivery WHERE 1 = 1");
         appendGovernanceFilters(sql, params, contractNo, deliveryNo);
-        sql.append(" ORDER BY id DESC LIMIT :limit OFFSET :offset");
+        sql.append(orderClause(page)).append(" LIMIT :limit OFFSET :offset");
         params.put("limit", page.pageSize());
         params.put("offset", page.offset());
         final var spec = jdbc.sql(sql.toString());
@@ -157,6 +168,20 @@ public class JdbcDeliveryRepository implements DeliveryRepository {
             sql.append(" AND delivery_type = :type");
             params.put("type", type.name());
         }
+    }
+
+    private static String orderClause(final PageQuery page) {
+        if (page.sortField() == null) {
+            return " ORDER BY id DESC";
+        }
+        final String column = SORT_COLUMNS.get(page.sortField());
+        if (column == null) {
+            throw new BizException(ErrorCodes.PARAM_INVALID, "orderBy 字段不支持");
+        }
+        final String direction = "desc".equalsIgnoreCase(page.sortDirection()) ? "DESC" : "ASC";
+        return "id".equals(column)
+                ? " ORDER BY id " + direction
+                : " ORDER BY " + column + " " + direction + ", id DESC";
     }
 
     private static void appendGovernanceFilters(final StringBuilder sql,

@@ -33,40 +33,69 @@ public class DeliveryAuditService {
     /** 成功类动作（create/read/download/governance）：DB 动作留痕 + 审计 JSONL。 */
     public void success(final String action, final String deliveryNo, final String contractNo,
             final String operatorNo) {
-        record(action, deliveryNo, contractNo, operatorNo, "SUCCESS", null);
+        success(action, deliveryNo, contractNo, operatorNo, null);
+    }
+
+    /** 成功类动作（带交付类型；hifi §7.3 create 字段）。 */
+    public void success(final String action, final String deliveryNo, final String contractNo,
+            final String operatorNo, final String deliveryType) {
+        record(action, deliveryNo, contractNo, operatorNo, "SUCCESS", null, deliveryType);
     }
 
     /** 拒绝类动作（含触发码；不暴露内部细节）：DB 动作留痕 + 审计 JSONL。 */
     public void denied(final String action, final String deliveryNo, final String contractNo,
             final String operatorNo, final String reasonCode) {
-        record(action, deliveryNo, contractNo, operatorNo, "DENIED", reasonCode);
+        denied(action, deliveryNo, contractNo, operatorNo, reasonCode, null);
+    }
+
+    /** 拒绝类动作（带交付类型；hifi §7.3 denied 字段）。 */
+    public void denied(final String action, final String deliveryNo, final String contractNo,
+            final String operatorNo, final String reasonCode, final String deliveryType) {
+        record(action, deliveryNo, contractNo, operatorNo, "DENIED", reasonCode, deliveryType);
+    }
+
+    /** 平台侧失败（hifi §5.4：check 放行后加密/存储失败 → delivery.create FAILURE + 1009S0003）。 */
+    public void failure(final String action, final String deliveryNo, final String contractNo,
+            final String operatorNo, final String reasonCode, final String deliveryType) {
+        record(action, deliveryNo, contractNo, operatorNo, "FAILURE", reasonCode, deliveryType);
     }
 
     /** 仅 JSONL（用于 create 已随事务落 DB 动作留痕的场景）。 */
     public void jsonOnly(final String action, final String deliveryNo, final String contractNo,
             final String operatorNo) {
-        recordJson(action, deliveryNo, contractNo, operatorNo, "SUCCESS", null);
+        jsonOnly(action, deliveryNo, contractNo, operatorNo, null);
+    }
+
+    /** 仅 JSONL（带交付类型）。 */
+    public void jsonOnly(final String action, final String deliveryNo, final String contractNo,
+            final String operatorNo, final String deliveryType) {
+        recordJson(action, deliveryNo, contractNo, operatorNo, "SUCCESS", null, deliveryType);
     }
 
     private void record(final String action, final String deliveryNo, final String contractNo,
-            final String operatorNo, final String result, final String reasonCode) {
+            final String operatorNo, final String result, final String reasonCode,
+            final String deliveryType) {
         try {
             repository.insertActionLog(new DeliveryActionLog(null, deliveryNo, contractNo, operatorNo,
                     action, result, reasonCode, null));
         } catch (final RuntimeException e) {
             log.warn("交付动作留痕写入失败: action={}", action);
         }
-        recordJson(action, deliveryNo, contractNo, operatorNo, result, reasonCode);
+        recordJson(action, deliveryNo, contractNo, operatorNo, result, reasonCode, deliveryType);
     }
 
     private void recordJson(final String action, final String deliveryNo, final String contractNo,
-            final String operatorNo, final String result, final String reasonCode) {
+            final String operatorNo, final String result, final String reasonCode,
+            final String deliveryType) {
         final AuditRecorder recorder = auditRecorder.getIfAvailable();
         if (recorder == null) {
             return;
         }
         final Map<String, String> detail = new LinkedHashMap<>();
         detail.put("contractNo", contractNo == null ? "" : contractNo);
+        if (deliveryType != null && !deliveryType.isBlank()) {
+            detail.put("deliveryType", deliveryType);
+        }
         if (reasonCode != null) {
             detail.put("reasonCode", reasonCode);
         }
@@ -79,6 +108,10 @@ public class DeliveryAuditService {
     }
 
     private static AuditOutcome outcomeOf(final String result) {
-        return "DENIED".equals(result) ? AuditOutcome.DENIED : AuditOutcome.SUCCESS;
+        return switch (result) {
+            case "DENIED" -> AuditOutcome.DENIED;
+            case "FAILURE" -> AuditOutcome.FAILURE;
+            default -> AuditOutcome.SUCCESS;
+        };
     }
 }

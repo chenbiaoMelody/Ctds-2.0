@@ -40,5 +40,8 @@ class DeliveryErrorCodesTest {
                 DeliveryErrorCodes.DELIVERY_DEPENDENCY_UNAVAILABLE_MESSAGE,
                 DeliveryErrorCodes.PACKAGE_OPERATION_FAILED_MESSAGE))
                 .allSatisfy(message -> assertThat(message).isNotBlank());
+        // 与网关 1009C0003 同值同文（hifi §7.2 一致性锚）
+        assertThat(DeliveryErrorCodes.REQUESTER_NOT_ALLOWED_MESSAGE)
+                .isEqualTo("非合约需求方不可发起交付调用");
     }
 }
