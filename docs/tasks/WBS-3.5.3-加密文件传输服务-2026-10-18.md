@@ -106,7 +106,7 @@
 | 修复批（2026-10-19 22:1x~23:2x） | ✅ **commit `3078cee`（本地，未推送）**：拒绝留痕（详情/治理/下载 + DB + 审计）、create FAILURE（check 放行后失败）、orderBy 白名单 + 分页类型、依赖空体/缺失字段/未知形态/未登记结论码 fail-closed、包覆盖防护/日志脱敏/有界读取/请求时 realpath、1009C0003 同文、畸形 JSON/类型不匹配码、审计 deliveryType。测试 **33→56**（delivery 56/56、1 跳过；contract 244、catalog 182；checkstyle 0）。 |
 | 独立复审（2026-10-19 23:3x） | ✅ 第 1 轮发现 **N1（P1）**：依赖空响应体 `readTree` 返回 null → NPE/500 → 已修复为 1009S0002 并补测；第 2 轮 **PASS（无 P0/P1）**。P2 登记：请求时替换用例、check 空体独立用例、预检拒绝审计用例、pageNum 非数字、序号 >999999、包存储 realpath；另登记 JSON null body 与先取号后读文件/加密的空号。 |
 | 全仓门禁（2026-10-19 23:47） | ✅ **GREEN `gate-report-20261019-234758.md`**：PASS=15/FAIL=0/SKIP=1/ERROR=0/PENDING=5；gateSelfTest **196 断言 100s**；frontendTest PASS；coverage **93.17%**（auth 92.02 / crypto 89.74 / did 96.22）；mutation PASS（did 68.18%）；SAST **0**；ConfigSha256 `955bdbba…2ee2` 逐字一致。首跑 `gate-report-20261019-230750.md` RED 仅 frontendTest worker 超时（隔离 440/440 绿），干净单发复跑通过。 |
-| 待验收 | ⏳ 编码批 `d567145` + 修复批 `3078cee` 本地提交（未推送）；下一关口 = **推送特性分支（须编排师显式指示）** → 真链走查（方式 A）→ 编排师验收。 |
+| 待验收 | ⏳ 编码批 `d567145` + 修复批 `3078cee` + 文档批 `9ba8429`（日志补记 `af5450a`）已推送 origin 特性分支（本地==origin；未建 PR/未合并 main）；下一关口 = **真链走查（方式 A）** → 编排师验收。 |
 
 ## 五、体量登记（立卡时填写）
 
