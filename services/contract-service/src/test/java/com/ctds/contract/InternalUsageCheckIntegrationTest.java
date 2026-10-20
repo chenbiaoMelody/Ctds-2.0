@@ -168,6 +168,66 @@ class InternalUsageCheckIntegrationTest {
         assertThat(usageCount(contractNo)).as("权限拒绝不得计数").isZero();
     }
 
+    // ==== 内部只读摘要（WBS-3.5.3 文件交付准入；不计数） ====
+
+    @Test
+    void internalSummaryReturnsProductAndParticipantsWithoutCounting() throws Exception {
+        final String contractNo = toEffective(unique("S1"), quotaStrategy(3));
+        final long before = usageCount(contractNo);
+        final MvcResult result = internalSummary(contractNo, REQ, "delivery-service",
+                "delivery-internal");
+        assertThat(result.getResponse().getStatus()).isEqualTo(200);
+        final JsonNode data = readBody(result).path("data");
+        assertThat(data.path("contractNo").asText()).isEqualTo(contractNo);
+        assertThat(data.path("productId").asLong()).isEqualTo(PRODUCT_ID);
+        assertThat(data.path("productName").asText()).isNotBlank();
+        assertThat(data.path("applicantNo").asText()).isEqualTo(REQ);
+        assertThat(data.path("providerNo").asText()).isEqualTo(PROV);
+        assertThat(data.path("status").asText()).isEqualTo("EFFECTIVE");
+        assertThat(data.path("effectiveAt").isNull()).isFalse();
+        assertThat(usageCount(contractNo)).as("只读摘要不计数").isEqualTo(before);
+        assertThat(data.toString()).doesNotContain("slots").doesNotContain("subject_matter");
+    }
+
+    @Test
+    void internalSummaryRejectsNonParticipantSameShape() throws Exception {
+        final String contractNo = toEffective(unique("S2"), quotaStrategy(3));
+        final MvcResult other = internalSummary(contractNo, OTHER, "delivery-service",
+                "delivery-internal");
+        final MvcResult missing = internalSummary("CO999999", OTHER, "delivery-service",
+                "delivery-internal");
+        assertThat(other.getResponse().getStatus()).isEqualTo(404);
+        assertThat(missing.getResponse().getStatus()).isEqualTo(404);
+        assertThat(readBody(other).path("code").asText()).isEqualTo(C0012);
+        assertThat(readBody(missing).path("code").asText()).isEqualTo(C0012);
+        assertThat(readBody(other).path("message").asText())
+                .isEqualTo(readBody(missing).path("message").asText());
+    }
+
+    @Test
+    void internalSummaryRejectsNonEffectiveContract() throws Exception {
+        final String contractNo = initiateOk(unique("S3"), quotaStrategy(3));
+        final MvcResult result = internalSummary(contractNo, REQ, "delivery-service",
+                "delivery-internal");
+        assertThat(result.getResponse().getStatus()).isEqualTo(409);
+        assertThat(readBody(result).path("code").asText()).isEqualTo(C0013);
+    }
+
+    @Test
+    void internalSummaryRequiresInternalPermission() throws Exception {
+        final String contractNo = toEffective(unique("S4"), quotaStrategy(3));
+        assertThat(statusOf(internalSummary(contractNo, REQ, "S-req", "provider"))).isEqualTo(403);
+        assertThat(statusOf(mockMvc.perform(get(BASE + "/internal/contract-summaries/" + contractNo
+                + "?requesterNo=" + REQ)).andReturn())).isEqualTo(401);
+    }
+
+    private MvcResult internalSummary(final String contractNo, final String requesterNo,
+            final String subject, final String roles) throws Exception {
+        return mockMvc.perform(get(BASE + "/internal/contract-summaries/" + contractNo)
+                .queryParam("requesterNo", requesterNo)
+                .header("X-Ctds-Subject", subject).header("X-Ctds-Roles", roles)).andReturn();
+    }
+
     // ==== 判定原码（越界 / 状态失效 / 参与方防枚举） ====
 
     @Test

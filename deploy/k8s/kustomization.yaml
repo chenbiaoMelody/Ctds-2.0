@@ -16,3 +16,5 @@ resources:
   - contract-service.yaml
   - gateway-deployment.yaml
   - gateway-service.yaml
+  - delivery-deployment.yaml
+  - delivery-service.yaml

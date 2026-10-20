@@ -1,0 +1,88 @@
+# C-TDS delivery-service Deployment (WBS-3.5.3, spec: docs/designs/WBS-3.5.3-hifi.md §1/§5;
+# template follows contract-deployment.yaml per ADR-013, WBS-2.5.2 label conventions).
+# IMAGE_PLACEHOLDER is injected by the 2.5.2 deployment toolchain convention (ADR-012).
+# ACTIVATION NOTE: not yet runnable in the demo cluster - prerequisites registered in the
+# delivery note: (1) delivery image added to the nightly build / ModuleMap wiring (2.5.x),
+# (2) `ctds_delivery` database bootstrap (CREATE DATABASE, same operational line as
+# ctds_catalog/ctds_contract), (3) SM4 key source env (CTDS_SM4_KEY_FILE or KMS) injected at
+# activation - key material never enters the repo (charter red line 7), (4) file source root /
+# storage root volumes configured for file delivery (empty = file delivery fails closed 503;
+# API delivery records still work). Until then the pod stays ImagePullBackOff if applied: expected.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ctds-delivery-service
+  labels:
+    app.kubernetes.io/part-of: ctds
+    app.kubernetes.io/name: ctds-delivery-service
+    app.kubernetes.io/component: delivery
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ctds-delivery-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: ctds
+        app.kubernetes.io/name: ctds-delivery-service
+        app.kubernetes.io/component: delivery
+    spec:
+      containers:
+        - name: ctds-delivery-service
+          # Image reference is injected by the 2.5.2 toolchain convention (ADR-012).
+          image: IMAGE_PLACEHOLDER
+          securityContext:
+            runAsNonRoot: true
+          ports:
+            - containerPort: 8087
+          readinessProbe:
+            tcpSocket:
+              port: 8087
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 8087
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          env:
+            # mysql profile is required (JdbcClient repositories; default profile is
+            # fail-fast non-startable by design, ADR-009/DB-24).
+            - name: SPRING_PROFILES_ACTIVE
+              value: "mysql"
+            # In-cluster relaxation of the host-demo loopback binding (ADR-016 §2.7):
+            # ClusterIP keeps the service non-exposed.
+            - name: SPRING_SERVER_ADDRESS
+              value: "0.0.0.0"
+            # Internal contract summary + usage check (delivery admission/policy).
+            - name: CTDS_DELIVERY_CONTRACT_BASEURL
+              value: "http://ctds-contract-service:8085"
+            # Internal product facts (form validation).
+            - name: CTDS_DELIVERY_CATALOG_BASEURL
+              value: "http://ctds-catalog-service:8084"
+            # SM4 key source: injected via secret/env at activation (CTDS_SM4_KEY_FILE or
+            # KMS); key material never enters the repo (charter red line 7).
+            - name: CTDS_SM4_KEY_FILE
+              value: ""
+            # File delivery source/storage roots: provision volumes at activation.
+            # Empty = file delivery fails closed (1009S0002); API delivery records still work.
+            - name: CTDS_DELIVERY_SOURCE_ROOT
+              value: ""
+            - name: CTDS_DELIVERY_STORAGE_ROOT
+              value: ""
+            # DB credentials are injected via secret/env at activation (2.5.x);
+            # keys only, no real credentials in the repo (charter red line 7).
+            - name: CTDS_DB_URL
+              value: "jdbc:mysql://ctds-mysql:3306/ctds_delivery"
+            - name: CTDS_DB_USER
+              value: "ctds"
+            - name: CTDS_DB_PASSWORD
+              value: ""
