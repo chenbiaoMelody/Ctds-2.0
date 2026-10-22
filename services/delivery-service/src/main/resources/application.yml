@@ -21,12 +21,13 @@ logging:
       file: logstash
 
 ctds:
-  # 交付域角色点（WBS-3.5.3 hifi §1/§7）：需求方发起 + 读 + 领取；提供方只读；运营方治理读面。
+  # 交付域角色点（WBS-3.5.3 hifi §1/§7 + WBS-3.5.4 hifi §1.2）：需求方发起 / 读 / 领取 / 沙箱申请与使用；
+  # 提供方只读（含沙箱读面）；运营方治理读面（交付 + 沙箱）。
   auth:
     permissions:
-      requester: delivery.request,delivery.read,delivery.package.download
-      provider: delivery.read
-      admin: delivery.governance
+      requester: delivery.request,delivery.read,delivery.package.download,sandbox.request,sandbox.read,sandbox.use
+      provider: delivery.read,sandbox.read
+      admin: delivery.governance,sandbox.governance
   # 交付服务参数（hifi §1/§4/§5）
   delivery:
     contract:
@@ -42,6 +43,38 @@ ctds:
       max-bytes: 67108864
     # 文件源清单（Q3-A）：fileId 仅精确键；path 相对 source-root；启动校验 fail-fast。
     files: []
+  # 沙箱子域（WBS-3.5.4 hifi §1.2）：配额 / 运行时 / 受控作业清单全部配置化；
+  # 运行时默认关闭 = fail-closed 503（k8s 不注入 docker socket，ADR-024）。
+  sandbox:
+    workspace-root: ${CTDS_SANDBOX_WORKSPACE_ROOT:}
+    jobs-root: ${CTDS_SANDBOX_JOBS_ROOT:}
+    quota:
+      cpus: 1.0
+      memory-mb: 512
+      ttl: 2h
+      job-timeout: 120s
+      max-active-per-requester: 2
+      max-active-global: 8
+      max-input-files: 32
+      max-input-bytes: 268435456
+    runtime:
+      enabled: ${CTDS_SANDBOX_RUNTIME_ENABLED:false}
+      docker-cli: docker
+      image: python:3.12-alpine
+      command-timeout: 30s
+    # 受控作业清单（Q4-A）：请求只给 jobId；命令首元素白名单 python3；作业脚本只读挂载。
+    jobs:
+      - id: dataset-profile
+        display-name: 数据集画像
+        command: [python3, /opt/ctds/jobs/dataset_profile.py, /work/input, /work/output/dataset-profile.md]
+        timeout: 120s
+      - id: input-inventory
+        display-name: 输入清单
+        command: [python3, /opt/ctds/jobs/input_inventory.py, /work/input, /work/output/input-inventory.md]
+        timeout: 60s
+    sweep:
+      enabled: true
+      fixed-delay-ms: 60000
   # 国密组件（ADR-006）：密钥仅环境变量/KeyProvider；未配置 = 文件交付 fail-closed。
   crypto:
     local:

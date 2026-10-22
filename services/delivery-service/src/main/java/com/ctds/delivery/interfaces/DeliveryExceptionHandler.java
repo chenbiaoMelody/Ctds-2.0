@@ -6,6 +6,7 @@ import com.ctds.common.errorcode.ErrorCodes;
 import com.ctds.delivery.domain.ContractPassThroughException;
 import com.ctds.delivery.domain.DeliveryBizException;
 import com.ctds.delivery.domain.DeliveryErrorCodes;
+import com.ctds.delivery.domain.SandboxErrorCodes;
 import java.util.Set;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
@@ -34,7 +35,14 @@ public class DeliveryExceptionHandler {
             DeliveryErrorCodes.FILE_TOO_LARGE.value(),
             DeliveryErrorCodes.PACKAGE_NOT_ALLOWED.value(),
             DeliveryErrorCodes.DELIVERY_DEPENDENCY_UNAVAILABLE.value(),
-            DeliveryErrorCodes.PACKAGE_OPERATION_FAILED.value());
+            DeliveryErrorCodes.PACKAGE_OPERATION_FAILED.value(),
+            SandboxErrorCodes.SANDBOX_NOT_VISIBLE.value(),
+            SandboxErrorCodes.SANDBOX_STATE_CONFLICT.value(),
+            SandboxErrorCodes.SANDBOX_DATA_DENIED.value(),
+            SandboxErrorCodes.SANDBOX_QUOTA_EXCEEDED.value(),
+            SandboxErrorCodes.SANDBOX_JOB_NOT_ALLOWED.value(),
+            SandboxErrorCodes.SANDBOX_RUNTIME_UNAVAILABLE.value(),
+            SandboxErrorCodes.SANDBOX_OPERATION_FAILED.value());
 
     @ExceptionHandler(DeliveryBizException.class)
     public ResponseEntity<ApiResult<Void>> onDeliveryBizException(final DeliveryBizException ex) {
@@ -73,12 +81,14 @@ public class DeliveryExceptionHandler {
                         ApiResult.currentTraceId(), null));
     }
 
-    private static HttpStatus statusOf(final String code) {
+    static HttpStatus statusOf(final String code) {
         return switch (code) {
-            case "1009C0003", "1009C0009" -> HttpStatus.FORBIDDEN;
-            case "1009C0005", "1009C0006", "1009C0008" -> HttpStatus.BAD_REQUEST;
-            case "1009C0007" -> HttpStatus.NOT_FOUND;
-            case "1009S0002" -> HttpStatus.SERVICE_UNAVAILABLE;
+            case "1009C0003", "1009C0009", "1009C0012" -> HttpStatus.FORBIDDEN;
+            case "1009C0005", "1009C0006", "1009C0008", "1009C0014" -> HttpStatus.BAD_REQUEST;
+            case "1009C0007", "1009C0010" -> HttpStatus.NOT_FOUND;
+            case "1009C0011" -> HttpStatus.CONFLICT;
+            case "1009C0013" -> HttpStatus.TOO_MANY_REQUESTS;
+            case "1009S0002", "1009S0004" -> HttpStatus.SERVICE_UNAVAILABLE;
             default -> HttpStatus.INTERNAL_SERVER_ERROR;
         };
     }

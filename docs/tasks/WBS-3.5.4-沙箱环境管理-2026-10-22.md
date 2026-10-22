@@ -93,6 +93,32 @@
 | §6-3（诚实边界） | 平台侧隔离环境；不作跨机构物理“不出域”承诺；自由编码 / 生产 K8s 编排登记演进 | 剧本维护说明 3 | —— |
 | G1（形态口径） | 仅 DATASET/REPORT/MODEL；API 形态 → `1009C0006` | S1-1（主凭据为数据集合约） | 准入组（形态 1 例） |
 
+### 编码段实测锚点（2026-10-22，`mvn -pl services/delivery-service test` → **122 例 / 0 失败 / 5 跳过**；基线 56 → 122）
+
+| 规格承载 | 实测用例（类#方法，均为 `SandboxIntegrationTest` 除注明） | 例数 |
+| --- | --- | --- |
+| 行为 1 规则 1（生效合约） | `nonEffectiveContractPassThrough`（1008C0013/409）+ `nonParticipantContractPassThrough`（1008C0012/404） | 2 |
+| 行为 1 规则 2（发起人 = 需求方） | `providerCannotCreateSandbox`（1009C0003/403）+ `invalidParamsRejected`（1009C0005/400） | 2 |
+| 行为 1 规则 4（防枚举 + 拒绝留痕） | `nonParticipantDetailIsNotFound` / `nonParticipantCloseIsNotFound` / `crossSandboxJobIsNotFound`（均 1009C0010 同码同文）+ `participantListShowsOwnSandboxesOnly`（非参与方空列表） | 4 |
+| 行为 4 规则 1（凭合约申请） | `createSandboxCopiesInputsAndLaunchesContainer`（任务绑定合约 + 产品快照）、`idempotentReplayReturnsSameSandboxWithoutSecondLaunch` | 2 |
+| 行为 4 规则 2（隔离环境） | `DockerCommandBuilderTest`（7 例 argv 基线）+ `SandboxDockerE2eTest`（4 例真 Docker，默认跳过、走查启用） | 11 |
+| 行为 4 规则 3（配额与生命周期） | `closeStopsContainerAndMarksStopped` / `closeIsIdempotent` / `providerCannotClose` / `sweepExpiresOverdueTask` / `reconcileMarksMissingContainerStopped` / `requesterQuotaExceeded`（429）/ `runJobAfterCloseRejected` / `runJobAfterExpiryRejectsAndMarksExpired` | 8 |
+| 行为 4 规则 4（可查 + 治理） | `resultsExposeMetadataOnlyWithSm3` / `governanceReadLeavesTrace` / `detailResponseHasNoInternalDetails` / `participantListShowsOwnSandboxesOnly` | 4 |
+| 行为 4 规则 5（不绕合约） | `noRegisteredDataFilesFailsClosed`（1009S0004） | 1 |
+| 行为 5 规则 1（数据带不出） | `dataInputDirectAccessDenied` / `dataOutputDirectAccessDenied` / `dataPathTraversalDenied` / `dataAccessByNonParticipantIsNotFound` | 4 |
+| 行为 5 规则 2（环境隔离） | `SandboxDockerE2eTest#inputMountIsReadOnly` / `#containerHasNoNetwork`（走查启用）+ `DockerCommandBuilderTest`（mount 三段、无 socket / host 网络） | 4 |
+| 行为 5 规则 3（使用留痕） | `runJobSucceedsAndCountsOnce` / `actionLogKeepsBusinessFieldsOnly` | 2 |
+| 行为 5 规则 4（策略仍生效） | `policyViolationPassThroughWithoutRecord`（1008C0020 零计数零记录）/ `contractUnavailableLeavesNoJobRecord`（1009S0002 零记录）/ `jobIdempotentReplayDoesNotDoubleCount` | 3 |
+| 行为 5 规则 5（配额到顶即止） | `jobTimeoutRecorded`（TIMEOUT）+ `requesterQuotaExceeded` | 2 |
+| 行为 7 规则 1/2（默认拒绝 + 治理例外） | `nonParticipantDetailIsNotFound` + `governanceReadLeavesTrace`（读即留痕） | 2 |
+| 行为 7 规则 3（服务端强制） | `dataPathTraversalDenied` + `runJobAfterExpiryRejectsAndMarksExpired` | 2 |
+| 行为 7 规则 4/5（留痕不含原文） | `actionLogKeepsBusinessFieldsOnly`（无命令 / 镜像 / 容器 / 路径）+ `detailResponseHasNoInternalDetails` | 2 |
+| WBS 行 317/328（计量 / 存证） | `runJobSucceedsAndCountsOnce`（check 计数 1）+ `jobIdempotentReplayDoesNotDoubleCount`（重放不重复计数）；`sandbox_job` = 3.7.5 事件源 | 2 |
+| G1（形态口径） | `apiProductFormRejectedByG1Rule`（API → 1009C0006/400） | 1 |
+| 配置 fail-fast（hifi §1.2） | `SandboxPropertiesTest`（10 例：配额 / 镜像 tag / 作业清单 / 运行时空根） | 10 |
+| 工作区与数据注入（hifi §5） | `SandboxWorkspaceStoreTest`（6 例：fileId 命名 / manifest 无路径 / 上限 / 结果元数据 SM3 / 幂等清理） | 6 |
+| 错误码出站映射（hifi §7.2） | `DeliveryExceptionHandlerTest`（码表一致性 + 沙箱 7 码 HTTP 映射） | 2 |
+
 ## 四、执行记录
 
 | 项 | 内容 |
@@ -100,6 +126,7 @@
 | 立卡段（2026-10-22 21:2x） | 🟡 **立卡段完成**：任务卡 + lofi **V0.9** + hifi **V0.9** 落盘；素材盘点八项（含 **G1 规格未定义项** + **G0 剧本答案 = 无需修订**）；**待编排师一次确认 Q1~Q9 + G1 + D1**；确认后 lofi/hifi 转 **V1.0（编码契约即时生效）**、分支推送 origin → 编码段（测试先行，另会冷启动，第一动作 = hifi §10 八项前置检查逐项实测留痕）。**本段零代码、零依赖、零门禁配置改动，未动 `main`**。台账“进行中”行暂未改（沿 3.5.3 先例，编码段更新）。 |
 | 确认段（2026-10-22 21:25） | ✅ **编排师一次确认 Q1~Q9 全采建议 A + G1-A + D1 不拆分**：lofi/hifi 同批转 **V1.0（编码契约即时生效）**；**G1-A** = 仅 DATASET/REPORT/MODEL，规格澄清补丁**待 PO 批准**（变更流程，本卡不擅自改规格）；**D1 不拆分**（2200~2600 行，2 个编码会话）。确认批提交并推送 origin；**下一关口 = 编码段（新会话冷启动，测试先行，第一动作 = hifi §10 八项前置检查逐项实测留痕）→ 4 视角评审 → 修复循环 ≤3 轮 → 真链走查 → 编排师验收**。本段零代码/零配置/零门禁改动。 |
 | G1 落地段（2026-10-22 21:3x） | ✅ **PO 批准 G1**（会话原文：“批准 G1：沙箱只接受数据集 / 报告 / 模型形态的合约，API 形态拒绝”）→ 规格转 **V1.1**（行为 4 规则 6 + 验收标准 6 + §7 G1 行 + 版本头 + 关联剧本版本）；C-5.2 剧本转 **V1.1**（步骤与业务判定一字未改；维护说明第 6 条留痕 + 演示前提 ④ 补“数据集形态”）；任务卡 G1 状态 / 关闭条件② / 设计 G1 备注同步。**零代码 / 零配置 / 零门禁改动** |
+| 编码段（2026-10-22 22:0x） | 🟢 **编码与测试完成（单会话）**：hifi §10 八项前置检查逐项实测（Docker 29.8.1/OSType=linux、镜像已拉取 digest `92abd2ba…fd656`、`--mount` 挂载冒烟通过、`ctds_delivery` + Flyway V1、gates V1.12 `955bdbba…2ee2`）；红相归档 `build-output/w354-red-1.log`（4 类找不到符号）→ 实现 `com.ctds.delivery.sandbox` 子域 + Flyway V2 + `deploy/sandbox/jobs/*.py` + ADR-024 + `dependencies.md` 镜像 1 行 + k8s 沙箱环境变量（默认关闭）；测试 **56 → 122 例**（0 失败 / 5 跳过 = 1 Windows 符号链接 + 4 真 Docker）；checkstyle **0 违规**；真 Docker 走查 4 例实跑全绿（安全基线 / 输入只读 / 作业产物 SM3 / 无网络）。**未推送、未建 PR**；下一关口 = 全仓门禁 + 4 视角评审 + API 级真链走查 + 编排师验收 |
 
 ## 五、体量登记（立卡时填写）
 
@@ -108,6 +135,7 @@
 | 实测（立卡段） | 任务卡 **112 行**；`docs/designs/WBS-3.5.4-lofi.md` **156 行**；`docs/designs/WBS-3.5.4-hifi.md` **430 行** → 合计 **698 行**（行数口径 = 文件实际行数实测）；**无代码、无测试、零 Maven 依赖引入** |
 | 实测（确认段） | 任务卡 **114 行**（+2 = §四 确认段行 + §五 确认段行）；lofi **156 行**（等量替换）；hifi **430 行**（等量替换）→ 合计 **700 行**；**无代码、无测试、零 Maven 依赖引入** |
 | 实测（G1 落地段） | 任务卡 **116 行**（+2 = §四 G1 落地段行 + §五 本行）；lofi **156 行**；hifi **430 行**；规格 `docs/specs/C-5.1-5.2-交付与沙箱.md` **244 行**（+4 = 行为 4 规则 6 / 验收标准 6 / §7 G1 行 / 补定义留痕）；C-5.2 剧本 **98 行**（+1 = 维护说明第 6 条）；本段**零代码 / 零配置 / 零门禁改动** |
+| 实测（编码段） | `git diff --numstat`（含新增文件）= **+4358 / −12 行**：主代码 **2456 行**（34 文件：领域 10 / 仓储 2 / 运行时与工作区 6 / 应用 7 / 接口与 DTO 5 / 审计 2 / 配置 1 / 异常 1，含既有类加性改动 5 处）、测试 **1046 行**（6 文件 / 66 新例）、Flyway V2 **83 行**、作业脚本 **74 行**、文档 **≈300 行**（ADR-024 89 + 本节与 §三/§四 回填 + 日志）。**超出立卡预估 2200~2600 约 68%**：① 测试占比 24%（hifi 预估 45~50 例，实测 66 例，含 15 例"绕过/越界/留痕"反向锚与 4 例真 Docker）；② 新子域跨 8 层（模型 / 仓储 / 运行时 / 工作区 / 应用 / 接口 / 审计 / 配置）文件数结构性偏高。**D1 已确认不拆分（2 个编码会话）**，本会话一次完成编码 + 测试 + 文档；后续评审修复批另计 |
 | 预估（编码段） | 有效变更 **2200~2600 行**：领域 / 仓储 ≈400 + 运行时 / 工作区 ≈350 + 准入 / 配额 / 生命周期 ≈450 + 作业 / 策略 / 留痕 ≈350 + 接口 / DTO / 错误码 ≈200 + 测试 ≈700~900 + 迁移 / 部署 / 文档 ≈300；**2 个编码会话**；零新 Maven 依赖；新增 1 条容器基础镜像（Q3-A） |
 | 超 400 行指引说明 | 本卡为沙箱环境管理的原子集（容器环境 + 配额 + 生命周期 + 使用承载 + 数据面出口）；拆分将导致“环境无使用可验、使用无环境可跑”，且 3.5.5 无结果物输入；请编排师在 **D1** 一并表态 |
 
