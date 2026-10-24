@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 
 import com.ctds.common.crypto.Sm3Service;
 import com.ctds.common.crypto.Sm4Service;
+import com.ctds.delivery.infrastructure.DefaultProcessRunner;
 import com.ctds.delivery.support.SharedMySqlContainer;
 import com.ctds.delivery.support.StubDependencyServer;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -13,7 +14,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.Base64;
+import java.util.List;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -58,6 +61,8 @@ class SandboxResultDockerE2eTest {
     private static final Path STORAGE;
     private static final Path AUDIT_DIR;
     private static final Path KEY_FILE;
+    /** W-2 收尾锚点：用例创建的沙箱号（@AfterAll best-effort 移除真容器，防本机残留）。 */
+    private static volatile String createdSandboxNo;
 
     static {
         try {
@@ -102,6 +107,21 @@ class SandboxResultDockerE2eTest {
     @AfterAll
     static void stop() {
         STUB.stop();
+        removeSandboxContainerQuietly();
+    }
+
+    /** W-2 收尾：best-effort 移除用例创建的真容器（运行时命名 ctds-sb-{no}），防本机残留。 */
+    private static void removeSandboxContainerQuietly() {
+        if (createdSandboxNo == null) {
+            return;
+        }
+        try {
+            new DefaultProcessRunner().run(
+                    List.of("docker", "rm", "-f", "ctds-sb-" + createdSandboxNo),
+                    Duration.ofSeconds(30), true);
+        } catch (final RuntimeException ignored) {
+            // 清理 best-effort（容器不存在等场景）
+        }
     }
 
     @Autowired
@@ -138,6 +158,7 @@ class SandboxResultDockerE2eTest {
                 .content("{\"contractNo\":\"" + CONTRACT + "\"}")).andReturn();
         assertThat(created.getResponse().getStatus()).isEqualTo(200);
         final String sandboxNo = dataOf(created).path("sandboxNo").asText();
+        createdSandboxNo = sandboxNo;
 
         final MvcResult job = mockMvc.perform(post("/api/v1/sandboxes/{no}/actions/run-job",
                 sandboxNo).header("X-Ctds-Subject", REQUESTER)
@@ -146,6 +167,8 @@ class SandboxResultDockerE2eTest {
                 .content("{\"jobId\":\"dataset-profile\",\"purpose\":\"风控建模\"}")).andReturn();
         assertThat(job.getResponse().getStatus()).isEqualTo(200);
         assertThat(dataOf(job).path("status").asText()).isEqualTo("SUCCEEDED");
+        // 作业链自身一次策略计数（3.5.4 作业计数规则），导出计数断言以此为基线
+        final int checksAfterJob = STUB.checkCount();
 
         // 2. 提交审核 → 治理审核通过 → 导出（策略放行一次计数）
         final MvcResult submitted = mockMvc.perform(post(
@@ -170,7 +193,7 @@ class SandboxResultDockerE2eTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"purpose\":\"风控建模\"}")).andReturn();
         assertThat(exported.getResponse().getStatus()).isEqualTo(200);
-        assertThat(STUB.checkCount()).isEqualTo(1);
+        assertThat(STUB.checkCount()).isEqualTo(checksAfterJob + 1); // 导出恰 +1（W-1 修正：基线为作业腿）
         final String deliveryNo = dataOf(exported).path("deliveryNo").asText();
         final String checksum = dataOf(exported).path("checksum").asText();
 
