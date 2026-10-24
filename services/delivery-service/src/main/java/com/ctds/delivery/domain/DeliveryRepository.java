@@ -25,5 +25,10 @@ public interface DeliveryRepository {
 
     long countGovernance(String contractNo, String deliveryNo);
 
+    /** 沙箱导出记录列表（SANDBOX_EXPORT 行按沙箱任务过滤；WBS-3.5.5）。 */
+    List<Delivery> listBySandbox(String sandboxNo, DeliveryType type, PageQuery page);
+
+    long countBySandbox(String sandboxNo, DeliveryType type);
+
     void insertActionLog(DeliveryActionLog log);
 }

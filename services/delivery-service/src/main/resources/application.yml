@@ -21,13 +21,14 @@ logging:
       file: logstash
 
 ctds:
-  # 交付域角色点（WBS-3.5.3 hifi §1/§7 + WBS-3.5.4 hifi §1.2）：需求方发起 / 读 / 领取 / 沙箱申请与使用；
-  # 提供方只读（含沙箱读面）；运营方治理读面（交付 + 沙箱）。
+  # 交付域角色点（WBS-3.5.3 hifi §1/§7 + WBS-3.5.4 hifi §1.2 + WBS-3.5.5 hifi §1/§6）：
+  # 需求方发起 / 读 / 领取 / 沙箱申请与使用（含结果物提交审核与导出）；提供方只读
+  # （含沙箱与导出记录读面）；运营方治理读面（交付 + 沙箱）+ 沙箱结果审核写面（读写分权）。
   auth:
     permissions:
       requester: delivery.request,delivery.read,delivery.package.download,sandbox.request,sandbox.read,sandbox.use
       provider: delivery.read,sandbox.read
-      admin: delivery.governance,sandbox.governance
+      admin: delivery.governance,sandbox.governance,sandbox.review
   # 交付服务参数（hifi §1/§4/§5）
   delivery:
     contract:

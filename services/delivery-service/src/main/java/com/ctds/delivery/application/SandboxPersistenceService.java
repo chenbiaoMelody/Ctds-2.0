@@ -23,6 +23,6 @@ public class SandboxPersistenceService {
         repository.insert(task);
         repository.insertActionLog(new SandboxActionLog(null, task.sandboxNo(), null,
                 task.contractNo(), task.requesterNo(), SandboxAuditActions.CREATE, "SUCCESS", null,
-                null));
+                null, null));
     }
 }

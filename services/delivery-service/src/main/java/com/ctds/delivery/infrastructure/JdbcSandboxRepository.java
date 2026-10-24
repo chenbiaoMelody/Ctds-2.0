@@ -188,8 +188,8 @@ public class JdbcSandboxRepository implements SandboxRepository {
     @Override
     public void insertActionLog(final SandboxActionLog log) {
         jdbc.sql("INSERT INTO sandbox_action_log (sandbox_no, job_no, contract_no, operator_no, "
-                        + "action, result, reason_code) VALUES (:sandboxNo, :jobNo, :contractNo, "
-                        + ":operator, :action, :result, :reason)")
+                        + "action, result, reason_code, result_name) VALUES (:sandboxNo, :jobNo, "
+                        + ":contractNo, :operator, :action, :result, :reason, :resultName)")
                 .param("sandboxNo", log.sandboxNo())
                 .param("jobNo", log.jobNo())
                 .param("contractNo", log.contractNo())
@@ -197,6 +197,7 @@ public class JdbcSandboxRepository implements SandboxRepository {
                 .param("action", log.action())
                 .param("result", log.result())
                 .param("reason", log.reasonCode())
+                .param("resultName", log.resultName())
                 .update();
     }
 

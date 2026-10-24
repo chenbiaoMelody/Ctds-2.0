@@ -63,25 +63,25 @@
 
 > **确认留痕（✅ 2026-10-24 12:23 编排师会话回复"全部按建议"）**：**Q1~Q8 均采建议口径 A + G2-A + D1 不拆分**——Q1 提交审核时登记 + 快照 / Q2 治理写面 `sandbox.review`（结论不可改）/ Q3 导出 = 一次交付动作（SM4 加密包 + 导出记录复用 `deliveries` SANDBOX_EXPORT + 复用 3.5.3 下载端点）/ Q4 生命周期门槛 RUNNING / Q5 快照复核（审 A 交 B 拒绝）/ Q6 `1009C0015~0016` 同码同文防枚举 / Q7 审核留痕专用表 + 三读面 / Q8 新建 ADR-025 + 工作区清理登记演进 + L4 双人复核诚实边界；**G2-A** = 驳回后可重新提交（轮次 +1、历史全留痕），**PO 已批准，规格转 V1.2（§7 补 G2 决策行，零规则与验收标准文字变更），C-5.2 剧本转 V1.2（仅维护说明第 7 条留痕，步骤与业务判定一字未改）**；**D1 不拆分**（预估 1700~2000 行，1 个编码会话）。**lofi/hifi 同批转 V1.0（编码契约即时生效）**；立卡批提交并推送 origin；**下一关口 = 编码段（新会话冷启动，测试先行，第一动作 = hifi §10 八项前置检查逐项实测留痕）→ 4 视角评审 → 修复循环 ≤3 轮 → 真链走查 → 编排师验收**（"验收通过" ≠ 合并授权；推送 main / 合并须显式指示）。
 
-## 三、规格行为 → 本卡承载 → 剧本步骤 映射表（立卡骨架，编码会话复验回填）
+## 三、规格行为 → 本卡承载 → 剧本步骤 映射表（编码段已回填实测锚点）
 
-| 规格承载 | 本卡落点（编码交付实测） | 剧本步骤（C-5.2） | 测试锚点（编码段回填） |
+| 规格承载 | 本卡落点（编码交付实测） | 剧本步骤（C-5.2） | 测试锚点（编码段实测回填） |
 | --- | --- | --- | --- |
-| 行为 6 规则 1（唯一出口） | 未审核（未登记 / 待审核）/ 已驳回 / 快照不一致导出 → `1009C0016` 拒绝；服务端强制 | S3-2 / S3-3 / S3-4 | 导出组（状态门槛 4 例） |
-| 行为 6 规则 2（审核留痕） | `sandbox_result_review`（谁审 / 何时 / 结论 / 理由）+ 审计 JSONL；治理审核留痕列表读即留痕 | S2-6 / S2-7 / S2-8 | 审核组 + 留痕组 |
-| 行为 6 规则 3（导出仍受策略） | 导出前 `check`（USE，purpose / territory 请求携带）；越界原码透传（`1008C0020` 等），零计数零导出记录 | S3-5 | 导出组（越界 1~2 例） |
-| 行为 6 规则 4（服务端强制） | 一切判定在服务端；绕过界面直调导出接口同拒 | S3-4 | 导出组（直调 1 例） |
-| 行为 6 规则 5（导出记录） | 导出记录 = `deliveries`（SANDBOX_EXPORT + sandbox_no / result_name）：谁 / 何时 / 合约与任务 / 结果物标识 / 结果；参与者可查 | S3-1 | 导出组（记录断言）+ 读面组 |
-| 行为 6 规则 6（双向用例） | "审核通过 → 导出放行" + "未审核 / 驳回 / 绕过 → 被拒"双向硬约束 | S3-1 ↔ S3-2~4 | 导出组正向 + 反向 |
-| 行为 6 验收 6（防枚举） | 非参与方查看 / 导出他人结果物 → `1009C0015` 与"结果物不存在"同码同文逐字 | S3-8 | 读面组（同码同文 2 例） |
-| 行为 7 规则 1（默认拒绝） | 结果物 / 审核记录 / 导出记录可见范围 = 合约参与方 + 治理读面；其余 404 | S3-8 | 读面组 |
-| 行为 7 规则 2（治理例外唯一） | 运营方**审核**（本卡新增治理写动作）+ 治理查看均留痕 | S2-6 / S2-8 | 审核组 + 留痕组 |
-| 行为 7 规则 3（服务端强制） | 权限层 `sandbox.review`（审核）/ `sandbox.use`（提交 / 导出）+ 服务端状态机 | S3-4 | 审核组 + 导出组 |
-| 行为 7 规则 5（留痕不含原文） | 登记 / 审核 / 导出 / 审计只含业务要素；无内容 / 路径 / 容器 / 命令 | S3-11 | 留痕字段集 4 例 |
-| 行为 5 规则 1（唯一出口前提） | `/data/**` 403 不变（3.5.4 已交付）；导出端点为唯一内容出口（密文） | S2-2（既有） | 既有用例回归 |
-| 生命周期门槛（行为 4 规则 3 引申） | 提交 / 审核 / 导出均要求 RUNNING；到期 / 关闭 → `1009C0011` | S3-6（导出面） | 导出组（到期 / 关闭 2 例） |
-| WBS 行 317 / 328（计量 / 存证） | 导出 = `deliveries` 行 + `check` 计数 1；不与 `sandbox_job` 双计；3.7.5 / 3.8.3 单一交付事件源 | —— | 导出组（计数恰 +1 / 幂等不重复） |
-| G2（驳回后重新提交） | REJECTED → 重新提交 → 待审核（轮次 +1）；审核历史全留痕 | ——（剧本无此步，不新增） | 提交组（重提交 1 例） |
+| 行为 6 规则 1（唯一出口） | 未登记（未登记 / 待审核）/ 已驳回 / 快照不一致导出 → `1009C0016` 拒绝；服务端强制 | S3-2 / S3-3 / S3-4 | `exportUnregisteredRejected` / `exportPendingRejected` / `exportRejectedResultRejectedWithReasonQueryable` / `exportSnapshotMismatchRejected` |
+| 行为 6 规则 2（审核留痕） | `sandbox_result_review`（谁审 / 何时 / 结论 / 理由）+ 审计 JSONL；治理审核留痕列表读即留痕 | S2-6 / S2-7 / S2-8 | `reviewApproveTransitionsStatusAndWritesReviewRow` / `reviewRejectKeepsReasonInResultAndReviewRow` / `reviewListShowsConclusionsAndReasons` / `governanceReviewsReadIsTraced` / `reviewRowsKeepBusinessFieldsOnly` |
+| 行为 6 规则 3（导出仍受策略） | 导出前 `check`（USE，purpose / territory 请求携带）；越界原码透传（`1008C0020`），零计数零导出记录 | S3-5 | `exportPolicyViolationPassesThroughWithoutRecord`（+ E2E `resultSubmitReviewExportDownloadRoundTrip` 计数腿） |
+| 行为 6 规则 4（服务端强制） | 一切判定在服务端；绕过界面直调导出接口同拒（测试全部直调 HTTP 承载） | S3-4 | 导出组全量 MockMvc 直调用例（`exportUnregisteredRejected` 等负向 9 例 = 直调同拒） |
+| 行为 6 规则 5（导出记录） | 导出记录 = `deliveries`（SANDBOX_EXPORT + sandbox_no / result_name）：谁 / 何时 / 合约与任务 / 结果物标识 / 结果；参与者可查 | S3-1 | `exportApprovedResultCreatesPackageRecordAndCountsOnce`（行字段断言）+ `exportsListVisibleToBothParticipants` |
+| 行为 6 规则 6（双向用例） | "审核通过 → 导出放行" + "未审核 / 驳回 / 绕过 → 被拒"双向硬约束 | S3-1 ↔ S3-2~4 | 正向 `exportApproved…` ↔ 反向 `exportUnregistered…`/`exportPending…`/`exportRejected…` |
+| 行为 6 验收 6（防枚举） | 非参与方查看 / 导出他人结果物 → `1009C0015`/`1009C0010` 与"不存在"同码同文逐字 | S3-8 | `nonParticipantResultFacesShareCodeAndMessage`（五面）+ `submitByNonParticipant…`/`exportByNonParticipant…` |
+| 行为 7 规则 1（默认拒绝） | 结果物 / 审核记录 / 导出记录可见范围 = 合约参与方 + 治理读面；其余 404 | S3-8 | `nonParticipantResultFacesShareCodeAndMessage` + `providerCanReadButNotSubmitOrExport` |
+| 行为 7 规则 2（治理例外唯一） | 运营方**审核**（治理写面 `sandbox.review`）+ 治理查看均留痕 | S2-6 / S2-8 | `reviewApprove…`/`reviewByNonAdminDeniedByPermissionLayer` + `governanceReviewsReadIsTraced` |
+| 行为 7 规则 3（服务端强制） | 权限层 `sandbox.review`（审核）/ `sandbox.use`（提交 / 导出）+ 服务端状态机 | S3-4 | `adminRoleCarriesSandboxReviewPermission` + `reviewAndExportParamValidation` |
+| 行为 7 规则 5（留痕不含原文） | 登记 / 审核 / 导出 / 审计只含业务要素；无内容 / 路径 / 容器 / 命令 | S3-11 | `auditJsonlForResultActionsKeepsMinimalFieldSet` / `dbRowsKeepBusinessFieldsOnly` / `responsesExposeNoContentOrPath` / `exportRecordKeyRefIsReferenceNotSecret` |
+| 行为 5 规则 1（唯一出口前提） | `/data/**` 403 不变（3.5.4 已交付）；导出端点为唯一内容出口（密文） | S2-2（既有） | 既有用例回归（SandboxIntegrationTest 数据面 5 例保持绿） |
+| 生命周期门槛（行为 4 规则 3 引申） | 提交 / 审核 / 导出均要求 RUNNING；到期 / 关闭 → `1009C0011` | S3-6（导出面） | `exportAfterTaskClosedOrExpiredRejected`（STOPPED + 实时到期两腿）+ `reviewAfterTaskClosedRejected` |
+| WBS 行 317 / 328（计量 / 存证） | 导出 = `deliveries` 行 + `check` 计数 1；不与 `sandbox_job` 双计；3.7.5 / 3.8.3 单一交付事件源 | —— | `exportApproved…`（checkCount 恰 1）+ `exportIdempotentReplayReturnsFirstRecord`（重放不重复）+ `exportPackageFailureLeavesNoRecordOrResidue`（失败不改写已计数） |
+| G2（驳回后重新提交） | REJECTED → 重新提交 → 待审核（轮次 +1）；审核历史全留痕 | ——（剧本无此步，不新增） | `resubmitAfterRejectAdvancesRoundAndRefreshesSnapshot` |
 
 ## 四、执行记录
 
@@ -89,6 +89,7 @@
 | --- | --- |
 | 立卡段（2026-10-24 12:0x） | 🟡 **立卡段完成**：任务卡 + lofi **V0.9** + hifi **V0.9** 落盘；素材盘点八项（含 **G2 规格未定义项** + **G0 剧本答案 = 无需修订**）；**待编排师一次确认 Q1~Q8 + G2 + D1**；确认后 lofi / hifi 转 **V1.0（编码契约即时生效）**、立卡批提交并推送 origin → 编码段（测试先行，另会冷启动，第一动作 = hifi §10 前置检查逐项实测留痕）。**本段零代码、零依赖、零门禁配置改动，未动 `main`**。台账"进行中"行暂未改（沿 3.5.3 / 3.5.4 先例，编码段更新）。 |
 | 确认段（2026-10-24 12:23） | ✅ **编排师一次确认"全部按建议"**：**Q1~Q8 全采建议 A + G2-A + D1 不拆分**；lofi / hifi 同批转 **V1.0（编码契约即时生效）**；**G2-A 经 PO 批准**（本批复"全部按建议"涵盖）→ 规格转 **V1.2**（§7 补 G2 决策行 + G2 留痕 + 版本头与日期；**零规则与验收标准文字变更**）、C-5.2 剧本转 **V1.2**（版本头 / 日期 / 关联规格 + 维护说明第 7 条留痕；**步骤与业务判定一字未改**）；任务卡 §二确认留痕 / G2 行 / 关闭条件①② / 设计文件行 / 分支行 / §五 确认段行同步回填；立卡批（任务卡 + lofi + hifi + 规格 + 剧本 + 日志）提交并推送 origin。**本段零代码 / 零配置 / 零门禁改动**；下一关口 = **编码段（新会话冷启动，测试先行，第一动作 = hifi §10 八项前置检查逐项实测留痕）**。 |
+| 编码段（2026-10-24 13:0x~14:0x） | 🟡 **编码段完成（待 4 视角评审 → 修复循环 → 真链走查 → 编排师验收）**：① **hifi §10 八项前置检查逐项实测**（分支/基线 ✅；delivery 基线 **135/0/0/6 全绿**复跑 ✅；MySQL 在线 + `ctds_delivery` Flyway V1~V2 ✅；gates V1.12 ConfigSha256 `955bdbba…2ee2` 逐字一致 ✅；lofi/hifi V1.0 + G2 PO 批准在案 ✅；演示数据实测 = CO000026 在 / SB000002·003 均 STOPPED（无 RUNNING，走查段按 3.5.4 演示链顺延开通）；零新依赖/镜像/消费方 ✅；ADR-025 本段落盘 ✅）。② **测试先行**：`SandboxResultIntegrationTest` **43 例**先红（红相归档 `build-output/w355-red-1252.log`，43/43 错于 V3 未建）→ 实现后全绿；另 + 真 Docker E2E `SandboxResultDockerE2eTest` **1 例**（默认跳过，走查段 `CTDS_SANDBOX_E2E=1` 启用）。③ **实现**：Flyway **V3**（2 新表 + delivery 加列 + action_log 加列）+ 领域 5 类 + 仓储 2 类 + `SandboxReviewService`/`SandboxExportService`/`SandboxResultPersistenceService` + `SandboxResultController` + 治理 2 端点 + 审计 3 动作 4 方法 + 权限点 `sandbox.review` + 错误码 `1009C0015/0016` + ADR-025（七字段齐备）。④ **验证**：模块 **179 例全绿**（新增 43 + 既有 136 含 E2E 跳过 1）+ **checkstyle 0**；全仓门禁复跑（后台执行，结论见开发日志）。⑤ **两处 hifi 与既有实现的物理冲突最小偏差**（均零业务语义变更，ADR-025 §2.5 留痕）：`delivery.delivery_type` 列宽 VARCHAR(8)→(16)（容不下 `SANDBOX_EXPORT` 14 字符，既有值零变更）；下载端点包形态门槛加性放宽 FILE→FILE 或 SANDBOX_EXPORT（API 行仍拒）。⑥ 体量实测 **+2799 / −37 行（40 文件，含文档）** 超 400 上限——沿 DB-43/DB-44 先例**登记不拆分**（D1 已确认；编码+测试+ADR 为同一原子集），请编排师知悉。 |
 
 ## 五、体量登记（立卡时填写）
 
@@ -96,6 +97,7 @@
 | --- | --- |
 | 实测（立卡段） | 任务卡 **102 行**；`docs/designs/WBS-3.5.5-lofi.md` **147 行**；`docs/designs/WBS-3.5.5-hifi.md` **277 行** → 合计 **526 行**（行数口径 = 文件实际行数实测）；**无代码、无测试、零 Maven 依赖引入** |
 | 实测（确认段） | 任务卡 **104 行**（+2 = §四 确认段行 + 本行）；lofi **147 行**（等量替换：版本头 + 确认记录）；hifi **277 行**（等量替换：版本头 + 确认记录）→ 合计 **528 行**；规格 `docs/specs/C-5.1-5.2-交付与沙箱.md` **247 行**（+3 = 版本头/日期 V1.2 留痕 + §7 G2 留痕段 + G2 决策行；**规则与验收标准文字零变更**）；C-5.2 剧本 **99 行**（+1 = 版本头/日期/关联规格 V1.2 与维护说明第 7 条；**步骤与业务判定一字未改**）；本段**零代码 / 零配置 / 零门禁改动** |
+| 实测（编码段） | git diff --stat **40 文件 +2799 / −37 行**：主代码 + 测试 + V3 迁移 ≈2304 行（其中测试 **1118 + 193 = 1311 行**、主实现 ≈993 行含迁移 51）+ ADR-025 **104 行** + 文档回填（台账/任务卡）；**超 400 行上限与预估上限（1700~2000）——沿 DB-43/DB-44 先例登记不拆分（D1 已确认），测试先行口径下测试体量占 47% 属正常占比**；零新 Maven 依赖、零新镜像、门禁配置零改动 |
 | 预估（编码段） | 有效变更 **1700~2000 行**：领域 / 仓储 ≈300 + 提交 / 审核 / 导出应用服务 ≈350 + 接口 / DTO / 错误码 ≈250 + 迁移 V3 ≈60 + 测试 ≈600~750 + ADR-025 / 文档 ≈200；**1 个编码会话**；零新 Maven 依赖、零新镜像 |
 | 超 400 行指引说明 | 本卡为"结果审核与导出"的原子集（审核状态机 + 导出链 + 记录与读面）；拆则"审核无导出可验、导出无审核可跑"；请编排师在 **D1** 一并表态 |
 

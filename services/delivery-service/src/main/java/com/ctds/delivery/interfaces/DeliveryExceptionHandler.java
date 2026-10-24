@@ -41,6 +41,8 @@ public class DeliveryExceptionHandler {
             SandboxErrorCodes.SANDBOX_DATA_DENIED.value(),
             SandboxErrorCodes.SANDBOX_QUOTA_EXCEEDED.value(),
             SandboxErrorCodes.SANDBOX_JOB_NOT_ALLOWED.value(),
+            SandboxErrorCodes.SANDBOX_RESULT_NOT_VISIBLE.value(),
+            SandboxErrorCodes.SANDBOX_RESULT_STATE_CONFLICT.value(),
             SandboxErrorCodes.SANDBOX_RUNTIME_UNAVAILABLE.value(),
             SandboxErrorCodes.SANDBOX_OPERATION_FAILED.value());
 
@@ -85,8 +87,8 @@ public class DeliveryExceptionHandler {
         return switch (code) {
             case "1009C0003", "1009C0009", "1009C0012" -> HttpStatus.FORBIDDEN;
             case "1009C0005", "1009C0006", "1009C0008", "1009C0014" -> HttpStatus.BAD_REQUEST;
-            case "1009C0007", "1009C0010" -> HttpStatus.NOT_FOUND;
-            case "1009C0011" -> HttpStatus.CONFLICT;
+            case "1009C0007", "1009C0010", "1009C0015" -> HttpStatus.NOT_FOUND;
+            case "1009C0011", "1009C0016" -> HttpStatus.CONFLICT;
             case "1009C0013" -> HttpStatus.TOO_MANY_REQUESTS;
             case "1009S0002", "1009S0004" -> HttpStatus.SERVICE_UNAVAILABLE;
             default -> HttpStatus.INTERNAL_SERVER_ERROR;

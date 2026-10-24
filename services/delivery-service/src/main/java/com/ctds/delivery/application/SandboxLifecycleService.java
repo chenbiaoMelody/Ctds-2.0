@@ -3,6 +3,8 @@ package com.ctds.delivery.application;
 import com.ctds.delivery.audit.SandboxAuditActions;
 import com.ctds.delivery.audit.SandboxAuditService;
 import com.ctds.delivery.config.SandboxProperties;
+import com.ctds.delivery.domain.SandboxBizException;
+import com.ctds.delivery.domain.SandboxErrorCodes;
 import com.ctds.delivery.domain.SandboxJobRepository;
 import com.ctds.delivery.domain.SandboxRepository;
 import com.ctds.delivery.domain.SandboxRuntime;
@@ -89,6 +91,30 @@ public class SandboxLifecycleService {
         } catch (final RuntimeException e) {
             log.warn("沙箱作业对账跳过");
         }
+    }
+
+    /**
+     * 使用门槛（WBS-3.5.5 hifi §3.2/§4/§5：提交审核 / 治理审核 / 导出均要求 RUNNING）：
+     * 状态终止直接 1009C0011；到期未扫的 RUNNING 任务实时翻转（条件更新 + 停容器 + 留痕）后拒绝。
+     */
+    public void ensureUsable(final SandboxTask task) {
+        if (!task.status().usable()) {
+            throw stateConflict();
+        }
+        final LocalDateTime now = LocalDateTime.now(clock);
+        if (!task.expiresAt().isAfter(now)) {
+            if (repository.close(task.sandboxNo(), SandboxStatus.EXPIRED, REASON_EXPIRED, now) > 0) {
+                stopQuietly(task.sandboxNo());
+                audit.success(SandboxAuditActions.EXPIRE, task.sandboxNo(), null,
+                        task.contractNo(), task.requesterNo());
+            }
+            throw stateConflict();
+        }
+    }
+
+    private static SandboxBizException stateConflict() {
+        return new SandboxBizException(SandboxErrorCodes.SANDBOX_STATE_CONFLICT,
+                SandboxErrorCodes.SANDBOX_STATE_CONFLICT_MESSAGE);
     }
 
     private void stopQuietly(final String sandboxNo) {
