@@ -86,3 +86,15 @@ spec:
               value: "ctds"
             - name: CTDS_DB_PASSWORD
               value: ""
+            # Sandbox runtime (WBS-3.5.4 / ADR-024): the cluster MUST NOT inject the host
+            # docker socket or any container-runtime credentials. Runtime stays disabled by
+            # default -> sandbox endpoints fail closed (503 / 1009S0004); delivery records
+            # and encrypted file delivery are unaffected.
+            - name: CTDS_SANDBOX_RUNTIME_ENABLED
+              value: "false"
+            # Platform workspace root (input copies / outputs) and controlled job scripts
+            # root: provision dedicated volumes at activation. Empty = sandbox unavailable.
+            - name: CTDS_SANDBOX_WORKSPACE_ROOT
+              value: ""
+            - name: CTDS_SANDBOX_JOBS_ROOT
+              value: ""

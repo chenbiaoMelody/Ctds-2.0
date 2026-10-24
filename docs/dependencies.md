@@ -72,6 +72,7 @@
 | --- | --- | --- | --- | --- | --- |
 | `eclipse-temurin:17-jre` | 后端容器运行环境（Java 17 JRE，ADR-001 冻结栈配套；非 root 专用用户 uid 1001 运行——uid 1000 已被基础镜像默认用户 ubuntu 占用，useradd 退 4 实测留痕，MaxRAMPercentage=75 随容器内存伸缩） | GPLv2 with CE（temurin 官方发行许可，运行时使用无传染问题） | Docker Hub 官方 eclipse-temurin 仓库（Eclipse Temurin 官方维护，tag 显式锁定 17-jre），2026-09-12 实测拉取 | PO 预授权：WBS-2.5.1 lofi 问题 3"确认"（AskUserQuestion 即时选定"确认进入编码"，2026-09-12），判定留痕见 `docs/designs/WBS-2.5.1-lofi.md` §4 | WBS 2.5.1 |
 | `nginx:1.29-alpine` | 前端容器静态托管（SPA history 路由 fallback + gzip；显式 tag 禁 latest/mainline 漂移） | BSD-2-Clause（nginx 官方镜像） | Docker Hub 官方 nginx 仓库（1.29 主线稳定 + alpine 最小攻击面），2026-09-12 实测拉取 | 同上 | WBS 2.5.1 |
+| `python:3.12-alpine` | 沙箱受控作业运行环境（WBS-3.5.4 Q3-A：沙箱容器仅执行配置化作业清单；运行时 `--network none` / 非 root `1000:1000` / 根只读 + tmpfs / 能力全丢 / 仅三段挂载；显式 tag 禁 latest） | PSF-2.0（Python 官方镜像；Alpine 基础包为 MIT/BSD/Apache 混合，随镜像分发） | Docker Hub 官方 library/python 仓库（Python 官方维护，tag 显式锁定 3.12-alpine），2026-10-22 实测拉取成功（digest `sha256:92abd2ba1bdfb48b1e2ac224b582dd1558d0d4bb11c903b126b5bf9c448fd656`），并与 `--mount type=bind` 挂载冒烟联合验证 | 编排师 2026-10-22 21:25 一次确认「Q1~Q9 全采建议 A」（Q3-A），留痕 = 任务卡 §二确认记录 + `docs/designs/WBS-3.5.4-hifi.md` 确认记录 | WBS-3.5.4 |
 
 ## 门禁质量度量工具（WBS-2.2.8 / DB-06，ADR-018）
 

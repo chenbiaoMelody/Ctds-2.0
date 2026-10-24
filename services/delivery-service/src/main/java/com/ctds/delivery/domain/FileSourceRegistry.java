@@ -8,6 +8,7 @@ import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Pattern;
@@ -122,6 +123,17 @@ public class FileSourceRegistry {
     /** 测试/诊断只读视图（不暴露路径）。 */
     public Optional<FileSource> find(final String fileId) {
         return Optional.ofNullable(sources.get(fileId));
+    }
+
+    /**
+     * 按产品列举已登记且启动校验通过的文件源（WBS-3.5.4 加性只读方法，供沙箱输入注入）。
+     * 未启用 = 空列表；不改变既有 {@link #require} 语义。
+     */
+    public List<FileSource> listForProduct(final long productId) {
+        if (!enabled) {
+            return List.of();
+        }
+        return sources.values().stream().filter(source -> source.productId() == productId).toList();
     }
 
     private FileSource validate(final DeliveryProperties.FileEntry entry, final Path realRoot) {
