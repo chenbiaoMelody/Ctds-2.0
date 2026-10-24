@@ -35,7 +35,7 @@ import org.springframework.test.web.servlet.MvcResult;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
- * 沙箱结果审核与导出集成测试（WBS-3.5.5 hifi §8）：提交审核 9 / 治理审核 9 / 导出 12 /
+ * 沙箱结果审核与导出集成测试（WBS-3.5.5 hifi §8）：提交审核 10 / 治理审核 9 / 导出 13 /
  * 读面与防枚举 6 / 留痕与无本体 4 / 配置与迁移 3。真实 MySQL 容器 + 合约 stub；
  * 任务与工作区直接造数（不依赖容器运行时），一切断言走 HTTP + DB 取证。
  */
@@ -66,6 +66,12 @@ class SandboxResultIntegrationTest {
     /** 结果物维度审计 detail 允许的业务字段（hifi §7.2 最小必要）。 */
     private static final Set<String> AUDIT_DETAIL_FIELDS = Set.of("contractNo", "jobNo",
             "reasonCode", "resultName");
+    /** 响应面顶层字段白名单（新增字段须显式扩集，防字段膨胀带出敏感面）。 */
+    private static final Set<String> SUBMIT_VIEW_FIELDS = Set.of("fileName", "sizeBytes",
+            "checksum", "createdAt", "status", "conclusion", "rejectReason", "reviewRound");
+    private static final Set<String> EXPORT_VIEW_FIELDS = Set.of("deliveryNo", "deliveryType",
+            "contractNo", "sandboxNo", "resultName", "requesterNo", "providerNo", "fileName",
+            "fileSize", "checksum", "result", "createdAt");
 
     static {
         try {
@@ -246,6 +252,19 @@ class SandboxResultIntegrationTest {
         assertThat(again.getResponse().getStatus()).isEqualTo(409);
         assertThat(codeOf(again)).isEqualTo("1009C0016");
         assertActionLog("sandbox.denied", "DENIED", "1009C0016", 1);
+    }
+
+    @Test
+    void submitIdempotentReplayReturnsFirstRegistration() throws Exception {
+        final String sandboxNo = seedRunningTask("SB100010");
+        writeResult(sandboxNo, "report.md", SECRET_MARKER);
+        final String first = submit(sandboxNo, "report.md", "key-submit-10", REQUESTER)
+                .getResponse().getContentAsString(StandardCharsets.UTF_8);
+        final String replay = submit(sandboxNo, "report.md", "key-submit-10", REQUESTER)
+                .getResponse().getContentAsString(StandardCharsets.UTF_8);
+        assertThat(replay).isEqualTo(first);
+        assertThat(countResults()).isEqualTo(1);
+        assertActionLog("sandbox.result.submit", "SUCCESS", null, 1);
     }
 
     // ---------- 治理审核组（hifi §4） ----------
@@ -550,6 +569,28 @@ class SandboxResultIntegrationTest {
     }
 
     @Test
+    void exportDuplicateKeyFallbackReturnsFirstRecordAndDeletesPackage() throws Exception {
+        final String sandboxNo = seedRunningTask("SB300014");
+        writeResult(sandboxNo, "report.md", SECRET_MARKER);
+        submitApproved(sandboxNo, "report.md", "key-export-14", "key-review-14x");
+        // 预插同 (requester_no, idempotency_key) 行 → 越过内存幂等层时 deliveries 唯一键兜底：
+        // 返回首次记录 + 本次构建的包删除 + 计数不重复（check 已计数不回滚 = 诚实边界）
+        jdbc.update("INSERT INTO delivery (delivery_no, contract_no, product_id, product_name, "
+                + "delivery_type, requester_no, provider_no, result, idempotency_key) VALUES "
+                + "('DL900002', ?, 13, '演示数据集', 'FILE', ?, ?, 'SUCCESS', 'key-export-14x')",
+                CONTRACT, REQUESTER, PROVIDER);
+        final MvcResult result = export(sandboxNo, "report.md", "key-export-14x", REQUESTER, "{}");
+        assertThat(result.getResponse().getStatus()).isEqualTo(200);
+        assertThat(dataOf(result).path("deliveryNo").asText()).isEqualTo("DL900002");
+        assertThat(dataOf(result).path("deliveryType").asText()).isEqualTo("FILE");
+        assertThat(STUB.checkCount()).isEqualTo(1);
+        assertThat(packageCount()).isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM delivery", Integer.class))
+                .isEqualTo(1);
+        assertActionLog("sandbox.export", "SUCCESS", null, 0);
+    }
+
+    @Test
     void exportPackageDownloadByRequesterOkAndProviderDenied() throws Exception {
         final String sandboxNo = seedRunningTask("SB300012");
         writeResult(sandboxNo, "report.md", SECRET_MARKER);
@@ -757,6 +798,10 @@ class SandboxResultIntegrationTest {
             assertThat(body).doesNotContain(SECRET_MARKER, WORKSPACE.toString(),
                     STORAGE.toString());
         }
+        assertThat(fieldNames(MAPPER.readTree(submitted).path("data")))
+                .isSubsetOf(SUBMIT_VIEW_FIELDS);
+        assertThat(fieldNames(MAPPER.readTree(exported).path("data")))
+                .isSubsetOf(EXPORT_VIEW_FIELDS);
     }
 
     @Test
@@ -800,6 +845,26 @@ class SandboxResultIntegrationTest {
                         + "'delivery_type'", String.class);
         // V1 列宽 8 容不下 SANDBOX_EXPORT（14 字符），V3 放宽至 16（既有值零变更）
         assertThat(typeWidth).isEqualTo("varchar(16)");
+        final String ukColumns = jdbc.queryForObject(
+                "SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index) FROM information_schema"
+                        + ".statistics WHERE table_schema = DATABASE() AND table_name = "
+                        + "'sandbox_result' AND index_name = 'uk_sandbox_result'", String.class);
+        // 一任务一文件名一行 = 并发兜底唯一键锚
+        assertThat(ukColumns).isEqualTo("sandbox_no,file_name");
+        final List<String> reviewColumns = jdbc.queryForList(
+                "SELECT column_name FROM information_schema.columns WHERE table_schema = "
+                        + "DATABASE() AND table_name = 'sandbox_result_review' "
+                        + "ORDER BY ordinal_position", String.class);
+        assertThat(reviewColumns).contains("sandbox_no", "file_name", "review_round", "conclusion",
+                "reason", "reviewed_by", "created_at");
+        final String widths = jdbc.queryForObject(
+                "SELECT CONCAT((SELECT character_maximum_length FROM information_schema.columns "
+                        + "WHERE table_schema = DATABASE() AND table_name = 'sandbox_result' AND "
+                        + "column_name = 'file_name'), '|', (SELECT character_maximum_length FROM "
+                        + "information_schema.columns WHERE table_schema = DATABASE() AND "
+                        + "table_name = 'sandbox_result' AND column_name = 'reject_reason'))",
+                String.class);
+        assertThat(widths).isEqualTo("128|256");
         jdbc.update("INSERT INTO delivery (delivery_no, contract_no, product_id, product_name, "
                 + "delivery_type, requester_no, provider_no, result, idempotency_key) VALUES "
                 + "('DL900001', ?, 13, '演示数据集', 'API', ?, ?, 'SUCCESS', 'seed-legacy')",
@@ -848,12 +913,13 @@ class SandboxResultIntegrationTest {
                         sandboxNo, "report.md")
                 .header("X-Ctds-Subject", ADMIN).header("X-Ctds-Roles", "admin")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"conclusion\":\"REJECT\",\"reason\":\"长\".repeat(257)}")).andReturn();
+                .content("{\"conclusion\":\"REJECT\",\"reason\":\"" + "长".repeat(257) + "\"}"))
+                .andReturn();
         assertThat(longReason.getResponse().getStatus()).isEqualTo(400);
         assertThat(codeOf(longReason)).isEqualTo("1009C0005");
 
         final MvcResult longPurpose = export(sandboxNo, "report.md", "key-cfg-2x", REQUESTER,
-                "{\"purpose\":\"用\".repeat(257)}");
+                "{\"purpose\":\"" + "用".repeat(257) + "\"}");
         assertThat(longPurpose.getResponse().getStatus()).isEqualTo(400);
         assertThat(codeOf(longPurpose)).isEqualTo("1009C0005");
     }

@@ -1,5 +1,6 @@
 package com.ctds.delivery.application;
 
+import com.ctds.common.crypto.Sm3Service;
 import com.ctds.common.crypto.Sm4Service;
 import com.ctds.common.idempotency.Idempotent;
 import com.ctds.delivery.audit.SandboxAuditActions;
@@ -56,6 +57,7 @@ public class SandboxExportService {
     private final SandboxWorkspaceStore workspaceStore;
     private final FilePackageStore packageStore;
     private final Sm4Service sm4Service;
+    private final Sm3Service sm3Service;
     private final SandboxLifecycleService lifecycle;
     private final SandboxResultPersistenceService persistence;
     private final SandboxAuditService audit;
@@ -66,7 +68,8 @@ public class SandboxExportService {
             final SandboxResultRepository resultRepository,
             final DeliveryRepository deliveryRepository, final ContractPort contractPort,
             final SandboxWorkspaceStore workspaceStore, final FilePackageStore packageStore,
-            final Sm4Service sm4Service, final SandboxLifecycleService lifecycle,
+            final Sm4Service sm4Service, final Sm3Service sm3Service,
+            final SandboxLifecycleService lifecycle,
             final SandboxResultPersistenceService persistence, final SandboxAuditService audit,
             final DeliveryProperties properties, final Clock clock) {
         this.sandboxRepository = sandboxRepository;
@@ -76,6 +79,7 @@ public class SandboxExportService {
         this.workspaceStore = workspaceStore;
         this.packageStore = packageStore;
         this.sm4Service = sm4Service;
+        this.sm3Service = sm3Service;
         this.lifecycle = lifecycle;
         this.persistence = persistence;
         this.audit = audit;
@@ -124,6 +128,10 @@ public class SandboxExportService {
             }
             final byte[] plaintext = workspaceStore.readResult(task.sandboxNo(), name);
             if (plaintext.length != registration.sizeBytes()) {
+                throw stateConflict();
+            }
+            // 实际导出字节重算 SM3 必须等于登记快照：复核与读取之间的等长替换同样拒绝（纵深）
+            if (!sm3Service.digestHex(plaintext).equals(registration.checksum())) {
                 throw stateConflict();
             }
             if (plaintext.length > properties.getFile().getMaxBytes()) {

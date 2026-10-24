@@ -84,7 +84,7 @@ com.ctds.delivery（既有包）
 
 ### 2.3 既有表加性变更
 
-1. `deliveries` **加列**：`sandbox_no VARCHAR(16) NULL`、`result_name VARCHAR(128) NULL`（仅 `SANDBOX_EXPORT` 行非空）；`KEY(sandbox_no)`；`delivery_type` 取值域新增 `SANDBOX_EXPORT`（列类型不变，`DeliveryType` 枚举加性新增）。既有行两列恒 NULL，语义零影响。
+1. `delivery` 表**加列**：`sandbox_no VARCHAR(16) NULL`、`result_name VARCHAR(128) NULL`（仅 `SANDBOX_EXPORT` 行非空）；`KEY(sandbox_no)`；`delivery_type` 取值域新增 `SANDBOX_EXPORT`（列类型不变，`DeliveryType` 枚举加性新增）。既有行两列恒 NULL，语义零影响。
 2. `sandbox_action_log` **加列**：`result_name VARCHAR(128) NULL`（结果物维度动作与拒绝留痕填写；既有行恒 NULL）。
 
 ## §3 结果物状态机与提交审核
@@ -146,13 +146,13 @@ com.ctds.delivery（既有包）
 → 任务可见性 → 非参与方 1009C0010（404 同码同文）
 → 需求方判定 → 1009C0003（403）
 → 任务 RUNNING → 1009C0011（409）
-→ 幂等查重（key = requester:idempotencyKey，落 deliveries 唯一键兜底）→ 命中返回首次导出记录
+→ 幂等查重（key = requester:idempotencyKey，落 delivery 表唯一键兜底）→ 命中返回首次导出记录
 → 登记存在且 APPROVED → 未登记/待审核/驳回 → 1009C0016（409）
 → [contract] check（USE，purpose / territory）→ 拒绝原码透传（1008C0020 等），零计数零记录零包
 → 快照复核：listResults 当前 sizeBytes/SM3 vs 登记快照 → 不一致 1009C0016（提示重新提交审核）
 → 读工作区文件 → 大小复核 ≤ max-bytes → 1009C0008
 → SM4 加密（common-crypto，key-ref 复用 ctds.delivery.file.key-ref）→ packageId = <deliveryNo>.sm4 → FilePackageStore 存储
-→ 取号 DV（delivery_no_seq 复用）→ INSERT deliveries（type=SANDBOX_EXPORT，sandbox_no / result_name /
+→ 取号 DV（delivery_no_seq 复用）→ INSERT delivery（type=SANDBOX_EXPORT，sandbox_no / result_name /
    displayName=fileName、fileSize、packageId、checksum=快照 SM3、keyRef、requester / provider / 合约与产品快照）
 → 失败清理：包生成 / 插入失败 → 删除包、不写记录（DuplicateKeyException → 删包并按幂等键返回首次）
 → sandbox_action_log（sandbox.export）+ 审计 JSONL
@@ -162,7 +162,7 @@ com.ctds.delivery（既有包）
 - **一次导出 = 一次数据使用**：`check` 放行即计数 1；拒绝零计数零导出记录；`check` 通过后平台侧失败（加密 / 存储）→ 不写导出记录 + 审计 FAILURE，**不改写已发生的计数**（沿 3.5.3 Q4 诚实边界）。
 - **导出物领取**：复用 3.5.3 交付包下载端点 `GET /api/v1/deliveries/{deliveryNo}/package`（`delivery.package.download`，仅合约需求方，密文 + `X-Ctds-Sm3` 头）——本卡**零新下载代码**。
 - **用途 / 地域**：请求可选；合约策略要求而缺失 → 由合约域 `1008C0020` 拒绝（不自行补默认值，沿 3.5.4 口径）。
-- **计量与存证**：导出行即交付事件（`deliveries`），3.7.5 / 3.8.3 读单一交付事件源；不与 `sandbox_job` 双计。
+- **计量与存证**：导出行即交付事件（`delivery` 表），3.7.5 / 3.8.3 读单一交付事件源；不与 `sandbox_job` 双计。
 
 ## §6 端点、权限、错误码与出站映射
 
@@ -214,12 +214,12 @@ com.ctds.delivery（既有包）
 
 | 组 | 例数 | 锚点 |
 | --- | --- | --- |
-| 提交审核 | 8 | 成功（登记 / 快照 / 留痕 / 状态 PENDING）、未登记文件 0015、非法文件名 0005、超上限 0008、非需求方 0003、非参与方 0010 同码同文、PENDING 再提交 0016、REJECTED 重提交 round+1、APPROVED 再提交 0016 |
+| 提交审核 | 10 | 成功（登记 / 快照 / 留痕 / 状态 PENDING）、未登记文件 0015、非法文件名 0005、超上限 0008、非需求方 0003、非参与方 0010 同码同文、PENDING 再提交 0016、REJECTED 重提交 round+1、APPROVED 再提交 0016、幂等重放（同键返回首次登记、零新增留痕）（评审修复批补） |
 | 治理审核 | 9 | 通过（状态 + review 行 + 留痕）、驳回（理由必填入 review）、驳回无理由 0005、已定论再审 0016、未登记 0015、非 admin 权限层 1000C0005、审核留痕列表（两条结论理由齐备 + 读即留痕）、任务到期后审核 0011、审核记录字段集（无内容 / 路径） |
-| 导出 | 12 | 成功（加密包落盘 + SM3 头 + deliveries SANDBOX_EXPORT 行 + check 计数恰 +1 + 留痕）、未提交导出 0016、驳回导出 0016（理由可查）、待审核导出 0016、策略越界 1008C0020 零计数零记录零包、快照不一致（覆盖文件后）0016、到期 / 关闭任务导出 0011、非需求方导出 0003、非参与方 0010 同码同文、幂等重放（同键返回首次、计数不重复）、下载端点（需求方可取 + 提供方 1009C0009）、包生成失败不写记录不残留 |
+| 导出 | 13 | 成功（加密包落盘 + SM3 头 + delivery SANDBOX_EXPORT 行 + check 计数恰 +1 + 留痕）、未提交导出 0016、驳回导出 0016（理由可查）、待审核导出 0016、策略越界 1008C0020 零计数零记录零包、快照不一致（覆盖文件后）0016、到期 / 关闭任务导出 0011、非需求方导出 0003、非参与方 0010 同码同文、幂等重放（同键返回首次、计数不重复）、唯一键兜底（预插同键行触发 DuplicateKey：返回首次记录 + 包删除，评审修复批补）、下载端点（需求方可取 + 提供方 1009C0009）、包生成失败不写记录不残留 |
 | 读面与防枚举 | 6 | 结果列表含状态 / 结论 / 理由 / 轮次（未提交为 null）、导出记录列表（参与者）、非参与方结果 / 导出 / 审核列表三面 404 同码同文、提供方只读（可查不可提交 / 导出）、驳回理由需求方可查、治理读留痕 |
 | 留痕与无本体 | 4 | 审计 JSONL 字段集（无路径 / 内容 / 容器 / 命令 / 密钥值）、DB 行字段集、响应字段集、`keyRef` 为引用非密钥断言 |
-| 配置与迁移 | 3 | Flyway V3 迁移（含 deliveries / action_log 加列，既有行 NULL）、权限点装载（admin 含 sandbox.review）、导出参数校验（conclusion 枚举 / reason 长度） |
+| 配置与迁移 | 3 | Flyway V3 迁移（含 delivery / action_log 加列 + `uk_sandbox_result` 唯一键与列宽锚，既有行 NULL）、权限点装载（admin 含 sandbox.review）、导出参数校验（conclusion 枚举 / reason 长度） |
 
 **真 Docker 端到端（默认跳过）**：`@EnabledIfEnvironmentVariable(named = "CTDS_SANDBOX_E2E", matches = "1")`，1~2 例（真容器跑作业产出结果物 → 提交 → 审核 → 导出 → 下载解密复核 SM3），走查段启用。
 
@@ -256,7 +256,7 @@ com.ctds.delivery（既有包）
 | D 领取与读面 | 5 | 加密包下载 + SM3 头可核；提供方领取 1009C0009；结果列表含状态结论；导出记录列表；非参与方三面同码同文（S3-8） |
 | E 无本体 | 3 | DB / 审计 JSONL / app.log / 响应四处取证零命中（内容 / 路径 / 容器 / 镜像 / 命令 / 密钥值）（S3-11） |
 
-**对账**：导出数 ↔ `deliveries`（SANDBOX_EXPORT）行数 ↔ 合约 `check` 计数增量；拒绝零增量；审核动作零计数。
+**对账**：导出数 ↔ `delivery` 表（SANDBOX_EXPORT）行数 ↔ 合约 `check` 计数增量；拒绝零增量；审核动作零计数。
 
 ## §12 边界、风险与演进
 
@@ -275,3 +275,5 @@ com.ctds.delivery（既有包）
 ## 确认记录（V0.9 → V1.0）
 
 > **✅ 已签署（2026-10-24 12:23，编排师会话回复"全部按建议"）**：Q1~Q8 全采建议 A + G2-A + D1 不拆分；本文与 `docs/designs/WBS-3.5.5-lofi.md` 同批转 **V1.0（编码契约即时生效）**。编码段归新会话冷启动（测试先行，第一动作 = §10 八项前置检查逐项实测留痕，红相归档 `build-output/w355-red-*`）。**G2-A 已于 2026-10-24 由 PO 批准，规格转 V1.2（§7 G2 决策行，零规则与验收标准文字变更）；C-5.2 剧本仅维护说明第 7 条留痕。**
+>
+> **勘正（2026-10-24 评审修复批，契约语义零变更）**：① 物理表名笔误 `deliveries` → `delivery`（§2.3/§5/§8/§11，URL 路径 `/api/v1/deliveries/**` 不变）；② §8 提交审核组例数 8 → 10（原列 9 锚，评审修复批 +1 幂等重放）、导出组 12 → 13（+1 唯一键兜底）。依据 = 4 视角评审①③指摘（F1.2/F1.3/F3.6），全文见评审报告与开发日志。
