@@ -20,6 +20,7 @@ public class FakeSandboxRuntime implements SandboxRuntime {
     private final AtomicInteger stopCount = new AtomicInteger();
     private final AtomicInteger execCount = new AtomicInteger();
     private volatile List<String> lastCommand = List.of();
+    private volatile Duration lastTimeout;
     private volatile JobExecResult nextResult = new JobExecResult(0, false, 12L);
     private volatile boolean launchFails;
     private volatile boolean unavailable;
@@ -55,6 +56,7 @@ public class FakeSandboxRuntime implements SandboxRuntime {
             final Duration timeout) {
         execCount.incrementAndGet();
         lastCommand = List.copyOf(command);
+        lastTimeout = timeout;
         return nextResult;
     }
 
@@ -64,6 +66,7 @@ public class FakeSandboxRuntime implements SandboxRuntime {
         stopCount.set(0);
         execCount.set(0);
         lastCommand = List.of();
+        lastTimeout = null;
         nextResult = new JobExecResult(0, false, 12L);
         launchFails = false;
         unavailable = false;
@@ -81,10 +84,6 @@ public class FakeSandboxRuntime implements SandboxRuntime {
         this.unavailable = value;
     }
 
-    public void markRunning(final String sandboxNo) {
-        running.add(sandboxNo);
-    }
-
     public List<SandboxSpec> launches() {
         return List.copyOf(launches);
     }
@@ -99,5 +98,10 @@ public class FakeSandboxRuntime implements SandboxRuntime {
 
     public List<String> lastCommand() {
         return lastCommand;
+    }
+
+    /** 应用层实际传给运行时的作业超时（Java 侧 +10s 兜底由 DockerCliSandboxRuntime 内部叠加）。 */
+    public Duration lastTimeout() {
+        return lastTimeout;
     }
 }

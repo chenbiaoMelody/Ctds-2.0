@@ -7,11 +7,13 @@ import com.ctds.common.crypto.Sm3Service;
 import com.ctds.delivery.config.SandboxProperties;
 import com.ctds.delivery.domain.DeliveryBizException;
 import com.ctds.delivery.domain.FileSource;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -80,6 +82,26 @@ class SandboxWorkspaceStoreTest {
                 List.of(new FileSource("big", 13, big, "big.bin", 1025))))
                 .isInstanceOfSatisfying(DeliveryBizException.class,
                         ex -> assertThat(ex.getErrorCode().value()).isEqualTo("1009S0004"));
+    }
+
+    @Test
+    void symbolicLinkSourceRejectedAndWorkspaceCleaned() throws Exception {
+        final Path real = sourceDir.resolve("real.csv");
+        Files.writeString(real, "alpha", StandardCharsets.UTF_8);
+        final Path link = sourceDir.resolve("link.csv");
+        try {
+            Files.createSymbolicLink(link, real);
+        } catch (final UnsupportedOperationException | IOException | SecurityException e) {
+            // Windows 非管理员 / 未开启开发者模式时无法创建符号链接：显式登记跳过
+            Assumptions.assumeTrue(false,
+                    "当前文件系统不支持符号链接：" + e.getClass().getSimpleName());
+            return;
+        }
+        assertThatThrownBy(() -> store.prepare(SANDBOX_NO,
+                List.of(new FileSource("link", 13, link, "link.csv", 5))))
+                .isInstanceOfSatisfying(DeliveryBizException.class,
+                        ex -> assertThat(ex.getErrorCode().value()).isEqualTo("1009S0004"));
+        assertThat(temp.resolve("workspace").resolve(SANDBOX_NO)).doesNotExist();
     }
 
     @Test

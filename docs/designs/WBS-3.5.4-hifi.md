@@ -8,25 +8,38 @@
 
 ### 1.1 包结构（`services/delivery-service` 内新增）
 
+> **落位实际口径（评审③P1 回写，2026-10-23）**：沙箱子域**沿用服务既有分层包**
+> （`com.ctds.delivery.{domain,application,infrastructure,interfaces,config,audit}`），
+> 以类名 `Sandbox*` 前缀划界，**不新建 `com.ctds.delivery.sandbox` 子包**。
+>
+> **不采"移包"的理由**：34 个主代码类 + 6 个测试类整体移包属纯结构调整、零业务收益，
+> 却触发全量 import / 包可见性 / 测试回归（>400 行），违反“最小实现 + 禁止顺手重构（AGENTS §2.5）”；
+> `Sandbox*` 前缀 + ADR-024 契约边界已足以划界。下文树为**逻辑分组**，物理落点 =
+> 每节标题所示既有包。
+
 ```
-com.ctds.delivery.sandbox
+com.ctds.delivery（既有包）
 ├── application
 │   ├── SandboxCommandService        # 申请开通 / 主动关闭
+│   ├── SandboxCommand               # 开通命令（requesterNo / contractNo / 幂等键）
 │   ├── SandboxJobService            # 受控作业执行（策略 + 使用留痕）
+│   ├── SandboxRunCommand            # 作业命令（sandboxNo / jobId / 用途 / 地域）
 │   ├── SandboxQueryService          # 参与者读面 / 治理读面 / 结果元数据 / 作业历史
-│   └── SandboxLifecycleService      # 到期扫描 + 启动对账
+│   ├── SandboxLifecycleService      # 到期扫描 + 启动对账
+│   └── SandboxPersistenceService    # 开通事务边界（任务 + 动作留痕）
 ├── domain
 │   ├── SandboxTask / SandboxStatus  # RUNNING / STOPPED / EXPIRED
 │   ├── SandboxJob / SandboxJobStatus# RUNNING / SUCCEEDED / FAILED / TIMEOUT
-│   ├── SandboxRepository / SandboxJobRepository
+│   ├── SandboxActionLog / SandboxRepository / SandboxJobRepository
 │   ├── SandboxRuntime               # 端口：launch / stop / isRunning / exec
 │   ├── SandboxSpec / JobExecResult
 │   ├── SandboxErrorCodes
 │   └── SandboxBizException
 ├── infrastructure
-│   ├── DockerCliSandboxRuntime      # 唯一 ProcessBuilder 落点
+│   ├── DockerCliSandboxRuntime      # 运行时适配器（fail-closed）
 │   ├── DockerCommandBuilder         # 纯函数：argv 构造（单测锚点）
-│   ├── DefaultProcessRunner         # ProcessRunner 默认实现（超时 + 有界读取）
+│   ├── ProcessRunner                # 子进程端口（测试可替换为 Fake）
+│   ├── DefaultProcessRunner         # 唯一 ProcessBuilder 落点（超时 + 有界读取）
 │   ├── SandboxWorkspaceStore        # 输入副本 / 输出目录 / 结果元数据
 │   ├── JdbcSandboxRepository
 │   └── JdbcSandboxJobRepository
@@ -192,7 +205,8 @@ ctds:
 
 ```java
 public interface SandboxRuntime {
-    String launch(SandboxSpec spec);                                   // 返回容器 ID（仅留内存/日志）
+    String launch(SandboxSpec spec);   // 返回容器句柄 = 容器名（ctds-sb-<sandboxNo>，确定性可重建；
+                                       // 容器 ID 不落库、不落日志、不入审计）
     void stop(String sandboxNo);                                       // 幂等
     boolean isRunning(String sandboxNo);
     JobExecResult exec(String sandboxNo, List<String> command, Duration timeout);
@@ -345,6 +359,10 @@ docker exec --user 1000:1000 ctds-sb-SB000001
 | `sandbox.denied` | 各类拒绝（403/404/409/429/400） | DENIED + reasonCode |
 | `sandbox.data.denied` | `/data/**` 直取拒绝 | DENIED + `1009C0012` |
 
+> **数据面留痕口径**：`/data/**` 直取一律记 `sandbox.data.denied` + `1009C0012`（**恒记，与响应码解耦**）——
+> 非参与方 / 不存在时响应为 404 `1009C0010`（同码同文防枚举），留痕仍按数据面拒绝记录，
+> 使审计侧能识别"探测"与"参与者直取"两类尝试；`contractNo` 仅在任务存在时填写。
+
 ### 8.2 字段集（DB + 审计 JSONL）
 
 - 允许：`sandboxNo` / `jobNo` / `contractNo` / `operatorNo` / `action` / `result` / `reasonCode` / `status` / `jobId` / `purpose` / `territory` / `dataFileCount` / 时间。
@@ -419,7 +437,7 @@ docker exec --user 1000:1000 ctds-sb-SB000001
 
 **复用（只读）**：`common-auth`（权限点 / AuthContext）、`common-errorcode`、`common-pagination`、`common-idempotency`、`common-logging`（AuditRecorder）、`common-crypto`（SM3）；delivery-service 既有 `ContractInternalClient` / `CatalogInternalClient` / `FileSourceRegistry` / `DeliveryExceptionHandler` / `DeliveryBeanConfig(Clock)`；测试支撑 `StubDependencyServer` / `SharedMySqlContainer`。
 
-**加性改动（不改既有语义）**：`FileSourceRegistry#listForProduct`；`DeliveryExceptionHandler` 码表与 HTTP 映射新增项；`DeliveryApplication` 增 `@EnableScheduling`；`application.yml` 配置与权限点；Flyway V2；k8s delivery 部署增沙箱环境变量（运行时默认关闭）；ADR-024；`dependencies.md` 容器基础镜像 1 行（Q3-A）。
+**加性改动（不改既有语义）**：`FileSourceRegistry#listForProduct`；`DeliveryExceptionHandler` 码表与 HTTP 映射新增项；`DeliveryApplication` 增 `@EnableScheduling`；`application.yml` 配置与权限点；Flyway V2；k8s delivery 部署增沙箱环境变量（运行时默认关闭）；ADR-024；`dependencies.md` 容器基础镜像 1 行（Q3-A）；**受控作业脚本 `deploy/sandbox/jobs/{dataset_profile,input_inventory}.py`（2 个新文件，只读挂载到容器 `/opt/ctds/jobs`，固定 argv 目标）**；**新增测试支撑 `FakeSandboxRuntime`（测试作用域，零生产影响）；`RecordingAuditRecorder` 为 3.5.3 既有替身，本卡复用（仅 `DeliveryAuditIntegrationTest` 使用；沙箱审计取证走真实 JSONL 落盘）**。
 
 **规格外实现声明**：**空**。受控作业是规格行为 5“沙箱内使用”的**接口承载**（规格 §4-1 明确数据模型与端点归 3.5.2~3.5.5），不新增业务行为；G1（产品形态）按变更流程处理。
 

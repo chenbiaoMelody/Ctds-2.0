@@ -19,9 +19,6 @@ public interface SandboxRepository {
     /** 条件更新（仅 RUNNING 可终止）：返回受影响行数（0 = 已被并发终止）。 */
     int close(String sandboxNo, SandboxStatus status, String closeReason, LocalDateTime updatedAt);
 
-    /** 到期扫描：条件更新全部已到期 RUNNING 任务，返回受影响行数。 */
-    int closeExpired(LocalDateTime now, String reason);
-
     /** 供到期 / 对账使用的候选集（上限由实现限制）。 */
     List<SandboxTask> listExpired(LocalDateTime now, int limit);
 

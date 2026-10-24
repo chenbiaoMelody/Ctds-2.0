@@ -22,6 +22,7 @@ import com.ctds.delivery.interfaces.dto.SandboxViews.JobView;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -68,13 +69,15 @@ public class SandboxJobService {
         final String sandboxNo = cmd == null ? "" : requireSandboxNo(cmd.sandboxNo());
         final String requester = cmd == null || cmd.requesterNo() == null ? "" : cmd.requesterNo();
         String jobNo = null;
+        // 可见性拒绝在 visibleTask 内已留痕（带 contractNo 上下文），catch 兜底不得重复写行
+        final AtomicBoolean traced = new AtomicBoolean(false);
         try {
             final String jobId = requireJobId(cmd.jobId());
             final String idempotencyKey = requireIdempotencyKey(cmd.idempotencyKey());
             final String purpose = validateElement(cmd.purpose());
             final String territory = validateElement(cmd.territory());
 
-            final SandboxTask task = visibleTask(sandboxNo, requester);
+            final SandboxTask task = visibleTask(sandboxNo, requester, traced);
             if (!requester.equals(task.requesterNo())) {
                 throw requesterNotAllowed();
             }
@@ -124,7 +127,7 @@ public class SandboxJobService {
                 jobRepository.finish(jobNo, SandboxJobStatus.FAILED, null, null,
                         LocalDateTime.now(clock));
                 audit.failure(SandboxAuditActions.JOB, sandboxNo, jobNo, null, requester, code);
-            } else {
+            } else if (!traced.get()) {
                 audit.denied(SandboxAuditActions.DENIED, sandboxNo, jobNo, null, requester, code);
             }
             throw e;
@@ -150,15 +153,18 @@ public class SandboxJobService {
         }
     }
 
-    private SandboxTask visibleTask(final String sandboxNo, final String callerNo) {
+    private SandboxTask visibleTask(final String sandboxNo, final String callerNo,
+            final AtomicBoolean traced) {
         final SandboxTask task = repository.findBySandboxNo(sandboxNo).orElseThrow(() -> {
             audit.denied(SandboxAuditActions.DENIED, sandboxNo, null, null, callerNo,
                     SandboxErrorCodes.SANDBOX_NOT_VISIBLE.value());
+            traced.set(true);
             return notVisible();
         });
         if (!callerNo.equals(task.requesterNo()) && !callerNo.equals(task.providerNo())) {
             audit.denied(SandboxAuditActions.DENIED, task.sandboxNo(), null, task.contractNo(),
                     callerNo, SandboxErrorCodes.SANDBOX_NOT_VISIBLE.value());
+            traced.set(true);
             throw notVisible();
         }
         return task;

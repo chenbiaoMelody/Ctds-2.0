@@ -102,15 +102,6 @@ public class JdbcSandboxRepository implements SandboxRepository {
     }
 
     @Override
-    public int closeExpired(final LocalDateTime now, final String reason) {
-        return jdbc.sql("UPDATE sandbox_task SET status = 'EXPIRED', close_reason = :reason, "
-                        + "updated_at = :now WHERE status = 'RUNNING' AND expires_at <= :now")
-                .param("reason", reason)
-                .param("now", now)
-                .update();
-    }
-
-    @Override
     public List<SandboxTask> listExpired(final LocalDateTime now, final int limit) {
         return jdbc.sql("SELECT " + COLUMNS + " FROM sandbox_task WHERE status = 'RUNNING' "
                         + "AND expires_at <= :now ORDER BY id LIMIT :limit")
