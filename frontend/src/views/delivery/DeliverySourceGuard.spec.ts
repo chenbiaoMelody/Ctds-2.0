@@ -139,4 +139,25 @@ describe('同形提示双源守卫（T15 / DB-43 模式）', () => {
       expect(DELIVERY_ERROR_HINTS[code], `后端码 ${code} 前端缺提示条目`).toBeDefined()
     }
   })
+
+  it('1008 跨域透传两条与合约域权威文案逐字一致（评审修复 F3.2：消除守卫跳过口）', () => {
+    const contractText = readFileSync(
+      resolve(
+        frontendRoot,
+        '../../services/contract-service/src/main/java/com/ctds/contract/domain/ContractErrorCodes.java',
+      ),
+      'utf-8',
+    )
+    const crossDomain = Object.entries(DELIVERY_ERROR_HINTS).filter(([code]) =>
+      code.startsWith('1008'),
+    )
+    expect(crossDomain.length).toBeGreaterThan(0)
+    for (const [code, hint] of crossDomain) {
+      const messageMatch = contractText.match(
+        new RegExp(code + '"\\);\\s*public static final String\\s+\\w+_MESSAGE\\s*=\\s*"([^"]+)'),
+      )
+      expect(messageMatch, `${code} 的合约域 MESSAGE 常量未找到`).toBeTruthy()
+      expect(hint).toBe(messageMatch![1])
+    }
+  })
 })

@@ -4,7 +4,7 @@ import ElementPlus from 'element-plus'
 import { createRouter, createMemoryHistory, type Router } from 'vue-router'
 import SandboxListView from './SandboxListView.vue'
 import { listSandboxes, requestSandbox, type SandboxRecord } from '../../api/delivery'
-import { listMyContracts } from '../../api/contract'
+import { listMyContracts, type MyContract } from '../../api/contract'
 import { ApiError, setDemoSubject } from '../../api/client'
 import { setActorMode } from '../../stores/demoIdentity'
 import { isDemoAuthed, signInDemo } from '../../stores/demoAuth'
@@ -43,6 +43,20 @@ function task(over: Partial<SandboxRecord> = {}): SandboxRecord {
     dataFileCount: 1,
     closeReason: null,
     createdAt: '2026-10-24T21:53:29',
+    ...over,
+  }
+}
+
+function contract(over: Partial<MyContract> = {}): MyContract {
+  return {
+    contractNo: 'CO000026',
+    productName: '普惠金融数据服务',
+    counterpartySubjectNo: 'S20260925000001',
+    myRole: 'REQUESTER',
+    status: 'EFFECTIVE',
+    currentClauseVersion: 1,
+    effectiveAt: '2026-10-20T10:00:00',
+    updatedAt: '2026-10-20T10:00:00',
     ...over,
   }
 }
@@ -166,5 +180,17 @@ describe('沙箱任务列表（T7）', () => {
     await button(wrapper, '提交')?.trigger('click')
     await flushPromises()
     expect(document.body.textContent).toContain('沙箱任务当前状态不允许该操作')
+  })
+
+  it('申请弹窗检索回填：listMyContracts 参数逐字（pageNum 1/pageSize 50/status EFFECTIVE）+ 选项渲染 contractNo', async () => {
+    mockedList.mockResolvedValue(page([]))
+    mockedMine.mockResolvedValue(page([contract()]))
+    const wrapper = await mountPage()
+    await button(wrapper, '申请沙箱')?.trigger('click')
+    await flushPromises()
+    await button(wrapper, '检索')?.trigger('click')
+    await flushPromises()
+    expect(mockedMine).toHaveBeenCalledWith({ pageNum: 1, pageSize: 50, status: 'EFFECTIVE' })
+    expect(document.body.textContent).toContain('CO000026')
   })
 })

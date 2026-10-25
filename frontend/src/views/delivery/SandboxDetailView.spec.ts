@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
-import ElementPlus from 'element-plus'
+import ElementPlus, { ElMessageBox } from 'element-plus'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import SandboxDetailView from './SandboxDetailView.vue'
 import {
@@ -13,6 +13,7 @@ import {
   submitResultReview,
   exportSandboxResult,
   type SandboxRecord,
+  type SandboxJobRecord,
   type SandboxResultItem,
 } from '../../api/delivery'
 import { ApiError, setDemoSubject } from '../../api/client'
@@ -21,6 +22,9 @@ import { isDemoAuthed, signInDemo } from '../../stores/demoAuth'
 import {
   SANDBOX_EXIT_BOUNDARY_HINT,
   RESULT_STATUS_LABELS,
+  JOB_ID_OPTIONS,
+  CLOSE_SANDBOX_CONFIRM_TIP,
+  CLOSE_SANDBOX_SUCCESS_TIP,
 } from '../../constants/delivery'
 
 /**
@@ -79,6 +83,22 @@ function result(over: Partial<SandboxResultItem> = {}): SandboxResultItem {
     conclusion: null,
     rejectReason: null,
     reviewRound: null,
+    ...over,
+  }
+}
+
+function job(over: Partial<SandboxJobRecord> = {}): SandboxJobRecord {
+  return {
+    jobNo: 'JB000001',
+    sandboxNo: 'SB000004',
+    jobId: 'dataset-profile',
+    status: 'SUCCEEDED',
+    exitCode: 0,
+    durationMs: 1200,
+    purpose: '风控建模',
+    territory: '本地',
+    createdAt: '2026-10-25T10:00:00',
+    finishedAt: '2026-10-25T10:00:01',
     ...over,
   }
 }
@@ -157,14 +177,39 @@ describe('页面装载与配额生命周期区（T8 前置）', () => {
     const wrapper = await mountPage()
     expect(button(wrapper, '关闭任务')).toBeFalsy()
   })
+
+  it('关闭任务：确认弹窗 → closeSandbox 调用 + 成功提示 + 作业/结果物刷新', async () => {
+    const confirmSpy = vi.spyOn(ElMessageBox, 'confirm').mockResolvedValue('confirm' as never)
+    mockedClose.mockResolvedValue(task({ status: 'STOPPED', closeReason: 'REQUESTER_CLOSE' }))
+    const wrapper = await mountPage()
+    mockedJobs.mockClear()
+    mockedResults.mockClear()
+    await button(wrapper, '关闭任务')?.trigger('click')
+    await flushPromises()
+    expect(confirmSpy).toHaveBeenCalledTimes(1)
+    expect(String(confirmSpy.mock.calls[0][0])).toBe(CLOSE_SANDBOX_CONFIRM_TIP)
+    expect(mockedClose).toHaveBeenCalledWith('SB000004')
+    expect(document.body.textContent).toContain(CLOSE_SANDBOX_SUCCESS_TIP)
+    expect(mockedJobs).toHaveBeenCalledTimes(1)
+    expect(mockedResults).toHaveBeenCalledTimes(1)
+  })
+
+  it('关闭任务取消：零请求', async () => {
+    vi.spyOn(ElMessageBox, 'confirm').mockRejectedValue(new Error('cancel'))
+    const wrapper = await mountPage()
+    await button(wrapper, '关闭任务')?.trigger('click')
+    await flushPromises()
+    expect(mockedClose).not.toHaveBeenCalled()
+  })
 })
 
 describe('结果物区状态机（T8）', () => {
-  it('未登记（status=null）：提交审核可用；导出禁用', async () => {
+  it('未登记（status=null）：提交审核可用；导出禁用；RUNNING 任务关闭按钮可见', async () => {
     mockedResults.mockResolvedValue([result()])
     const wrapper = await mountPage()
     expect(button(wrapper, '提交审核')).toBeTruthy()
     expect(button(wrapper, '导出')?.attributes('disabled')).toBeDefined()
+    expect(button(wrapper, '关闭任务')).toBeTruthy()
     expect(document.body.textContent).toContain(RESULT_STATUS_LABELS[''])
   })
 
@@ -172,10 +217,11 @@ describe('结果物区状态机（T8）', () => {
     mockedResults.mockResolvedValue([result({ status: 'PENDING', conclusion: null })])
     const wrapper = await mountPage()
     expect(document.body.textContent).toContain(RESULT_STATUS_LABELS.PENDING)
+    expect(button(wrapper, '提交审核')?.attributes('disabled')).toBeDefined()
     expect(button(wrapper, '导出')?.attributes('disabled')).toBeDefined()
   })
 
-  it('REJECTED：驳回理由与轮次展示；可重新提交；导出禁用', async () => {
+  it('REJECTED：驳回理由与轮次展示；可重新提交（按钮非禁用）；导出禁用', async () => {
     mockedResults.mockResolvedValue([
       result({
         status: 'REJECTED',
@@ -187,6 +233,9 @@ describe('结果物区状态机（T8）', () => {
     const wrapper = await mountPage()
     expect(document.body.textContent).toContain('output contains unmasked sample field')
     expect(document.body.textContent).toContain('1')
+    const resubmit = wrapper.findAll('button').find((b) => b.text().includes('重新提交'))
+    expect(resubmit).toBeTruthy()
+    expect(resubmit?.attributes('disabled')).toBeUndefined()
     expect(button(wrapper, '导出')?.attributes('disabled')).toBeDefined()
   })
 
@@ -216,10 +265,35 @@ describe('结果物区状态机（T8）', () => {
     expect(fileName).toBe('dataset-profile.md')
     expect(mockedResults).toHaveBeenCalledTimes(2)
   })
+
+  it('提交审核请求进行中重复点击零新请求（同键重放语义，E-9 测试锚）', async () => {
+    mockedResults.mockResolvedValue([result()])
+    let resolveSubmit!: (value: ReturnType<typeof result>) => void
+    mockedSubmit.mockImplementation(
+      () => new Promise((resolve) => { resolveSubmit = resolve }),
+    )
+    const wrapper = await mountPage()
+    await button(wrapper, '提交审核')?.trigger('click')
+    await flushPromises()
+    // 请求未返回（挂起中）时再次点击：前置守卫拦截，零新请求零换键
+    await button(wrapper, '提交审核')?.trigger('click')
+    await flushPromises()
+    expect(mockedSubmit).toHaveBeenCalledTimes(1)
+    resolveSubmit(result({ status: 'PENDING' }))
+    await flushPromises()
+    expect(mockedSubmit).toHaveBeenCalledTimes(1)
+  })
+
+  it('结果物 checksum=null：SM3 列渲染超大文件口径文案', async () => {
+    mockedResults.mockResolvedValue([result({ checksum: null })])
+    await mountPage()
+    expect(document.body.textContent).toContain('—（超大文件不提供摘要）')
+  })
 })
 
 describe('沙箱工作台（T9）', () => {
-  it('运行作业弹窗：jobId 白名单下拉二项（数据集画像 / 输入清单）；提交契约逐字 + 幂等键', async () => {
+  it('运行作业弹窗：jobId 白名单下拉二项；提交契约逐字 + 幂等键 + 成功提示按 SUCCEEDED 分支', async () => {
+    mockedRun.mockResolvedValue(job())
     const wrapper = await mountPage()
     await button(wrapper, '运行作业')?.trigger('click')
     await flushPromises()
@@ -232,17 +306,30 @@ describe('沙箱工作台（T9）', () => {
     expect(key).toMatch(/^[0-9a-f-]{36}$/)
     expect(sandboxNo).toBe('SB000004')
     expect(command.jobId).toBe('dataset-profile')
+    expect(document.body.textContent).toContain('作业执行成功')
+  })
+
+  it('运行作业弹窗：jobId 白名单下拉渲染受控作业二项（数据集画像 / 输入清单）', async () => {
+    const wrapper = await mountPage()
+    await button(wrapper, '运行作业')?.trigger('click')
+    await flushPromises()
+    const optionTexts = Array.from(document.body.querySelectorAll('.el-select-dropdown__item')).map(
+      (el) => el.textContent?.trim() ?? '',
+    )
+    for (const label of JOB_ID_OPTIONS.map((o) => o.label)) {
+      expect(optionTexts, `下拉缺受控作业选项：${label}`).toContain(label)
+    }
   })
 
   it('作业被拒（策略越界 1008C0020）：文案原样透传', async () => {
-    mockedRun.mockRejectedValue(new ApiError('1008C0020', '用途或地域要素超出合约约定范围'))
+    mockedRun.mockRejectedValue(new ApiError('1008C0020', '越界使用被拒绝，触发要素见留痕'))
     const wrapper = await mountPage()
     await button(wrapper, '运行作业')?.trigger('click')
     await flushPromises()
     ;(wrapper.vm as unknown as { jobForm: { jobId: string } }).jobForm.jobId = 'dataset-profile'
     await button(wrapper, '提交')?.trigger('click')
     await flushPromises()
-    expect(document.body.textContent).toContain('用途或地域要素超出合约约定范围')
+    expect(document.body.textContent).toContain('越界使用被拒绝，触发要素见留痕')
   })
 })
 

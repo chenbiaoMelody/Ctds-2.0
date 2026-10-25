@@ -1,19 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import ElementPlus from 'element-plus'
-import { createRouter, createMemoryHistory } from 'vue-router'
+import { createRouter, createMemoryHistory, type Router } from 'vue-router'
 import DeliveryListView from './DeliveryListView.vue'
 import {
   listDeliveries,
   getDelivery,
   requestDelivery,
+  downloadDeliveryPackage,
   type DeliveryRecord,
 } from '../../api/delivery'
-import { listMyContracts } from '../../api/contract'
+import { listMyContracts, type MyContract } from '../../api/contract'
 import { ApiError, setDemoSubject } from '../../api/client'
 import { setActorMode } from '../../stores/demoIdentity'
 import { isDemoAuthed, signInDemo } from '../../stores/demoAuth'
-import { DELIVERY_TYPE_LABELS } from '../../constants/delivery'
+import { DELIVERY_TYPE_LABELS, PACKAGE_DOWNLOAD_SM3_HINT } from '../../constants/delivery'
 
 /**
  * 交付记录页测试（WBS-3.5.6 hifi §6.1 / §7 T4/T5/T6）：
@@ -35,6 +36,7 @@ vi.mock('../../api/contract', () => ({
 const mockedList = vi.mocked(listDeliveries)
 const mockedGet = vi.mocked(getDelivery)
 const mockedRequest = vi.mocked(requestDelivery)
+const mockedDownload = vi.mocked(downloadDeliveryPackage)
 const mockedMine = vi.mocked(listMyContracts)
 
 function record(over: Partial<DeliveryRecord> = {}): DeliveryRecord {
@@ -57,9 +59,25 @@ function record(over: Partial<DeliveryRecord> = {}): DeliveryRecord {
   }
 }
 
+function contract(over: Partial<MyContract> = {}): MyContract {
+  return {
+    contractNo: 'CO000026',
+    productName: '普惠金融数据服务',
+    counterpartySubjectNo: 'S20260925000001',
+    myRole: 'REQUESTER',
+    status: 'EFFECTIVE',
+    currentClauseVersion: 1,
+    effectiveAt: '2026-10-20T10:00:00',
+    updatedAt: '2026-10-20T10:00:00',
+    ...over,
+  }
+}
+
 function page<T>(list: T[], total = list.length) {
   return { list, total, pageNum: 1, pageSize: 10, totalPages: 1 }
 }
+
+let currentRouter: Router | undefined
 
 async function mountPage(route = '/deliveries') {
   const router = createRouter({
@@ -69,6 +87,7 @@ async function mountPage(route = '/deliveries') {
       { path: '/login', name: 'login', component: { template: '<div />' } },
     ],
   })
+  currentRouter = router
   await router.push(route)
   await router.isReady()
   const wrapper = mount(DeliveryListView, {
@@ -87,7 +106,7 @@ beforeEach(() => {
   localStorage.clear()
   document.body.innerHTML = ''
   vi.restoreAllMocks()
-  for (const fn of [mockedList, mockedGet, mockedRequest, mockedMine]) {
+  for (const fn of [mockedList, mockedGet, mockedRequest, mockedDownload, mockedMine]) {
     fn.mockReset()
   }
   setDemoSubject('S20260922000001')
@@ -191,6 +210,18 @@ describe('发起交付弹窗（T5）', () => {
     await flushPromises()
     expect(document.body.textContent).toContain('交付形态或范围与合约约定不符')
   })
+
+  it('检索回填：listMyContracts 参数逐字（pageNum 1/pageSize 50/status EFFECTIVE）+ 选项渲染 contractNo', async () => {
+    mockedList.mockResolvedValue(page([]))
+    mockedMine.mockResolvedValue(page([contract()]))
+    const wrapper = await mountPage()
+    await button(wrapper, '发起交付')?.trigger('click')
+    await flushPromises()
+    await button(wrapper, '检索')?.trigger('click')
+    await flushPromises()
+    expect(mockedMine).toHaveBeenCalledWith({ pageNum: 1, pageSize: 50, status: 'EFFECTIVE' })
+    expect(document.body.textContent).toContain('CO000026')
+  })
 })
 
 describe('详情抽屉与下载（T6）', () => {
@@ -232,5 +263,50 @@ describe('详情抽屉与下载（T6）', () => {
     const text = document.body.textContent ?? ''
     expect(text).not.toContain('content')
     expect(text).not.toContain('文件内容')
+  })
+
+  it('下载点击链：downloadDeliveryPackage 以交付编号调用 + 成功提示含 SM3 全串', async () => {
+    const sm3 = 'a'.repeat(64)
+    mockedList.mockResolvedValue(page([record()]))
+    mockedGet.mockResolvedValue(record())
+    mockedDownload.mockResolvedValue({ blob: new Blob(['x']), sm3, fileName: '报告.pkg' })
+    const wrapper = await mountPage()
+    await button(wrapper, '详情')?.trigger('click')
+    await flushPromises()
+    // jsdom 未实现 Blob URL 与锚点导航：以桩替代，验证下载链全程不抛错
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    Object.defineProperty(URL, 'createObjectURL', {
+      value: vi.fn(() => 'blob:mock-url'),
+      configurable: true,
+      writable: true,
+    })
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      value: vi.fn(),
+      configurable: true,
+      writable: true,
+    })
+    try {
+      await button(wrapper, '下载加密包')?.trigger('click')
+      await flushPromises()
+      expect(mockedDownload).toHaveBeenCalledWith('DL000003')
+      expect(clickSpy).toHaveBeenCalled()
+      expect(document.body.textContent).toContain(PACKAGE_DOWNLOAD_SM3_HINT)
+      expect(document.body.textContent).toContain(sm3)
+    } finally {
+      clickSpy.mockRestore()
+      delete (URL as unknown as Record<string, unknown>).createObjectURL
+      delete (URL as unknown as Record<string, unknown>).revokeObjectURL
+    }
+  })
+})
+
+describe('认证失效引导（F4.5）', () => {
+  it('列表加载 1000C0002：原样提示 + 清演示登录态 + 引导回登录页', async () => {
+    signInDemo()
+    mockedList.mockRejectedValue(new ApiError('1000C0002', '未登录或会话已过期'))
+    await mountPage()
+    expect(document.body.textContent).toContain('未登录或会话已过期')
+    expect(isDemoAuthed()).toBe(false)
+    expect(currentRouter?.currentRoute.value.path).toBe('/login')
   })
 })

@@ -92,6 +92,7 @@
         <el-descriptions :column="2" border size="small">
           <el-descriptions-item label="任务编号">{{ detailTask.sandboxNo }}</el-descriptions-item>
           <el-descriptions-item label="合约编号">{{ detailTask.contractNo }}</el-descriptions-item>
+          <el-descriptions-item label="产品名称">{{ detailTask.productName }}</el-descriptions-item>
           <el-descriptions-item label="状态">
             <el-tag :type="SANDBOX_STATUS_TAG_TYPES[detailTask.status] ?? 'info'">
               {{ SANDBOX_STATUS_LABELS[detailTask.status] ?? detailTask.status }}
@@ -102,11 +103,24 @@
           <el-descriptions-item :label="SANDBOX_QUOTA_COLUMN_LABEL">
             {{ detailTask.cpus }}C·{{ detailTask.memoryMb }}MB·{{ detailTask.ttlSeconds }}S
           </el-descriptions-item>
+          <el-descriptions-item label="数据文件数">{{ detailTask.dataFileCount }}</el-descriptions-item>
+          <el-descriptions-item label="到期时间">{{ detailTask.expiresAt ?? '—' }}</el-descriptions-item>
+          <el-descriptions-item label="关闭原因">{{ detailTask.closeReason ?? '—' }}</el-descriptions-item>
+          <el-descriptions-item label="开通时间" :span="2">{{ detailTask.createdAt }}</el-descriptions-item>
         </el-descriptions>
 
         <h4 class="section-title">结果物</h4>
         <el-table :data="detailResults" empty-text="暂无结果物" size="small">
-          <el-table-column prop="fileName" label="文件名" min-width="140" />
+          <el-table-column prop="fileName" label="文件名" min-width="130" />
+          <el-table-column label="大小" width="85">
+            <template #default="scope">{{ humanSize(scope.row.sizeBytes) }}</template>
+          </el-table-column>
+          <el-table-column label="SM3" width="140">
+            <template #default="scope">
+              <span class="checksum-text">{{ scope.row.checksum ?? '—（超大文件不提供摘要）' }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="createdAt" label="生成时间" width="160" />
           <el-table-column label="状态" width="90">
             <template #default="scope">
               <el-tag :type="RESULT_STATUS_TAG_TYPES[scope.row.status ?? ''] ?? 'info'">
@@ -118,6 +132,9 @@
             <template #default="scope">
               {{ scope.row.conclusion ? REVIEW_CONCLUSION_LABELS[scope.row.conclusion] : '—' }}
             </template>
+          </el-table-column>
+          <el-table-column label="驳回理由" min-width="140">
+            <template #default="scope">{{ scope.row.rejectReason ?? '—' }}</template>
           </el-table-column>
           <el-table-column label="轮次" width="65">
             <template #default="scope">{{ scope.row.reviewRound ?? '—' }}</template>
@@ -203,10 +220,13 @@
         </el-descriptions-item>
         <el-descriptions-item label="发起方">{{ deliveryDetail.requesterNo }}</el-descriptions-item>
         <el-descriptions-item label="提供方">{{ deliveryDetail.providerNo }}</el-descriptions-item>
+        <el-descriptions-item label="文件标识">{{ deliveryDetail.fileId ?? '—' }}</el-descriptions-item>
         <el-descriptions-item label="文件名">{{ deliveryDetail.fileName ?? '—' }}</el-descriptions-item>
+        <el-descriptions-item label="大小">{{ humanSize(deliveryDetail.fileSize) }}</el-descriptions-item>
         <el-descriptions-item label="SM3 校验值">
           <span class="checksum-text">{{ deliveryDetail.checksum ?? '—' }}</span>
         </el-descriptions-item>
+        <el-descriptions-item label="结果">{{ deliveryDetail.result }}</el-descriptions-item>
         <el-descriptions-item label="时间">{{ deliveryDetail.createdAt }}</el-descriptions-item>
       </el-descriptions>
     </el-drawer>
@@ -265,7 +285,7 @@ import {
 import {
   listGovernanceSandboxes,
   getGovernanceSandbox,
-  listSandboxResults,
+  listGovernanceSandboxResults,
   listGovernanceReviews,
   reviewGovernanceResult,
   listGovernanceDeliveries,
@@ -327,6 +347,13 @@ const reviewForm = reactive({ fileName: '', conclusion: 'APPROVE' as 'APPROVE' |
 function showError(error: unknown): void {
   if (guideToLoginIfAuthFailed(error, router)) return
   ElMessage.error(error instanceof Error ? error.message : String(error))
+}
+
+function humanSize(size: number | null): string {
+  if (size == null) return '—'
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
+  return `${(size / 1024 / 1024).toFixed(2)} MB`
 }
 
 async function loadSandboxes(): Promise<void> {
@@ -439,7 +466,7 @@ function onActionLogsPageChange(page: number): void {
 async function openSandboxDetail(sandboxNo: string): Promise<void> {
   try {
     detailTask.value = await getGovernanceSandbox(sandboxNo)
-    detailResults.value = await listSandboxResults(sandboxNo)
+    detailResults.value = await listGovernanceSandboxResults(sandboxNo)
     detailVisible.value = true
     reviewsPageNum.value = 1
     actionLogsPageNum.value = 1
@@ -479,7 +506,7 @@ async function submitReview(): Promise<void> {
     })
     reviewVisible.value = false
     ElMessage.success('审核结论已记录')
-    detailResults.value = await listSandboxResults(detailTask.value.sandboxNo)
+    detailResults.value = await listGovernanceSandboxResults(detailTask.value.sandboxNo)
     await loadReviews()
   } catch (error) {
     showError(error)

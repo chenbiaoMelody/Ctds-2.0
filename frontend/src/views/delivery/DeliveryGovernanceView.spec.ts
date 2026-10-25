@@ -6,7 +6,7 @@ import DeliveryGovernanceView from './DeliveryGovernanceView.vue'
 import {
   listGovernanceSandboxes,
   getGovernanceSandbox,
-  listSandboxResults,
+  listGovernanceSandboxResults,
   listGovernanceReviews,
   reviewGovernanceResult,
   listGovernanceDeliveries,
@@ -33,7 +33,7 @@ import { GOVERNANCE_READ_TRACE_HINT, REVIEW_IMMUTABLE_HINT } from '../../constan
 vi.mock('../../api/delivery', () => ({
   listGovernanceSandboxes: vi.fn(),
   getGovernanceSandbox: vi.fn(),
-  listSandboxResults: vi.fn(),
+  listGovernanceSandboxResults: vi.fn(),
   listGovernanceReviews: vi.fn(),
   reviewGovernanceResult: vi.fn(),
   listGovernanceDeliveries: vi.fn(),
@@ -43,7 +43,7 @@ vi.mock('../../api/delivery', () => ({
 
 const mockedList = vi.mocked(listGovernanceSandboxes)
 const mockedGet = vi.mocked(getGovernanceSandbox)
-const mockedResults = vi.mocked(listSandboxResults)
+const mockedResults = vi.mocked(listGovernanceSandboxResults)
 const mockedReviews = vi.mocked(listGovernanceReviews)
 const mockedReview = vi.mocked(reviewGovernanceResult)
 const mockedDeliveries = vi.mocked(listGovernanceDeliveries)
@@ -305,7 +305,7 @@ describe('Tab2 交付记录治理（T12）', () => {
 })
 
 describe('动作留痕区（T13 / G7b）', () => {
-  it('空态：无留痕行时空态展示不报错', async () => {
+  it('空态：无留痕行时空态精确展示"暂无留痕"', async () => {
     const wrapper = await mountPage()
     mockedGet.mockResolvedValue(task())
     mockedResults.mockResolvedValue([])
@@ -313,6 +313,6 @@ describe('动作留痕区（T13 / G7b）', () => {
     mockedActionLogs.mockResolvedValue(page([]))
     await button(wrapper, '治理详情')?.trigger('click')
     await flushPromises()
-    expect(document.body.textContent).toContain('暂无')
+    expect(document.body.textContent).toContain('暂无留痕')
   })
 })

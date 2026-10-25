@@ -133,6 +133,7 @@
               v-else-if="scope.row.status === null || scope.row.status === 'REJECTED'"
               link
               type="primary"
+              :disabled="submitKey !== ''"
               @click="submitReview(scope.row.fileName)"
             >{{ scope.row.status === 'REJECTED' ? '重新提交' : '提交审核' }}</el-button>
             <el-tooltip
@@ -420,13 +421,17 @@ async function submitRunJob(): Promise<void> {
   }
   runJobSubmitting.value = true
   try {
-    await runSandboxJob(runJobKey.value, sandboxNo, {
+    const job = await runSandboxJob(runJobKey.value, sandboxNo, {
       jobId: jobForm.jobId,
       ...(jobForm.purpose.trim() ? { purpose: jobForm.purpose.trim() } : {}),
       ...(jobForm.territory.trim() ? { territory: jobForm.territory.trim() } : {}),
     })
     runJobVisible.value = false
-    ElMessage.success('作业已完成')
+    if (job.status === 'SUCCEEDED') {
+      ElMessage.success('作业执行成功')
+    } else {
+      ElMessage.warning(`作业未成功（${job.status}），详见作业历史`)
+    }
     await loadJobs()
   } catch (error) {
     showError(error)
@@ -436,6 +441,8 @@ async function submitRunJob(): Promise<void> {
 }
 
 async function submitReview(fileName: string): Promise<void> {
+  // 请求进行中幂等键保持不变（双击同键重放语义）；失败清空可换键重试（Q3-A 同构口径）
+  if (submitKey.value) return
   submitKey.value = newIdempotencyKey()
   try {
     await submitResultReview(submitKey.value, sandboxNo, fileName)
@@ -443,6 +450,8 @@ async function submitReview(fileName: string): Promise<void> {
     await loadResults()
   } catch (error) {
     showError(error)
+  } finally {
+    submitKey.value = ''
   }
 }
 

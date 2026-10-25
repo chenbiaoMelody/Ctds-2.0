@@ -1,6 +1,7 @@
 /**
  * WBS-3.5.6 交付域 API 模块（hifi §1 端点表 / §2.1）：
- * - 交付域 22 端点只读复用（交付 4 / 沙箱 10 / 治理 6）+ Q5-A 新增 G7 双路径只读留痕端点；
+ * - 交付域 21 端点只读复用（交付 4 / 沙箱 7 / 沙箱结果 3 / 沙箱治理 4 / 交付治理 2 / 数据面拒绝 1）
+ *   + Q5-A 新增 G7 双路径只读留痕端点 + 评审修复 G8 治理结果物只读端点（hifi §11 E-4）；
  * - 经 `makeDomainJson(deliveryRolesHeader())` 统一封装（**不新增第二份域工厂**——T14 源集守卫）；
  * - 页面级角色头：普通档 `requester,provider` 双头 / 运营档 `admin`（Q2-A；T2 硬约束：
  *   普通档不得携带 `admin`）；空主体编号 → 前置拦截零请求（沿 DB-41 口径）；
@@ -11,7 +12,8 @@
  *   productId = number、fileSize = number | null、ResultView 审核四字段未登记为 null、
  *   conclusion 由 status 派生〔PENDING 为 null，否则与 status 同值〕）。
  */
-import { getDemoSubject, makeDomainJson, pageQuery } from './client'
+import { ApiError, getDemoSubject, makeDomainJson, pageQuery } from './client'
+import { DEMO_SUBJECT_REQUIRED_TIP } from '../constants/space'
 import { deliveryRolesHeader } from '../stores/demoIdentity'
 import type { PageData } from './types'
 
@@ -184,6 +186,9 @@ export function getDelivery(deliveryNo: string): Promise<DeliveryRecord> {
  * 明文校验值（T14 源集守卫唯一 fetch 豁免点）；非 ApiResult 响应（403/404）原样抛错。
  */
 export async function downloadDeliveryPackage(deliveryNo: string): Promise<PackageDownloadResult> {
+  if (!getDemoSubject().trim()) {
+    return Promise.reject(new ApiError('1000C0002', DEMO_SUBJECT_REQUIRED_TIP))
+  }
   const response = await fetch(
     `/api/v1/deliveries/${encodeURIComponent(deliveryNo)}/package`,
     {
@@ -404,5 +409,12 @@ export function listGovernanceDeliveryActionLogs(query: {
 }): Promise<PageData<ActionLogItem>> {
   return deliveryJson(
     `/api/v1/deliveries/governance/${encodeURIComponent(query.contractNo)}/action-logs${pageQuery(query.pageNum, query.pageSize)}`,
+  )
+}
+
+/** G8 治理结果物元数据（WBS-3.5.6 评审修复加性读端点；读即留痕；未登记审核四字段为 null）。 */
+export function listGovernanceSandboxResults(sandboxNo: string): Promise<SandboxResultItem[]> {
+  return deliveryJson(
+    `/api/v1/sandboxes/governance/${encodeURIComponent(sandboxNo)}/results`,
   )
 }

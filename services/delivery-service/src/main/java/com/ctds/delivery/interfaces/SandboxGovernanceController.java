@@ -11,6 +11,7 @@ import com.ctds.delivery.interfaces.dto.SandboxRequest.ReviewRequest;
 import com.ctds.delivery.interfaces.dto.SandboxViews.ResultView;
 import com.ctds.delivery.interfaces.dto.SandboxViews.ReviewView;
 import com.ctds.delivery.interfaces.dto.SandboxViews.SandboxView;
+import java.util.List;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -77,5 +78,12 @@ public class SandboxGovernanceController {
             @RequestParam(required = false) final Integer pageSize) {
         return ApiResult.ok(queryService.governanceReviews(sandboxNo, fileName,
                 PageQuery.of(pageNum, pageSize, null), AuthContext.subject()));
+    }
+
+    /** 治理结果物元数据（读即留痕；承载治理详情结果物区，WBS-3.5.6 评审修复加性读端点）。 */
+    @GetMapping(path = "/{sandboxNo}/results", produces = MediaType.APPLICATION_JSON_VALUE)
+    @RequirePermission("sandbox.governance")
+    public ApiResult<List<ResultView>> results(@PathVariable final String sandboxNo) {
+        return ApiResult.ok(queryService.governanceResults(sandboxNo, AuthContext.subject()));
     }
 }

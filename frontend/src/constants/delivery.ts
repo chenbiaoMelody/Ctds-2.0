@@ -93,22 +93,17 @@ export const JOB_STATUS_TAG_TYPES: Record<string, string> = {
   TIMEOUT: 'info',
 }
 
-/** 动作留痕动作名展示（后端 DeliveryAuditActions / SandboxAuditActions 值域）。 */
+/**
+ * 动作留痕动作名展示（后端 DeliveryAuditActions 值域）——G7 动作留痕读面只读
+ * delivery_action_log 表，sandbox.* 动作写 sandbox_action_log 不经本读面
+ * （评审修复 F3.3：收敛为实际可达值域，键与 SandboxAuditActions 错位条目删除）。
+ */
 export const ACTION_LOG_ACTION_LABELS: Record<string, string> = {
   'delivery.create': '发起交付',
   'delivery.read': '查看交付',
   'delivery.governance.read': '治理查看交付',
   'delivery.package.download': '领取加密包',
   'delivery.denied': '操作被拒',
-  'sandbox.create': '申请沙箱',
-  'sandbox.read': '查看沙箱',
-  'sandbox.governance.read': '治理查看沙箱',
-  'sandbox.job.run': '运行作业',
-  'sandbox.close': '关闭任务',
-  'sandbox.result.submit': '提交结果物审核',
-  'sandbox.result.export': '导出结果物',
-  'sandbox.review': '治理审核',
-  'sandbox.denied': '操作被拒',
 }
 
 /** 留痕结果列（SUCCESS/DENIED/FAILURE）。 */
@@ -191,5 +186,5 @@ export const DELIVERY_ERROR_HINTS: Record<string, string> = {
   '1009C0015': '结果物不存在或无权查看',
   '1009C0016': '结果物当前状态不允许该操作',
   '1008C0013': '合约当前状态不允许该操作',
-  '1008C0020': '用途或地域要素超出合约约定范围',
+  '1008C0020': '越界使用被拒绝，触发要素见留痕',
 }

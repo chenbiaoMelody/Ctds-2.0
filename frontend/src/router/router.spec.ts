@@ -314,6 +314,21 @@ describe('守卫 beforeEach 实际行为（H4）', () => {
     expect(router.currentRoute.value.name).toBe('contract-detail')
   })
 
+  it('普通用户直连 /delivery-governance：守卫拦截重定向工作台带 denied（WBS-3.5.6 T3）', async () => {
+    const { default: router } = await import('../router/index')
+    setDemoRole('user')
+    await router.push('/delivery-governance')
+    expect(router.currentRoute.value.name).toBe('dashboard')
+    expect(router.currentRoute.value.query.denied).toBe('1')
+  })
+
+  it('普通用户直连沙箱详情深链：无权限点守卫放行（门槛在服务端——WBS-3.5.6 §3）', async () => {
+    const { default: router } = await import('../router/index')
+    setDemoRole('user')
+    await router.push('/sandboxes/SB000004')
+    expect(router.currentRoute.value.name).toBe('sandbox-detail')
+  })
+
   it('普通用户直连空间域四条路由：守卫逐条拦截重定向工作台带 denied（WBS-3.2.6 T28）', async () => {
     const { default: router } = await import('../router/index')
     setDemoRole('user')

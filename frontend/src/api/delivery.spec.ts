@@ -3,6 +3,7 @@ import {
   requestDelivery,
   listDeliveries,
   getDelivery,
+  downloadDeliveryPackage,
   requestSandbox,
   listSandboxes,
   closeSandbox,
@@ -10,6 +11,7 @@ import {
   submitResultReview,
   exportSandboxResult,
   listGovernanceSandboxes,
+  listGovernanceSandboxResults,
   reviewGovernanceResult,
   listDeliveryActionLogs,
   listGovernanceDeliveryActionLogs,
@@ -171,6 +173,13 @@ describe('delivery API 请求形态（T1 组）', () => {
     )
   })
 
+  it('listGovernanceSandboxResults：G8 治理结果物路径逐字 + 运营档 admin 头', async () => {
+    setActorMode('operator')
+    await listGovernanceSandboxResults('SB000004')
+    expect(lastCall()[0]).toBe('/api/v1/sandboxes/governance/SB000004/results')
+    expect(lastHeaders()['X-Ctds-Roles']).toBe('admin')
+  })
+
   it('G7a 参与方动作留痕：contractNo 路径段 + 分页', async () => {
     await listDeliveryActionLogs({ contractNo: 'CO000026', pageNum: 1, pageSize: 10 })
     expect(lastCall()[0]).toBe(
@@ -185,11 +194,76 @@ describe('delivery API 请求形态（T1 组）', () => {
     )
   })
 
+  it('downloadDeliveryPackage：GET package 路径 + SM3 头与 filename*=UTF-8 文件名解析', async () => {
+    const blob = new Blob(['x'])
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      headers: {
+        get: (name: string) => {
+          if (name.toLowerCase() === 'x-ctds-sm3') return 'abc123'
+          if (name.toLowerCase() === 'content-disposition') {
+            return "attachment; filename*=UTF-8''%E6%8A%A5%E5%91%8A.md"
+          }
+          return null
+        },
+      },
+      blob: () => Promise.resolve(blob),
+    })
+    const result = await downloadDeliveryPackage('DL000003')
+    const [path, options] = lastCall()
+    expect(path).toBe('/api/v1/deliveries/DL000003/package')
+    expect(options?.method).toBeUndefined()
+    expect(lastHeaders()['X-Ctds-Subject']).toBe('S20260922000001')
+    expect(lastHeaders()['X-Ctds-Roles']).toBe('requester,provider')
+    expect(result.blob).toBe(blob)
+    expect(result.sm3).toBe('abc123')
+    expect(result.fileName).toBe('报告.md')
+  })
+
+  it('downloadDeliveryPackage：403 ApiResult 错误原样抛出（九位码 + 文案保留）', async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 403,
+      json: () => Promise.resolve({ code: '1009C0003', message: '非需求方不可下载' }),
+    })
+    await expect(downloadDeliveryPackage('DL000003')).rejects.toMatchObject({
+      code: '1009C0003',
+      message: '非需求方不可下载',
+    })
+  })
+
+  it('downloadDeliveryPackage：404 业务错误逐字；非 JSON 响应兜底 HTTP_404', async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 404,
+      json: () => Promise.resolve({ code: '1009C0004', message: '交付记录不存在' }),
+    })
+    await expect(downloadDeliveryPackage('DL000003')).rejects.toMatchObject({
+      code: '1009C0004',
+      message: '交付记录不存在',
+    })
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 404,
+      json: () => Promise.reject(new SyntaxError('Unexpected token')),
+    })
+    await expect(downloadDeliveryPackage('DL000003')).rejects.toMatchObject({
+      code: 'HTTP_404',
+      message: 'HTTP 404',
+    })
+  })
+
   it('空主体编号：全部请求前置拦截零请求（1000C0002）', async () => {
     setDemoSubject('  ')
     await expect(
       listDeliveries({ pageNum: 1, pageSize: 10 }),
     ).rejects.toMatchObject({ code: '1000C0002' })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('downloadDeliveryPackage：空主体编号前置拦截零请求（1000C0002）', async () => {
+    setDemoSubject('  ')
+    await expect(downloadDeliveryPackage('DL000003')).rejects.toMatchObject({ code: '1000C0002' })
     expect(fetchMock).not.toHaveBeenCalled()
   })
 })
