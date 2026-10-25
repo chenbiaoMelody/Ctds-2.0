@@ -158,6 +158,29 @@ class GatewayDeliveryChainIntegrationTest {
         assertThat(JUDGE.requestCount()).isZero();
     }
 
+    /**
+     * T3 后半（3.5.2 补登记 15）：未认证校验失败审计 AUTH_VERIFY FAILURE 字段断言——
+     * detail 仅含 reason 枚举（MISSING/EXPIRED/BAD_SIGNATURE 三连），不含令牌原文与签名材料。
+     */
+    @Test
+    void authFailureAuditCarriesReasonOnlyWithoutTokenMaterial() {
+        errorBody(HttpStatus.UNAUTHORIZED, null, CONTRACT_NO, null);
+        errorBody(HttpStatus.UNAUTHORIZED, TestTokens.expired(REQUESTER), CONTRACT_NO, null);
+        errorBody(HttpStatus.UNAUTHORIZED, TestTokens.wrongSignature(REQUESTER), CONTRACT_NO, null);
+
+        final List<AuditEvent> events = awaitEventsOf(GatewayAuditActions.AUTH_VERIFY, 3);
+        assertThat(events).as("三次未认证 ≡ AUTH_VERIFY FAILURE 3 条").hasSize(3);
+        assertThat(events).allSatisfy(event -> {
+            assertThat(event.outcome()).isEqualTo(AuditOutcome.FAILURE);
+            assertThat(event.actor()).isEqualTo("anonymous");
+            assertThat(event.detail().keySet()).as("detail 仅含 reason 枚举").containsExactly("reason");
+        });
+        assertThat(events).extracting(event -> event.detail().get("reason"))
+                .containsExactlyInAnyOrder("MISSING", "EXPIRED", "BAD_SIGNATURE");
+        assertThat(events.toString()).as("审计事件不含令牌原文与 Bearer 头")
+                .doesNotContain(TestTokens.TEST_SECRET).doesNotContain("Bearer");
+    }
+
     // ==== T2 头处置真链（正/反）====
 
     @Test
@@ -347,6 +370,46 @@ class GatewayDeliveryChainIntegrationTest {
                 .isEqualTo("1000C0001");
         assertThat(JUDGE.requestCount()).isZero();
         assertThat(UPSTREAM.requestCount()).isZero();
+    }
+
+    /** DB-50：不完整百分号转义（"%A" 截断尾）与非法百分号序列同码同文（400 + 1000C0001）。 */
+    @Test
+    void incompleteEscapeElementSharesRejectionEnvelopeWithIllegalSequence() {
+        final JsonNode body = readTree(client.get().uri(DELIVERY_PATH)
+                .header(HttpHeaders.AUTHORIZATION,
+                        "Bearer " + TestTokens.valid(REQUESTER, List.of("provider")))
+                .header("X-Ctds-Contract-No", CONTRACT_NO)
+                .header("X-Ctds-Purpose", "%A")
+                .exchange().expectStatus().isBadRequest()
+                .expectBody().returnResult().getResponseBody());
+
+        assertThat(body.path("code").asText()).as("不完整转义 → 1000C0001（同码）")
+                .isEqualTo("1000C0001");
+        assertThat(body.path("message").asText()).as("同文：与非法百分号序列逐字一致")
+                .isEqualTo("策略要素编码不合法");
+        assertThat(JUDGE.requestCount()).isZero();
+        assertThat(UPSTREAM.requestCount()).isZero();
+    }
+
+    /**
+     * DB-50：非法 UTF-8 字节（%C3%28）负向子路径兜底——JDK REPLACE 语义解码为 U+FFFD 不抛异常
+     * （方向 fail-safe）：不 500、不旁路，仍按业务值送判定（stub 收到 U+FFFD），由判定面决定
+     * 放行/拒绝；本例判定放行 → 转发 + 计量 1:1 照常。
+     */
+    @Test
+    void invalidUtf8ElementBytesFailSafeToJudgeWithoutBypass() {
+        client.get().uri(DELIVERY_PATH)
+                .header(HttpHeaders.AUTHORIZATION,
+                        "Bearer " + TestTokens.valid(REQUESTER, List.of("provider")))
+                .header("X-Ctds-Contract-No", CONTRACT_NO)
+                .header("X-Ctds-Purpose", "%C3%28")
+                .exchange().expectStatus().isOk();
+
+        assertThat(JUDGE.requestCount()).isEqualTo(1);
+        assertThat(JUDGE.lastBody()).as("REPLACE 语义：畸形字节解码为 U+FFFD 后按业务值送判定")
+                .contains("\uFFFD(");
+        assertThat(UPSTREAM.requestCount()).isEqualTo(1);
+        assertThat(awaitAllEvents(1)).as("放行即计量 1:1（DB-46⑩ 不变式）").hasSize(1);
     }
 
     // ==== T8 计量对账（双向）与事件字段最小必要 ====

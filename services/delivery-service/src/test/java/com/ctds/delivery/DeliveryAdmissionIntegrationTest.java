@@ -423,6 +423,65 @@ class DeliveryAdmissionIntegrationTest {
         assertThat(countDeliveries()).isZero();
     }
 
+    /** DB-53②：依赖 check 空体独立用例（与 summary/product 空体同为 fail-closed 503 1009S0002）。 */
+    @Test
+    void checkEmptyBodyFailsClosed() throws Exception {
+        STUB.respondCheckRaw("", 200);
+        final MvcResult result = postDelivery(fileBody("sample-dataset"), "idem-check-empty-1",
+                REQUESTER, "requester");
+        assertThat(result.getResponse().getStatus()).isEqualTo(503);
+        assertThat(codeOf(result)).isEqualTo("1009S0002");
+        assertThat(STUB.checkCount()).isEqualTo(1);
+        assertThat(countDeliveries()).isZero();
+        try (var files = Files.list(STORAGE_ROOT)) {
+            assertThat(files.count()).isZero();
+        }
+    }
+
+    /** DB-53⑦：请求体为 JSON 字面量 null → 1009C0005（不可读请求体同码同文拒绝面）。 */
+    @Test
+    void jsonNullBodyRejectedAsParamInvalid() throws Exception {
+        final MvcResult result = mockMvc.perform(post("/api/v1/deliveries")
+                .header("X-Ctds-Subject", REQUESTER).header("X-Ctds-Roles", "requester")
+                .header("X-Idempotency-Key", "idem-null-1")
+                .contentType(MediaType.APPLICATION_JSON).content("null")).andReturn();
+        assertThat(result.getResponse().getStatus()).isEqualTo(400);
+        assertThat(codeOf(result)).isEqualTo("1009C0005");
+        assertThat(countDeliveries()).isZero();
+    }
+
+    /**
+     * B2 对账锚（交付侧）：deliveries 按形态行数 ≡ 放行/成功路径计数收敛——
+     * FILE 行数 ≡ check 放行次数；策略拒绝路径 check 已调用但零新增行；
+     * API 发起"记录不计数"语义显式锚定（行数 +1、checkCount 不变）。
+     */
+    @Test
+    void deliveryRowsConvergeWithGrantedChecksPerForm() throws Exception {
+        postDelivery(fileBody("sample-dataset"), "idem-b2-1", REQUESTER, "requester");
+        postDelivery(fileBody("sample-dataset"), "idem-b2-2", REQUESTER, "requester");
+        assertThat(rowsByType("FILE")).as("FILE 放行 2 次 ≡ FILE 行 2").isEqualTo(2);
+        assertThat(STUB.checkCount()).isEqualTo(2);
+
+        STUB.respondCheckError("1008C0020", "越界使用被拒绝，触发要素见留痕", 403);
+        final MvcResult denied = postDelivery(fileBody("sample-dataset"), "idem-b2-3",
+                REQUESTER, "requester");
+        assertThat(codeOf(denied)).isEqualTo("1008C0020");
+        assertThat(STUB.checkCount()).as("拒绝路径 check 已调用但不放行").isEqualTo(3);
+        assertThat(rowsByType("FILE")).as("拒绝路径零新增交付行").isEqualTo(2);
+
+        STUB.respondCheckAllowed();
+        STUB.respondProduct(13, "API");
+        postDelivery("{\"contractNo\":\"CO000001\",\"deliveryType\":\"API\"}", "idem-b2-4",
+                REQUESTER, "requester");
+        assertThat(rowsByType("API")).as("API 发起记录 1 行").isEqualTo(1);
+        assertThat(STUB.checkCount()).as("API 记录不计数（真正调用由网关判定计数）").isEqualTo(3);
+    }
+
+    private int rowsByType(final String type) {
+        return jdbc.queryForObject("SELECT COUNT(*) FROM delivery WHERE delivery_type = ?",
+                Integer.class, type);
+    }
+
     @Test
     void concurrentSameKeyCreatesOneRecordAndOnePackage() throws Exception {
         final String key = "idem-concurrent-1";

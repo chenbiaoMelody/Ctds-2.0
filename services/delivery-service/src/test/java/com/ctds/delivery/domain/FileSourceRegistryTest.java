@@ -93,6 +93,28 @@ class FileSourceRegistryTest {
                         ex -> assertThat(ex.getErrorCode().value()).isEqualTo("1009C0008"));
     }
 
+    /** DB-53①（TOCTOU）：启动后源文件被替换为符号链接（指向源根外），请求时复核 fail-closed。 */
+    @Test
+    void requestTimeSymlinkSwapRejected() throws Exception {
+        final Path file = temp.resolve("a.csv");
+        Files.writeString(file, "hello", StandardCharsets.UTF_8);
+        final FileSourceRegistry registry = registry(1024, entry("a", 13, "a.csv", "A.csv"));
+        registry.load();
+        final Path outside = temp.resolve("outside");
+        Files.createDirectories(outside);
+        Files.writeString(outside.resolve("secret.csv"), "leak", StandardCharsets.UTF_8);
+        Files.deleteIfExists(file);
+        try {
+            Files.createSymbolicLink(file, outside.resolve("secret.csv"));
+        } catch (final Exception e) {
+            Assumptions.assumeTrue(false, "当前文件系统不支持符号链接");
+            return;
+        }
+        assertThatThrownBy(() -> registry.require("a", 13))
+                .isInstanceOfSatisfying(DeliveryBizException.class,
+                        ex -> assertThat(ex.getErrorCode().value()).isEqualTo("1009S0002"));
+    }
+
     @Test
     void cryptoHardLimitBoundaryAccepted() throws Exception {
         final long max = 64L * 1024 * 1024;

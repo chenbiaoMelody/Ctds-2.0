@@ -221,6 +221,67 @@ class DeliveryAuditIntegrationTest {
         assertThat(rows).isEqualTo(1);
     }
 
+    /** DB-53③：预检拒绝（发起人不符 1009C0003 / 参数非法 1009C0005 / 形态不符 1009C0006）
+     * 均落 delivery.denied DENIED 留痕（audit 单点承担，含 recorder 事件与 DB 行双面）。 */
+    @Test
+    void precheckRejectionsAreAuditedAsDenied() throws Exception {
+        final MvcResult provider = mockMvc.perform(post("/api/v1/deliveries")
+                .header("X-Ctds-Subject", PROVIDER).header("X-Ctds-Roles", "requester")
+                .header("X-Idempotency-Key", "idem-audit-precheck-1")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"contractNo\":\"CO000001\",\"deliveryType\":\"API\"}")).andReturn();
+        assertThat(provider.getResponse().getStatus()).isEqualTo(403);
+        assertThat(codeOf(provider)).isEqualTo("1009C0003");
+
+        final MvcResult param = mockMvc.perform(post("/api/v1/deliveries")
+                .header("X-Ctds-Subject", REQUESTER).header("X-Ctds-Roles", "requester")
+                .header("X-Idempotency-Key", "idem-audit-precheck-2")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"contractNo\":\"bad value!\",\"deliveryType\":\"API\"}")).andReturn();
+        assertThat(param.getResponse().getStatus()).isEqualTo(400);
+        assertThat(codeOf(param)).isEqualTo("1009C0005");
+
+        STUB.respondProduct(13, "API");
+        final MvcResult form = postFile("idem-audit-precheck-3");
+        assertThat(form.getResponse().getStatus()).isEqualTo(400);
+        assertThat(codeOf(form)).isEqualTo("1009C0006");
+
+        final List<AuditEvent> denied = recorder.eventsOf("delivery.denied");
+        assertThat(denied).hasSize(3);
+        assertThat(denied).allSatisfy(event -> {
+            assertThat(event.outcome()).isEqualTo(AuditOutcome.DENIED);
+            assertNoSensitiveDetail(event);
+        });
+        assertThat(denied).extracting(event -> event.detail().get("reasonCode"))
+                .containsExactlyInAnyOrder("1009C0003", "1009C0005", "1009C0006");
+        for (final String code : new String[] {"1009C0003", "1009C0005", "1009C0006"}) {
+            final Integer rows = jdbc.queryForObject(
+                    "SELECT COUNT(*) FROM delivery_action_log WHERE action = 'delivery.denied' "
+                            + "AND result = 'DENIED' AND reason_code = '" + code + "'",
+                    Integer.class);
+            assertThat(rows).as("预检拒绝 %s 留痕行", code).isEqualTo(1);
+        }
+        assertThat(countDeliveries()).isZero();
+    }
+
+    /** DB-53⑧：取号在先语义——取号后的平台失败消耗序号（空号），修复后下一单跳号可溯。 */
+    @Test
+    void postDrawnFailureLeavesSequenceGap() throws Exception {
+        // 取号语义 = 先加后取（next_no=1 时首单即 DL000002）；自置 0 使首单 = DL000001，
+        // 空号/跳号断言与序号一一对应
+        jdbc.update("UPDATE delivery_no_seq SET next_no = 0 WHERE id = 1");
+        properties.getFile().setKeyRef("missing-key");
+        assertThat(postFile("idem-gap-1").getResponse().getStatus()).isEqualTo(500);
+        properties.getFile().setKeyRef(KEY_REF);
+        final MvcResult second = postFile("idem-gap-2");
+        assertThat(second.getResponse().getStatus()).isEqualTo(200);
+        assertThat(dataOf(second).path("deliveryNo").asText())
+                .as("失败单已消耗 DL000001（取号在先），成功单 = DL000002（空号语义可溯）")
+                .isEqualTo("DL000002");
+        assertThat(countDeliveries()).as("空号不落行").isEqualTo(1);
+        assertThat(STUB.checkCount()).isEqualTo(2);
+    }
+
     private String createFileDelivery() throws Exception {
         final MvcResult result = postFile("idem-audit-file-" + java.util.UUID.randomUUID());
         assertThat(result.getResponse().getStatus()).isEqualTo(200);

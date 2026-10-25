@@ -44,6 +44,29 @@ class FilePackageStoreTest {
                         ex -> assertThat(ex.getErrorCode().value()).isEqualTo("1009S0003"));
     }
 
+    /** DB-53⑥（包存储根 realpath/归一化防线）：包标识归一化后越出或等于存储根 → 1009S0003，
+     * 且根外零落盘（路径只由存储根解析，不接受用户路径）。 */
+    @Test
+    void traversalPackageIdIsRejectedWithoutEscapingRoot() throws Exception {
+        final Path rootParent = temp;
+        final FilePackageStore store = store();
+        assertThatThrownBy(() -> store.store("..", new byte[] {1}))
+                .isInstanceOfSatisfying(DeliveryBizException.class,
+                        ex -> assertThat(ex.getErrorCode().value()).isEqualTo("1009S0003"));
+        assertThatThrownBy(() -> store.store(".", new byte[] {1}))
+                .isInstanceOfSatisfying(DeliveryBizException.class,
+                        ex -> assertThat(ex.getErrorCode().value()).isEqualTo("1009S0003"));
+        assertThatThrownBy(() -> store.store("sub/../../evil", new byte[] {1}))
+                .isInstanceOfSatisfying(DeliveryBizException.class,
+                        ex -> assertThat(ex.getErrorCode().value()).isEqualTo("1009S0003"));
+        assertThatThrownBy(() -> store.requirePath(".."))
+                .isInstanceOfSatisfying(DeliveryBizException.class,
+                        ex -> assertThat(ex.getErrorCode().value()).isEqualTo("1009S0003"));
+        try (var files = Files.list(rootParent)) {
+            assertThat(files).as("根外零落盘：仅存储根目录本身").hasSize(1);
+        }
+    }
+
     private FilePackageStore store() {
         final DeliveryProperties properties = new DeliveryProperties();
         properties.setStorageRoot(temp.resolve("store").toString());
