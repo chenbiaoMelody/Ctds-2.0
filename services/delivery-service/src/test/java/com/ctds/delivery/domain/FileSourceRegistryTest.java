@@ -93,7 +93,9 @@ class FileSourceRegistryTest {
                         ex -> assertThat(ex.getErrorCode().value()).isEqualTo("1009C0008"));
     }
 
-    /** DB-53①（TOCTOU）：启动后源文件被替换为符号链接（指向源根外），请求时复核 fail-closed。 */
+    /** DB-53①（TOCTOU）：启动后源文件被替换为符号链接（指向源根内另一文件——链接存在性本身
+     * 即触发请求时 {@code isSymbolicLink} 复核分支；realpath 越出源根分支由启动期校验用例承载），
+     * 请求时复核 fail-closed。 */
     @Test
     void requestTimeSymlinkSwapRejected() throws Exception {
         final Path file = temp.resolve("a.csv");
