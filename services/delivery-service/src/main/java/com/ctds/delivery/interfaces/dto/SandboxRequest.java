@@ -13,4 +13,12 @@ public final class SandboxRequest {
     /** 受控作业：只给清单内 jobId（用途 / 地域为可选策略要素）。 */
     public record RunJobRequest(String jobId, String purpose, String territory) {
     }
+
+    /** 治理审核（WBS-3.5.5 hifi §4）：conclusion = APPROVE | REJECT；驳回理由必填（≤256 字）。 */
+    public record ReviewRequest(String conclusion, String reason) {
+    }
+
+    /** 结果物导出（WBS-3.5.5 hifi §5）：用途 / 地域为可选策略要素（由合约域判定是否必填）。 */
+    public record ExportRequest(String purpose, String territory) {
+    }
 }

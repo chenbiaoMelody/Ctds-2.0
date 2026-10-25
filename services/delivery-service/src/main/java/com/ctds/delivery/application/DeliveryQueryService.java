@@ -66,7 +66,11 @@ public class DeliveryQueryService {
                     callerNo, ex.getErrorCode().value(), delivery.deliveryType().name());
             throw ex;
         }
-        if (delivery.deliveryType() != DeliveryType.FILE || delivery.packageId() == null) {
+        // 加密包领取仅限带包形态：FILE（3.5.3）与 SANDBOX_EXPORT（3.5.5 审批后导出，hifi §5
+        // 复用下载端点）；API 行与缺包行仍拒绝，既有语义零变更
+        if ((delivery.deliveryType() != DeliveryType.FILE
+                && delivery.deliveryType() != DeliveryType.SANDBOX_EXPORT)
+                || delivery.packageId() == null) {
             audit.denied(DeliveryAuditActions.PACKAGE_DOWNLOAD, deliveryNo, delivery.contractNo(),
                     callerNo, DeliveryErrorCodes.DELIVERY_SCOPE_MISMATCH.value(),
                     delivery.deliveryType().name());

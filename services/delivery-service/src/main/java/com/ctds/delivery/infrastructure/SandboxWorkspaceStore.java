@@ -29,7 +29,9 @@ import org.springframework.stereotype.Component;
  * 沙箱工作区（hifi §5）：输入按文件源复制（目标名 = fileId，不用展示名做路径）、
  * 输出目录可写、结果只出元数据（名称 / 字节数 / SM3）。
  *
- * <p><b>数据面口径</b>：不提供任何内容读取方法；文件内容只存在于工作区与容器内。
+ * <p><b>数据面口径</b>：常规读面不提供任何内容读取方法；文件内容只存在于工作区与容器内。
+ * 唯一例外 = {@link #readResult}（WBS-3.5.5 审核导出专用出口，仅 SandboxExportService 调用，
+ * 有界读取 + 路径约束，内容只以密文离开服务进程）。
  * 所有目标路径 normalize 后必须落在任务根内，符号链接一律拒绝。</p>
  */
 @Component
@@ -117,6 +119,32 @@ public class SandboxWorkspaceStore {
         }
         results.sort(Comparator.comparing(ResultFile::fileName));
         return List.copyOf(results);
+    }
+
+    /**
+     * 审核导出专用内容出口（WBS-3.5.5 hifi §5）：仅 SandboxExportService 在"登记 APPROVED +
+     * 策略放行 + 快照复核通过"之后调用；有界读取（64MiB 封顶）+ 输出目录约束，符号链接拒绝。
+     * 内容只以 SM4 密文形式离开服务进程（下载端点）。
+     */
+    public byte[] readResult(final String sandboxNo, final String fileName) {
+        if (fileName == null || !RESULT_NAME.matcher(fileName).matches()) {
+            throw unavailable();
+        }
+        final Path output = taskRoot(sandboxNo).resolve(OUTPUT);
+        final Path target = output.resolve(fileName).normalize();
+        if (!target.startsWith(output) || !target.getParent().equals(output)) {
+            throw unavailable();
+        }
+        try (InputStream input = Files.newInputStream(target, LinkOption.NOFOLLOW_LINKS)) {
+            final byte[] data = input.readNBytes((int) MAX_CHECKSUM_BYTES + 1);
+            if (data.length > MAX_CHECKSUM_BYTES) {
+                throw unavailable();
+            }
+            return data;
+        } catch (final IOException e) {
+            log.warn("沙箱结果文件读取失败: sandboxNo={}", sandboxNo);
+            throw unavailable();
+        }
     }
 
     /** 清理任务工作区（幂等；不跟随符号链接；失败不影响业务结论）。 */

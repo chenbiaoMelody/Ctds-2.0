@@ -24,7 +24,7 @@ public class JdbcDeliveryRepository implements DeliveryRepository {
 
     private static final String COLUMNS = "id, delivery_no, contract_no, product_id, product_name, "
             + "delivery_type, requester_no, provider_no, file_id, file_name, file_size, package_id, "
-            + "checksum, key_ref, result, idempotency_key, created_at";
+            + "checksum, key_ref, result, idempotency_key, sandbox_no, result_name, created_at";
     private static final Map<String, String> SORT_COLUMNS = Map.of(
             "id", "id",
             "createdAt", "created_at",
@@ -69,10 +69,10 @@ public class JdbcDeliveryRepository implements DeliveryRepository {
     public void insert(final Delivery delivery) {
         jdbc.sql("INSERT INTO delivery (delivery_no, contract_no, product_id, product_name, "
                         + "delivery_type, requester_no, provider_no, file_id, file_name, file_size, "
-                        + "package_id, checksum, key_ref, result, idempotency_key) VALUES "
-                        + "(:deliveryNo, :contractNo, :productId, :productName, :type, :requester, "
-                        + ":provider, :fileId, :fileName, :fileSize, :packageId, :checksum, :keyRef, "
-                        + ":result, :idempotencyKey)")
+                        + "package_id, checksum, key_ref, result, idempotency_key, sandbox_no, "
+                        + "result_name) VALUES (:deliveryNo, :contractNo, :productId, :productName, "
+                        + ":type, :requester, :provider, :fileId, :fileName, :fileSize, :packageId, "
+                        + ":checksum, :keyRef, :result, :idempotencyKey, :sandboxNo, :resultName)")
                 .param("deliveryNo", delivery.deliveryNo())
                 .param("contractNo", delivery.contractNo())
                 .param("productId", delivery.productId())
@@ -88,6 +88,8 @@ public class JdbcDeliveryRepository implements DeliveryRepository {
                 .param("keyRef", delivery.keyRef())
                 .param("result", delivery.result())
                 .param("idempotencyKey", delivery.idempotencyKey())
+                .param("sandboxNo", delivery.sandboxNo())
+                .param("resultName", delivery.resultName())
                 .update();
     }
 
@@ -142,6 +144,31 @@ public class JdbcDeliveryRepository implements DeliveryRepository {
         final var spec = jdbc.sql(sql.toString());
         params.forEach(spec::param);
         return spec.query(Long.class).single();
+    }
+
+    @Override
+    public List<Delivery> listBySandbox(final String sandboxNo, final DeliveryType type,
+            final PageQuery page) {
+        return jdbc.sql("SELECT " + COLUMNS + " FROM delivery WHERE sandbox_no = :sandboxNo "
+                        + appendTypeFilter(type) + " ORDER BY id DESC LIMIT :limit OFFSET :offset")
+                .param("sandboxNo", sandboxNo)
+                .param("type", type == null ? null : type.name())
+                .param("limit", page.pageSize())
+                .param("offset", page.offset())
+                .query(JdbcDeliveryRepository::map).list();
+    }
+
+    @Override
+    public long countBySandbox(final String sandboxNo, final DeliveryType type) {
+        return jdbc.sql("SELECT COUNT(*) FROM delivery WHERE sandbox_no = :sandboxNo "
+                        + appendTypeFilter(type))
+                .param("sandboxNo", sandboxNo)
+                .param("type", type == null ? null : type.name())
+                .query(Long.class).single();
+    }
+
+    private static String appendTypeFilter(final DeliveryType type) {
+        return type == null ? "" : " AND delivery_type = :type";
     }
 
     @Override
@@ -203,6 +230,7 @@ public class JdbcDeliveryRepository implements DeliveryRepository {
                 rs.getString("provider_no"), rs.getString("file_id"), rs.getString("file_name"),
                 nullableLong(rs, "file_size"), rs.getString("package_id"), rs.getString("checksum"),
                 rs.getString("key_ref"), rs.getString("result"), rs.getString("idempotency_key"),
+                rs.getString("sandbox_no"), rs.getString("result_name"),
                 rs.getObject("created_at", LocalDateTime.class));
     }
 

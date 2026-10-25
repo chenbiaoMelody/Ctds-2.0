@@ -135,8 +135,8 @@ public class DeliveryCommandService {
             final Delivery delivery = new Delivery(null, deliveryNo, contractNo, summary.productId(),
                     summary.productName(), type, requester, summary.providerNo(),
                     source == null ? null : source.fileId(),
-                    source == null ? null : source.displayName(), fileSize, packageId, checksum, keyRef,
-                    RESULT_SUCCESS, idempotencyKey, null);
+                    source == null ? null : source.displayName(), fileSize, packageId, checksum,
+                    keyRef, RESULT_SUCCESS, idempotencyKey, null, null, null);
             try {
                 persistence.persist(delivery, new DeliveryActionLog(null, deliveryNo, contractNo,
                         requester, DeliveryAuditActions.CREATE, RESULT_SUCCESS, null, null));

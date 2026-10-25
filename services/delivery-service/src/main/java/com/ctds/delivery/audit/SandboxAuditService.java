@@ -55,16 +55,53 @@ public class SandboxAuditService {
         recordJson(action, sandboxNo, jobNo, contractNo, operatorNo, "SUCCESS", null);
     }
 
+    /** 结果物维度成功类动作（结果物标识入 result_name 列与审计 detail；WBS-3.5.5）。 */
+    public void successResult(final String action, final String sandboxNo, final String resultName,
+            final String contractNo, final String operatorNo) {
+        recordResult(action, sandboxNo, resultName, contractNo, operatorNo, "SUCCESS", null);
+    }
+
+    /** 结果物维度拒绝（404/409/403/400/透传码；带结果物标识）。 */
+    public void deniedResult(final String action, final String sandboxNo, final String resultName,
+            final String contractNo, final String operatorNo, final String reasonCode) {
+        recordResult(action, sandboxNo, resultName, contractNo, operatorNo, "DENIED", reasonCode);
+    }
+
+    /** 结果物维度平台侧失败（导出链加密 / 存储失败等）。 */
+    public void failureResult(final String action, final String sandboxNo, final String resultName,
+            final String contractNo, final String operatorNo, final String reasonCode) {
+        recordResult(action, sandboxNo, resultName, contractNo, operatorNo, "FAILURE", reasonCode);
+    }
+
+    /** 结果物维度仅 JSONL（DB 动作留痕已随事务落库的场景）。 */
+    public void jsonOnlyResult(final String action, final String sandboxNo,
+            final String resultName, final String contractNo, final String operatorNo) {
+        recordJsonResult(action, sandboxNo, resultName, contractNo, operatorNo, "SUCCESS", null);
+    }
+
     private void record(final String action, final String sandboxNo, final String jobNo,
             final String contractNo, final String operatorNo, final String result,
             final String reasonCode) {
         try {
             repository.insertActionLog(new SandboxActionLog(null, sandboxNo, jobNo, contractNo,
-                    operatorNo, action, result, reasonCode, null));
+                    operatorNo, action, result, reasonCode, null, null));
         } catch (final RuntimeException e) {
             log.warn("沙箱动作留痕写入失败: action={}", action);
         }
         recordJson(action, sandboxNo, jobNo, contractNo, operatorNo, result, reasonCode);
+    }
+
+    private void recordResult(final String action, final String sandboxNo, final String resultName,
+            final String contractNo, final String operatorNo, final String result,
+            final String reasonCode) {
+        try {
+            repository.insertActionLog(new SandboxActionLog(null, sandboxNo, null, contractNo,
+                    operatorNo, action, result, reasonCode, resultName, null));
+        } catch (final RuntimeException e) {
+            log.warn("沙箱动作留痕写入失败: action={}", action);
+        }
+        recordJsonResult(action, sandboxNo, resultName, contractNo, operatorNo, result,
+                reasonCode);
     }
 
     private void recordJson(final String action, final String sandboxNo, final String jobNo,
@@ -81,6 +118,29 @@ public class SandboxAuditService {
         }
         if (reasonCode != null) {
             detail.put("reasonCode", reasonCode);
+        }
+        recordJson(action, sandboxNo, contractNo, operatorNo, result, detail);
+    }
+
+    private void recordJsonResult(final String action, final String sandboxNo,
+            final String resultName, final String contractNo, final String operatorNo,
+            final String result, final String reasonCode) {
+        final Map<String, String> detail = new LinkedHashMap<>();
+        detail.put("contractNo", contractNo == null ? "" : contractNo);
+        if (resultName != null && !resultName.isBlank()) {
+            detail.put("resultName", resultName);
+        }
+        if (reasonCode != null) {
+            detail.put("reasonCode", reasonCode);
+        }
+        recordJson(action, sandboxNo, contractNo, operatorNo, result, detail);
+    }
+
+    private void recordJson(final String action, final String sandboxNo, final String contractNo,
+            final String operatorNo, final String result, final Map<String, String> detail) {
+        final AuditRecorder recorder = auditRecorder.getIfAvailable();
+        if (recorder == null) {
+            return;
         }
         final String target = sandboxNo == null ? contractNo : sandboxNo;
         try {
