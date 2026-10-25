@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest'
-import { getActorMode, setActorMode, spaceRolesHeader } from './demoIdentity'
+import { deliveryRolesHeader, getActorMode, setActorMode, spaceRolesHeader } from './demoIdentity'
 import { getDemoSubject, setDemoSubject } from '../api/client'
 
 /**
@@ -48,5 +48,26 @@ describe('演示身份档（T27）', () => {
     setDemoSubject('S20260925000001')
     expect(getDemoSubject()).toBe('S20260925000001')
     expect(localStorage.getItem('ctds-demo-subject')).toBe('S20260925000001')
+  })
+})
+
+describe('交付域页面级角色头（WBS-3.5.6 Q2-A / T2）', () => {
+  afterEach(() => {
+    localStorage.clear()
+  })
+
+  it('普通档 = requester,provider 双头（主体编号决定视角，双头使提供方动作达业务层判定）', () => {
+    setActorMode('subject')
+    expect(deliveryRolesHeader()).toBe('requester,provider')
+  })
+
+  it('硬约束：普通档不得携带 admin（治理面步骤不失真的地基）', () => {
+    setActorMode('subject')
+    expect(deliveryRolesHeader()).not.toContain('admin')
+  })
+
+  it('运营档 = admin（治理读面 + 审核写面）', () => {
+    setActorMode('operator')
+    expect(deliveryRolesHeader()).toBe('admin')
   })
 })

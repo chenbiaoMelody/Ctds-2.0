@@ -10,6 +10,7 @@ import com.ctds.delivery.domain.DeliveryErrorCodes;
 import com.ctds.delivery.domain.DeliveryRepository;
 import com.ctds.delivery.domain.DeliveryType;
 import com.ctds.delivery.infrastructure.FilePackageStore;
+import com.ctds.delivery.interfaces.dto.DeliveryViews.ActionLogView;
 import com.ctds.delivery.interfaces.dto.DeliveryViews.DeliveryView;
 import java.nio.file.Path;
 import java.util.List;
@@ -109,6 +110,40 @@ public class DeliveryQueryService {
         final long total = repository.countGovernance(contractNo, deliveryNo);
         audit.success(DeliveryAuditActions.GOVERNANCE_READ, deliveryNo, contractNo, operatorNo);
         return PageResult.of(list, total, page);
+    }
+
+    /**
+     * G7a 参与方动作留痕分页（WBS-3.5.6 Q5-A）：非参与方与"合约不存在"同码同文
+     * {@code 1009C0007} 防枚举 + 既有 DENIED 留痕；参与方读取零新增留痕
+     * （沿 3.4.7 R13 口径，防"看留痕产生留痕"递归）。
+     */
+    public PageResult<ActionLogView> participantActionLogs(final String contractNo,
+            final String callerNo, final PageQuery page) {
+        requireContractParticipant(contractNo, callerNo);
+        return pageActionLogs(contractNo, page);
+    }
+
+    /** G7b 治理动作留痕分页（WBS-3.5.6 Q5-A）：治理例外读全量合约留痕；读即留痕。 */
+    public PageResult<ActionLogView> governanceActionLogs(final String contractNo,
+            final String operatorNo, final PageQuery page) {
+        final PageResult<ActionLogView> result = pageActionLogs(contractNo, page);
+        audit.success(DeliveryAuditActions.GOVERNANCE_READ, null, contractNo, operatorNo);
+        return result;
+    }
+
+    private PageResult<ActionLogView> pageActionLogs(final String contractNo, final PageQuery page) {
+        final List<ActionLogView> list = repository.pageActionLogs(contractNo, page).stream()
+                .map(ActionLogView::from).toList();
+        final long total = repository.countActionLogs(contractNo);
+        return PageResult.of(list, total, page);
+    }
+
+    private void requireContractParticipant(final String contractNo, final String callerNo) {
+        if (!repository.existsByContractParticipant(contractNo, callerNo)) {
+            audit.denied(DeliveryAuditActions.DENIED, null, contractNo, callerNo,
+                    DeliveryErrorCodes.DELIVERY_NOT_VISIBLE.value());
+            throw notVisible();
+        }
     }
 
     private Delivery visibleRecord(final String deliveryNo, final String callerNo) {

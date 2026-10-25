@@ -75,3 +75,13 @@ export function catalogRolesHeader(): string {
 export function contractRolesHeader(): string {
   return pageRolesHeader('admin', 'provider')
 }
+
+/**
+ * 交付域页面级角色头（WBS-3.5.6 Q2-A）：普通档 `requester,provider` 双头 + 运营档 `admin`。
+ * 主体编号决定视角（服务端按合约参与方判定）：星河 = 需求方全操作；蓝天 = 提供方只读对照，
+ * 代发起经双头到达业务层判定（1009C0003 准确文案，规避单头被权限层先拦的 DB-63/66 同型）。
+ * 硬约束（T2）：**普通档不得携带 `admin`**。
+ */
+export function deliveryRolesHeader(): string {
+  return pageRolesHeader('admin', 'requester,provider')
+}

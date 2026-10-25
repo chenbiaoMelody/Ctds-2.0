@@ -6,6 +6,7 @@ import {
   demoRolesHeader,
   getDemoSubject,
   makeDomainJson,
+  newIdempotencyKey,
   pageQuery,
   setDemoSubject,
 } from './client'
@@ -170,3 +171,31 @@ describe('DB-41 公用层（pageQuery + 域请求工厂）', () => {
     expect(contractRolesHeader()).toBe('provider')
   })
 })
+describe('幂等键助手（WBS-3.5.6 Q3-A / T1）', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    localStorage.clear()
+  })
+
+  it('newIdempotencyKey：两次调用不重复（弹窗实例级 UUID）', () => {
+    const keys = new Set(Array.from({ length: 50 }, () => newIdempotencyKey()))
+    expect(keys.size).toBe(50)
+  })
+
+  it('apiJson 自定义头透传：X-Idempotency-Key 原样到达 fetch（headers 覆盖机制）', async () => {
+    const fetchFn = vi.fn((_path: string, _init?: RequestInit) =>
+      Promise.resolve({
+        json: () => Promise.resolve({ code: '0', message: 'ok', data: 1 }),
+      }),
+    )
+    vi.stubGlobal('fetch', fetchFn)
+    await apiJson('/api/v1/deliveries', {
+      method: 'POST',
+      headers: { 'X-Idempotency-Key': newIdempotencyKey() },
+    })
+    const headers = (fetchFn.mock.calls[0][1] as RequestInit).headers as Record<string, string>
+    expect(headers['X-Idempotency-Key']).toMatch(/^[0-9a-f-]{36}$/)
+    expect(headers['Content-Type']).toBe('application/json')
+  })
+})
+

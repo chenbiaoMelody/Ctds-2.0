@@ -55,7 +55,8 @@ describe('路由表结构（H3）', () => {
     expect(didRoute?.meta?.permission).toBe('did.admin')
     const permissionRouteNames = ['admin-only', 'review-queue', 'did-management', 'space-list', 'platform-policy',
       'catalog-datasets', 'catalog-products', 'catalog-governance',
-      'contract-templates', 'contract-workbench', 'contract-governance']
+      'contract-templates', 'contract-workbench', 'contract-governance',
+      'delivery-governance']
     const normalRoutes = children.filter(
       (r) => r.meta?.menu === true && !permissionRouteNames.includes(String(r.name)),
     )
@@ -65,9 +66,9 @@ describe('路由表结构（H3）', () => {
   })
 
   it('DID 管理路由（WBS-3.1.11）：menuOrder=8、icon=Key、did.admin 权限；演示页不占菜单', () => {
-    // 菜单末尾追加（lofi Q1/Q8：不重排既有菜单）；WBS-3.4.7 追加 menuOrder 14/15/16 后全站最大值为 16
+    // 菜单末尾追加（lofi Q1/Q8：不重排既有菜单）；WBS-3.5.6 追加 menuOrder 17/18/19 后全站最大值为 19
     const menuOrders = children.filter((r) => r.meta?.menu === true).map((r) => r.meta?.menuOrder ?? 0)
-    expect(Math.max(...menuOrders)).toBe(16)
+    expect(Math.max(...menuOrders)).toBe(19)
     const didRoute = children.find((r) => r.name === 'did-management')
     expect(didRoute?.path).toBe('did')
     expect(didRoute?.meta?.title).toBe('DID 管理')
@@ -135,10 +136,11 @@ describe('路由表结构（H3）', () => {
     expect(progressRoute?.meta?.icon).toBe('Search')
     expect(progressRoute?.meta?.permission).toBeUndefined()
     // menuOrder=7 为入驻进度查询占位；WBS-3.1.11（8）与 WBS-3.2.6（9/10）追加后全站最大值为 10；
-    // WBS-3.3.6（11/12/13）追加后全站最大值为 13；WBS-3.4.7（14/15/16）追加后全站最大值为 16
+    // WBS-3.3.6（11/12/13）追加后全站最大值为 13；WBS-3.4.7（14/15/16）追加后全站最大值为 16；
+    // WBS-3.5.6（17/18/19）追加后全站最大值为 19
     const menuOrders = children.filter((r) => r.meta?.menu === true).map((r) => r.meta?.menuOrder ?? 0)
     expect(menuOrders).toContain(7)
-    expect(Math.max(...menuOrders)).toBe(16)
+    expect(Math.max(...menuOrders)).toBe(19)
   })
 
   it('空间管理界面路由（WBS-3.2.6 §3）：菜单 9/10、权限点 space.member / platform.policy，"我的邀请"不占菜单且在 :id 之前', () => {
@@ -408,3 +410,31 @@ describe('登录守卫（WBS-2.4.12 B5/B7/边界 B-2）', () => {
     expect(router.currentRoute.value.name).toBe('catalog')
   })
 })
+describe('交付域路由（WBS-3.5.6 T3）', () => {
+  const root = routes.find((r) => r.path === '/')
+  const children = root && 'children' in root ? (root.children ?? []) : []
+
+  it('交付记录：menuOrder=17、登录可见（无权限点）', () => {
+    const route = children.find((r) => r.path === 'deliveries')
+    expect(route?.meta?.menu).toBe(true)
+    expect(route?.meta?.menuOrder).toBe(17)
+    expect(route?.meta?.permission).toBeUndefined()
+  })
+
+  it('沙箱任务：menuOrder=18、登录可见；深链 /sandboxes/:sandboxNo 不占菜单', () => {
+    const route = children.find((r) => r.path === 'sandboxes')
+    expect(route?.meta?.menu).toBe(true)
+    expect(route?.meta?.menuOrder).toBe(18)
+    expect(route?.meta?.permission).toBeUndefined()
+    const detail = children.find((r) => r.path === 'sandboxes/:sandboxNo')
+    expect(detail?.meta?.menu).toBeUndefined()
+  })
+
+  it('交付治理：menuOrder=19、admin 权限点 delivery.governance', () => {
+    const route = children.find((r) => r.path === 'delivery-governance')
+    expect(route?.meta?.menu).toBe(true)
+    expect(route?.meta?.menuOrder).toBe(19)
+    expect(route?.meta?.permission).toBe('delivery.governance')
+  })
+})
+

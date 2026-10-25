@@ -6,6 +6,7 @@ import com.ctds.common.auth.RequirePermission;
 import com.ctds.common.pagination.PageQuery;
 import com.ctds.common.pagination.PageResult;
 import com.ctds.delivery.application.DeliveryQueryService;
+import com.ctds.delivery.interfaces.dto.DeliveryViews.ActionLogView;
 import com.ctds.delivery.interfaces.dto.DeliveryViews.DeliveryView;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -42,5 +43,19 @@ public class DeliveryGovernanceController {
     @RequirePermission("delivery.governance")
     public ApiResult<DeliveryView> get(@PathVariable final String deliveryNo) {
         return ApiResult.ok(queryService.governanceGet(deliveryNo, AuthContext.subject()));
+    }
+
+    /**
+     * G7b 合约动作留痕分页（WBS-3.5.6 Q5-A 治理路径）：治理例外读全量合约留痕；
+     * 读即留痕（GOVERNANCE_READ）；无该合约交付记录时为空页（治理列表语义，不防枚举拒绝）。
+     */
+    @GetMapping(path = "/{contractNo}/action-logs", produces = MediaType.APPLICATION_JSON_VALUE)
+    @RequirePermission("delivery.governance")
+    public ApiResult<PageResult<ActionLogView>> actionLogs(
+            @PathVariable final String contractNo,
+            @RequestParam(required = false) final Integer pageNum,
+            @RequestParam(required = false) final Integer pageSize) {
+        return ApiResult.ok(queryService.governanceActionLogs(contractNo, AuthContext.subject(),
+                PageQuery.of(pageNum, pageSize, null)));
     }
 }

@@ -31,4 +31,12 @@ public interface DeliveryRepository {
     long countBySandbox(String sandboxNo, DeliveryType type);
 
     void insertActionLog(DeliveryActionLog log);
+
+    /** 合约参与方存在性（WBS-3.5.6 Q5-A G7 可见性守卫：该合约下调用者为需求方或提供方）。 */
+    boolean existsByContractParticipant(String contractNo, String callerNo);
+
+    /** 合约动作留痕分页（WBS-3.5.6 Q5-A G7；id 倒序最新在前）。 */
+    List<DeliveryActionLog> pageActionLogs(String contractNo, PageQuery page);
+
+    long countActionLogs(String contractNo);
 }

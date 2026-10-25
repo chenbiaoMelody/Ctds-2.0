@@ -12,6 +12,7 @@ import com.ctds.delivery.application.DeliveryQueryService.PackageDownload;
 import com.ctds.delivery.domain.DeliveryBizException;
 import com.ctds.delivery.domain.DeliveryErrorCodes;
 import com.ctds.delivery.interfaces.dto.DeliveryRequest;
+import com.ctds.delivery.interfaces.dto.DeliveryViews.ActionLogView;
 import com.ctds.delivery.interfaces.dto.DeliveryViews.DeliveryView;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -78,6 +79,20 @@ public class DeliveryController {
             @RequestParam(required = false) final String orderBy) {
         final PageQuery page = PageQuery.of(pageNum, pageSize, orderBy);
         return ApiResult.ok(queryService.list(AuthContext.subject(), contractNo, deliveryType, page));
+    }
+
+    /**
+     * G7a 合约动作留痕分页（WBS-3.5.6 Q5-A）：参与方可见本合约全部留痕
+     * （含他人越权探测 DENIED 行——C-5.1 S3-7 界面承载）；读取零新增留痕（防递归）。
+     */
+    @GetMapping(path = "/{contractNo}/action-logs", produces = MediaType.APPLICATION_JSON_VALUE)
+    @RequirePermission("delivery.read")
+    public ApiResult<PageResult<ActionLogView>> actionLogs(
+            @PathVariable final String contractNo,
+            @RequestParam(required = false) final Integer pageNum,
+            @RequestParam(required = false) final Integer pageSize) {
+        return ApiResult.ok(queryService.participantActionLogs(contractNo, AuthContext.subject(),
+                PageQuery.of(pageNum, pageSize, null)));
     }
 
     /** 加密交付包领取（仅合约需求方）；返回加密件 + 明文 SM3 头，不返回明文。 */

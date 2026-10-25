@@ -70,6 +70,23 @@ export function pageQuery(pageNum: number, pageSize: number, extra: Record<strin
 }
 
 /**
+ * 幂等键助手（WBS-3.5.6 Q3-A）：写弹窗打开时生成一次、随 `X-Idempotency-Key` 头提交；
+ * 同弹窗重复提交复用同键（后端返回首次结果），关闭重开换新键。
+ * jsdom 兜底：crypto.randomUUID 不可用时以 getRandomValues 组装 UUID v4 形态。
+ */
+export function newIdempotencyKey(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  const bytes = new Uint8Array(16)
+  crypto.getRandomValues(bytes)
+  bytes[6] = (bytes[6] & 0x0f) | 0x40
+  bytes[8] = (bytes[8] & 0x3f) | 0x80
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
+/**
  * 域请求工厂（DB-41②③：`client.ts` 公用层唯一新增公共 API）：
  * 空主体前置拦截（**零请求** → `ApiError('1000C0002')`）→ 附页面级角色头
  * （`X-Ctds-Roles = rolesHeader()`，调用方显式同名头可覆盖）→ `apiJson`。
