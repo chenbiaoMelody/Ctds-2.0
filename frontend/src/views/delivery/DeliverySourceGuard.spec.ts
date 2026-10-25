@@ -43,7 +43,7 @@ const apiText = Object.values(apiSources).join('')
 
 /** 禁写中文集合：这些词只能出现在 constants/delivery.ts（视图散写 = 红）。 */
 const FORBIDDEN_VIEW_LITERALS = [
-  '接口交付',
+  'API 交付',
   '文件交付',
   '沙箱导出',
   '使用中',

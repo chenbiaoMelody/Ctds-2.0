@@ -7,7 +7,7 @@
 
 /** 交付形态（后端 DeliveryType 枚举；SANDBOX_EXPORT 仅导出链产生，发起面只有 API/FILE）。 */
 export const DELIVERY_TYPE_LABELS: Record<string, string> = {
-  API: '接口交付',
+  API: 'API 交付',
   FILE: '文件交付',
   SANDBOX_EXPORT: '沙箱导出',
 }
