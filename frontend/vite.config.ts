@@ -50,6 +50,16 @@ export default defineConfig({
         target: 'http://localhost:8085',
         changeOrigin: true,
       },
+      // WBS-3.5.6 交付域（8087）：界面走查经 5173 访问交付服务（开发期转发，不改服务契约与
+      // 门禁配置；nginx 容器配置零改动——沿 3.2.6/3.3.6/3.4.7 界面包先例，部署面无 API 代理）。
+      '/api/v1/deliveries': {
+        target: 'http://localhost:8087',
+        changeOrigin: true,
+      },
+      '/api/v1/sandboxes': {
+        target: 'http://localhost:8087',
+        changeOrigin: true,
+      },
       // WBS-3.2.6 空间域（8083）：界面走查经 5173 访问空间服务（开发期转发，不改服务契约与门禁配置）。
       '/api/v1/data-spaces': {
         target: 'http://localhost:8083',

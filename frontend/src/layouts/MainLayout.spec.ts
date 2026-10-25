@@ -66,11 +66,11 @@ describe('权限菜单显隐（H4）', () => {
     localStorage.clear()
   })
 
-  it('普通用户：菜单渲染 5 项，不含权限保护菜单（CHG-C-1.1-V1.2 新增入驻进度查询菜单）', () => {
+  it('普通用户：菜单渲染 7 项，不含权限保护菜单（WBS-3.5.6 新增交付记录/沙箱任务两项登录可见）', () => {
     setDemoRole('user')
     const wrapper = mountLayout()
     const items = wrapper.findAll('.el-menu-item')
-    expect(items.length).toBe(5)
+    expect(items.length).toBe(7)
     expect(wrapper.text()).not.toContain('仅管理员可见')
     expect(wrapper.text()).not.toContain('主体审核')
     expect(wrapper.text()).not.toContain('DID 管理')
@@ -81,7 +81,7 @@ describe('权限菜单显隐（H4）', () => {
     setDemoRole('admin')
     const wrapper = mountLayout()
     const items = wrapper.findAll('.el-menu-item')
-    expect(items.length).toBe(16)
+    expect(items.length).toBe(19)
     expect(wrapper.text()).toContain('仅管理员可见')
     expect(wrapper.text()).toContain('主体审核')
     expect(wrapper.text()).toContain('DID 管理')

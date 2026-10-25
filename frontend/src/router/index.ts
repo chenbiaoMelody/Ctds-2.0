@@ -116,6 +116,34 @@ const routes = [
         component: () => import('../views/contract/GovernanceView.vue'),
         meta: { title: '合约治理', menu: true, menuOrder: 16, icon: 'Stamp', permission: 'contract.governance' },
       },
+      // WBS-3.5.6 交付域：三菜单（17/18/19）+ 沙箱详情深链（不占菜单；须声明在
+      // sandboxes 之后，深链匹配不吞噬清单页；交付记录/沙箱任务无权限点——登录即可见，
+      // 门槛在服务端；运营档误入参与方两菜单为 fail-closed 原样报错，口径登记 hifi
+      // §11 E-5：走查/演示时运营档仅使用「交付治理」页；交付治理 admin）
+      {
+        path: 'deliveries',
+        name: 'delivery-list',
+        component: () => import('../views/delivery/DeliveryListView.vue'),
+        meta: { title: '交付记录', menu: true, menuOrder: 17, icon: 'Box' },
+      },
+      {
+        path: 'sandboxes',
+        name: 'sandbox-list',
+        component: () => import('../views/delivery/SandboxListView.vue'),
+        meta: { title: '沙箱任务', menu: true, menuOrder: 18, icon: 'Monitor' },
+      },
+      {
+        path: 'sandboxes/:sandboxNo',
+        name: 'sandbox-detail',
+        component: () => import('../views/delivery/SandboxDetailView.vue'),
+        meta: { title: '沙箱任务详情' },
+      },
+      {
+        path: 'delivery-governance',
+        name: 'delivery-governance',
+        component: () => import('../views/delivery/DeliveryGovernanceView.vue'),
+        meta: { title: '交付治理', menu: true, menuOrder: 19, icon: 'Stamp', permission: 'delivery.governance' },
+      },
       {
         path: 'admin-only',
         name: 'admin-only',

@@ -185,6 +185,40 @@ public class JdbcDeliveryRepository implements DeliveryRepository {
                 .update();
     }
 
+    @Override
+    public boolean existsByContractParticipant(final String contractNo, final String callerNo) {
+        return jdbc.sql("SELECT COUNT(*) FROM delivery WHERE contract_no = :contractNo "
+                        + "AND (requester_no = :caller OR provider_no = :caller)")
+                .param("contractNo", contractNo).param("caller", callerNo)
+                .query(Long.class).single() > 0;
+    }
+
+    @Override
+    public List<DeliveryActionLog> pageActionLogs(final String contractNo, final PageQuery page) {
+        return jdbc.sql("SELECT id, delivery_no, contract_no, operator_no, action, result, "
+                        + "reason_code, created_at FROM delivery_action_log "
+                        + "WHERE contract_no = :contractNo ORDER BY id DESC "
+                        + "LIMIT :limit OFFSET :offset")
+                .param("contractNo", contractNo)
+                .param("limit", page.pageSize())
+                .param("offset", page.offset())
+                .query(JdbcDeliveryRepository::mapActionLog).list();
+    }
+
+    @Override
+    public long countActionLogs(final String contractNo) {
+        return jdbc.sql("SELECT COUNT(*) FROM delivery_action_log WHERE contract_no = :contractNo")
+                .param("contractNo", contractNo).query(Long.class).single();
+    }
+
+    private static DeliveryActionLog mapActionLog(final ResultSet rs, final int rowNum)
+            throws SQLException {
+        return new DeliveryActionLog(rs.getLong("id"), rs.getString("delivery_no"),
+                rs.getString("contract_no"), rs.getString("operator_no"), rs.getString("action"),
+                rs.getString("result"), rs.getString("reason_code"),
+                rs.getObject("created_at", LocalDateTime.class));
+    }
+
     private static void appendFilters(final StringBuilder sql, final Map<String, Object> params,
             final String contractNo, final DeliveryType type) {
         if (contractNo != null && !contractNo.isBlank()) {

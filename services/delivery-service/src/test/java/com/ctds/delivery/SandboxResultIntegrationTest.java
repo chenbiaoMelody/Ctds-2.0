@@ -743,6 +743,69 @@ class SandboxResultIntegrationTest {
         assertActionLog("sandbox.governance.read", "SUCCESS", null, 1);
     }
 
+    // ---------- 治理结果物读面组（WBS-3.5.6 评审修复：治理详情结果物承载） ----------
+
+    @Test
+    void governanceResultsCarriesStatusFieldsAndNullsForUnsubmitted() throws Exception {
+        final String sandboxNo = seedRunningTask("SB400007");
+        writeResult(sandboxNo, "report.md", SECRET_MARKER);
+        writeResult(sandboxNo, "draft.md", "draft");
+        submit(sandboxNo, "report.md", "key-gres-1", REQUESTER);
+        review(sandboxNo, "report.md", "REJECT", "格式不符");
+        final MvcResult result = governanceResults(sandboxNo);
+        assertThat(result.getResponse().getStatus()).isEqualTo(200);
+        final JsonNode list = dataOf(result);
+        assertThat(list).hasSize(2);
+        JsonNode rejected = null;
+        JsonNode unsubmitted = null;
+        for (final JsonNode item : list) {
+            if ("report.md".equals(item.path("fileName").asText())) {
+                rejected = item;
+            } else {
+                unsubmitted = item;
+            }
+        }
+        assertThat(rejected.path("status").asText()).isEqualTo("REJECTED");
+        assertThat(rejected.path("conclusion").asText()).isEqualTo("REJECTED");
+        assertThat(rejected.path("rejectReason").asText()).isEqualTo("格式不符");
+        assertThat(rejected.path("reviewRound").asInt()).isEqualTo(1);
+        assertThat(unsubmitted.path("status").isNull()).isTrue();
+        assertThat(unsubmitted.path("conclusion").isNull()).isTrue();
+        assertThat(unsubmitted.path("rejectReason").isNull()).isTrue();
+        assertThat(unsubmitted.path("reviewRound").isNull()).isTrue();
+        final String body = result.getResponse().getContentAsString(StandardCharsets.UTF_8);
+        assertThat(body).doesNotContain(SECRET_MARKER, WORKSPACE.toString());
+    }
+
+    @Test
+    void governanceResultsReadIsTraced() throws Exception {
+        final String sandboxNo = seedRunningTask("SB400008");
+        writeResult(sandboxNo, "report.md", SECRET_MARKER);
+        assertThat(governanceResults(sandboxNo).getResponse().getStatus()).isEqualTo(200);
+        assertActionLog("sandbox.governance.read", "SUCCESS", null, 1);
+    }
+
+    @Test
+    void governanceResultsByParticipantDeniedByPermissionLayer() throws Exception {
+        final String sandboxNo = seedRunningTask("SB400009");
+        writeResult(sandboxNo, "report.md", SECRET_MARKER);
+        final MvcResult denied = mockMvc.perform(get(
+                        "/api/v1/sandboxes/governance/{no}/results", sandboxNo)
+                .header("X-Ctds-Subject", REQUESTER).header("X-Ctds-Roles", "requester"))
+                .andReturn();
+        assertThat(denied.getResponse().getStatus()).isEqualTo(403);
+        assertThat(codeOf(denied)).isEqualTo("1000C0005");
+        assertActionLog("sandbox.governance.read", "SUCCESS", null, 0);
+    }
+
+    @Test
+    void governanceResultsMissingTaskSameCodeAsNotVisible() throws Exception {
+        final MvcResult missing = governanceResults("SB999996");
+        assertThat(missing.getResponse().getStatus()).isEqualTo(404);
+        assertThat(codeOf(missing)).isEqualTo("1009C0010");
+        assertActionLog("sandbox.denied", "DENIED", "1009C0010", 1);
+    }
+
     // ---------- 留痕与无本体组（hifi §7.2 / §8 字段集断言） ----------
 
     @Test
@@ -1004,6 +1067,11 @@ class SandboxResultIntegrationTest {
 
     private MvcResult reviewsListMissing(final String sandboxNo) throws Exception {
         return mockMvc.perform(get("/api/v1/sandboxes/governance/{no}/reviews", sandboxNo)
+                .header("X-Ctds-Subject", ADMIN).header("X-Ctds-Roles", "admin")).andReturn();
+    }
+
+    private MvcResult governanceResults(final String sandboxNo) throws Exception {
+        return mockMvc.perform(get("/api/v1/sandboxes/governance/{no}/results", sandboxNo)
                 .header("X-Ctds-Subject", ADMIN).header("X-Ctds-Roles", "admin")).andReturn();
     }
 

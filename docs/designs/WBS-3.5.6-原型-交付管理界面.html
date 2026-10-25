@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>WBS-3.5.6 线框原型 · 交付管理界面（低保真）</title>
+<style>
+  /* 低保真线框：只表达信息架构与操作流，不做视觉定稿（高保真阶段定稿） */
+  body { font-family: sans-serif; margin: 0; background: #f5f5f5; }
+  .frame { border: 2px dashed #999; margin: 16px; padding: 12px; }
+  .frame h2 { margin-top: 0; }
+  .layout { display: flex; gap: 12px; }
+  .side { width: 190px; border: 1px dashed #999; padding: 8px; min-height: 260px; }
+  .main { flex: 1; border: 1px dashed #999; padding: 8px; }
+  table { border-collapse: collapse; width: 100%; background: #fff; }
+  th, td { border: 1px solid #bbb; padding: 6px 8px; font-size: 13px; text-align: left; }
+  th { background: #eee; }
+  .btn { display: inline-block; border: 1px solid #666; padding: 3px 10px; margin: 2px; font-size: 13px; background: #fff; text-decoration: none; color: #000; }
+  .btn-danger { border-color: #a00; color: #a00; }
+  .btn[disabled], .dis { border-color: #ccc; color: #aaa; }
+  .note { color: #888; font-size: 12px; }
+  .field { margin: 4px 0; font-size: 13px; }
+  .label { display: inline-block; width: 170px; color: #555; }
+  .section { border: 1px dashed #aaa; padding: 6px; margin: 6px 0; background: #fff; }
+  .placeholder { color: #aaa; font-style: italic; }
+  .modal { border: 2px solid #666; background: #fff; padding: 10px; margin: 8px 0; width: 720px; }
+  .modal h3 { margin: 0 0 6px 0; font-size: 15px; }
+  .warn { color: #a00; font-weight: bold; }
+  .tabs span { display: inline-block; border: 1px solid #666; border-bottom: none; padding: 4px 12px; margin-right: 4px; font-size: 13px; background: #fff; }
+  .tabs span.on { background: #eee; font-weight: bold; }
+  .topbar { border: 1px solid #666; background: #fff; padding: 6px 10px; font-size: 13px; margin-bottom: 10px; }
+  .tag { border: 1px solid #888; border-radius: 8px; padding: 1px 8px; font-size: 12px; }
+  .tag-warn { border-color: #a00; color: #a00; }
+  .tag-ok { border-color: #2a7; color: #2a7; }
+  .tag-info { border-color: #26a; color: #26a; }
+  .drawer { border: 2px solid #26a; background: #fff; padding: 10px; width: 640px; float: right; }
+</style>
+</head>
+<body>
+
+<div class="frame">
+  <h2>画面 0：全局布局（侧边菜单 + 顶栏"演示身份"控件；WBS-3.5.6 新增三菜单）</h2>
+  <div class="topbar">
+    <b>顶栏</b>：折叠按钮 ｜ 面包屑：交付记录 / 沙箱任务 / 交付治理 ｜ 右侧：<b>[ 演示身份 ]</b>
+    主体编号 <span class="placeholder">[ S2026…（星河=需求方 / 蓝天=提供方）]</span>
+    档位 <span class="placeholder">[ 普通主体 ▾ ｜ 平台运营方 ]</span> <a class="btn" href="#">保存</a>
+    ｜ 演示模式标识 ｜ 角色切换（user/admin） ｜ 退出
+    <div class="note">演示期专用（沿用 3.2.6 顶栏控件，零新增）。<b>交付域角色头（本卡新增，Q2-A）：普通档 = requester,provider 双头；运营档 = admin</b>
+      （服务端 requester 六点 / provider 二点 / admin 四点映射）。<b>硬约束：普通档不得携带 admin</b>。
+      主体编号决定视角：星河 = 需求方（可发起 / 可操作）；蓝天 = 提供方（只读；代发起走服务端业务层拒绝文案，非权限层先拦——规避 DB-63/66 同型）。
+      主体编号为空 = 未认证，前端拦零请求。跨域例外：发起弹窗"检索合约"走合约域（合约角色头），两套页面级头互不污染。</div>
+  </div>
+  <div class="layout">
+    <div class="side">
+      <div class="field"><b>侧边菜单</b>（按权限显隐；现有 16 项 + 本卡新增 3 项）</div>
+      <div class="field">工作台 / 标准能力 / 数据目录</div>
+      <div class="field">仅管理员可见 / 主体入驻 / 主体审核 / 入驻进度查询 / DID 管理</div>
+      <div class="field">逻辑空间 / 平台策略治理 / 资源登记 / 产品上架 / 目录治理</div>
+      <div class="field">合约模板 / 合约工作台 / 合约治理</div>
+      <div class="field"><b>交付记录</b> ◀（menuOrder 17；登录可见）</div>
+      <div class="field"><b>沙箱任务</b> ◀（menuOrder 18；登录可见）</div>
+      <div class="field"><b>交付治理</b> ◀（menuOrder 19；admin）</div>
+      <div class="note">菜单计数：admin 16 → 19；普通角色 +2（交付治理带权限点不显）。
+        路由 meta 权限 = 演示角色体验层；服务端判定以"档位角色头"为准（两套机制独立，沿目录/合约域先例）。
+        剧本占位「交付管理」菜单在平铺一级菜单结构下映射为三个菜单项（核对修订时说明）。</div>
+    </div>
+    <div class="main">
+      <div class="note">本区为页面承载区（画面 1~7 分别为各路由内容）。</div>
+    </div>
+  </div>
+</div>
+
+<div class="frame" id="deliveries">
+  <h2>画面 1：交付记录页（/deliveries，登录可见）</h2>
+  <div class="section"><b>过滤栏 + 列表</b>（D3 分页）
+    <div class="field">合约编号 <span class="placeholder">[ __________ ]</span>
+      形态 <span class="placeholder">[ 全部 ▾ ｜ API 交付 ｜ 文件交付 ｜ 沙箱导出 ]</span>
+      <a class="btn" href="#request-delivery">查询</a><a class="btn" href="#">重置</a>
+      <a class="btn" href="#request-delivery" style="float:right"><b>发起交付</b></a></div>
+    <table>
+      <tr><th>交付编号</th><th>合约编号</th><th>产品</th><th>形态</th><th>发起方</th><th>提供方</th><th>文件名</th><th>大小</th><th>结果</th><th>时间</th><th>操作</th></tr>
+      <tr><td>DL000009</td><td>CO000026</td><td>企业信用数据集</td><td><span class="tag tag-info">文件交付</span></td><td>S…星河</td><td>S…蓝天</td><td>credit-dataset.pkg</td><td>2.4 MB</td><td><span class="tag tag-ok">成功</span></td><td>10-24 22:1x</td><td><a class="btn" href="#delivery-detail">详情</a></td></tr>
+      <tr><td>DL000007</td><td>CO000026</td><td>企业信用数据集</td><td><span class="tag tag-warn">沙箱导出</span></td><td>S…星河</td><td>S…蓝天</td><td>profile-report.csv</td><td>18 KB</td><td><span class="tag tag-ok">成功</span></td><td>10-24 22:0x</td><td><a class="btn" href="#delivery-detail">详情</a></td></tr>
+      <tr><td>DL000002</td><td>CO000019</td><td>征信查询 API</td><td><span class="tag">API 交付</span></td><td>S…星河</td><td>S…蓝天</td><td>—</td><td>—</td><td><span class="tag tag-ok">成功</span></td><td>10-16 1x</td><td><a class="btn" href="#delivery-detail">详情</a></td></tr>
+    </table>
+    <div class="field note">分页（pageSize 10）；空态：暂无交付记录。被拒（如以已终止合约发起）→ 后端文案原样展示，不产生新行。</div>
+  </div>
+  <div class="modal" id="request-delivery"><h3>发起交付（弹窗；打开时生成幂等键，重复提交 = 同键重放返回首次结果）</h3>
+    <div class="field"><span class="label">合约编号 *</span> <span class="placeholder">[ CO000026 __________ ]</span> <a class="btn" href="#">检索生效合约</a>
+      <span class="note">（检索 = 跨域只读复用合约域"我的合约"，仅回填编号；也可直填任意编号——"已终止合约发起被拒"等对照步骤可执行）</span></div>
+    <div class="field"><span class="label">交付形态 *</span> <span class="placeholder">[ ○ API 交付　● 文件交付 ]</span></div>
+    <div class="field"><span class="label">文件标识 fileId *</span> <span class="placeholder">[ FILE 形态时显示并必填 ]</span></div>
+    <div class="field"><span class="label">用途</span> <span class="placeholder">[ 风控建模（自由填写，服务端按合约策略判定）]</span></div>
+    <div class="field"><span class="label">地域</span> <span class="placeholder">[ 本市域 ]</span></div>
+    <div class="field"><a class="btn" href="#">提交（携带 X-Idempotency-Key）</a><a class="btn" href="#">取消</a>
+      <span class="note">必填留空 → 前置拦截零请求；要素非法值可提交（服务端判定，剧本对照步骤屏幕可执行）</span></div>
+  </div>
+</div>
+
+<div class="frame" id="delivery-detail">
+  <h2>画面 2：交付记录详情（抽屉；D2）</h2>
+  <div class="drawer">
+    <div class="field"><b>交付详情 · DL000009</b></div>
+    <div class="field"><span class="label">合约 / 产品</span> CO000026 / 企业信用数据集</div>
+    <div class="field"><span class="label">形态 / 结果</span> 文件交付 / 成功</div>
+    <div class="field"><span class="label">发起方 / 提供方</span> S…星河 / S…蓝天</div>
+    <div class="field"><span class="label">文件名 / 大小</span> credit-dataset.pkg / 2.4 MB</div>
+    <div class="field"><span class="label">校验值（SM3）</span> <span class="placeholder">9f86d081…2474</span> <a class="btn" href="#">复制</a></div>
+    <div class="field"><a class="btn" href="#"><b>下载加密包</b></a>
+      <span class="note">仅 FILE / 沙箱导出形态 + 当前主体 == 发起方（需求方）时显示；下载密文落盘后提示"请以校验值比对完整性（SM3）"。
+      页面<b>零展示文件内容与数据原文</b>（行为 7 规则 4）。</span></div>
+    <div class="field note">非参与方查看 → 与"记录不存在"同码同文（1009C0007，防枚举）。</div>
+  </div>
+  <div class="note" style="clear:both">治理档查看同一记录走「交付治理」页（画面 7），读即留痕。</div>
+</div>
+
+<div class="frame" id="sandboxes">
+  <h2>画面 3：沙箱任务页（/sandboxes，登录可见）</h2>
+  <div class="section"><b>过滤栏 + 列表</b>（S3 分页）
+    <div class="field">合约编号 <span class="placeholder">[ __________ ]</span>
+      状态 <span class="placeholder">[ 全部 ▾ ｜ 运行中 ｜ 已关闭 ｜ 已到期 ]</span>
+      <a class="btn" href="#">查询</a><a class="btn" href="#">重置</a>
+      <a class="btn" href="#request-sandbox" style="float:right"><b>申请沙箱</b></a></div>
+    <table>
+      <tr><th>任务编号</th><th>合约编号</th><th>产品</th><th>需求方</th><th>提供方</th><th>状态</th><th>配额</th><th>到期时间</th><th>关闭原因</th><th>操作</th></tr>
+      <tr><td>SB000006</td><td>CO000026</td><td>企业信用数据集</td><td>S…星河</td><td>S…蓝天</td><td><span class="tag tag-ok">运行中</span></td><td>2C·2048MB·7200S</td><td>10-25 1x:xx</td><td>—</td><td><a class="btn" href="#sandbox-detail">详情</a></td></tr>
+      <tr><td>SB000004</td><td>CO000026</td><td>企业信用数据集</td><td>S…星河</td><td>S…蓝天</td><td><span class="tag">已关闭</span></td><td>2C·2048MB·7200S</td><td>—</td><td>需求方主动关闭</td><td><a class="btn" href="#sandbox-detail">详情</a></td></tr>
+    </table>
+    <div class="field note">申请被拒（未生效 / 已终止合约、API 形态合约）→ 后端文案原样（1008C0013 同语义域 / 形态不符），不创建任务。</div>
+  </div>
+  <div class="modal" id="request-sandbox"><h3>申请沙箱（弹窗；幂等键同画面 1 机制）</h3>
+    <div class="field"><span class="label">合约编号 *</span> <span class="placeholder">[ CO000026 __________ ]</span> <a class="btn" href="#">检索生效合约</a></div>
+    <div class="field warn">提示（G1 口径，常驻）：沙箱仅接受数据集 / 报告 / 模型形态的合约；API 形态合约申请将被拒绝（判定在服务端）。</div>
+    <div class="field"><a class="btn" href="#">提交（X-Idempotency-Key）</a><a class="btn" href="#">取消</a>
+      <span class="note">成功 → 跳转任务详情页（画面 4）</span></div>
+  </div>
+</div>
+
+<div class="frame" id="sandbox-detail">
+  <h2>画面 4：沙箱任务详情页 · 上半（深链 /sandboxes/:sandboxNo）—— 基本信息与配额生命周期 + 沙箱工作台</h2>
+  <div class="section"><b>A 基本信息与配额生命周期</b>（S2）
+    <div class="field"><span class="label">任务 / 合约 / 产品</span> SB000006 / CO000026 / 企业信用数据集　状态 <span class="tag tag-ok">运行中</span></div>
+    <div class="field"><span class="label">需求方 / 提供方</span> S…星河 / S…蓝天</div>
+    <div class="field"><span class="label">资源配额</span> 2 vCPU · 2048 MB · TTL 7200 秒　到期时间 10-25 1x:xx　数据文件数 3</div>
+    <div class="field"><a class="btn btn-danger" href="#">关闭任务</a>
+      <span class="note">仅"运行中"显示；已关闭 / 已到期隐藏（此后操作一律被服务端拒 1009C0011）</span></div>
+  </div>
+  <div class="section"><b>B 沙箱工作台</b>
+    <div class="field warn">诚实边界（常驻）：沙箱内可读可算，数据本体不可带出；唯一出口 = 审核通过后导出。</div>
+    <div class="field"><a class="btn" href="#run-job"><b>运行作业</b></a> <span class="note">（仅"运行中"可用）</span></div>
+    <table>
+      <tr><th>作业编号</th><th>作业</th><th>状态</th><th>退出码</th><th>时长</th><th>用途</th><th>地域</th><th>时间</th></tr>
+      <tr><td>JOB000012</td><td>数据集画像</td><td><span class="tag tag-ok">成功</span></td><td>0</td><td>4.2 s</td><td>风控建模</td><td>本市域</td><td>10-25 0x:xx</td></tr>
+      <tr><td>JOB000011</td><td>输入清单</td><td><span class="tag tag-warn">被拒（策略越界）</span></td><td>—</td><td>—</td><td>营销外呼</td><td>本市域</td><td>10-25 0x:xx</td></tr>
+    </table>
+    <div class="field note">用途 / 地域自由填写（服务端按合约策略判定）：约定外用途 → 原样展示合约域出站文案（1008C0020，越界不触达数据、零计数）。</div>
+  </div>
+  <div class="modal" id="run-job"><h3>运行作业（弹窗；幂等键）</h3>
+    <div class="field"><span class="label">作业 *</span> <span class="placeholder">[ 数据集画像 ▾ ｜ 输入清单 ]</span> <span class="note">（白名单二项，源自服务配置）</span></div>
+    <div class="field"><span class="label">用途</span> <span class="placeholder">[ 风控建模 ]</span>　<span class="label" style="width:auto">地域</span> <span class="placeholder">[ 本市域 ]</span></div>
+    <div class="field"><a class="btn" href="#">提交</a><a class="btn" href="#">取消</a></div>
+  </div>
+</div>
+
+<div class="frame">
+  <h2>画面 5：沙箱任务详情页 · 下半 —— 结果物区（提交审核 / 导出）+ 导出记录</h2>
+  <div class="section"><b>D 结果物</b>（S7）
+    <table>
+      <tr><th>文件名</th><th>大小</th><th>SM3</th><th>时间</th><th>状态</th><th>结论</th><th>驳回理由</th><th>轮次</th><th>操作</th></tr>
+      <tr><td>profile-report.csv</td><td>18 KB</td><td>5fe2…a1</td><td>10-25 0x</td><td><span class="tag tag-ok">已通过</span></td><td>通过</td><td>—</td><td>2</td><td><span class="dis">提交审核（已通过不可再提交）</span> <a class="btn" href="#export-result"><b>导出</b></a></td></tr>
+      <tr><td>model-v2.bin</td><td>964 KB</td><td>—（超大文件不提供摘要）</td><td>10-25 0x</td><td><span class="tag tag-warn">已驳回</span></td><td>驳回</td><td>样本行含原始手机号，请脱敏后重交</td><td>1</td><td><a class="btn" href="#">提交审核（重新提交，轮次+1）</a> <span class="dis">导出</span></td></tr>
+      <tr><td>summary.txt</td><td>2 KB</td><td>ab31…c9</td><td>10-25 0x</td><td><span class="tag tag-info">待审核</span></td><td>—</td><td>—</td><td>1</td><td><span class="dis">提交审核（审核中）</span> <span class="dis">导出</span></td></tr>
+      <tr><td>draft-notes.md</td><td>1 KB</td><td>77de…0f</td><td>10-25 0x</td><td>未登记</td><td>—</td><td>—</td><td>—</td><td><a class="btn" href="#">提交审核</a> <span class="dis">导出</span></td></tr>
+    </table>
+    <div class="field note">按钮显隐唯一依据 = 后端 status（ADR-025 状态机）：未登记 / 已驳回可提交；待审核禁用；已通过不可再提交。
+      导出仅"已通过"可用（体验层提示；判定在服务端 1009C0016）。<b>本区零展示任何数据本体与原文</b>（C-5.2 S3-11）。</div>
+  </div>
+  <div class="modal" id="export-result"><h3>导出结果物（弹窗；幂等键；仅"已通过"）</h3>
+    <div class="field"><span class="label">结果物</span> profile-report.csv（已通过 · 轮次 2）</div>
+    <div class="field"><span class="label">用途（可选）</span> <span class="placeholder">[ 风控建模 ]</span>　<span class="label" style="width:auto">地域（可选）</span> <span class="placeholder">[ 本市域 ]</span>
+      <span class="note">（审核通过 ≠ 免策略——导出仍受合约策略校验，越界原样被拒）</span></div>
+    <div class="field"><a class="btn" href="#">提交（X-Idempotency-Key）</a><a class="btn" href="#">取消</a>
+      <span class="note">成功 → 生成沙箱导出记录（下方）+ 交付记录页可见 DL 行；加密包在交付记录详情领取</span></div>
+  </div>
+  <div class="section"><b>E 导出记录</b>（S10 分页）
+    <table>
+      <tr><th>导出编号</th><th>合约</th><th>结果物</th><th>文件名</th><th>大小</th><th>SM3</th><th>结果</th><th>时间</th></tr>
+      <tr><td>DL000007</td><td>CO000026</td><td>profile-report.csv</td><td>profile-report.csv.pkg</td><td>18 KB</td><td>5fe2…a1</td><td><span class="tag tag-ok">成功</span></td><td>10-24 22:0x</td></tr>
+    </table>
+    <div class="field note">加密包领取入口 = 交付记录页详情（画面 2"下载加密包"）。</div>
+  </div>
+</div>
+
+<div class="frame" id="governance-review">
+  <h2>画面 6：交付治理页 · Tab1 导出审批（/delivery-governance，admin）</h2>
+  <div class="tabs"><span class="on">导出审批</span><span>交付记录治理</span></div>
+  <div class="field warn">读即留痕提示（常驻）：治理查看与审核动作均产生留痕。</div>
+  <div class="section"><b>沙箱治理列表</b>（G1，过滤：合约 / 状态）
+    <table>
+      <tr><th>任务编号</th><th>合约</th><th>需求方</th><th>状态</th><th>待审核结果物</th><th>操作</th></tr>
+      <tr><td>SB000006</td><td>CO000026</td><td>S…星河</td><td><span class="tag tag-ok">运行中</span></td><td>1</td><td><a class="btn" href="#gov-detail">治理详情</a></td></tr>
+    </table>
+  </div>
+  <div class="section" id="gov-detail"><b>治理详情 · SB000006</b>（G2 + 结果物 + 审核留痕）
+    <table>
+      <tr><th>文件名</th><th>状态</th><th>轮次</th><th>操作</th></tr>
+      <tr><td>summary.txt</td><td><span class="tag tag-info">待审核</span></td><td>1</td><td><a class="btn" href="#review-modal"><b>审核</b></a></td></tr>
+      <tr><td>model-v2.bin</td><td><span class="tag tag-warn">已驳回</span></td><td>1</td><td><span class="dis">审核（结论已作出，不可修改；纠错走需求方重新提交）</span></td></tr>
+    </table>
+    <div class="field"><b>审核留痕</b>（G4，含轮次）</div>
+    <table>
+      <tr><th>结果物</th><th>轮次</th><th>结论</th><th>理由</th><th>审核人</th><th>时间</th></tr>
+      <tr><td>profile-report.csv</td><td>1</td><td>驳回</td><td>首版样本含原始手机号</td><td>运营管理员</td><td>10-25 0x:xx</td></tr>
+      <tr><td>profile-report.csv</td><td>2</td><td>通过</td><td>—</td><td>运营管理员</td><td>10-25 0x:xx</td></tr>
+    </table>
+  </div>
+  <div class="modal" id="review-modal"><h3>审核（弹窗；仅"待审核"结果物）</h3>
+    <div class="field"><span class="label">结论 *</span> <span class="placeholder">[ ○ 通过　● 驳回 ]</span></div>
+    <div class="field"><span class="label">理由（驳回时必填）</span> <span class="placeholder">[ 样本行含原始手机号，请脱敏后重新提交（≤256 字，实时计数 18/256）]</span></div>
+    <div class="field warn">结论一经作出不可修改；纠错走需求方重新提交（轮次 +1）流程。</div>
+    <div class="field"><a class="btn" href="#">提交</a><a class="btn" href="#">取消</a></div>
+  </div>
+</div>
+
+<div class="frame" id="governance-delivery">
+  <h2>画面 7：交付治理页 · Tab2 交付记录治理（+ 动作留痕区，Q5-A）</h2>
+  <div class="tabs"><span>导出审批</span><span class="on">交付记录治理</span></div>
+  <div class="field warn">读即留痕提示（常驻）。</div>
+  <div class="section"><b>交付治理列表</b>（G5，过滤：合约 / 交付编号；含 orderBy）—— 列同画面 1；行操作「详情」= 治理视角抽屉（同画面 2 字段，<b>无"下载加密包"按钮</b>——治理面不领取加密包）。</div>
+  <div class="section"><b>动作留痕区（Q5-A 新端点 G7；承载 C-5.1 S3-7"查看被拒的越权探测记录"）</b>
+    <table>
+      <tr><th>操作人</th><th>时间</th><th>对象</th><th>动作</th><th>结果码</th></tr>
+      <tr><td>S…蓝天（提供方）</td><td>10-25 0x:xx</td><td>CO000026</td><td>发起交付（代发起）</td><td><span class="tag tag-warn">被拒（发起主体唯一）</span></td></tr>
+      <tr><td>S…第三方</td><td>10-25 0x:xx</td><td>CO000026</td><td>查看交付记录</td><td><span class="tag tag-warn">被拒（同码同文·防枚举）</span></td></tr>
+    </table>
+    <div class="field note">可见范围 = 合约参与方 + 治理例外；非参与方与"不存在"同码同文；留痕只含四要素与结果码，零本体零原文。
+      （Q5 若采 B = 不新增端点，本区不实现，S3-7 转技术侧配合项。）</div>
+  </div>
+</div>
+
+<div class="frame">
+  <h2>画面 8：走查路径速览（两剧本界面步骤串联）</h2>
+  <div class="field">C-5.1（数据交付）：画面 1 发起（API / 文件）→ 画面 2 详情 / 校验值 / 下载 → 幂等重放（同弹窗重复提交）→ 画面 7 治理查看。</div>
+  <div class="field">C-5.2（数据沙箱）：画面 3 申请 → 画面 4 工作台运行作业（用途越界被拒演示）→ 画面 5 提交审核 → 画面 6 运营审核（通过 / 驳回含理由）→ 画面 5 导出（已通过）+ 导出记录 → 画面 2 领取加密包。</div>
+  <div class="field note">技术侧配合项（界面不承载，剧本已标注）：网关合规 API 调用（S1-2）、/data/** 直取被拒（S2-2）、跨任务访问（S2-3）、绕过界面直调（S3-4）、对照任务代造（S3-9）。
+  "已计量"标记 = 3.7.5 未开工依赖口径（核对修订建议交 PO 裁决）。</div>
+</div>
+
+</body>
+</html>

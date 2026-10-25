@@ -1,6 +1,7 @@
 package com.ctds.delivery.interfaces.dto;
 
 import com.ctds.delivery.domain.Delivery;
+import com.ctds.delivery.domain.DeliveryActionLog;
 import java.time.LocalDateTime;
 
 /** 交付记录读面（不含路径、keyRef、文件本体与原文）。 */
@@ -33,6 +34,17 @@ public final class DeliveryViews {
                     delivery.requesterNo(), delivery.providerNo(), delivery.fileName(),
                     delivery.fileSize(), delivery.checksum(), delivery.result(),
                     delivery.createdAt());
+        }
+    }
+
+    /** 动作留痕视图（WBS-3.5.6 Q5-A G7：谁 / 何时 / 对象 / 动作 / 结果码；无本体无路径无密钥）。 */
+    public record ActionLogView(Long id, String deliveryNo, String contractNo, String operatorNo,
+            String action, String result, String reasonCode, LocalDateTime createdAt) {
+
+        public static ActionLogView from(final DeliveryActionLog log) {
+            return new ActionLogView(log.id(), log.deliveryNo(), log.contractNo(),
+                    log.operatorNo(), log.action(), log.result(), log.reasonCode(),
+                    log.createdAt());
         }
     }
 }

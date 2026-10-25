@@ -115,6 +115,25 @@ public class SandboxQueryService {
         return PageResult.of(list, total, page);
     }
 
+    /** 治理结果物元数据（运营方；读即留痕；无内容、无路径；含审核状态 / 结论 / 驳回理由 / 轮次）。 */
+    public List<ResultView> governanceResults(final String sandboxNo, final String operatorNo) {
+        final SandboxTask task = repository.findBySandboxNo(safeSandboxNo(sandboxNo))
+                .orElseThrow(() -> {
+                    audit.denied(SandboxAuditActions.DENIED, sandboxNo, null, null, operatorNo,
+                            SandboxErrorCodes.SANDBOX_NOT_VISIBLE.value());
+                    return notVisible();
+                });
+        audit.success(SandboxAuditActions.GOVERNANCE_READ, task.sandboxNo(), null,
+                task.contractNo(), operatorNo);
+        final Map<String, SandboxResult> registrations =
+                resultRepository.findBySandbox(task.sandboxNo()).stream()
+                        .collect(Collectors.toMap(SandboxResult::fileName, Function.identity(),
+                                (left, right) -> left));
+        return workspaceStore.listResults(task.sandboxNo()).stream()
+                .map(file -> ResultView.of(file, registrations.get(file.fileName())))
+                .toList();
+    }
+
     /** 治理审核留痕列表（运营方；读即留痕；按文件 + 轮次返回）。 */
     public PageResult<ReviewView> governanceReviews(final String sandboxNo, final String fileName,
             final PageQuery page, final String operatorNo) {
