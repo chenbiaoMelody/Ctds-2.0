@@ -989,6 +989,33 @@ class SandboxResultIntegrationTest {
 
     // ---------- 辅助 ----------
 
+    /**
+     * B2 对账锚（导出侧）：SANDBOX_EXPORT 交付行数 ≡ 成功导出（check 放行）次数收敛——
+     * 放行 1 次 ≡ 行数 +1；同为已批准结果的策略拒绝路径 check 已调用但零新增行
+     * （拒绝零新增行；单点收敛 STUB checkCount 与交付行断言两信号）。
+     */
+    @Test
+    void exportRowsConvergeWithGrantedChecksAndDenialsAddNothing() throws Exception {
+        final String ok = seedRunningTask("SB300030");
+        writeResult(ok, "report.md", SECRET_MARKER);
+        submitApproved(ok, "report.md", "key-b2a-1", "key-b2a-1r");
+        final int rowsBefore = exportRowCount();
+        assertThat(STUB.checkCount()).as("放行前 check 零调用").isZero();
+
+        export(ok, "report.md", "key-b2a-1x", REQUESTER, "{\"purpose\":\"风控建模\"}");
+        assertThat(STUB.checkCount()).as("成功导出 check 放行 1 次").isEqualTo(1);
+        assertThat(exportRowCount()).as("放行 1 次 ≡ SANDBOX_EXPORT 行 +1").isEqualTo(rowsBefore + 1);
+
+        STUB.respondCheckError("1008C0020", "越界使用被拒绝，触发要素见留痕", 403);
+        final String denied = seedRunningTask("SB300031");
+        writeResult(denied, "report.md", SECRET_MARKER);
+        submitApproved(denied, "report.md", "key-b2b-1", "key-b2b-1r");
+        assertThat(codeOf(export(denied, "report.md", "key-b2b-1x", REQUESTER,
+                "{\"purpose\":\"营销外呼\"}"))).isEqualTo("1008C0020");
+        assertThat(STUB.checkCount()).as("拒绝路径 check 已调用但不放行").isEqualTo(2);
+        assertThat(exportRowCount()).as("拒绝路径零新增 SANDBOX_EXPORT 行").isEqualTo(rowsBefore + 1);
+    }
+
     private String seedRunningTask(final String sandboxNo) {
         return seedTask(sandboxNo, REQUESTER, "RUNNING");
     }

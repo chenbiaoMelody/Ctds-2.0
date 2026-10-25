@@ -100,6 +100,12 @@ public final class StubDependencyServer {
         checkBody = "{\"code\":\"" + code + "\",\"message\":\"" + message + "\"}";
     }
 
+    /** 原样返回判定响应体（check 空体负向测试，与 summary/product 原样旋钮同型）。 */
+    public void respondCheckRaw(final String body, final int status) {
+        checkStatus = status;
+        checkBody = body;
+    }
+
     public void respondProduct(final long productId, final String productType) {
         productStatus = 200;
         productBody = "{\"code\":\"0\",\"message\":\"ok\",\"data\":{\"productId\":" + productId

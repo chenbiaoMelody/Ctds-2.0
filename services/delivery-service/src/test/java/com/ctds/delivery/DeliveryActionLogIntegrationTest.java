@@ -227,6 +227,17 @@ class DeliveryActionLogIntegrationTest {
         assertThat(over.getResponse().getContentAsString()).doesNotContain("\"code\":\"0\"");
     }
 
+    /** DB-53④：pageNum 非数字 → 类型错配 400 + 1000C0001（沿 common-pagination 口径同码同文）。 */
+    @Test
+    void nonNumericPageNumRejectedAsParamInvalid() throws Exception {
+        final MvcResult result = getLogs("/api/v1/deliveries/" + CONTRACT + "/action-logs",
+                REQUESTER, "requester", "?pageNum=abc&pageSize=10");
+        assertThat(result.getResponse().getStatus()).isEqualTo(400);
+        final String body = result.getResponse().getContentAsString();
+        assertThat(body).contains("1000C0001").contains("参数格式不合法");
+        assertThat(body).doesNotContain("\"code\":\"0\"");
+    }
+
     @Test
     void beyondRangePageReturnsEmptyList() throws Exception {
         final MvcResult result = getLogs("/api/v1/deliveries/" + CONTRACT + "/action-logs",

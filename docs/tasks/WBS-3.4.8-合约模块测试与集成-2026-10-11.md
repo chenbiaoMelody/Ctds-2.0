@@ -103,7 +103,7 @@
 | ② 跟踪-27② 受控执行端点并发/幂等 | **预判成立：无需新增**——并发安全由引擎条件 UPDATE + t22 真并发两口径（恰 N/恰 N+1）承载；请求级幂等 ADR-020 §2.7 明文不做，联调 S1-7 真链复验同键重放返回首次结果（合约数不变）实证既有幂等组件行为 |
 | ③ 跟踪-22/移交-2 可见性收敛 | **实施归独立清债卡**——现状盘点：参与方/R9 两腿已走 `requireVisibleForRead`/`requireVisibleForReadWithAdmin` + `denyAccessAndLog` 共享守卫单点（R13 第 4 消费方已接）；残余内联 = 治理路径 2 处 `orElseThrow(NOT_VISIBLE)`（`governanceDetail`/`governanceClauseVersions`，均无越权腿）。**收敛方案草图**：提取 `requireExistingForGovernance(contractNo)` 私有方法收编两处；收益（~4 行去重）低于触碰治理留痕语义面的回归风险，行为零变更由既有 R12 矩阵锚保护 |
 | ④ 3.4.7 移交-1 模板框架强校验 | **不采（规格外）**——当前 `ClauseFramework.validate` 已覆盖结构/长度/重复/未知键四类（联调 C0004"未知槽位键"真链实证）；槽位值类型/枚举强校验超出规格行为 1 范围，若采须走变更流程另立需求 |
-| ⑤ A9 性能豁免 / A10 受控执行端点复核准备 | **豁免维持**（Q5-A）：策略判定为应用层方法（O(要素数) 纯内存 + 单行条件 UPDATE），非章程性能敏感白名单（网关/目录检索/计量流水）；正式性能归 3.5.2 网关链路与 4.2.x。**复核准备清单**：①"端点 ≡ check 判定面"核对方法 = `usage-executions` 入参 → `ExecutionCommand` → `PolicySimulationService.executeUsage` → `PolicyJudge` 单点调用链比对（联调 S2/S3 全链已实证一致）；② 退役评估项 = C-5.x 真实执行链上线后按 ADR-021 §2.10 触发受控执行端点退役评估（演示期形态，ADR-021 §2.8 诚实边界） |
+| ⑤ A9 性能豁免 / A10 受控执行端点复核准备 | **豁免维持**（Q5-A）：策略判定为应用层方法（O(要素数) 纯内存 + 单行条件 UPDATE），非章程性能敏感白名单（网关/目录检索/计量流水）；正式性能归 3.5.2 网关链路与 4.2.x。**复核准备清单**：①"端点 ≡ check 判定面"核对方法 = `usage-executions` 入参 → `ExecutionCommand` → `PolicySimulationService.executeUsage` → `PolicyJudge` 单点调用链比对（联调 S2/S3 全链已实证一致）；② 退役评估项 = C-5.x 真实执行链上线后按 ADR-021 §2.10 触发受控执行端点退役评估（演示期形态，ADR-021 §2.8 诚实边界）。**【WBS-3.5.7 复核回填（2026-10-25）】② 项触发条件已成立（3.5.2~3.5.6 闭环，C-5.x 上线）并完成评估：真实交付链判定面 = gateway → `/api/v1/contracts/internal/usage-checks` → `InternalUsageCheckService`（同判定核 `PolicyJudge` 单点，3.5.7 G1 网关真调实证）；评估结论 = **维持至 3.7.5 计量落库后再退役**（C-4.4 模拟器/测试台演示入口仍依赖该端点，退役须走变更流程不静默移除，ADR-021 §2.10；结论全文见 WBS-3.5.7 任务卡 §七件①） |
 
 ## 六、体量登记（编码交付时回填）
 

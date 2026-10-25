@@ -149,7 +149,7 @@ com.ctds.delivery（既有包）
 → 幂等查重（key = requester:idempotencyKey，落 delivery 表唯一键兜底）→ 命中返回首次导出记录
 → 登记存在且 APPROVED → 未登记/待审核/驳回 → 1009C0016（409）
 → [contract] check（USE，purpose / territory）→ 拒绝原码透传（1008C0020 等），零计数零记录零包
-→ 快照复核：listResults 当前 sizeBytes/SM3 vs 登记快照 → 不一致 1009C0016（提示重新提交审核）
+→ 快照复核：listResults 当前 sizeBytes/SM3 vs 登记快照 → 不一致 1009C0016（APPROVED 登记遇文件被覆盖后不可重新提交——仅 未登记/REJECTED 可提交〔实测 409 1009C0016〕；恢复路径 = 确定性作业重跑恢复一致 / 新开任务，WBS-3.5.7 DB-65 勘正与状态机口径对齐）
 → 读工作区文件 → 大小复核 ≤ max-bytes → 1009C0008
 → SM4 加密（common-crypto，key-ref 复用 ctds.delivery.file.key-ref）→ packageId = <deliveryNo>.sm4 → FilePackageStore 存储
 → 取号 DV（delivery_no_seq 复用）→ INSERT delivery（type=SANDBOX_EXPORT，sandbox_no / result_name /
