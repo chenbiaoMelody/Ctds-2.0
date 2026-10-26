@@ -61,11 +61,12 @@ class UsageControlFailClosedTest {
     void 越界使用_平台拒绝_原码原文透传且不重试() {
         server.expect(ExpectedCount.once(), requestTo(URL))
                 .andRespond(withStatus(HttpStatus.FORBIDDEN).contentType(MediaType.APPLICATION_JSON)
-                        .body("{\"code\":\"1008C0020\",\"message\":\"使用越界，已拒绝\",\"traceId\":\"t2\"}"));
+                        .body("{\"code\":\"1008C0020\",\"message\":\"越界使用被拒绝，触发要素见留痕\","
+                                + "\"traceId\":\"t2\"}"));
         assertThatThrownBy(() -> usage.executeUsage(REQUEST))
                 .isInstanceOfSatisfying(ConnectorException.class, e -> {
                     assertThat(e.platformCode()).isEqualTo("1008C0020");
-                    assertThat(e.platformMessage()).isEqualTo("使用越界，已拒绝");
+                    assertThat(e.platformMessage()).isEqualTo("越界使用被拒绝，触发要素见留痕");
                     assertThat(e.sdkErrorType()).isNull();
                 });
         server.verify();
@@ -75,10 +76,13 @@ class UsageControlFailClosedTest {
     void 合约未生效_状态门槛拒绝_原码透传() {
         server.expect(requestTo(URL))
                 .andRespond(withStatus(HttpStatus.CONFLICT).contentType(MediaType.APPLICATION_JSON)
-                        .body("{\"code\":\"1008C0013\",\"message\":\"合约状态不允许该操作\",\"traceId\":\"t3\"}"));
+                        .body("{\"code\":\"1008C0013\",\"message\":\"合约当前状态不允许该操作\","
+                                + "\"traceId\":\"t3\"}"));
         assertThatThrownBy(() -> usage.executeUsage(REQUEST))
-                .isInstanceOfSatisfying(ConnectorException.class,
-                        e -> assertThat(e.platformCode()).isEqualTo("1008C0013"));
+                .isInstanceOfSatisfying(ConnectorException.class, e -> {
+                    assertThat(e.platformCode()).isEqualTo("1008C0013");
+                    assertThat(e.platformMessage()).isEqualTo("合约当前状态不允许该操作");
+                });
         server.verify();
     }
 
@@ -98,13 +102,32 @@ class UsageControlFailClosedTest {
     }
 
     @Test
-    void 被交付资源不存在_404透传() {
+    void 产品不存在或未在架_404透传() {
         server.expect(requestTo(URL))
                 .andRespond(withStatus(HttpStatus.NOT_FOUND).contentType(MediaType.APPLICATION_JSON)
-                        .body("{\"code\":\"1007C0005\",\"message\":\"产品不存在\",\"traceId\":\"t4\"}"));
+                        .body("{\"code\":\"1007C0011\",\"message\":\"产品不存在或未在架\","
+                                + "\"traceId\":\"t4\"}"));
         assertThatThrownBy(() -> usage.executeUsage(REQUEST))
-                .isInstanceOfSatisfying(ConnectorException.class,
-                        e -> assertThat(e.platformCode()).isEqualTo("1007C0005"));
+                .isInstanceOfSatisfying(ConnectorException.class, e -> {
+                    assertThat(e.platformCode()).isEqualTo("1007C0011");
+                    assertThat(e.platformMessage()).isEqualTo("产品不存在或未在架");
+                });
+        server.verify();
+    }
+
+    @Test
+    void 判定服务不可用_503原码透传_绝不放行() {
+        server.expect(ExpectedCount.once(), requestTo(URL))
+                .andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"code\":\"1009S0001\",\"message\":\"策略判定服务暂不可用，请求未放行\","
+                                + "\"traceId\":\"t7\"}"));
+        assertThatThrownBy(() -> usage.executeUsage(REQUEST))
+                .isInstanceOfSatisfying(ConnectorException.class, e -> {
+                    assertThat(e.platformCode()).isEqualTo("1009S0001");
+                    assertThat(e.platformMessage()).isEqualTo("策略判定服务暂不可用，请求未放行");
+                    assertThat(e.sdkErrorType()).isNull();
+                });
         server.verify();
     }
 

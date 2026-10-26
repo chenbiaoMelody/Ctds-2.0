@@ -42,9 +42,11 @@ class ConnectorSdkBuilderTest {
         assertThat(CONTEXT.connectorNo()).isNull();
         assertThat(CONTEXT.subjectNo()).isEqualTo("S001");
         assertThatThrownBy(() -> new ConnectorContext(null, "did:ctds:S001", null))
-                .isInstanceOf(ConnectorException.class);
+                .isInstanceOfSatisfying(ConnectorException.class,
+                        e -> assertThat(e.sdkErrorType()).isEqualTo(SdkErrorType.CONFIG));
         assertThatThrownBy(() -> new ConnectorContext("S001", " ", null))
-                .isInstanceOf(ConnectorException.class);
+                .isInstanceOfSatisfying(ConnectorException.class,
+                        e -> assertThat(e.sdkErrorType()).isEqualTo(SdkErrorType.CONFIG));
     }
 
     @Test
@@ -63,8 +65,12 @@ class ConnectorSdkBuilderTest {
         assertThat(sdk.context()).isEqualTo(CONTEXT);
     }
 
+    /**
+     * 超时值由 PlatformClient 私有持有，单测不断言具体数值（避免反射脆性）；
+     * 超时行为语义由 {@code UsageControlFailClosedTest#平台调用超时_中性分类TIMEOUT} 承载。
+     */
     @Test
-    void 超时可覆盖_缺省2秒与10秒() {
+    void 超时可覆盖_构建成功且六门面可用() {
         ConnectorSdk sdk = ConnectorSdk.builder()
                 .baseUrl("http://platform.test")
                 .tokenProvider(TOKEN)

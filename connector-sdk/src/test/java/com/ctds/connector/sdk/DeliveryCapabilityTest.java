@@ -74,12 +74,13 @@ class DeliveryCapabilityTest {
     void API型交付_越界拒绝_原码透传且不重试() {
         server.expect(ExpectedCount.once(), requestTo(BASE + "/api/v1/data-products/601"))
                 .andRespond(withStatus(HttpStatus.FORBIDDEN).contentType(MediaType.APPLICATION_JSON)
-                        .body("{\"code\":\"1008C0020\",\"message\":\"使用越界，已拒绝\",\"traceId\":\"t2\"}"));
+                        .body("{\"code\":\"1008C0020\",\"message\":\"越界使用被拒绝，触发要素见留痕\","
+                                + "\"traceId\":\"t2\"}"));
         assertThatThrownBy(() -> delivery.requestApiDelivery(
                 new ProductAccessRequest(601L, "CT001", "数据分析", "境内")))
                 .isInstanceOfSatisfying(ConnectorException.class, e -> {
                     assertThat(e.platformCode()).isEqualTo("1008C0020");
-                    assertThat(e.platformMessage()).isEqualTo("使用越界，已拒绝");
+                    assertThat(e.platformMessage()).isEqualTo("越界使用被拒绝，触发要素见留痕");
                     assertThat(e.sdkErrorType()).isNull();
                 });
         server.verify();
@@ -142,11 +143,14 @@ class DeliveryCapabilityTest {
     void 文件型交付_合约状态门槛拒绝_原码透传() {
         server.expect(requestTo(BASE + "/api/v1/deliveries"))
                 .andRespond(withStatus(HttpStatus.CONFLICT).contentType(MediaType.APPLICATION_JSON)
-                        .body("{\"code\":\"1008C0013\",\"message\":\"合约状态不允许该操作\",\"traceId\":\"t3\"}"));
+                        .body("{\"code\":\"1008C0013\",\"message\":\"合约当前状态不允许该操作\","
+                                + "\"traceId\":\"t3\"}"));
         assertThatThrownBy(() -> delivery.requestFileDelivery(
                 new FileDeliveryRequest("CT001", "F-001", "数据分析", "境内", "idem-42")))
-                .isInstanceOfSatisfying(ConnectorException.class,
-                        e -> assertThat(e.platformCode()).isEqualTo("1008C0013"));
+                .isInstanceOfSatisfying(ConnectorException.class, e -> {
+                    assertThat(e.platformCode()).isEqualTo("1008C0013");
+                    assertThat(e.platformMessage()).isEqualTo("合约当前状态不允许该操作");
+                });
         server.verify();
     }
 

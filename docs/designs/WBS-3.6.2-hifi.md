@@ -131,7 +131,7 @@ UsageSummaryView      getUsageSummary(String contractNo);
 | T8 | 文件型交付幂等键 | **必填**（缺失 / 非法 → CONFIG 且不发起调用）+ 原值头发送（不编码；平台按 `[A-Za-z0-9._-]{1,128}` 校验） |
 | T9 | **executeUsage 放行**（行为 5 标准 1） | 2xx → 成功结果（双向用例之一） |
 | T10 | **executeUsage 越界拒绝**（行为 5 标准 2） | 网关交付面 mock 403 + `1008C0020` → ConnectorException 原码原文 + **调用计数 = 1（不重试）**（双向用例之二） |
-| T11 | **executeUsage 不可达**（行为 5 规则 2） | mock 网络错误 → UNREACHABLE，断言绝无成功返回（fail-closed） |
+| T11 | **executeUsage 不可达**（行为 5 规则 2） | mock 网络错误 → UNREACHABLE，断言绝无成功返回（fail-closed）；**另覆盖判定服务不可达**：网关 503 + `1009S0001` → 原码原文透传（绝不放行） |
 | T12 | executeUsage 超时 | mock `SocketTimeoutException` → TIMEOUT |
 | T13 | 平台非 2xx 统一响应透传 | 404 / 409（合约状态门槛）原码原文到达 |
 | T14 | SPI 契约 | SourceType 四枚举齐；SourceCheckResult 三类失败原因枚举齐 |

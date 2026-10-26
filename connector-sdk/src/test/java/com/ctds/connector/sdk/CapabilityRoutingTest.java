@@ -6,6 +6,7 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import com.ctds.connector.sdk.model.CreateContractCommand;
@@ -17,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
@@ -60,6 +62,7 @@ class CapabilityRoutingTest {
     void 身份腿_查DID状态_平台ResolutionView字段() {
         server.expect(requestTo(BASE + "/api/v1/did/did:ctds:S001"))
                 .andExpect(method(HttpMethod.GET))
+                .andExpect(header("Authorization", "Bearer tok-1"))
                 .andRespond(withSuccess(ok("{\"did\":\"did:ctds:S001\",\"status\":\"ACTIVE\","
                         + "\"document\":{\"@context\":[\"https://www.w3.org/ns/did/v1\"]}}"),
                         MediaType.APPLICATION_JSON));
@@ -118,6 +121,7 @@ class CapabilityRoutingTest {
                 .andExpect(method(HttpMethod.POST))
                 .andExpect(jsonPath("$.datasetId").value(501))
                 .andExpect(jsonPath("$.productName").value("信用数据 API"))
+                .andExpect(jsonPath("$.intro").value("按次调用"))
                 .andExpect(jsonPath("$.productType").value("API"))
                 .andExpect(jsonPath("$.pricingModel").value("PER_CALL"))
                 .andExpect(jsonPath("$.priceAmount").value(10.00))
@@ -141,6 +145,7 @@ class CapabilityRoutingTest {
     void 产品腿_查我的产品_返回平台分页信封() {
         server.expect(requestTo(BASE + "/api/v1/data-products/mine?pageNum=1&pageSize=10"))
                 .andExpect(method(HttpMethod.GET))
+                .andExpect(header("Authorization", "Bearer tok-1"))
                 .andRespond(withSuccess(ok("{\"list\":[{\"productId\":601,"
                         + "\"productName\":\"信用数据 API\",\"intro\":\"按次调用\",\"productType\":\"API接口\","
                         + "\"pricingModel\":\"按次\",\"priceAmount\":\"10.00\",\"status\":\"已上架\","
@@ -162,9 +167,11 @@ class CapabilityRoutingTest {
                 .andExpect(jsonPath("$.templateNo").value("TPL-001"))
                 .andExpect(jsonPath("$.templateVersionNo").value(1))
                 .andExpect(jsonPath("$.clauseValues.slots.purpose").value("数据分析"))
-                .andRespond(withSuccess(ok("{\"contractNo\":\"CT20261001001\",\"status\":\"NEGOTIATING\","
-                        + "\"clauseVersionNo\":1,\"templateNo\":\"TPL-001\",\"templateVersionNo\":1,"
-                        + "\"productId\":601}"), MediaType.APPLICATION_JSON));
+                .andRespond(withStatus(HttpStatus.CREATED)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body(ok("{\"contractNo\":\"CT20261001001\",\"status\":\"NEGOTIATING\","
+                                + "\"clauseVersionNo\":1,\"templateNo\":\"TPL-001\","
+                                + "\"templateVersionNo\":1,\"productId\":601}")));
         server.expect(requestTo(BASE + "/api/v1/contracts/CT20261001001"))
                 .andExpect(method(HttpMethod.GET))
                 .andRespond(withSuccess(ok("{\"contractNo\":\"CT20261001001\",\"productId\":601,"
