@@ -36,6 +36,9 @@ ctds:
       # contract-internal 仅持签名专用点 did.demo.signature（不外借 did.admin 管理权限）。
       admin: did.admin,did.demo.signature
       contract-internal: did.demo.signature
+      # 连接器服务间只读衔接（WBS-3.6.3 hifi §8-②，ADR-017 补记）：仅持内部只读点 did.internal.read，
+      # 不外借 did.admin 管理面（防服务身份越权读取/吊销）
+      connector-internal: did.internal.read
   # DID → KMS 密钥对托管调用（内部回环，ADR-016 §2.7）；未配置则签发停留待签发
   did:
     kms:
