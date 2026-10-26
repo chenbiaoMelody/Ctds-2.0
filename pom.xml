@@ -27,6 +27,8 @@
     <module>common/crypto</module>
     <module>common/idempotency</module>
     <module>std-adapter</module>
+    <!-- 连接器 SDK 骨架（WBS 3.6.2；ADR-002 §3-1 规划位，V1.0 期间 monorepo 内开发）：参与方接入客户端库 -->
+    <module>connector-sdk</module>
     <module>services/example-service</module>
     <module>services/kms</module>
     <module>services/subject-service</module>
@@ -104,6 +106,12 @@
       <dependency>
         <groupId>com.ctds</groupId>
         <artifactId>std-adapter</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <!-- 连接器 SDK（WBS 3.6.2）：供 3.6.5 / 3.6.6 适配器与 3.6.8 集成消费。 -->
+      <dependency>
+        <groupId>com.ctds</groupId>
+        <artifactId>connector-sdk</artifactId>
         <version>${project.version}</version>
       </dependency>
       <!-- 分布式锁唯一实现来源（dependencies.md 已登记；组件只封装、不自研锁协议——沿国密红线逻辑）。 -->
