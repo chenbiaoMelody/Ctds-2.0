@@ -15,14 +15,15 @@ class ConnectorOccupancyApiTest extends ConnectorTestSupport {
 
     private static final String OWNER = "S20261026000091";
 
-    private void occupyExpect(final String connectorNo, final String jobRef, final int expectedStatus)
-            throws Exception {
+    private void occupyExpect(final String connectorNo, final String jobRef, final int expectedStatus,
+            final String expectedCode) throws Exception {
         mockMvc.perform(post(INTERNAL + connectorNo + "/occupancies")
                         .contentType(MediaType.APPLICATION_JSON)
                         .header("X-Ctds-Subject", "delivery-service")
                         .header("X-Ctds-Roles", INTERNAL_ROLE)
                         .content("{\"jobRef\":\"" + jobRef + "\"}"))
-                .andExpect(status().is(expectedStatus));
+                .andExpect(status().is(expectedStatus))
+                .andExpect(jsonPath("$.code").value(expectedCode));
     }
 
     @Test
@@ -123,12 +124,39 @@ class ConnectorOccupancyApiTest extends ConnectorTestSupport {
     void occupyOnCanceledConnectorRejected() throws Exception {
         final String connectorNo = registerConnector(OWNER, "conn-a");
         cancel(OWNER, APPLICANT_ROLE, connectorNo);
-        occupyExpect(connectorNo, "job-1", 400);
+        occupyExpect(connectorNo, "job-1", 400, "1010C0004");
     }
 
     @Test
     void occupyOnUnknownConnectorRejected() throws Exception {
-        occupyExpect("CN999999", "job-1", 400);
+        occupyExpect("CN999999", "job-1", 400, "1010C0003");
+    }
+
+    @Test
+    void jobRefAtMaxLengthAccepted() throws Exception {
+        final String connectorNo = registerConnector(OWNER, "conn-a");
+        occupy(connectorNo, "j".repeat(64));
+        mockMvc.perform(get(INTERNAL + connectorNo + "/occupancies")
+                        .header("X-Ctds-Subject", "delivery-service")
+                        .header("X-Ctds-Roles", INTERNAL_ROLE))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].jobRef").value("j".repeat(64)));
+    }
+
+    @Test
+    void businessRoleForbiddenOnInternalReadAndRelease() throws Exception {
+        final String connectorNo = registerConnector(OWNER, "conn-a");
+        occupy(connectorNo, "job-1");
+        mockMvc.perform(get(INTERNAL + connectorNo + "/occupancies")
+                        .header("X-Ctds-Subject", OWNER)
+                        .header("X-Ctds-Roles", APPLICANT_ROLE))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("1000C0005"));
+        mockMvc.perform(delete(INTERNAL + connectorNo + "/occupancies/job-1")
+                        .header("X-Ctds-Subject", OWNER)
+                        .header("X-Ctds-Roles", APPLICANT_ROLE))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("1000C0005"));
     }
 
     @Test

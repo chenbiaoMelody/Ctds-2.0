@@ -99,6 +99,15 @@ class ConnectorLifecycleApiTest extends ConnectorTestSupport {
     }
 
     @Test
+    void lifecycleOfUnknownConnectorRejected() throws Exception {
+        mockMvc.perform(get(CONNECTORS + "CN999999" + "/lifecycle")
+                        .header("X-Ctds-Subject", OWNER)
+                        .header("X-Ctds-Roles", APPLICANT_ROLE))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("1010C0003"));
+    }
+
+    @Test
     void reregistrationAfterCancellationGetsNewNumber() throws Exception {
         final String oldConnectorNo = registerConnector(OWNER, "conn-a");
         cancel(OWNER, APPLICANT_ROLE, oldConnectorNo);

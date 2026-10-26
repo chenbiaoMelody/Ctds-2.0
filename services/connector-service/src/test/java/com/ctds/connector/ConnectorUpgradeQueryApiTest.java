@@ -1,5 +1,6 @@
 package com.ctds.connector;
 
+import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -99,8 +100,28 @@ class ConnectorUpgradeQueryApiTest extends ConnectorTestSupport {
                 .andExpect(jsonPath("$.data.total").value(2))
                 .andExpect(jsonPath("$.data.list[0].toVersion").value("2.0.0"))
                 .andExpect(jsonPath("$.data.list[0].status").value("PENDING_CONFIRM"))
+                .andExpect(jsonPath("$.data.list[0].fromVersion").value("1.1.0"))
+                .andExpect(jsonPath("$.data.list[0].compatibility").value("INCOMPATIBLE"))
+                .andExpect(jsonPath("$.data.list[0].confirmedBy").value(nullValue()))
+                .andExpect(jsonPath("$.data.list[0].appliedAt").value(nullValue()))
                 .andExpect(jsonPath("$.data.list[1].toVersion").value("1.1.0"))
-                .andExpect(jsonPath("$.data.list[1].status").value("APPLIED"));
+                .andExpect(jsonPath("$.data.list[1].status").value("APPLIED"))
+                .andExpect(jsonPath("$.data.list[1].fromVersion").value("1.0.0"))
+                .andExpect(jsonPath("$.data.list[1].compatibility").value("COMPATIBLE"))
+                .andExpect(jsonPath("$.data.list[1].confirmedBy").value(nullValue()))
+                .andExpect(jsonPath("$.data.list[1].appliedAt").isNotEmpty());
+    }
+
+    @Test
+    void confirmationRequiresOperator() throws Exception {
+        final String connectorNo = registerConnector(OWNER, "conn-a");
+        final String upgradeNo = upgrade(OWNER, APPLICANT_ROLE, connectorNo, "2.0.0", "INCOMPATIBLE")
+                .path("upgradeNo").asText();
+        mockMvc.perform(post(CONNECTORS + connectorNo + "/upgrades/" + upgradeNo + "/confirmation")
+                        .header("X-Ctds-Subject", OWNER)
+                        .header("X-Ctds-Roles", APPLICANT_ROLE))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("1000C0005"));
     }
 
     @Test

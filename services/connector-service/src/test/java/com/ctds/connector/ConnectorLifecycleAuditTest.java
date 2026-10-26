@@ -33,11 +33,14 @@ class ConnectorLifecycleAuditTest extends ConnectorTestSupport {
                 .andExpect(status().isOk());
         cancel(OWNER, APPLICANT_ROLE, connectorNo);
 
-        final List<String> actions = jdbc.queryForList("SELECT action FROM connector_action_log "
-                + "WHERE connector_no = ? ORDER BY id", String.class, connectorNo);
-        assertThat(actions).contains("connector.upgrade.applied", "connector.upgrade.requested",
-                "connector.upgrade.confirmed", "connector.occupancy.register",
-                "connector.occupancy.release", "connector.cancelled");
+        final List<String> lifecycleActions = List.of("connector.upgrade.applied",
+                "connector.upgrade.requested", "connector.upgrade.confirmed",
+                "connector.occupancy.register", "connector.occupancy.release", "connector.cancelled");
+        for (final String action : lifecycleActions) {
+            final Long rows = jdbc.queryForObject("SELECT COUNT(*) FROM connector_action_log "
+                    + "WHERE connector_no = ? AND action = ?", Long.class, connectorNo, action);
+            assertThat(rows).as("动作 %s 应恰落 1 行", action).isEqualTo(1L);
+        }
     }
 
     @Test
@@ -49,7 +52,8 @@ class ConnectorLifecycleAuditTest extends ConnectorTestSupport {
                         .header("X-Ctds-Roles", APPLICANT_ROLE))
                 .andExpect(status().isBadRequest());
         final String reasonCode = jdbc.queryForObject("SELECT reason_code FROM connector_action_log "
-                + "WHERE action = 'connector.cancelled' AND result = 'DENIED'", String.class);
+                + "WHERE connector_no = ? AND action = 'connector.cancelled' AND result = 'DENIED'",
+                String.class, connectorNo);
         assertThat(reasonCode).isEqualTo("1010C0008");
     }
 
@@ -83,8 +87,9 @@ class ConnectorLifecycleAuditTest extends ConnectorTestSupport {
         assertThat(details).allSatisfy(detail -> {
             final String lower = detail.toLowerCase();
             assertThat(lower).doesNotContain("password").doesNotContain("passwd")
-                    .doesNotContain("secret").doesNotContain("token").doesNotContain("apikey")
-                    .doesNotContain("privatekey").doesNotContain("credential")
+                    .doesNotContain("secret").doesNotContain("token").doesNotContain("key")
+                    .doesNotContain("credential").doesNotContain("pwd").doesNotContain("sign")
+                    .doesNotContain("cert")
                     .doesNotContain("密码").doesNotContain("口令").doesNotContain("密钥");
         });
     }

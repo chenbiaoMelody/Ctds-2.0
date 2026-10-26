@@ -10,7 +10,6 @@ import com.ctds.connector.support.ConnectorTestSupport;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
-import org.springframework.test.web.servlet.MvcResult;
 
 /** 升级登记与兼容分级（hifi §9 T1：行为 9 验收 1~3）。 */
 class ConnectorUpgradeApiTest extends ConnectorTestSupport {
@@ -59,7 +58,12 @@ class ConnectorUpgradeApiTest extends ConnectorTestSupport {
                         .header("X-Ctds-Subject", OWNER)
                         .header("X-Ctds-Roles", APPLICANT_ROLE))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.connectorVersion").value("1.0.0"));
+                .andExpect(jsonPath("$.data.connectorVersion").value("1.0.0"))
+                .andExpect(jsonPath("$.data.status").value("REGISTERED"));
+        mockMvc.perform(post(CONNECTORS + connectorNo + "/heartbeats")
+                        .header("X-Ctds-Subject", OWNER)
+                        .header("X-Ctds-Roles", APPLICANT_ROLE))
+                .andExpect(status().isOk());
     }
 
     @Test
@@ -161,17 +165,15 @@ class ConnectorUpgradeApiTest extends ConnectorTestSupport {
     @Test
     void upgradeIsTraced() throws Exception {
         final String connectorNo = registerConnector(OWNER, "conn-a");
-        final MvcResult result = mockMvc.perform(post(CONNECTORS + connectorNo + "/upgrades")
+        mockMvc.perform(post(CONNECTORS + connectorNo + "/upgrades")
                         .contentType(MediaType.APPLICATION_JSON)
                         .header("X-Ctds-Subject", OWNER)
                         .header("X-Ctds-Roles", APPLICANT_ROLE)
                         .content("{\"toVersion\":\"1.1.0\",\"compatibility\":\"COMPATIBLE\"}"))
-                .andExpect(status().isOk())
-                .andReturn();
+                .andExpect(status().isOk());
         final Long traces = jdbc.queryForObject("SELECT COUNT(*) FROM connector_action_log "
                 + "WHERE action = 'connector.upgrade.applied' AND connector_no = ? "
                 + "AND detail LIKE '%from=1.0.0%to=1.1.0%'", Long.class, connectorNo);
         assertThat(traces).isEqualTo(1L);
-        assertThat(result.getResponse().getStatus()).isEqualTo(200);
     }
 }

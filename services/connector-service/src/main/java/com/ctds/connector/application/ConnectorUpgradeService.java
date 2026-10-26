@@ -14,7 +14,6 @@ import com.ctds.connector.domain.ConnectorVersionChangeRepository;
 import com.ctds.connector.domain.VersionChangeStatus;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.regex.Pattern;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,8 +24,6 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class ConnectorUpgradeService {
-
-    private static final Pattern VERSION = Pattern.compile("^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}$");
 
     private final ConnectorRepository repository;
     private final ConnectorVersionChangeRepository changeRepository;
@@ -53,21 +50,22 @@ public class ConnectorUpgradeService {
         if (registration.status() != ConnectorStatus.REGISTERED) {
             throw stateNotAllowed();
         }
-        final Compatibility declared = Compatibility.parse(compatibility);
-        if (toVersion == null || !VERSION.matcher(toVersion).matches() || declared == null) {
-            throw paramInvalid();
-        }
-        if (toVersion.equals(registration.connectorVersion())) {
+        final String targetVersion = ConnectorRegistrationService.normalizeVersion(toVersion);
+        if (targetVersion.equals(registration.connectorVersion())) {
             throw new ConnectorBizException(ConnectorErrorCodes.VERSION_UNCHANGED,
                     ConnectorErrorCodes.VERSION_UNCHANGED_MESSAGE);
+        }
+        final Compatibility declared = Compatibility.parse(compatibility);
+        if (declared == null) {
+            throw paramInvalid();
         }
         if (changeRepository.findPendingByConnectorNo(connectorNo).isPresent()) {
             throw stateNotAllowed();
         }
         try {
             return declared == Compatibility.COMPATIBLE
-                    ? applyCompatible(registration, subjectNo, toVersion)
-                    : requestIncompatible(registration, subjectNo, toVersion, declared);
+                    ? applyCompatible(registration, subjectNo, targetVersion)
+                    : requestIncompatible(registration, subjectNo, targetVersion, declared);
         } catch (final DuplicateKeyException e) {
             throw stateNotAllowed();
         }
