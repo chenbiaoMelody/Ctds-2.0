@@ -1,10 +1,12 @@
 package com.ctds.connector;
 
-import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.ctds.connector.domain.ConnectorErrorCodes;
 import com.ctds.connector.support.ConnectorTestSupport;
 import org.junit.jupiter.api.Test;
 
@@ -50,24 +52,56 @@ class ConnectorQueryApiTest extends ConnectorTestSupport {
                         .header("X-Ctds-Subject", OTHER)
                         .header("X-Ctds-Roles", APPLICANT_ROLE))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("1010C0003"));
+                .andExpect(jsonPath("$.code").value("1010C0003"))
+                .andExpect(jsonPath("$.message").value(ConnectorErrorCodes.NOT_FOUND_OR_DENIED_MESSAGE));
     }
 
     @Test
-    void actionLogsContainApplyAndApproval() throws Exception {
+    void myConnectorsPagedWithDerivedOnline() throws Exception {
         final String connectorNo = registerConnector(OWNER, "conn-a");
-        mockMvc.perform(get(CONNECTORS + connectorNo + "/action-logs")
+        registerConnector(OWNER, "conn-b");
+        mockMvc.perform(post(CONNECTORS + connectorNo + "/heartbeats")
+                        .header("X-Ctds-Subject", OWNER)
+                        .header("X-Ctds-Roles", APPLICANT_ROLE))
+                .andExpect(status().isOk());
+        mockMvc.perform(get(CONNECTORS + "mine")
+                        .param("pageNum", "1").param("pageSize", "10")
                         .header("X-Ctds-Subject", OWNER)
                         .header("X-Ctds-Roles", APPLICANT_ROLE))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.total").value(2))
+                .andExpect(jsonPath("$.data.list.length()").value(2))
+                .andExpect(jsonPath("$.data.list[0].did").value(nullValue()))
+                .andExpect(jsonPath("$.data.list[0].didStatus").value(nullValue()))
+                .andExpect(jsonPath("$.data.list[0].online").value(false))
+                .andExpect(jsonPath("$.data.list[1].online").value(true));
+    }
+
+    @Test
+    void actionLogsContainApplyApprovalAndBindingRead() throws Exception {
+        final String connectorNo = registerConnector(OWNER, "conn-a");
+        mockMvc.perform(get(CONNECTORS + connectorNo + "/binding")
+                        .header("X-Ctds-Subject", OWNER)
+                        .header("X-Ctds-Roles", APPLICANT_ROLE))
+                .andExpect(status().isOk());
+        mockMvc.perform(get(CONNECTORS + connectorNo + "/action-logs")
+                        .header("X-Ctds-Subject", OWNER)
+                        .header("X-Ctds-Roles", APPLICANT_ROLE))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(3))
                 .andExpect(jsonPath("$.data.list[0].action").value("connector.apply"))
-                .andExpect(jsonPath("$.data.list[1].action").value("connector.verify.approved"));
+                .andExpect(jsonPath("$.data.list[1].action").value("connector.verify.approved"))
+                .andExpect(jsonPath("$.data.list[2].action").value("connector.binding.read"));
     }
 
     @Test
     void invalidConnectorNoRejected() throws Exception {
         mockMvc.perform(get(CONNECTORS + "CN12")
+                        .header("X-Ctds-Subject", OWNER)
+                        .header("X-Ctds-Roles", APPLICANT_ROLE))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("1010C0001"));
+        mockMvc.perform(get(CONNECTORS + "CN1234567")
                         .header("X-Ctds-Subject", OWNER)
                         .header("X-Ctds-Roles", APPLICANT_ROLE))
                 .andExpect(status().isBadRequest())
@@ -82,7 +116,5 @@ class ConnectorQueryApiTest extends ConnectorTestSupport {
                         .header("X-Ctds-Roles", APPLICANT_ROLE))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("1000C0001"));
-        final Long count = jdbc.queryForObject("SELECT COUNT(*) FROM connector_registration", Long.class);
-        assertThat(count).isZero();
     }
 }

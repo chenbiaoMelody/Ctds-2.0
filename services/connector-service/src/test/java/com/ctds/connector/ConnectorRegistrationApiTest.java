@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.ctds.connector.domain.ConnectorErrorCodes;
 import com.ctds.connector.support.ConnectorTestSupport;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
@@ -42,7 +43,8 @@ class ConnectorRegistrationApiTest extends ConnectorTestSupport {
                         .header("X-Ctds-Roles", APPLICANT_ROLE)
                         .content(registrationBody("conn-b")))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("1010C0006"));
+                .andExpect(jsonPath("$.code").value("1010C0006"))
+                .andExpect(jsonPath("$.message").value(ConnectorErrorCodes.SUBJECT_NOT_ADMITTED_MESSAGE));
         assertThat(count("connector_registration")).isZero();
     }
 
@@ -55,7 +57,9 @@ class ConnectorRegistrationApiTest extends ConnectorTestSupport {
                         .header("X-Ctds-Roles", APPLICANT_ROLE)
                         .content(registrationBody("conn-b")))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("1010C0006"));
+                .andExpect(jsonPath("$.code").value("1010C0006"))
+                .andExpect(jsonPath("$.message").value(ConnectorErrorCodes.SUBJECT_NOT_ADMITTED_MESSAGE));
+        assertThat(count("connector_registration")).isZero();
     }
 
     @Test
@@ -80,7 +84,7 @@ class ConnectorRegistrationApiTest extends ConnectorTestSupport {
                         .content("{\"connectorName\":\"a\",\"connectorType\":\"STANDARD\","
                                 + "\"connectorVersion\":\"1.0.0\"}"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("1000C0001"));
+                .andExpect(jsonPath("$.code").value("1010C0001"));
         mockMvc.perform(post(REGISTRATIONS)
                         .contentType(MediaType.APPLICATION_JSON)
                         .header("X-Ctds-Subject", OWNER)
@@ -88,7 +92,7 @@ class ConnectorRegistrationApiTest extends ConnectorTestSupport {
                         .content("{\"connectorName\":\"conn-c\",\"connectorType\":\"STANDARD\","
                                 + "\"connectorVersion\":\"1.0\"}"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("1000C0001"));
+                .andExpect(jsonPath("$.code").value("1010C0001"));
         mockMvc.perform(post(REGISTRATIONS)
                         .contentType(MediaType.APPLICATION_JSON)
                         .header("X-Ctds-Subject", OWNER)
@@ -97,6 +101,19 @@ class ConnectorRegistrationApiTest extends ConnectorTestSupport {
                                 + "\"connectorVersion\":\"1.0.0\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("1010C0001"));
+    }
+
+    @Test
+    void applyRejectsNameAboveUpperBound() throws Exception {
+        mockMvc.perform(post(REGISTRATIONS)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-Ctds-Subject", OWNER)
+                        .header("X-Ctds-Roles", APPLICANT_ROLE)
+                        .content(registrationBody("n".repeat(65))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("1010C0001"))
+                .andExpect(jsonPath("$.message").value("连接器名称长度须为 2~64 字符"));
+        assertThat(count("connector_registration")).isZero();
     }
 
     @Test
@@ -138,6 +155,12 @@ class ConnectorRegistrationApiTest extends ConnectorTestSupport {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.connectorName").value("conn-g2"))
                 .andExpect(jsonPath("$.data.connectorVersion").value("1.0.1"));
+        final String traceDetail = jdbc.queryForObject(
+                "SELECT detail FROM connector_action_log WHERE action = 'connector.amend'", String.class);
+        assertThat(traceDetail).contains("old=conn-g").contains("new=conn-g2");
+        final String traceOperator = jdbc.queryForObject(
+                "SELECT operator_no FROM connector_action_log WHERE action = 'connector.amend'", String.class);
+        assertThat(traceOperator).isEqualTo(OWNER);
         mockMvc.perform(post(REGISTRATIONS + "/" + applicationNo + "/verification")
                         .header("X-Ctds-Subject", OPERATOR)
                         .header("X-Ctds-Roles", ADMIN_ROLE))

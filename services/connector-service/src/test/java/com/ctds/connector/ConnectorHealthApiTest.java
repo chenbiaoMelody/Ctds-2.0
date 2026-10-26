@@ -44,6 +44,24 @@ class ConnectorHealthApiTest extends ConnectorTestSupport {
     }
 
     @Test
+    void heartbeatRejectedForPendingState() throws Exception {
+        final String applicationNo = apply(OWNER, "conn-pending2");
+        mockMvc.perform(post(REGISTRATIONS + "/" + applicationNo + "/verification")
+                        .header("X-Ctds-Subject", OPERATOR)
+                        .header("X-Ctds-Roles", ADMIN_ROLE));
+        final String connectorNo = jdbc.queryForObject(
+                "SELECT connector_no FROM connector_registration WHERE application_no = ?",
+                String.class, applicationNo);
+        jdbc.update("UPDATE connector_registration SET status = 'PENDING_REVIEW' WHERE connector_no = ?",
+                connectorNo);
+        mockMvc.perform(post(CONNECTORS + connectorNo + "/heartbeats")
+                        .header("X-Ctds-Subject", OWNER)
+                        .header("X-Ctds-Roles", APPLICANT_ROLE))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("1010C0004"));
+    }
+
+    @Test
     void heartbeatUnknownConnectorDenied() throws Exception {
         mockMvc.perform(post(CONNECTORS + "CN999999/heartbeats")
                         .header("X-Ctds-Subject", OWNER)

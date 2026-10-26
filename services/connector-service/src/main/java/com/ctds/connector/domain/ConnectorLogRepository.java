@@ -16,9 +16,4 @@ public interface ConnectorLogRepository {
     List<ConnectorActionLog> findByConnectorNo(String connectorNo, long offset, int limit);
 
     long countByConnectorNo(String connectorNo);
-
-    /** 申请单维度留痕（待核验态尚无连接器编号时读取）。 */
-    List<ConnectorActionLog> findByApplicationNo(String applicationNo, long offset, int limit);
-
-    long countByApplicationNo(String applicationNo);
 }

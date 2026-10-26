@@ -1,5 +1,6 @@
 package com.ctds.connector.infrastructure;
 
+import com.ctds.common.errorcode.ErrorCodes;
 import com.ctds.connector.config.ConnectorProperties;
 import com.ctds.connector.domain.SubjectAdmission;
 import com.ctds.connector.domain.SubjectAdmissionPort;
@@ -31,8 +32,8 @@ public class SubjectAdmissionClient implements SubjectAdmissionPort {
     private static final String INTERNAL_SUBJECT = "connector-service";
     private static final String INTERNAL_ROLES = "connector-internal";
     private static final String STATUS_ADMITTED = "ADMITTED";
-    /** 主体不存在的平台业务码（主体不存在 = 资格不成立，与未入驻同文防枚举）。 */
-    private static final String SUBJECT_NOT_FOUND_CODE = "1000C0003";
+    /** 主体不存在的平台业务码（主体不存在 = 资格不成立，与未入驻同文防枚举；复用 common 常量）。 */
+    private static final String SUBJECT_NOT_FOUND_CODE = ErrorCodes.RESOURCE_NOT_FOUND.value();
 
     private final String baseUrl;
     private final Duration readTimeout;

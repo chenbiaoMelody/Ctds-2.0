@@ -28,6 +28,18 @@ class ConnectorInternalApiTest extends ConnectorTestSupport {
     }
 
     @Test
+    void internalReflectsRealtimeDidStatusInsteadOfSnapshot() throws Exception {
+        final String connectorNo = registerConnector(OWNER, "conn-realtime");
+        stub().respondDid("REVOKED", "did:ctds:S20261026000051.1");
+        mockMvc.perform(get(INTERNAL + connectorNo)
+                        .header("X-Ctds-Subject", "connector-service")
+                        .header("X-Ctds-Roles", INTERNAL_ROLE))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.didStatus").value("REVOKED"))
+                .andExpect(jsonPath("$.data.verified").value(false));
+    }
+
+    @Test
     void internalReadableByAdmin() throws Exception {
         final String connectorNo = registerConnector(OWNER, "conn-b");
         mockMvc.perform(get(INTERNAL + connectorNo)

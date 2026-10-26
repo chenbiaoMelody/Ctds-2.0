@@ -1,7 +1,6 @@
 package com.ctds.connector.interfaces;
 
 import com.ctds.common.api.ApiResult;
-import com.ctds.common.errorcode.ErrorCodes;
 import com.ctds.connector.domain.ConnectorErrorCodes;
 import com.ctds.connector.domain.ConnectorUnavailableException;
 import java.util.Objects;
@@ -38,7 +37,7 @@ public class ConnectorExceptionHandler {
                 .findFirst()
                 .orElse(ConnectorErrorCodes.PARAM_INVALID_MESSAGE);
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(new ApiResult<>(ErrorCodes.PARAM_INVALID.value(), message,
+                .body(new ApiResult<>(ConnectorErrorCodes.PARAM_INVALID.value(), message,
                         ApiResult.currentTraceId(), null));
     }
 }

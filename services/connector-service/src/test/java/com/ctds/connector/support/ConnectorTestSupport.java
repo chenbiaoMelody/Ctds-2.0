@@ -111,7 +111,10 @@ public abstract class ConnectorTestSupport {
 
     private static ConnectorStubServer createStub() {
         try {
-            return new ConnectorStubServer();
+            final ConnectorStubServer stub = new ConnectorStubServer();
+            // 全类共享静态 stub（避免多上下文启动开销），JVM 退出时释放监听端口与调度线程。
+            Runtime.getRuntime().addShutdownHook(new Thread(stub::stop, "connector-stub-shutdown"));
+            return stub;
         } catch (final IOException e) {
             throw new IllegalStateException("测试 stub 启动失败", e);
         }

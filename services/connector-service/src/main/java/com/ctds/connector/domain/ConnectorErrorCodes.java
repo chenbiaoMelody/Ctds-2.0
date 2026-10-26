@@ -27,8 +27,6 @@ public final class ConnectorErrorCodes {
     public static final ErrorCode SUBJECT_UNAVAILABLE = ErrorCode.of("1010S0001");
     /** DID 服务不可用（同上）→ 503 fail-closed。 */
     public static final ErrorCode DID_UNAVAILABLE = ErrorCode.of("1010S0002");
-    /** 服务内部错误（DB / 事务 / 不可分类异常）。→ 500 */
-    public static final ErrorCode INTERNAL_ERROR = ErrorCode.of("1010S0003");
 
     public static final String PARAM_INVALID_MESSAGE = "请求参数不合法";
     public static final String NAME_DUPLICATED_MESSAGE = "同主体同名连接器已存在，请更换名称或走升级流程";

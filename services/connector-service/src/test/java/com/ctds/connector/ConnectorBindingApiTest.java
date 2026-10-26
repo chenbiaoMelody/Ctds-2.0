@@ -23,6 +23,7 @@ class ConnectorBindingApiTest extends ConnectorTestSupport {
                 .andExpect(jsonPath("$.data.connectorNo").value(connectorNo))
                 .andExpect(jsonPath("$.data.did").value("did:ctds:S20261026000001.1"))
                 .andExpect(jsonPath("$.data.bindingStatus").value("ACTIVE"))
+                .andExpect(jsonPath("$.data.boundAt").isNotEmpty())
                 .andExpect(jsonPath("$.data.didStatus").value("ACTIVE"))
                 .andExpect(jsonPath("$.data.verified").value(true));
     }

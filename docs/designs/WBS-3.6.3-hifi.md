@@ -1,8 +1,8 @@
-# WBS-3.6.3 高保真设计：连接器注册与核验服务（V1.1，2026-10-26）
+# WBS-3.6.3 高保真设计：连接器注册与核验服务（V1.2，2026-10-26）
 
 | 字段 | 内容 |
 | --- | --- |
-| 版本 | **V1.1（编码段勘正，2026-10-26）**——V1.0 = 2026-10-26 编排师一次确认（Q1~Q8 全采 A + D1 不拆分）的编码契约；编码段按实现就地勘正 4 处（§1 依赖去 `common-idempotency`、§1 角色补 `connector-internal`、§4 `registeredAt` → `updatedAt`、§5 列表不查 DID 状态），业务判定语义零变更；与 lofi 一并提交、一次确认（章程 2.6.3） |
+| 版本 | **V1.2（评审循环 1 勘正，2026-10-26）**——V1.0 = 2026-10-26 编排师一次确认（Q1~Q8 全采 A + D1 不拆分）的编码契约；**V1.1** = 编码段就地勘正 4 处（§1 依赖去 `common-idempotency`、§1 角色补 `connector-internal`、§4 `registeredAt` → `updatedAt`、§5 列表不查 DID 状态）；**V1.2** = 4 视角评审循环 1 打回后就地勘正 5 处（§3 类清单按实现收敛、§4 请求/命令 record 收敛、§5 列表 `online` 派生口径写明、§6 错误码语义与 `1010S0003` 段位、§9 测试形态澄清），**业务判定语义零变更**；与 lofi 一并提交、一次确认（章程 2.6.3） |
 | 契约来源 | lofi Q1~Q8 建议口径 A + D1 不拆分；规格 `docs/specs/C-6.1-6.3-接入连接器.md` V1.0 行为 1 / 6 / 7 / 8 + §7 Q2-A / Q4-A / Q5-A / Q8-A / Q9-A |
 | 交付物 | ① 新服务 `services/connector-service`；② 迁移 `V1__create_connector_tables.sql`；③ 跨域装配两处（subject yml 1 行 / did 新增内部端点 + yml 1 行）；④ **ADR-027 连接器注册与核验服务契约**（编码段落盘）；⑤ 测试（测试先行） |
 
@@ -107,6 +107,8 @@ INSERT INTO connector_no_seq (id, next_no) VALUES (1, 1);
 
 **表注释与列注释全覆盖**；跨库引用只逻辑引用不建外键（沿 ADR-009 / contract 先例）。
 
+> **V1.2 勘正说明（迁移 checksum）**：评审修复批补齐了 4 张表 10 处列的 `COMMENT`（含 `id` / `created_at` / `updated_at` / 取号表两列），属**发布前勘正**——本服务尚未部署、`ctds_connector` 仅存在于 Testcontainers 临时库（每次新建），故不影响任何运行库；若某本地库已执行过旧 V1，需 `flyway repair` 或重建库后再启动。
+
 ## §3 包结构与类清单
 
 ```
@@ -117,43 +119,45 @@ com.ctds.connector
 │   ├── ConnectorRegistrationController.java   # 申请 / 补正 / 我的申请 / 单申请 / 核验队列 / 核验动作
 │   ├── ConnectorController.java               # 已注册连接器：我的列表 / 详情 / 绑定查验 / 留痕 / 心跳
 │   ├── InternalConnectorController.java       # 内部面：单连接器 + 绑定 + 实时 DID 状态
-│   ├── ConnectorExceptionHandler.java         # 1010 段与本域 BizException → ApiResult 映射
-│   └── dto/{ConnectorRequests.java, ConnectorViews.java}
+│   ├── ConnectorExceptionHandler.java         # 1010 段映射（含 Bean Validation → 1010C0001）与 503 保留文案
+│   └── dto/{ConnectorRegisterRequest.java, ConnectorViews.java}   # V1.2：申请/补正共用单请求 record
 ├── application/
 │   ├── ConnectorRegistrationService.java      # 申请 / 补正（要素校验 + 主体资格前置 + 防重 + 留痕）
 │   ├── ConnectorVerificationService.java      # 核验三查 + 通过（签发 + 绑定，同一事务）+ 拒绝留痕
-│   ├── ConnectorQueryService.java             # 我的申请 / 单申请 / 队列 / 连接器详情 / 我的连接器 / 留痕
-│   ├── ConnectorBindingService.java           # 绑定查验（实时 DID 状态）+ 内部面读
-│   └── ConnectorHealthService.java            # 心跳上报 + online 派生
+│   ├── ConnectorQueryService.java             # V1.2：我的申请 / 单申请 / 队列 / 我的连接器 / 详情 / 绑定查验 / 留痕 / 心跳 / 内部面 + online 派生
+│   ├── ConnectorDetail.java                   # 读面结果 record（档案 + 绑定 + 实时 DID 状态 + online）
+│   └── VerificationOutcome.java               # 核验结论 record（verified / failedCheck / reasonCode / reason / 档案 / 绑定）
 ├── domain/
 │   ├── ConnectorRegistration.java, ConnectorBinding.java, ConnectorActionLog.java   # record
 │   ├── ConnectorStatus.java (PENDING_REVIEW/REGISTERED/CANCELLED)、ConnectorType.java (STANDARD)、BindingStatus.java (ACTIVE/RELEASED)
-│   ├── ConnectorRepository.java, ConnectorBindingRepository.java, ConnectorLogRepository.java, ConnectorSeqRepository.java
+│   ├── ConnectorRepository.java（含 V1.2：CA/CN 双轨取号）、ConnectorBindingRepository.java, ConnectorLogRepository.java
 │   ├── SubjectAdmissionPort.java (ADMITTED/NOT_ADMITTED/UNAVAILABLE) + DidStatusPort.java (ACTIVE/REVOKED/PENDING_ISSUE/NONE/UNAVAILABLE)
-│   ├── ConnectorErrorCodes.java, ConnectorBizException.java, VerificationCheck.java (SUBJECT_ADMISSION/DID_STATUS/COMPLETENESS)
+│   ├── ConnectorErrorCodes.java, ConnectorBizException.java, ConnectorUnavailableException.java, CurrentDid.java,
+│   │   VerificationCheck.java (SUBJECT_ADMISSION/DID_STATUS/COMPLETENESS)
+├── audit/                       # V1.2：独立 audit 包（与 delivery 先例一致；原设计归 infrastructure）
+│   ├── ConnectorAuditService.java      # JSONL 审计 + DB 留痕双写
+│   └── ConnectorAuditActions.java
 └── infrastructure/
-    ├── JdbcConnectorRepository.java, JdbcConnectorBindingRepository.java, JdbcConnectorLogRepository.java, JdbcConnectorSeqRepository.java
-    ├── SubjectAdmissionClient.java, DidStatusClient.java     # JDK HttpClient，零新依赖（沿 catalog/delivery 先例）
-    └── ConnectorAuditService.java + ConnectorAuditActions.java   # JSONL 审计 + DB 留痕双写（沿 delivery）
+    ├── JdbcConnectorRepository.java（含 CA/CN 双轨取号）、JdbcConnectorBindingRepository.java, JdbcConnectorLogRepository.java
+    └── SubjectAdmissionClient.java, DidStatusClient.java     # JDK HttpClient，零新依赖（沿 catalog/delivery 先例）
 ```
+
+> **V1.2 类清单勘正说明**：原设计列的 `ConnectorBindingService` / `ConnectorHealthService` / `ConnectorSeqRepository`(+Jdbc) 三个类**未单独落地**——绑定查验与心跳并入 `ConnectorQueryService`（同一读面聚合，避免 4 个薄服务类），双轨取号并入 `ConnectorRepository`（单表单事务原子取号）；`ConnectorRequests` 收敛为 `ConnectorRegisterRequest`（申请/补正三要素同构）。合并**不改端点契约、不改状态机、不改错误码**，属实现随模板（delivery 先例：读写合一 + 取号在仓储内）收敛。
 
 分层沿用既有四层（`interfaces → application → domain → infrastructure`）；domain **不依赖** common-pagination（分页在 interfaces 层用 `PageQuery`；db 查以 offset/limit 表达）。
 
 ## §4 关键接口签名（record 模型）
 
 ```java
-// 请求（interfaces/dto）
-record ConnectorRegistrationRequest(
+// 请求（interfaces/dto）——V1.2 勘正：申请与补正三要素同构，共用一个 record
+record ConnectorRegisterRequest(
     @NotBlank @Size(min = 2, max = 64) String connectorName,
     @NotBlank String connectorType,          // 仅 STANDARD
     @NotBlank @Pattern(regexp = "^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}$") String connectorVersion) {}
 
-record ConnectorAmendRequest(同上三字段) {}
-
-// 应用层命令
-record ConnectorRegistrationCommand(String subjectNo, String name, String type, String version) {}
-record ConnectorAmendCommand(String subjectNo, String applicationNo, String name, String type, String version) {}
-record VerificationCommand(String operatorNo, String applicationNo) {}
+// 应用层命令（V1.2 勘正：核验动作直接传 operatorNo + applicationNo，不设 VerificationCommand；组件名与代码一致）
+record ConnectorRegistrationCommand(String subjectNo, String connectorName, String connectorType, String connectorVersion) {}
+record ConnectorAmendCommand(String subjectNo, String applicationNo, String connectorName, String connectorType, String connectorVersion) {}
 
 // 视图（interfaces/dto）
 record RegistrationView(String applicationNo, String connectorNo, String subjectNo, String connectorName,
@@ -186,7 +190,7 @@ record ActionLogView(String applicationNo, String connectorNo, String operatorNo
 | 4 | GET | `/api/v1/connectors/registrations/{applicationNo}` | `connector.read` | → `RegistrationView` | 属主或 `admin`（`connector.review` 持有者）可读；否则 `1010C0003` 同码同文 |
 | 5 | GET | `/api/v1/connectors/review/queue` | `connector.review` | `?pageNum&pageSize` → `PageResult<RegistrationView>` | 固定 `PENDING_REVIEW`，申请时间升序 |
 | 6 | POST | `/api/v1/connectors/registrations/{applicationNo}/verification` | `connector.review` | → `VerificationResultView` | **核验三查**（顺序：主体资格 → DID → 信息完整）；全过 = 状态转 `REGISTERED` + 签发 `CN` + 建 ACTIVE 绑定（**同一事务**）+ 留痕 `connector.verify.approved`；任一不过 = 200 + `verified=false` + `failedCheck`，状态不变 + 留痕 `connector.verify.rejected`；非 `PENDING_REVIEW` → `1010C0004` |
-| 7 | GET | `/api/v1/connectors/mine` | `connector.read` | `?pageNum&pageSize` → `PageResult<ConnectorView>` | 本主体已注册连接器**摘要**（`did` / `didStatus` 不查——**编码段勘正**：列表逐条查 DID 会形成 N 次跨域调用；实时状态由 #8 / #9 / #12 承载，列表保留 `online` 派生） |
+| 7 | GET | `/api/v1/connectors/mine` | `connector.read` | `?pageNum&pageSize` → `PageResult<ConnectorView>` | 本主体已注册连接器**摘要**（`did` / `didStatus` 不查——**编码段勘正**：列表逐条查 DID 会形成 N 次跨域调用；实时状态由 #8 / #9 / #12 承载）。**V1.2 勘正**：`online` 必须由 `ConnectorQueryService.online(registration)` 读时派生后传入摘要（`verified` 因未查 DID 固定 `false`），不得写死 `false` |
 | 8 | GET | `/api/v1/connectors/{connectorNo}` | `connector.read` | → `ConnectorView` | 属主或 `admin`；否则 `1010C0003` 同码同文；路径变量正则 `^CN\d{6}$` |
 | 9 | GET | `/api/v1/connectors/{connectorNo}/binding` | `connector.read` | → `BindingView` | **实时**查 DID 状态（不缓存）：`verified = (didStatus == ACTIVE)`；DID 不可达 → `1010S0002`；留痕 `connector.binding.read`（读取留痕，沿行为 8 可追溯） |
 | 10 | GET | `/api/v1/connectors/{connectorNo}/action-logs` | `connector.read` | `?pageNum&pageSize` → `PageResult<ActionLogView>` | 属主或 `admin`；读取零新增留痕（防递归） |
@@ -201,7 +205,7 @@ record ActionLogView(String applicationNo, String connectorNo, String operatorNo
 
 | 码 | 常量 | 语义 | HTTP |
 | --- | --- | --- | --- |
-| `1010C0001` | `CONNECTOR_PARAM_INVALID` | 参数不合法（名称/类型/版本/编号格式/分页外） | 400 |
+| `1010C0001` | `CONNECTOR_PARAM_INVALID` | 参数不合法（**请求体要素**：名称长度/类型取值/版本格式；**路径变量**：编号格式；**Bean Validation 失败**） | 400 |
 | `1010C0002` | `CONNECTOR_NAME_DUPLICATED` | 同主体同名连接器已存在（活跃档案） | 400 |
 | `1010C0003` | `CONNECTOR_NOT_FOUND_OR_DENIED` | 未找到该记录或无权访问（**防枚举同码同文**） | 400 |
 | `1010C0004` | `CONNECTOR_STATE_NOT_ALLOWED` | 当前状态不允许该操作（补正/核验/心跳的状态门槛） | 400 |
@@ -210,9 +214,9 @@ record ActionLogView(String applicationNo, String connectorNo, String operatorNo
 | `1010C0007` | `CONNECTOR_DID_NOT_VALID` | 主体 DID 非 ACTIVE（REVOKED / PENDING_ISSUE / NONE） | 200（结论视图 reasonCode） |
 | `1010S0001` | `CONNECTOR_SUBJECT_UNAVAILABLE` | 主体服务不可用（不可达/超时/非 200/不可解析） | 503 |
 | `1010S0002` | `CONNECTOR_DID_UNAVAILABLE` | DID 服务不可用 | 503 |
-| `1010S0003` | `CONNECTOR_INTERNAL_ERROR` | 内部错误（DB / 事务 / 不可分类异常） | 500 |
+| `1010S0003` | （**预留不启用**，代码不声明） | 内部错误段位预留：未分类异常由 common `GlobalExceptionHandler` 以 `1000S` 段承载（与其它 9 服务同口径；声明不使用即死码） | 500（1000S 段） |
 
-**不设 B 型码**（Q8-A 理由：核验拒绝 = 200 业务结论）；复用 `1000C0001`（参数）/ `1000C0002`（未认证）/ `1000C0005`（无权限）/ `1000C0003`（主体不存在）。**占用留痕写 ADR-027 §2**。
+**不设 B 型码**（Q8-A 理由：核验拒绝 = 200 业务结论）；复用 `1000C0001`（**分页越界**，common-pagination 口径）/ `1000C0002`（未认证）/ `1000C0005`（无权限）/ `1000C0003`（主体不存在）。**1010 段实际在用 9 个码**（`1010C0001~0007` + `1010S0001~0002`）+ 1 个预留段位。**占用留痕写 ADR-027 §2.7**。
 
 ## §7 状态机与关键流程
 
@@ -271,11 +275,11 @@ REGISTERED --注销--> CANCELLED（3.6.4，本卡不实现）
 | T1 | `ConnectorRegistrationApiTest` | 行为 1 验收 1/2/3/4 + 行为 6 验收 1/2/3：申请受理（`PENDING_REVIEW` + `CA` 前缀）/ 未入驻拒绝 `1010C0006` / 同名重复 `1010C0002` 且计数不变 / 缺要素与非法版本 `1010C0001` / 名称超长 `1010C0001` / 主体服务不可达 503 `1010S0001` / 非属主查申请 `1010C0003`（同码同文）/ 补正成功留痕 / 已注册态补正 `1010C0004` |
 | T2 | `ConnectorVerificationApiTest` | 行为 6 验收 4 + 行为 7 验收 1~4：三查全过 → `REGISTERED` + `CN` + 绑定 ACTIVE / 未入驻 → `verified=false` + `SUBJECT_ADMISSION` / DID `REVOKED` / `PENDING_ISSUE` / `NONE` → `DID_STATUS` / DID 不可达 503 `1010S0002` / 已注册再核验 `1010C0004` / **编号唯一不复用**（连续两次核验拿到不同 `CN`）/ 补正后重新核验通过（留痕链完整）|
 | T3 | `ConnectorBindingApiTest` | 行为 8 验收 1/2/3：绑定可查（connector ↔ DID ↔ boundAt）/ 实时联动（建绑后把桩 DID 改成 `REVOKED` → `verified=false` + `didStatus=REVOKED`）/ DID 不可达 503 `1010S0002` |
-| T4 | `ConnectorHealthApiTest` | Q8-A 最小健康度：心跳 → `online=true` + `lastHeartbeatAt` / 非属主心跳 `1010C0003` / 待核验态心跳 `1010C0004` / 超阈值（配置 1m + 回拨时间）→ `online=false` / 配置越界（0m / 2000m）启动 fail-fast |
+| T4 | `ConnectorHealthApiTest` + `config/ConnectorPropertiesTest` | Q8-A 最小健康度：心跳 → `online=true` + `lastHeartbeatAt` / 非属主心跳 `1010C0003` / 待核验态心跳 `1010C0004` / 超阈值（回拨时间）→ `online=false` / 配置越界（0m / 2000m）启动 fail-fast（**V1.2**：直接构造 `ConnectorProperties` 调校验方法断言，不启 Spring 上下文、不引新测试基建） |
 | T5 | `ConnectorQueryApiTest` | 行为 8 验收 1 + 防枚举：我的申请分页 / 我的连接器分页 / 详情（属主 200、他人 `1010C0003`、admin 200）/ 留痕分页（含申请+核验+绑定三动作）/ 分页越界 `1000C0001` / 路径变量非法（`CN12` / `CN1234567`）`1010C0001` |
 | T6 | `ConnectorInternalApiTest` | 内部面：`connector-internal` 角色 200（含 `didStatus` 实时）/ 业务角色 403 `1000C0005` / 无身份 401 `1000C0002` / 不存在 `1010C0003` |
 | T7 | `InternalCurrentDidApiTest`（**did 模块内**） | 新增端点：`ACTIVE` / `REVOKED` / `PENDING_ISSUE` / 无记录 `NONE` / `connector-internal` 200 / 未持权限 403 / 无身份 401 |
-| T8 | `ConnectorAuditIntegrationTest` | 留痕：申请 / 补正 / 核验通过 / 核验拒绝 / 绑定查验五类动作落 `connector_action_log` + JSONL 审计；`detail` **不含秘密材料**（断言无密钥/口令字段）|
+| T8 | `ConnectorAuditIntegrationTest` + `audit/ConnectorAuditServiceTest` | 留痕：申请 / 补正 / 核验通过 / 核验拒绝 / 绑定查验 / 心跳六类动作落 `connector_action_log`；`detail` **不含秘密材料**（断言无 password/secret/token/key/credential/密钥/口令等词）。**V1.2**：JSONL 审计以**组件级捕获式 `AuditRecorder`** 断言事件要素（谁/动作/对象/结论/摘要）+ 无审计器分支，不依赖异步文件设施（文件落盘由 common-logging 自身用例覆盖） |
 
 **测试基础设施**：Testcontainers MySQL（沿 delivery 先例）；跨域客户端以 JDK `HttpServer` 桩（沿 delivery `ContractInternalClient` 测试形态）；时钟相关用例以「回拨 `last_heartbeat_at`」实现，**不引入可注入时钟抽象**（避免规格外设计）。
 
@@ -313,3 +317,12 @@ REGISTERED --注销--> CANCELLED（3.6.4，本卡不实现）
 | 提请确认 | 2026-10-26；契约基准 = lofi Q1~Q8 全采 A + D1 不拆分 |
 | **编排师裁定** | ✅ **2026-10-26 编排师会话回复"确认"** = **Q1~Q8 全采 A + D1 不拆分**；本文件正文（§1~§12）**零改动**转 V1.0 = 编码契约 |
 | 确认后动作（进行中） | 编码段以 §11 前置检查八项为第一动作，测试先行（§9 清单 T1~T8 逐类落盘）；实现与本节契约逐条一致，偏差就地注记留痕 |
+
+## 勘正记录（V1.1 → V1.2）
+
+| 项 | 内容 |
+| --- | --- |
+| 触发 | 4 视角评审循环 1 打回（①规格与设计符合性 FAIL：hifi §3/§4 类与 record 偏离未勘正；③一致性与重复 FAIL：要素错误码与契约相反） |
+| 勘正 5 处 | ① §3 类清单按实现收敛（绑定/心跳并入 `ConnectorQueryService`、双轨取号并入 `ConnectorRepository`、审计两件落 `audit` 包、`ConnectorRegisterRequest` 单 record）+ 新增「类清单勘正说明」段；② §4 请求/命令 record 与实现一致（删 `ConnectorAmendRequest` / `VerificationCommand`）；③ §5 #7 写明列表 `online` 必须读时派生（`verified` 固定 false）；④ §6 `1010C0001` 语义去掉"分页外"（分页越界仍 `1000C0001`，common-pagination 口径）+ `1010S0003` 改"段位预留、代码不声明"+ 在用 9 码说明；⑤ §9 T4/T8 测试形态澄清（阈值校验直调、JSONL 用捕获式 AuditRecorder） |
+| 语义影响 | **业务判定语义零变更**：端点数量/路径/权限点/状态机/错误码映射/事务边界均未改；仅类组织、文档口径与测试形态澄清 |
+| 生效 | 评审修复批随批落盘（编排师 2026-10-26 指示"进行修复批任务"）；编码契约随之以 V1.2 为准 |

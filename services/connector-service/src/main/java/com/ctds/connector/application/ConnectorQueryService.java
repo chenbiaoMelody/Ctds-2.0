@@ -170,7 +170,8 @@ public class ConnectorQueryService {
         return registration;
     }
 
-    private boolean online(final ConnectorRegistration registration) {
+    /** 在线派生（读时，无调度）：最近心跳未超阈值即在线；列表摘要与详情共用同一口径。 */
+    public boolean online(final ConnectorRegistration registration) {
         final LocalDateTime last = registration.lastHeartbeatAt();
         if (last == null) {
             return false;

@@ -5,7 +5,7 @@
 -- connector_application_no_seq / connector_no_seq = CA/CN 双轨全局序号（各 1 行原子取号）
 
 CREATE TABLE connector_registration (
-    id                   BIGINT       NOT NULL AUTO_INCREMENT,
+    id                   BIGINT       NOT NULL AUTO_INCREMENT COMMENT '技术主键（自增）',
     application_no       VARCHAR(16)  NOT NULL COMMENT 'CA+6位申请单号（登记即签发）',
     connector_no         VARCHAR(16)  NULL COMMENT 'CN+6位连接器编号（核验通过事务内签发；待核验态为 NULL）',
     subject_no           VARCHAR(32)  NOT NULL COMMENT '所属主体编号（申请者身份，服务端从鉴权上下文取）',
@@ -17,8 +17,8 @@ CREATE TABLE connector_registration (
     last_rejection_code  VARCHAR(16)  NULL COMMENT '最近一次核验拒绝码（1010C0005/1010C0006/1010C0007）',
     last_rejection_reason VARCHAR(256) NULL COMMENT '最近一次核验拒绝理由（服务端常量文案）',
     last_heartbeat_at    DATETIME     NULL COMMENT '最近心跳时间（健康度读时派生，无调度）',
-    created_at           DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at           DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    created_at           DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '登记时间',
+    updated_at           DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '最近更新时间（含状态流转 / 心跳 / 补正）',
     PRIMARY KEY (id),
     UNIQUE KEY uk_application_no (application_no),
     UNIQUE KEY uk_connector_no (connector_no),
@@ -28,7 +28,7 @@ CREATE TABLE connector_registration (
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '连接器注册申请与档案（待核验 → 已注册）';
 
 CREATE TABLE connector_did_binding (
-    id            BIGINT       NOT NULL AUTO_INCREMENT,
+    id            BIGINT       NOT NULL AUTO_INCREMENT COMMENT '技术主键（自增）',
     connector_no  VARCHAR(16)  NOT NULL COMMENT 'CN+6位连接器编号',
     subject_no    VARCHAR(32)  NOT NULL COMMENT '所属主体编号（绑定对象）',
     did           VARCHAR(128) NOT NULL COMMENT '所属主体 DID 快照（非秘密材料）',
@@ -41,7 +41,7 @@ CREATE TABLE connector_did_binding (
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '连接器与所属主体 DID 绑定（DID 状态不冗余，查验实时读取）';
 
 CREATE TABLE connector_action_log (
-    id              BIGINT       NOT NULL AUTO_INCREMENT,
+    id              BIGINT       NOT NULL AUTO_INCREMENT COMMENT '技术主键（自增，同时保证同秒内动作顺序可读）',
     application_no  VARCHAR(16)  NULL COMMENT '申请单号（申请/补正/核验类动作）',
     connector_no    VARCHAR(16)  NULL COMMENT '连接器编号（核验通过后动作）',
     operator_no     VARCHAR(32)  NOT NULL COMMENT '操作者（申请人 / 核验人 / 属主）',
@@ -49,23 +49,23 @@ CREATE TABLE connector_action_log (
     result          VARCHAR(16)  NOT NULL COMMENT 'SUCCESS/DENIED/FAILURE',
     reason_code     VARCHAR(16)  NULL COMMENT '拒绝码 / 失败码',
     detail          VARCHAR(256) NULL COMMENT '业务要素摘要（名称/类型/版本/绑定 DID/结论/旧值），不含凭据',
-    created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '动作发生时间',
     PRIMARY KEY (id),
     KEY idx_log_application (application_no, created_at),
     KEY idx_log_connector (connector_no, created_at)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '连接器域动作留痕（不含秘密材料）';
 
 CREATE TABLE connector_application_no_seq (
-    id       BIGINT NOT NULL,
-    next_no  BIGINT NOT NULL,
+    id       BIGINT NOT NULL COMMENT '固定为 1（单行取号表）',
+    next_no  BIGINT NOT NULL COMMENT '下一个可签发序号（LAST_INSERT_ID 原子自增）',
     PRIMARY KEY (id)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '连接器申请单号全局序号（1 行原子取号）';
 
 INSERT INTO connector_application_no_seq (id, next_no) VALUES (1, 1);
 
 CREATE TABLE connector_no_seq (
-    id       BIGINT NOT NULL,
-    next_no  BIGINT NOT NULL,
+    id       BIGINT NOT NULL COMMENT '固定为 1（单行取号表）',
+    next_no  BIGINT NOT NULL COMMENT '下一个可签发序号（LAST_INSERT_ID 原子自增；终身不复用）',
     PRIMARY KEY (id)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '连接器编号全局序号（1 行原子取号）';
 

@@ -64,12 +64,16 @@ public final class ConnectorViews {
                     registration.lastHeartbeatAt(), registration.updatedAt());
         }
 
-        /** 列表摘要（did / didStatus 不查：列表不做逐条跨域调用）。 */
-        public static ConnectorView summary(final ConnectorRegistration registration) {
+        /**
+         * 列表摘要（hifi §5 #7）：did / didStatus 不查（列表不做逐条跨域调用），
+         * `verified` 随之取 false；`online` 由调用方传入心跳读时派生值（不得写死，否则列表恒"离线"）。
+         */
+        public static ConnectorView summary(final ConnectorRegistration registration,
+                final boolean online) {
             return new ConnectorView(registration.connectorNo(), registration.subjectNo(),
                     registration.connectorName(), registration.connectorType(),
                     registration.connectorVersion(), registration.status().name(), null, null,
-                    false, false, registration.lastHeartbeatAt(), registration.updatedAt());
+                    false, online, registration.lastHeartbeatAt(), registration.updatedAt());
         }
     }
 

@@ -2,6 +2,9 @@ package com.ctds.connector.infrastructure;
 
 import com.ctds.connector.domain.ConnectorActionLog;
 import com.ctds.connector.domain.ConnectorLogRepository;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.time.LocalDateTime;
 import java.util.List;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
@@ -47,11 +50,7 @@ public class JdbcConnectorLogRepository implements ConnectorLogRepository {
         return jdbc.sql("SELECT " + COLUMNS + " FROM connector_action_log WHERE connector_no = :no "
                         + "ORDER BY created_at ASC, id ASC LIMIT :limit OFFSET :offset")
                 .param("no", connectorNo).param("limit", limit).param("offset", offset)
-                .query((rs, rowNum) -> new ConnectorActionLog(
-                        rs.getString("application_no"), rs.getString("connector_no"),
-                        rs.getString("operator_no"), rs.getString("action"), rs.getString("result"),
-                        rs.getString("reason_code"), rs.getString("detail"),
-                        rs.getObject("created_at", java.time.LocalDateTime.class)))
+                .query(JdbcConnectorLogRepository::map)
                 .list();
     }
 
@@ -62,24 +61,11 @@ public class JdbcConnectorLogRepository implements ConnectorLogRepository {
         return count == null ? 0L : count;
     }
 
-    @Override
-    public List<ConnectorActionLog> findByApplicationNo(final String applicationNo, final long offset,
-            final int limit) {
-        return jdbc.sql("SELECT " + COLUMNS + " FROM connector_action_log WHERE application_no = :no "
-                        + "ORDER BY created_at ASC, id ASC LIMIT :limit OFFSET :offset")
-                .param("no", applicationNo).param("limit", limit).param("offset", offset)
-                .query((rs, rowNum) -> new ConnectorActionLog(
-                        rs.getString("application_no"), rs.getString("connector_no"),
-                        rs.getString("operator_no"), rs.getString("action"), rs.getString("result"),
-                        rs.getString("reason_code"), rs.getString("detail"),
-                        rs.getObject("created_at", java.time.LocalDateTime.class)))
-                .list();
-    }
-
-    @Override
-    public long countByApplicationNo(final String applicationNo) {
-        final Long count = jdbc.sql("SELECT COUNT(*) FROM connector_action_log WHERE application_no = :no")
-                .param("no", applicationNo).query(Long.class).single();
-        return count == null ? 0L : count;
+    /** 行映射（沿 JdbcConnectorRepository.map 先例，单处定义避免重复 lambda）。 */
+    private static ConnectorActionLog map(final ResultSet rs, final int rowNum) throws SQLException {
+        return new ConnectorActionLog(rs.getString("application_no"), rs.getString("connector_no"),
+                rs.getString("operator_no"), rs.getString("action"), rs.getString("result"),
+                rs.getString("reason_code"), rs.getString("detail"),
+                rs.getObject("created_at", LocalDateTime.class));
     }
 }
