@@ -35,6 +35,8 @@ public abstract class ConnectorTestSupport {
     protected static final String ADMIN_ROLE = "admin";
     protected static final String INTERNAL_ROLE = "connector-internal";
     protected static final String REGISTRATIONS = "/api/v1/connectors/registrations";
+    protected static final String CONNECTORS = "/api/v1/connectors/";
+    protected static final String INTERNAL = "/api/v1/connectors/internal/";
     protected static final String OPERATOR = "ops-admin";
 
     private static final ConnectorStubServer STUB = createStub();
@@ -58,11 +60,14 @@ public abstract class ConnectorTestSupport {
 
     @BeforeEach
     void resetState() {
+        jdbc.update("DELETE FROM connector_job_occupancy");
+        jdbc.update("DELETE FROM connector_version_change");
         jdbc.update("DELETE FROM connector_did_binding");
         jdbc.update("DELETE FROM connector_registration");
         jdbc.update("DELETE FROM connector_action_log");
         jdbc.update("UPDATE connector_application_no_seq SET next_no = 1");
         jdbc.update("UPDATE connector_no_seq SET next_no = 1");
+        jdbc.update("UPDATE connector_upgrade_no_seq SET next_no = 1");
         STUB.reset();
     }
 
@@ -107,6 +112,41 @@ public abstract class ConnectorTestSupport {
         return jdbc.queryForObject(
                 "SELECT connector_no FROM connector_registration WHERE application_no = ?",
                 String.class, applicationNo);
+    }
+
+    /** 升级登记（期望 200），返回 data 段。 */
+    protected JsonNode upgrade(final String subjectNo, final String role, final String connectorNo,
+            final String toVersion, final String compatibility) throws Exception {
+        final MvcResult result = mockMvc.perform(post(CONNECTORS + connectorNo + "/upgrades")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-Ctds-Subject", subjectNo)
+                        .header("X-Ctds-Roles", role)
+                        .content("{\"toVersion\":\"" + toVersion + "\",\"compatibility\":\""
+                                + compatibility + "\"}"))
+                .andExpect(status().isOk())
+                .andReturn();
+        return data(result);
+    }
+
+    /** 注销（期望 200），返回 data 段。 */
+    protected JsonNode cancel(final String subjectNo, final String role, final String connectorNo)
+            throws Exception {
+        final MvcResult result = mockMvc.perform(post(CONNECTORS + connectorNo + "/cancellation")
+                        .header("X-Ctds-Subject", subjectNo)
+                        .header("X-Ctds-Roles", role))
+                .andExpect(status().isOk())
+                .andReturn();
+        return data(result);
+    }
+
+    /** 内部面登记在途作业占用（期望 200）。 */
+    protected void occupy(final String connectorNo, final String jobRef) throws Exception {
+        mockMvc.perform(post(INTERNAL + connectorNo + "/occupancies")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-Ctds-Subject", "delivery-service")
+                        .header("X-Ctds-Roles", INTERNAL_ROLE)
+                        .content("{\"jobRef\":\"" + jobRef + "\"}"))
+                .andExpect(status().isOk());
     }
 
     private static ConnectorStubServer createStub() {

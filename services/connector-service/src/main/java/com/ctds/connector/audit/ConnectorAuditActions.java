@@ -10,6 +10,13 @@ public final class ConnectorAuditActions {
     public static final String BINDING_READ = "connector.binding.read";
     public static final String HEARTBEAT = "connector.heartbeat";
     public static final String DENIED = "connector.denied";
+    /** 3.6.4 生命周期动作。 */
+    public static final String UPGRADE_REQUESTED = "connector.upgrade.requested";
+    public static final String UPGRADE_APPLIED = "connector.upgrade.applied";
+    public static final String UPGRADE_CONFIRMED = "connector.upgrade.confirmed";
+    public static final String CANCELLED = "connector.cancelled";
+    public static final String OCCUPANCY_REGISTER = "connector.occupancy.register";
+    public static final String OCCUPANCY_RELEASE = "connector.occupancy.release";
 
     private ConnectorAuditActions() {
     }

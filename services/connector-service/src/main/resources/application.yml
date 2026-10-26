@@ -21,14 +21,14 @@ logging:
       file: logstash
 
 ctds:
-  # 连接器域角色点（WBS-3.6.3 hifi §1）：applicant = 参与方（申请/读/心跳）；
-  # admin = 平台运营方（核验/读/内部面直调）。internal 消费方角色由 3.6.4+ 各卡追加。
+  # 连接器域角色点（WBS-3.6.3 hifi §1 + 3.6.4 hifi §1）：applicant = 参与方（申请/读/心跳/升级/注销）；
+  # admin = 平台运营方（核验/读/内部面直调/版本确认/注销）；connector-internal = 服务身份内部面（读 + 占用写）。
   auth:
     permissions:
-      applicant: connector.register,connector.read,connector.heartbeat
-      admin: connector.review,connector.read,connector.internal.read
-      # 服务身份专用内部面角色（本服务作为被调方；3.6.4 / 3.6.7 / 3.6.8 与 SDK 校验消费，ADR-027 §2）
-      connector-internal: connector.internal.read
+      applicant: connector.register,connector.read,connector.heartbeat,connector.upgrade,connector.cancel
+      admin: connector.review,connector.read,connector.internal.read,connector.upgrade.confirm,connector.cancel
+      # 服务身份专用内部面角色（本服务作为被调方；3.6.7 / 3.6.8 与 SDK 校验消费，ADR-027 §2 / ADR-028 §2）
+      connector-internal: connector.internal.read,connector.internal.write
   connector:
     # 跨域只读调用（服务身份 connector-service / connector-internal；未配置 = 判定不可用 → 503 fail-closed）
     subject:

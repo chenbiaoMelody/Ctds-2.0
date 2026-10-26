@@ -41,6 +41,19 @@ public class JdbcConnectorBindingRepository implements ConnectorBindingRepositor
                 .param("no", connectorNo).query(JdbcConnectorBindingRepository::map).optional();
     }
 
+    @Override
+    public Optional<ConnectorBinding> findByConnectorNo(final String connectorNo) {
+        return jdbc.sql("SELECT " + COLUMNS + " FROM connector_did_binding WHERE connector_no = :no")
+                .param("no", connectorNo).query(JdbcConnectorBindingRepository::map).optional();
+    }
+
+    @Override
+    public int release(final String connectorNo, final LocalDateTime now) {
+        return jdbc.sql("UPDATE connector_did_binding SET status = 'RELEASED', released_at = :now "
+                        + "WHERE connector_no = :no AND status = 'ACTIVE'")
+                .param("now", now).param("no", connectorNo).update();
+    }
+
     private static ConnectorBinding map(final ResultSet rs, final int rowNum) throws SQLException {
         return new ConnectorBinding(
                 rs.getLong("id"),

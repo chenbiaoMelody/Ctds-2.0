@@ -27,6 +27,10 @@ public final class ConnectorErrorCodes {
     public static final ErrorCode SUBJECT_UNAVAILABLE = ErrorCode.of("1010S0001");
     /** DID 服务不可用（同上）→ 503 fail-closed。 */
     public static final ErrorCode DID_UNAVAILABLE = ErrorCode.of("1010S0002");
+    /** 存在进行中的交付作业，暂不能注销（3.6.4 注销前置检查）。→ 400 */
+    public static final ErrorCode JOB_IN_PROGRESS = ErrorCode.of("1010C0008");
+    /** 目标版本与当前版本相同（无意义变更；3.6.4 升级登记）。→ 400 */
+    public static final ErrorCode VERSION_UNCHANGED = ErrorCode.of("1010C0009");
 
     public static final String PARAM_INVALID_MESSAGE = "请求参数不合法";
     public static final String NAME_DUPLICATED_MESSAGE = "同主体同名连接器已存在，请更换名称或走升级流程";
@@ -37,6 +41,8 @@ public final class ConnectorErrorCodes {
     public static final String DID_NOT_VALID_MESSAGE = "所属主体 DID 无效或已失效";
     public static final String SUBJECT_UNAVAILABLE_MESSAGE = "主体服务暂不可用，请稍后重试";
     public static final String DID_UNAVAILABLE_MESSAGE = "DID 服务暂不可用，请稍后重试";
+    public static final String JOB_IN_PROGRESS_MESSAGE = "存在进行中的交付作业，请先完结或终止后再注销";
+    public static final String VERSION_UNCHANGED_MESSAGE = "目标版本与当前版本相同，无需升级";
 
     /** 核验拒绝理由（DID 三态分别可读，服务端常量）。 */
     public static final String DID_REVOKED_REASON = "所属主体 DID 已吊销";

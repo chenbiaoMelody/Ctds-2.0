@@ -19,6 +19,7 @@ public record ConnectorRegistration(
         String lastRejectionCode,
         String lastRejectionReason,
         LocalDateTime lastHeartbeatAt,
+        LocalDateTime cancelledAt,
         LocalDateTime createdAt,
         LocalDateTime updatedAt) {
 }
