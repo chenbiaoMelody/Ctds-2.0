@@ -40,6 +40,8 @@
     <module>services/gateway-service</module>
     <!-- 加密文件传输服务（WBS 3.5.3；文件交付 + 交付记录宿主，ADR-023） -->
     <module>services/delivery-service</module>
+    <!-- 连接器注册与核验服务（WBS 3.6.3；平台侧注册 / 核验三查 / 编号签发 / DID 绑定，ADR-027） -->
+    <module>services/connector-service</module>
   </modules>
 
   <properties>

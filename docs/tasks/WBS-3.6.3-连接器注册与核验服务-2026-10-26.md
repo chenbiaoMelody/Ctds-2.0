@@ -65,30 +65,32 @@
 
 | 项 | 内容 |
 | --- | --- |
-| 状态 | 🟡 **确认段完成（2026-10-26）**：编排师会话回复"确认"（**Q1~Q8 全采 A + D1 不拆分**）→ ① lofi / hifi 转 **V1.0**（编码契约生效，正文零改动）+ 两文件末节确认记录回填；② 本卡 §二 确认留痕 + 关闭条件① ✅ + 本行；③ 台账行 19 确认销项；④ 确认批提交并**推送 origin**；⑤ **编码段测试先行**（hifi §11 前置检查八项为第一动作，本会话就地续接）。**本段零代码 / 零依赖 / 零门禁配置改动**（历史留痕：立卡段完成（2026-10-26）任务卡 + lofi V0.9 + hifi V0.9 落盘 546 行，待一次确认；立卡批 `99bda06` 提交未推送，随确认批推送） |
+| 状态 | 🟡 **编码段完成（2026-10-26）**：新服务 `services/connector-service` 落地全绿——`compile` ✅ / **40 例全过**（T1~T8 六个类 + 审计类）/ `checkstyle` **0 违规**（connector-service + did 两模块）/ **行覆盖 84.83%（559/659）** / did 模块 **118 例全过**（含新增 T7 6 例，既有 112 例未破坏）；did 服务新增内部只读端点 + subject yml 1 行 + ADR-027 / ADR-017 §11 落盘；下一关口 = 提交前自检单 → 4 视角评审（另会/子智能体）→ 修复循环 ≤3 → 编排师验收（历史留痕：确认段完成（2026-10-26）编排师"确认"（Q1~Q8 全采 A + D1 不拆分）→ lofi / hifi 转 V1.0 + 确认批 `612fefd` 推送 origin；立卡段完成（2026-10-26）任务卡 + lofi V0.9 + hifi V0.9 落盘 546 行，立卡批 `99bda06`） |
 | 立卡素材盘点（本会话） | ① 平台九服务与目标服务骨架盘点（delivery-service 为模板：pom / application.yml / 四层包结构 / 纯 JDBC + Flyway / checkstyle 显式、jacoco 不显式）；② 迁移与 DDL 惯例（`V{n}__*.sql`、状态 `VARCHAR` 存枚举名 + 列注释全量、`uk_/idx_` 命名、`LAST_INSERT_ID` 单行取号、无外键、生成列归一）；③ 主体域内部端点 `GET /api/v1/subject/internal/subjects/{subjectNo}/admission`（`subject.internal.read`，仅服务身份持有，`1000C0003` → 视为未入驻防枚举）；④ **DID 域内部面缺口实测**（`did.internal` 全仓零命中；公开解析无鉴权、管理面 `did.admin`）→ Q4-A 新增内部只读端点；⑤ 服务间调用惯例（JDK HttpClient + `X-Ctds-Subject`/`X-Ctds-Roles` 两个上下文头 + 被调方 yml 1 行角色映射）；⑥ 错误码格式与占用（1000~1009 已占，**1010 段零占用**，登记 = 服务 `*ErrorCodes.java` + ADR 留痕）；⑦ common 六组件与权限注解用法（`@RequirePermission` + `ctds.auth.permissions.<角色>=csv`）；⑧ 端口 / 库名 / 编号前缀零冲突实测（8088 仅 3.5.4 立卡备选文字、`ctds_connector` 零命中、`CN%06d` / `CA%06d` 零命中）；⑨ ADR 最大编号 = ADR-026 → 本卡新建 ADR-027，门禁七字段已知。**本段零代码、零依赖、零门禁配置改动** |
 
 ## 五、体量登记（立卡时填写）
 
 | 项 | 数值 / 说明 |
 | --- | --- |
-| 实测（立卡段） | 任务卡（本卡）**97 行** + lofi **135 行** + hifi **314 行** → 合计 **546 行**（`Get-Content \| .Count` 实测）；无代码、无测试（编码段开工） |
-| 预估（编码段） | 有效变更 **1300~1650 行**：主代码 ~900~1100（迁移 4 表 / 12 端点分 3 控制器 / 5 应用服务 / 4 仓储 / 2 外部客户端 / 错误码与异常 / ~10 record 视图）+ 测试 ~400~550（T1~T8）+ 装配与文档（pom / 2 份 yml / ADR-027 / ADR-017 补记） |
-| 超 400 行指引说明 | 本卡为**新服务实施包**，表 / 迁移 / 服务 / 端点 / 测试为不可分原子集（沿 3.4.2 / 3.5.2 / 3.6.2 新模块先例）；**D1 建议不拆分**，请编排师确认时一并表态 |
-| 新依赖 | **0**（common 六组件 + JDBC + Flyway + MySQL 驱动均为既有坐标；无 dependencies.md 新登记项） |
-| 文档 | 本卡 / lofi / hifi / 台账 / 会话日志；ADR-027 归编码段 |
+| 实测（编码段） | **62 文件 +3604/−5**（`git diff --stat 612fefd` 实测；其中 services 下 **58 文件 +3481 行**）：主代码 31 文件（domain 17 / infrastructure 5 / application 8 / interfaces 7 / 配置与启动 2 ≈ **1,700 行**）+ 测试 10 文件（**~880 行**，46 例）+ 迁移 72 行 + pom 90 行 + ADR-027 105 行 + ADR-017 §11 10 行 + 两份 yml 61 行；行覆盖 **84.83%（559/659）** |
+| 实测（立卡段） | 任务卡（本卡）**97 行** + lofi **135 行** + hifi **314 行** → 合计 **546 行**；无代码、无测试 |
+| 预估（编码段） | 1300~1650 行（实际 3604 行含测试与 ADR，**超预估约 1.2 倍**）：偏差原因 = ① 12 端点 → 实际 12 端点但控制器拆 3 类 + 视图 record 8 个；② 测试用真 MySQL 容器 + stub，支撑类 3 个；③ ADR-027 七字段实质内容 105 行 |
+| 超 400 行指引说明 | 本卡为**新服务实施包**，表 / 迁移 / 服务 / 端点 / 测试为不可分原子集（沿 3.4.2 / 3.5.2 / 3.6.2 新模块先例）；**D1 已确认不拆分**（编排师 2026-10-26） |
+| 新依赖 | **0**（common 六组件中实际用 4 个：errorcode/auth/pagination/logging；JDBC + Flyway + MySQL 驱动均为既有坐标；**未引 common-idempotency**，理由见 hifi §1 勘正与 ADR-027 §4） |
+| 文档 | 本卡 / lofi / hifi（V1.1）/ ADR-027 / ADR-017 §11 / 台账 / 会话日志 |
+| **实现偏差登记**（编码段，业务语义零变更） | ① **测试与实现同批**（非严格"测试先行"）：本会话为"设计确认 → 编码"同会话续接，测试按 hifi §9 T1~T8 清单在同批落盘并**全绿**；如实登记为流程偏差，教训 = ≤1 天卡片若同会话编码，应先落测试骨架再实现（下次执行）；② hifi 勘正 4 处（依赖去 idempotency / 角色补 `connector-internal` / `registeredAt` → `updatedAt` / 列表不查 DID 状态）；③ 新增 `VerificationOutcome` / `ConnectorDetail` 两个 application 结果 record（hifi §4 未列，属实现细节，不改契约）；④ 审计留痕 `denied` 用 `REQUIRES_NEW` 独立事务（拒绝留痕不得随业务异常回滚丢失——hifi §7 未显式，属实现必要修正） |
 
 ## 六、提交前自检单（章程附录 B1；编码段末落盘）
 
 | # | 项 | 结果 |
 | --- | --- | --- |
-| 1 | 两级设计门禁已过 + 实现与设计逐条一致 | ⬜ 编码段填写 |
-| 2 | 规格验收标准 → 设计 → 测试用例 → 剧本步骤 映射 | ⬜ 编码段填写（本卡 §三为立卡基线） |
-| 3 | 复用声明 + 规格外实现声明 | ⬜ 编码段填写（预期复用：common 六组件 / subject 内部端点 / DID 解析端点 / delivery 骨架与取号先例；规格外应为空） |
-| 4 | 本地检查命令与结果摘要 | ⬜ 编码段填写 |
-| 5 | 高风险点自查（并发 / 事务 / 加解密 / 性能） | ⬜ 编码段填写（预期：核验事务内取号 + 状态乐观门槛；零加解密面；非性能敏感路径） |
-| 6 | 验收剧本更新建议（业务语言） | ⬜ 编码段填写（预期：C-6.2 S1 占位说明核对，步骤判定不变） |
-| 7 | 业务可读交付说明（完成什么 / 如何演示 / 注意什么） | ⬜ 编码段填写 |
+| 1 | 两级设计门禁已过 + 实现与设计逐条一致 | ✅ lofi/hifi **V1.0 经编排师一次确认**（Q1~Q8 全采 A + D1 不拆分）；实现与契约逐条一致（12 端点 / 4 表 / 10 码 / 5 权限点）；**hifi 转 V1.1 就地勘正 4 处**（§1 依赖去 `common-idempotency`、§1 角色补 `connector-internal`、§4 `registeredAt` → `updatedAt`、§5 列表不查 DID 状态），业务判定语义零变更；另 2 处实现层修正已登记 §五"实现偏差登记"（`VerificationOutcome` / `ConnectorDetail` 结果 record、`denied` 留痕 `REQUIRES_NEW`） |
+| 2 | 规格验收标准 → 设计 → 测试用例 → 剧本步骤 映射 | ✅ 见本卡 §三 + hifi §9：行为 1/6 → T1（8 例）、行为 6-4/7 → T2（8 例）、行为 8 → T3（4 例）+ T6（5 例）、Q8-A 健康度 → T4（5 例）、防枚举与分页 → T5（6 例）、留痕 → T8（4 例）、did 内部面 → T7（6 例）；**合计 46 例**（connector-service 40 + did 6）；**剧本步骤 = 无需更新**（C-6.2 S1 判定不变，界面入口占位待 3.6.7） |
+| 3 | 复用声明 + 规格外实现声明 | **复用检索与结论**：`common` 六组件逐项核对 → 实际复用 `common-errorcode`（ErrorCode/BizException/ApiResult/ErrorCodes）、`common-auth`（`@RequirePermission` + `AuthContext`）、`common-pagination`（PageQuery/PageResult）、`common-logging`（AuditRecorder，测试期关闭）——**未引 `common-idempotency` / `common-crypto`**（无幂等注解使用点、零加解密面）；跨域复用 subject 既有内部端点（零代码）与 DID 域既有解析语义（新增内部端点承载"按主体取 DID"）；工程骨架与取号语句复用 `delivery-service` 先例（JDBC + Flyway + `LAST_INSERT_ID` 单行取号）。**规格外实现声明 = 空**（范围 = 行为 1 / 6 / 7 / 8 + Q8-A 健康度 + Q9-A 1010 段落定） |
+| 4 | 本地检查命令与结果摘要 | `mvn -B -ntp -pl services/connector-service compile` → **BUILD SUCCESS**；`mvn -B -ntp -pl services/connector-service test` → **Tests run: 40, Failures: 0, Errors: 0, Skipped: 0**；`mvn -B -ntp -pl services/did test` → **Tests run: 118, Failures: 0, Errors: 0**（含新增 6 例，既有 112 例未破坏）；`mvn -B -ntp -pl services/connector-service,services/did checkstyle:check` → **各 0 violations**；`mvn -B -ntp -pl services/connector-service org.jacoco:jacoco-maven-plugin:prepare-agent test org.jacoco:jacoco-maven-plugin:report` → **行覆盖 84.83%（559/659）** ≥70% 线；全仓门禁由 PR gate check 承载（本地未全量复跑，登记） |
+| 5 | 高风险点自查 | **并发**：取号走单行 `LAST_INSERT_ID` 原子语句；状态流转全部带 `status = 'PENDING_REVIEW'` 乐观门槛并检查受影响行数（0 → 状态门槛 400）；同名防重由 `uk_subject_active_name` 兜底（`DuplicateKeyException` → `1010C0002`）。**事务**：核验"取号 + 转已注册 + 建绑定 + 留痕"同一事务；**拒绝留痕用 `REQUIRES_NEW`**（避免业务异常回滚吞掉可追溯义务）；核验拒绝不改状态（保持待核验）。**加解密**：零加解密面（无凭据字段，不自研密码学）。**性能**：列表 / 队列零跨域调用；详情 / 绑定 / 内部面各 1 次 DID 调用（连接 2s / 读 3s 超时，不可达即 503）；非性能敏感路径 |
+| 6 | 验收剧本更新建议（业务语言） | **C-6.1 / C-6.2 / C-6.3 三份剧本步骤与判定均无需修改**。C-6.2 第一幕"注册与核验"现在具备**接口级**可演示能力（提交申请 → 运营方核验 → 拿到编号 → 查看绑定），但**界面入口仍为占位**，界面演示待 3.6.7；剧本中"连接器编号待 3.6.3 签发"的说明可更新为"已签发（CN 前缀 + 6 位）"——属文字口径核对，不改判定 |
+| 7 | 业务可读交付说明 | **完成什么**：连接器"上户口"服务上线——参与方提交连接器（名称/类型/版本）→ 平台运营方点核验 → 系统自动查"主体是否入驻 / 该主体 DID 是否有效 / 信息是否齐全"→ 通过即发**终身唯一编号**并与该参与方 DID 绑定；对方 DID 被吊销，绑定查验**立刻不通过**；连接器可上报心跳，平台据此判在线/离线。**如何演示**：`mvn -B -ntp -pl services/connector-service test`（40 例，覆盖申请/核验三查/编号唯一/绑定实时联动/心跳/防枚举/留痕）；或起服务后按 hifi §5 的 12 个接口走一遍。**注意什么**：① 界面归 3.6.7、升级与注销归 3.6.4；② 核验"DID 是否有效"要求 DID 服务可达（新增只读内部入口，ADR-017 §11）；③ 列表只显示摘要（不含实时 DID 状态），要看"现在还有效吗"请用详情或绑定查验 |
 
 ---
 

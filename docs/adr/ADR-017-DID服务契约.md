@@ -171,3 +171,13 @@ C-1.2 分布式数字身份（DID）的第一个实施包（WBS-3.1.8）新建�
 **权限点收敛（最小权限）**：演示签名入口注解由 `did.admin` 收敛为**服务间专用权限点** `did.demo.signature`——admin 保持直调（双向持有）、`contract-internal` 仅持本签名专用点（不外借 did.admin 全量管理权限，防服务身份越权读取管理面读数端点）；`application.yml` 角色映射追加 2 行（admin 追加持有 + contract-internal 专用）。随卡测试：权限矩阵（contract-internal 过 / admin 过 / 业务角色拒）+ 既有开关默认关闭语义不变（1000C0003）。
 
 **did 侧改动边界**：仅该注解权限点 + yml 2 行；零新增错误码/库表/迁移；消费方不可达或入口关闭在 contract 侧以 `1008S0002` 承载（不冒充签署结论——UNAVAILABLE 语义，did 侧答复原样透传不转换）。
+
+## 11. 变更补记（WBS-3.6.3 连接器域内部只读面，2026-10-26）
+
+**新增内部只读端点**：`GET /api/v1/did/internal/subjects/{subjectNo}/current` → `{subjectNo, did, status}`，status ∈ ACTIVE / REVOKED / PENDING_ISSUE / NONE（NONE = 该主体尚无 DID 记录，业务状态不报错）。语义 = 取最新非吊销行（有效 / 待签发）；无则取最新已吊销行；全无 → NONE。最小暴露：不返回文档、公钥与密钥引用。
+
+**权限口径**：功能门槛 = 服务身份专用权限点 `did.internal.read`，`application.yml` 仅 `connector-internal` 持有（**不外借 did.admin**——防服务身份越权读取管理面 / 吊销 / 重签；admin 不持有该点）。随卡权限矩阵测试：connector-internal 200 / admin 403 / 业务角色 403 / 无身份 401。
+
+**消费方与边界**：唯一消费方 = `connector-service`（WBS-3.6.3 核验第二查 + 绑定实时联动）；只读、不缓存、不改既有端点语义；零新增错误码（参数类复用 `1005C0001`）、零新增库表与迁移。
+
+**路径兼容性**：该路径 4 段，与既有 `GET /api/v1/did/{did}`（单段模板）不冲突（`InternalCurrentDidApiTest` 覆盖）。

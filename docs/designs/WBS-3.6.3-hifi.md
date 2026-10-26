@@ -1,8 +1,8 @@
-# WBS-3.6.3 高保真设计：连接器注册与核验服务（V1.0，2026-10-26）
+# WBS-3.6.3 高保真设计：连接器注册与核验服务（V1.1，2026-10-26）
 
 | 字段 | 内容 |
 | --- | --- |
-| 版本 | **V1.0（✅ 2026-10-26 编排师一次确认 = Q1~Q8 全采 A + D1 不拆分；本文件 = 编码契约，正文零改动）**——与 lofi 一并提交、一次确认（章程 2.6.3） |
+| 版本 | **V1.1（编码段勘正，2026-10-26）**——V1.0 = 2026-10-26 编排师一次确认（Q1~Q8 全采 A + D1 不拆分）的编码契约；编码段按实现就地勘正 4 处（§1 依赖去 `common-idempotency`、§1 角色补 `connector-internal`、§4 `registeredAt` → `updatedAt`、§5 列表不查 DID 状态），业务判定语义零变更；与 lofi 一并提交、一次确认（章程 2.6.3） |
 | 契约来源 | lofi Q1~Q8 建议口径 A + D1 不拆分；规格 `docs/specs/C-6.1-6.3-接入连接器.md` V1.0 行为 1 / 6 / 7 / 8 + §7 Q2-A / Q4-A / Q5-A / Q8-A / Q9-A |
 | 交付物 | ① 新服务 `services/connector-service`；② 迁移 `V1__create_connector_tables.sql`；③ 跨域装配两处（subject yml 1 行 / did 新增内部端点 + yml 1 行）；④ **ADR-027 连接器注册与核验服务契约**（编码段落盘）；⑤ 测试（测试先行） |
 
@@ -14,7 +14,7 @@
 
 - `parent` = `com.ctds:ctds-platform:2.0.0-SNAPSHOT`，`<relativePath>../../pom.xml</relativePath>`
 - `artifactId` = `connector-service`，`packaging` = jar，`description` = 连接器注册与核验服务（WBS 3.6.3）
-- 依赖（全部既有坐标）：`common-errorcode` / `common-auth` / `common-pagination` / `common-logging` / `common-idempotency`（锁组件备用，本卡不引幂等注解）/ `spring-boot-starter-web` / `spring-boot-starter-validation` / `spring-boot-starter-jdbc` / `flyway-core` / `flyway-mysql`(runtime) / `mysql-connector-j`(runtime) / 测试三件（`spring-boot-starter-test` / `testcontainers:junit-jupiter` / `testcontainers:mysql`）
+- 依赖（全部既有坐标）：`common-errorcode` / `common-auth` / `common-pagination` / `common-logging` / `spring-boot-starter-web` / `spring-boot-starter-validation` / `spring-boot-starter-jdbc` / `flyway-core` / `flyway-mysql`(runtime) / `mysql-connector-j`(runtime) / 测试三件（`spring-boot-starter-test` / `testcontainers:junit-jupiter` / `testcontainers:mysql`）——**编码段勘正**：不引 `common-idempotency`（本卡无幂等注解使用点，申请防重由活跃态唯一索引 + `1010C0002` 天然承载；ADR-027 §4 登记）
 - 插件：`spring-boot-maven-plugin`（与 delivery 同）+ `maven-checkstyle-plugin` **显式声明**；**不声明 jacoco**（沿 9 服务惯例，覆盖率由门禁脚本挂 agent）
 - 根 `pom.xml`：`<modules>` 增 1 行 `<module>services/connector-service</module>`（位置在 delivery-service 之后）；**不新增 dependencyManagement 条目**（无跨模块消费需求，内部面为 HTTP）
 
@@ -29,6 +29,7 @@ ctds:
     permissions:
       applicant: connector.register,connector.read,connector.heartbeat
       admin: connector.review,connector.read,connector.internal.read
+      connector-internal: connector.internal.read   # 编码段勘正：本卡即落该服务身份角色（T6 / T7 可测 200）
   connector:
     subject:
       base-url: ${CTDS_CONNECTOR_SUBJECT_BASEURL:}
@@ -161,7 +162,7 @@ record RegistrationView(String applicationNo, String connectorNo, String subject
 
 record ConnectorView(String connectorNo, String subjectNo, String connectorName, String connectorType,
     String connectorVersion, String status, String did, String didStatus, boolean verified,
-    boolean online, LocalDateTime lastHeartbeatAt, LocalDateTime registeredAt) {}
+    boolean online, LocalDateTime lastHeartbeatAt, LocalDateTime updatedAt) {}   // 编码段勘正：registeredAt → updatedAt（表无独立注册时间列）
 
 record BindingView(String connectorNo, String subjectNo, String did, String bindingStatus,
     LocalDateTime boundAt, String didStatus, boolean verified) {}
@@ -185,7 +186,7 @@ record ActionLogView(String applicationNo, String connectorNo, String operatorNo
 | 4 | GET | `/api/v1/connectors/registrations/{applicationNo}` | `connector.read` | → `RegistrationView` | 属主或 `admin`（`connector.review` 持有者）可读；否则 `1010C0003` 同码同文 |
 | 5 | GET | `/api/v1/connectors/review/queue` | `connector.review` | `?pageNum&pageSize` → `PageResult<RegistrationView>` | 固定 `PENDING_REVIEW`，申请时间升序 |
 | 6 | POST | `/api/v1/connectors/registrations/{applicationNo}/verification` | `connector.review` | → `VerificationResultView` | **核验三查**（顺序：主体资格 → DID → 信息完整）；全过 = 状态转 `REGISTERED` + 签发 `CN` + 建 ACTIVE 绑定（**同一事务**）+ 留痕 `connector.verify.approved`；任一不过 = 200 + `verified=false` + `failedCheck`，状态不变 + 留痕 `connector.verify.rejected`；非 `PENDING_REVIEW` → `1010C0004` |
-| 7 | GET | `/api/v1/connectors/mine` | `connector.read` | `?pageNum&pageSize` → `PageResult<ConnectorView>` | 本主体已注册连接器（含实时 `didStatus` / `online`） |
+| 7 | GET | `/api/v1/connectors/mine` | `connector.read` | `?pageNum&pageSize` → `PageResult<ConnectorView>` | 本主体已注册连接器**摘要**（`did` / `didStatus` 不查——**编码段勘正**：列表逐条查 DID 会形成 N 次跨域调用；实时状态由 #8 / #9 / #12 承载，列表保留 `online` 派生） |
 | 8 | GET | `/api/v1/connectors/{connectorNo}` | `connector.read` | → `ConnectorView` | 属主或 `admin`；否则 `1010C0003` 同码同文；路径变量正则 `^CN\d{6}$` |
 | 9 | GET | `/api/v1/connectors/{connectorNo}/binding` | `connector.read` | → `BindingView` | **实时**查 DID 状态（不缓存）：`verified = (didStatus == ACTIVE)`；DID 不可达 → `1010S0002`；留痕 `connector.binding.read`（读取留痕，沿行为 8 可追溯） |
 | 10 | GET | `/api/v1/connectors/{connectorNo}/action-logs` | `connector.read` | `?pageNum&pageSize` → `PageResult<ActionLogView>` | 属主或 `admin`；读取零新增留痕（防递归） |
