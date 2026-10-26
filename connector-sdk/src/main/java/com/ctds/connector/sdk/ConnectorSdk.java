@@ -38,8 +38,9 @@ public final class ConnectorSdk {
         this.resource = new DefaultResourceCapability(client);
         this.product = new DefaultProductCapability(client);
         this.contract = new DefaultContractCapability(client);
-        this.delivery = new DefaultDeliveryCapability(client);
-        this.usageControl = new DefaultUsageControlCapability(client);
+        DefaultDeliveryCapability deliveryCapability = new DefaultDeliveryCapability(client);
+        this.delivery = deliveryCapability;
+        this.usageControl = new DefaultUsageControlCapability(client, deliveryCapability);
     }
 
     public static Builder builder() {

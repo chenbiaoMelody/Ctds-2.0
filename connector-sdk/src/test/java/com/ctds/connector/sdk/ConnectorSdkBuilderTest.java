@@ -3,6 +3,7 @@ package com.ctds.connector.sdk;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.time.Duration;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -60,5 +61,23 @@ class ConnectorSdkBuilderTest {
         assertThat(sdk.delivery()).isNotNull();
         assertThat(sdk.usageControl()).isNotNull();
         assertThat(sdk.context()).isEqualTo(CONTEXT);
+    }
+
+    @Test
+    void 超时可覆盖_缺省2秒与10秒() {
+        ConnectorSdk sdk = ConnectorSdk.builder()
+                .baseUrl("http://platform.test")
+                .tokenProvider(TOKEN)
+                .context(CONTEXT)
+                .connectTimeout(Duration.ofSeconds(3))
+                .readTimeout(Duration.ofSeconds(15))
+                .build();
+        assertThat(sdk.usageControl()).isNotNull();
+        ConnectorSdk defaults = ConnectorSdk.builder()
+                .baseUrl("http://platform.test")
+                .tokenProvider(TOKEN)
+                .context(CONTEXT)
+                .build();
+        assertThat(defaults.delivery()).isNotNull();
     }
 }

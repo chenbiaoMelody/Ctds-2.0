@@ -1,5 +1,11 @@
 package com.ctds.connector.sdk.model;
 
-/** 合约磋商创建命令（对齐平台合约域磋商要素——产品 / 用途 / 域）。 */
-public record CreateContractCommand(Long productId, String purpose, String territory) {
+import java.util.Map;
+
+/**
+ * 合约磋商创建命令（对齐平台 DealRequests.InitiateContract：productId / templateNo /
+ * templateVersionNo（≥1）/ clauseValues 条款值全文）。
+ */
+public record CreateContractCommand(Long productId, String templateNo, Integer templateVersionNo,
+        Map<String, Object> clauseValues) {
 }

@@ -38,6 +38,15 @@ class SpiContractTest {
     }
 
     @Test
+    void 源接入登记_toString对凭据引用掩码() {
+        var registration = new SourceRegistration(SourceType.DATABASE, "jdbc:postgresql://src:5432/db",
+                "cred-ref-7f3a", "CN001");
+        assertThat(registration.toString())
+                .doesNotContain("cred-ref-7f3a")
+                .contains("credentialRef=***");
+    }
+
+    @Test
     void 自检结果静态工厂语义() {
         assertThat(SourceCheckResult.ok().passed()).isTrue();
         var fail = SourceCheckResult.fail(SourceCheckFailureType.INVALID_CREDENTIAL, "凭据无效");
