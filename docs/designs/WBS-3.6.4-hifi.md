@@ -2,7 +2,7 @@
 
 | 字段 | 内容 |
 | --- | --- |
-| 版本 | **V1.0（✅ 2026-10-26 编排师一次确认 = Q1~Q7 全采 A + D1 不拆分；正文 §1~§12 = 编码契约）**——与 lofi 一并提交、一次确认（章程 2.6.3） |
+| 版本 | **V1.1（编码段就地勘正 2 处，2026-10-26）**——V1.0 = 2026-10-26 编排师一次确认（Q1~Q7 全采 A + D1 不拆分）的编码契约；**V1.1 勘正**：§5 #5 注销状态范围收敛为仅 `REGISTERED`、新增 **#10 撤回端点**（待核验档案 `connector_no` 为 NULL，无法按编号寻址），**业务判定语义零变更**；与 lofi 一并提交、一次确认（章程 2.6.3） |
 | 契约来源 | lofi Q1~Q7 建议口径 A + D1 不拆分；规格 `docs/specs/C-6.1-6.3-接入连接器.md` V1.0 行为 9 / 行为 10 + 行为 8 规则 1 后半 + §7 Q5-A |
 | 交付物 | ① `services/connector-service` 增量：迁移 `V2__create_connector_lifecycle_tables.sql`（3 表 + 1 列）+ 9 端点（对外 6 + 内部 3）；② **ADR-028 连接器生命周期管理契约**（编码段落盘）；③ 测试（测试先行） |
 
@@ -90,7 +90,7 @@ ALTER TABLE connector_registration
 com.ctds.connector
 ├── interfaces/
 │   ├── ConnectorUpgradeController.java          # 新：#1 升级登记 / #2 版本链 / #3 待确认队列 / #4 显式确认
-│   ├── ConnectorLifecycleController.java        # 新：#5 注销 / #6 生命周期聚合读
+│   ├── ConnectorLifecycleController.java        # 新：#5 注销 / #6 生命周期聚合读 / #10 撤回待核验申请
 │   ├── InternalConnectorOccupancyController.java# 新：#7 占用登记 / #8 占用释放 / #9 占用清单（内部面）
 │   └── dto/ConnectorLifecycleViews.java         # 新：UpgradeRequest / OccupancyRequest / VersionChangeView
 │                                                #     / OccupancyView / LifecycleView
@@ -148,7 +148,7 @@ record LifecycleView(String connectorNo, String subjectNo, String connectorName,
 
 应用层命令：`UpgradeCommand(connectorNo, subjectNo, toVersion, compatibility)`、`CancellationCommand(connectorNo, callerNo, operator)`；`LifecycleView` 的 `online` **复用 3.6.3 的 `ConnectorQueryService.online(registration)` 口径**（同一派生函数，不复制判定逻辑）。
 
-## §5 端点契约表（9 个：对外 6 + 内部 3）
+## §5 端点契约表（10 个：对外 7 + 内部 3）
 
 | # | 方法 | 路径 | 权限 | 请求 / 响应 | 关键语义 |
 | --- | --- | --- | --- | --- | --- |
@@ -156,11 +156,12 @@ record LifecycleView(String connectorNo, String subjectNo, String connectorName,
 | 2 | GET | `/api/v1/connectors/{connectorNo}/upgrades` | `connector.read` | `?pageNum&pageSize` → `PageResult<VersionChangeView>` | 属主或 `admin`（否则 `1010C0003`）；**时间倒序**（版本链）；含 `PENDING_CONFIRM` / `APPLIED` / `VOIDED` 全部行 |
 | 3 | GET | `/api/v1/connectors/upgrades/pending` | `connector.upgrade.confirm` | `?pageNum&pageSize` → `PageResult<VersionChangeView>` | 运营方待确认队列：固定 `PENDING_CONFIRM`，提交时间**升序**（先到先处置） |
 | 4 | POST | `/api/v1/connectors/{connectorNo}/upgrades/{upgradeNo}/confirmation` | `connector.upgrade.confirm` | → `VersionChangeView` | 显式确认：记录须存在且 `connectorNo` 与路径一致（否则 `1010C0003`）、`upgradeNo` 格式 `^UC\d{6}$`（否则 `1010C0001`）、状态 = `PENDING_CONFIRM`（否则 `1010C0004`）；同事务「改当前版本（门槛 `REGISTERED` 且 `connector_version = from_version`）+ 行转 `APPLIED` + `confirmed_by`/`applied_at` + 留痕 `connector.upgrade.confirmed`」 |
-| 5 | POST | `/api/v1/connectors/{connectorNo}/cancellation` | `connector.cancel` | 空 body → `LifecycleView` | 属主或 `admin`（否则 `1010C0003`）；状态 ∈ `PENDING_REVIEW`（撤回申请）/ `REGISTERED`（否则 `1010C0004`）；**在途占用 > 0 → `1010C0008`**（拒绝留痕 `connector.cancelled` / `DENIED`）；同事务「`status=CANCELLED` + `cancelled_at` + 绑定 `ACTIVE→RELEASED` + `released_at` + 待确认升级行转 `VOIDED` + 留痕 `connector.cancelled` / `SUCCESS`」 |
+| 5 | POST | `/api/v1/connectors/{connectorNo}/cancellation` | `connector.cancel` | 空 body → `LifecycleView` | 属主或 `admin`（否则 `1010C0003`）；状态 = `REGISTERED`（否则 `1010C0004`；**待核验档案无连接器编号，走 #10**）；**在途占用 > 0 → `1010C0008`**（拒绝留痕 `connector.cancelled` / `DENIED`）；同事务「`status=CANCELLED` + `cancelled_at` + 绑定 `ACTIVE→RELEASED` + `released_at` + 待确认升级行转 `VOIDED` + 留痕 `connector.cancelled` / `SUCCESS`」 |
 | 6 | GET | `/api/v1/connectors/{connectorNo}/lifecycle` | `connector.read` | → `LifecycleView` | 属主或 `admin`（否则 `1010C0003`）；聚合读：档案 + 在线派生 + 版本链（全量倒序，低频操作）+ 待确认标记 + **绑定状态（含 `RELEASED` 与 `releasedAt`，供行为 10-3"绑定记录保留"）+ 在途占用数 + 注销时间**；**零跨域调用**（不查 DID 域） |
 | 7 | POST | `/api/v1/connectors/internal/{connectorNo}/occupancies` | `connector.internal.write` | body=`{jobRef}` → `OccupancyView` | 内部面（使用方登记在途作业）：连接器不存在 → `1010C0003`；非 `REGISTERED` → `1010C0004`；同 `connectorNo + jobRef` **幂等**（`ON DUPLICATE KEY UPDATE` 复位为 `OCCUPY`）；留痕 `connector.occupancy.register` |
 | 8 | DELETE | `/api/v1/connectors/internal/{connectorNo}/occupancies/{jobRef}` | `connector.internal.write` | → `OccupancyView` | 释放：记录不存在 → `1010C0003`；已 `RELEASED` → **幂等返回既有**（200）；否则 `RELEASED` + `released_at` + 留痕 `connector.occupancy.release` |
 | 9 | GET | `/api/v1/connectors/internal/{connectorNo}/occupancies` | `connector.internal.read` | → `List<OccupancyView>` | 内部只读清单（在途 + 已释放），供 3.6.8 演练与运维排查；连接器不存在 → `1010C0003` |
+| 10 | DELETE | `/api/v1/connectors/registrations/{applicationNo}` | `connector.cancel` | → `RegistrationView` | **撤回待核验申请**（**V1.1 新增**）：仅属主（否则 `1010C0003` 同码同文）+ 仅 `PENDING_REVIEW`（否则 `1010C0004`）；`applicationNo` 格式 `^CA\d{6}$`（否则 `1010C0001`）；`PENDING_REVIEW → CANCELLED` + `cancelled_at` + 留痕 `connector.cancelled`（detail 标 `withdraw=true`） |
 
 > **路径不冲突实测要求**（hifi §11-6）：`/api/v1/connectors/upgrades/pending` 为字面量两段路径（既有 `/{connectorNo}` 单段模板不匹配）；`/internal/{connectorNo}/occupancies` 与 3.6.3 的 `/internal/connectors/{connectorNo}` 首段字面量不同（`connectors` vs `CN`）。`{connectorNo}` / `{upgradeNo}` 一律正则校验（`^CN\d{6}$` / `^UC\d{6}$`），非法 → `1010C0001`（不把非法值带进 SQL）。
 >
@@ -284,3 +285,12 @@ REGISTERED --注销--> CANCELLED（绑定 → RELEASED + released_at；本卡实
 | 提请确认 | 2026-10-26；契约基准 = lofi Q1~Q7 全采 A + D1 不拆分 |
 | **编排师裁定** | ✅ **2026-10-26 编排师会话回复"确认"** = **Q1~Q7 全采 A + D1 不拆分**；本文件正文（§1~§12）**零改动**转 V1.0 = 编码契约 |
 | 确认后动作 | ✅ 转 V1.0 + 末节回填；🟡 编码段以 §11 前置检查八项为第一动作，测试先行（§9 T1~T6 逐类落盘） |
+
+## 勘正记录（V1.0 → V1.1）
+
+| 项 | 内容 |
+| --- | --- |
+| 触发 | 编码段落盘实现时发现契约不可寻址：待核验档案 `connector_no` 为 `NULL`（编号在核验通过事务内才签发），故 #5 以 `/{connectorNo}/cancellation` 承载 `PENDING_REVIEW`（撤回申请）在 URL 层不可能 |
+| 勘正 2 处 | ① §5 #5 注销状态范围收敛为 **仅 `REGISTERED`**（其余 → `1010C0004`）；② §5 新增 **#10 `DELETE /registrations/{applicationNo}`** 承载"撤回待核验申请"（Q5-A 的业务意图不变，仅寻址面由编号改为申请单号）；端点计数 9 → **10** |
+| 语义影响 | **业务判定语义零变更**：Q5-A"待核验可撤回"仍实现；注销前置检查、终态不可逆、编号不复用、历史保留、错误码集合、权限点集合全部不变 |
+| 生效 | 编码批随批落盘（编排师 2026-10-26 指示"续接编码段任务"）；编码契约随之以 **V1.1** 为准 |

@@ -20,7 +20,7 @@ public class JdbcConnectorRepository implements ConnectorRepository {
 
     private static final String COLUMNS = "id, application_no, connector_no, subject_no, connector_name, "
             + "connector_type, connector_version, status, last_rejection_code, last_rejection_reason, "
-            + "last_heartbeat_at, created_at, updated_at";
+            + "last_heartbeat_at, cancelled_at, created_at, updated_at";
 
     private final JdbcClient jdbc;
 
@@ -122,6 +122,29 @@ public class JdbcConnectorRepository implements ConnectorRepository {
     }
 
     @Override
+    public int updateVersion(final String connectorNo, final String fromVersion, final String toVersion) {
+        return jdbc.sql("UPDATE connector_registration SET connector_version = :toVersion "
+                        + "WHERE connector_no = :no AND status = 'REGISTERED' "
+                        + "AND connector_version = :fromVersion")
+                .param("toVersion", toVersion).param("no", connectorNo)
+                .param("fromVersion", fromVersion).update();
+    }
+
+    @Override
+    public int cancel(final String connectorNo, final LocalDateTime now) {
+        return jdbc.sql("UPDATE connector_registration SET status = 'CANCELLED', cancelled_at = :now "
+                        + "WHERE connector_no = :no AND status IN ('PENDING_REVIEW', 'REGISTERED')")
+                .param("now", now).param("no", connectorNo).update();
+    }
+
+    @Override
+    public int withdraw(final String applicationNo, final LocalDateTime now) {
+        return jdbc.sql("UPDATE connector_registration SET status = 'CANCELLED', cancelled_at = :now "
+                        + "WHERE application_no = :no AND status = 'PENDING_REVIEW'")
+                .param("now", now).param("no", applicationNo).update();
+    }
+
+    @Override
     public List<ConnectorRegistration> findRegistrations(final String subjectNo,
             final ConnectorStatus status, final long offset, final int limit) {
         final Map<String, Object> params = new HashMap<>();
@@ -180,6 +203,7 @@ public class JdbcConnectorRepository implements ConnectorRepository {
                 rs.getString("last_rejection_code"),
                 rs.getString("last_rejection_reason"),
                 rs.getObject("last_heartbeat_at", LocalDateTime.class),
+                rs.getObject("cancelled_at", LocalDateTime.class),
                 rs.getObject("created_at", LocalDateTime.class),
                 rs.getObject("updated_at", LocalDateTime.class));
     }

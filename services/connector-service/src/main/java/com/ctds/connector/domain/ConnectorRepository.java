@@ -37,6 +37,15 @@ public interface ConnectorRepository {
     /** 心跳刷新（仅已注册态，返回受影响行数）。 */
     int touchHeartbeat(String connectorNo, LocalDateTime now);
 
+    /** 版本替换（带"已注册态 + 版本未变"乐观门槛，返回受影响行数；3.6.4 升级）。 */
+    int updateVersion(String connectorNo, String fromVersion, String toVersion);
+
+    /** 注销（待核验或已注册 → 已注销 + cancelled_at，返回受影响行数；3.6.4）。 */
+    int cancel(String connectorNo, LocalDateTime now);
+
+    /** 撤回待核验申请（仅 PENDING_REVIEW → CANCELLED + cancelled_at，返回受影响行数；3.6.4）。 */
+    int withdraw(String applicationNo, LocalDateTime now);
+
     /** 列表（subjectNo / status 为 null = 不筛选）；申请时间倒序。 */
     List<ConnectorRegistration> findRegistrations(String subjectNo, ConnectorStatus status,
             long offset, int limit);

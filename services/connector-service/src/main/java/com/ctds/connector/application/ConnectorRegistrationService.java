@@ -55,7 +55,7 @@ public class ConnectorRegistrationService {
         final String applicationNo = repository.nextApplicationNo();
         try {
             repository.insert(new ConnectorRegistration(null, applicationNo, null, command.subjectNo(),
-                    name, type, version, ConnectorStatus.PENDING_REVIEW, null, null, null, null, null));
+                    name, type, version, ConnectorStatus.PENDING_REVIEW, null, null, null, null, null, null));
         } catch (final DuplicateKeyException e) {
             audit.denied(ConnectorAuditActions.DENIED, null, null, command.subjectNo(),
                     ConnectorErrorCodes.NAME_DUPLICATED.value(), "name=" + name);
