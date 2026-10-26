@@ -110,7 +110,7 @@ UsageSummaryView      getUsageSummary(String contractNo);
 | executeUsage | **GET `/api/v1/data-products/{productId}`**（同 requestApiDelivery；消费判定结果） | Bearer + 三凭据头（X-Ctds-Contract-No / Purpose / Territory） |
 | getUsageSummary | GET `/api/v1/contracts/{contractNo}/usage-summary` | Bearer |
 
-> **诚实边界（修复批勘正，登记 ADR-026 §4-1）**：V1.0 网关**唯一静态路由 = `/api/v1/data-products/**`**（3.5.2 Q4-A），且交付链强制 `X-Ctds-Contract-No`（缺失即 400）——13 方法中**仅交付 / 使用两腿（`requestApiDelivery` / `executeUsage`）经网关可用**；其余 11 方法经网关不可达（身份 / 资源 / 合约四读腿与写腿无路由 → 404；`data-products/mine` 命中路由但缺凭据头 → 400；文件型交付与 `getDelivery`、用量汇总无路由 → 404），端到端受理验证归 3.6.8（网关扩路由随 3.6.7 / 3.6.8 与部署期统一设计，**本卡不改网关配置**）。
+> **诚实边界（修复批勘正，登记 ADR-026 §4-1）**：V1.0 网关**唯一静态路由 = `/api/v1/data-products/**`**（3.5.2 Q4-A），且交付链强制 `X-Ctds-Contract-No`（缺失即 400）——**14 方法**中**仅交付 / 使用两腿（`requestApiDelivery` / `executeUsage`）经网关可用**；其余 **12 方法**经网关不可达（身份 / 资源 / 合约四读腿与写腿无路由 → 404；`data-products/mine` 命中路由但缺凭据头 → 400；文件型交付与 `getDelivery`、用量汇总无路由 → 404），端到端受理验证归 3.6.8（网关扩路由随 3.6.7 / 3.6.8 与部署期统一设计，**本卡不改网关配置**）。
 
 ## §6 配置项
 

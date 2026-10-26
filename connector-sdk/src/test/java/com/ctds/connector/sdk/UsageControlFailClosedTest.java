@@ -83,6 +83,21 @@ class UsageControlFailClosedTest {
     }
 
     @Test
+    void 非合约需求方发起使用_网关拒绝_原码透传() {
+        server.expect(ExpectedCount.once(), requestTo(URL))
+                .andRespond(withStatus(HttpStatus.FORBIDDEN).contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"code\":\"1009C0003\",\"message\":\"非合约需求方不可发起交付调用\","
+                                + "\"traceId\":\"t6\"}"));
+        assertThatThrownBy(() -> usage.executeUsage(REQUEST))
+                .isInstanceOfSatisfying(ConnectorException.class, e -> {
+                    assertThat(e.platformCode()).isEqualTo("1009C0003");
+                    assertThat(e.platformMessage()).isEqualTo("非合约需求方不可发起交付调用");
+                    assertThat(e.sdkErrorType()).isNull();
+                });
+        server.verify();
+    }
+
+    @Test
     void 被交付资源不存在_404透传() {
         server.expect(requestTo(URL))
                 .andRespond(withStatus(HttpStatus.NOT_FOUND).contentType(MediaType.APPLICATION_JSON)
@@ -102,6 +117,7 @@ class UsageControlFailClosedTest {
                     assertThat(e.sdkErrorType()).isEqualTo(SdkErrorType.UNREACHABLE);
                     assertThat(e.platformCode()).isNull();
                 });
+        server.verify();
     }
 
     @Test
@@ -111,6 +127,7 @@ class UsageControlFailClosedTest {
         assertThatThrownBy(() -> usage.executeUsage(REQUEST))
                 .isInstanceOfSatisfying(ConnectorException.class,
                         e -> assertThat(e.sdkErrorType()).isEqualTo(SdkErrorType.TIMEOUT));
+        server.verify();
     }
 
     @Test
