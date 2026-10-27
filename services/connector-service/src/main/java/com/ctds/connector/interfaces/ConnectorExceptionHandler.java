@@ -1,6 +1,8 @@
 package com.ctds.connector.interfaces;
 
 import com.ctds.common.api.ApiResult;
+import com.ctds.common.errorcode.ErrorCodes;
+import com.ctds.connector.domain.ConnectorAdapterProbeException;
 import com.ctds.connector.domain.ConnectorErrorCodes;
 import com.ctds.connector.domain.ConnectorUnavailableException;
 import java.util.Objects;
@@ -26,6 +28,14 @@ public class ConnectorExceptionHandler {
     public ResponseEntity<ApiResult<Void>> onUnavailable(final ConnectorUnavailableException ex) {
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                 .body(new ApiResult<>(ex.getErrorCode().value(), ex.getMessage(),
+                        ApiResult.currentTraceId(), null));
+    }
+
+    /** 适配器非预期失败（hifi §7-③）：502 + 中性文案，不归为三类业务原因、不暴露内部实现。 */
+    @ExceptionHandler(ConnectorAdapterProbeException.class)
+    public ResponseEntity<ApiResult<Void>> onProbeFailed(final ConnectorAdapterProbeException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                .body(new ApiResult<>(ErrorCodes.INTERNAL_ERROR.value(), ex.getMessage(),
                         ApiResult.currentTraceId(), null));
     }
 

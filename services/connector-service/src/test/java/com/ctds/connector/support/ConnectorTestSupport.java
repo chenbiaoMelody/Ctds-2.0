@@ -3,10 +3,15 @@ package com.ctds.connector.support;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.ctds.connector.infrastructure.SourceAdapterRegistry;
+import com.ctds.connector.sdk.adapter.gov.GovExchangeSourceAdapter;
+import com.ctds.connector.sdk.spi.SourceType;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -22,7 +27,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
  * 连接器服务集成测试基类（hifi §9）：真实 MySQL 容器 + 主体/DID 本地 stub + 全类共享 Spring 上下文。
- * 每个用例前清空三张业务表并重置取号表，保证用例互不串扰（同库共享，避免多上下文启动开销）。
+ * 每个用例前清空业务表并重置取号表，保证用例互不串扰（同库共享，避免多上下文启动开销）。
+ * 3.6.5 起：临时密钥文件供源凭据国密（解析路径不落库、不打印）+ 源表清理 + 模拟源计数重置。
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK,
         properties = {"ctds.audit.enabled=false"})
@@ -38,8 +44,13 @@ public abstract class ConnectorTestSupport {
     protected static final String CONNECTORS = "/api/v1/connectors/";
     protected static final String INTERNAL = "/api/v1/connectors/internal/";
     protected static final String OPERATOR = "ops-admin";
+    /** 源凭据测试明文（断言：任何响应 / 落库 / 留痕均不得出现）。 */
+    protected static final String SOURCE_SECRET = "gov-exchange-secret-0001";
+    /** 源凭据加密 keyRef（与 application.yml 默认一致）。 */
+    protected static final String SOURCE_KEY_REF = "connector-source-credential";
 
     private static final ConnectorStubServer STUB = createStub();
+    private static final Path KEY_FILE = createKeyFile();
 
     @DynamicPropertySource
     static void properties(final DynamicPropertyRegistry registry) {
@@ -47,6 +58,7 @@ public abstract class ConnectorTestSupport {
         registry.add("ctds.connector.subject.base-url", STUB::baseUrl);
         registry.add("ctds.connector.did.base-url", STUB::baseUrl);
         registry.add("ctds.connector.health.offline-after", () -> "5m");
+        registry.add("ctds.crypto.local.key-file", KEY_FILE::toString);
     }
 
     @Autowired
@@ -58,8 +70,12 @@ public abstract class ConnectorTestSupport {
     @Autowired
     protected ObjectMapper objectMapper;
 
+    @Autowired
+    protected SourceAdapterRegistry sourceAdapterRegistry;
+
     @BeforeEach
     void resetState() {
+        jdbc.update("DELETE FROM connector_source");
         jdbc.update("DELETE FROM connector_job_occupancy");
         jdbc.update("DELETE FROM connector_version_change");
         jdbc.update("DELETE FROM connector_did_binding");
@@ -68,6 +84,8 @@ public abstract class ConnectorTestSupport {
         jdbc.update("UPDATE connector_application_no_seq SET next_no = 1");
         jdbc.update("UPDATE connector_no_seq SET next_no = 1");
         jdbc.update("UPDATE connector_upgrade_no_seq SET next_no = 1");
+        jdbc.update("UPDATE connector_source_no_seq SET next_no = 1");
+        govAdapter().mockResetCounters();
         STUB.reset();
     }
 
@@ -147,6 +165,53 @@ public abstract class ConnectorTestSupport {
                         .header("X-Ctds-Roles", INTERNAL_ROLE)
                         .content("{\"jobRef\":\"" + jobRef + "\"}"))
                 .andExpect(status().isOk());
+    }
+
+    /** 登记源（期望 200），返回 sourceNo。 */
+    protected String registerSource(final String subjectNo, final String connectorNo, final String sourceType,
+            final String endpoint, final String credential) throws Exception {
+        final MvcResult result = mockMvc.perform(post(CONNECTORS + connectorNo + "/sources")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-Ctds-Subject", subjectNo)
+                        .header("X-Ctds-Roles", APPLICANT_ROLE)
+                        .content(sourceBody(sourceType, endpoint, credential)))
+                .andExpect(status().isOk())
+                .andReturn();
+        return data(result).path("sourceNo").asText();
+    }
+
+    /** 源登记请求体（凭据仅出现在请求侧）。 */
+    protected static String sourceBody(final String sourceType, final String endpoint,
+            final String credential) {
+        return "{\"sourceType\":\"" + sourceType + "\",\"endpoint\":\"" + endpoint + "\",\"credential\":\""
+                + credential + "\"}";
+    }
+
+    /** 政务适配器实例（模拟源观测面：触达计数 / 源端数据版本）。 */
+    protected GovExchangeSourceAdapter govAdapter() {
+        return (GovExchangeSourceAdapter) sourceAdapterRegistry.find(SourceType.GOV_EXCHANGE).orElseThrow();
+    }
+
+    /** 内部读取请求体。 */
+    protected static String readBody(final String contractNo, final String purpose) {
+        return "{\"contractNo\":\"" + contractNo + "\",\"purpose\":\"" + purpose + "\"}";
+    }
+
+    private static Path createKeyFile() {
+        try {
+            final Path file = Files.createTempFile("ctds-connector-source-keys", ".keys");
+            Files.writeString(file, SOURCE_KEY_REF + "=MDEyMzQ1Njc4OWFiY2RlZg==\n", StandardCharsets.UTF_8);
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                try {
+                    Files.deleteIfExists(file);
+                } catch (final IOException ignored) {
+                    // 临时密钥文件清理失败不影响测试结论（不落库、不打印内容）
+                }
+            }, "connector-source-key-cleanup"));
+            return file;
+        } catch (final IOException e) {
+            throw new IllegalStateException("测试密钥文件创建失败", e);
+        }
     }
 
     private static ConnectorStubServer createStub() {

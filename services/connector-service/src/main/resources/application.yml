@@ -21,14 +21,18 @@ logging:
       file: logstash
 
 ctds:
-  # 连接器域角色点（WBS-3.6.3 hifi §1 + 3.6.4 hifi §1）：applicant = 参与方（申请/读/心跳/升级/注销）；
+  # 连接器域角色点（WBS-3.6.3 hifi §1 + 3.6.4 hifi §1 + 3.6.5 hifi §1）：applicant = 参与方（申请/读/心跳/升级/注销/源管理）；
   # admin = 平台运营方（核验/读/内部面直调/版本确认/注销）；connector-internal = 服务身份内部面（读 + 占用写）。
   auth:
     permissions:
-      applicant: connector.register,connector.read,connector.heartbeat,connector.upgrade,connector.cancel
+      applicant: connector.register,connector.read,connector.heartbeat,connector.upgrade,connector.cancel,connector.source.manage
       admin: connector.review,connector.read,connector.internal.read,connector.upgrade.confirm,connector.cancel
       # 服务身份专用内部面角色（本服务作为被调方；3.6.7 / 3.6.8 与 SDK 校验消费，ADR-027 §2 / ADR-028 §2）
       connector-internal: connector.internal.read,connector.internal.write
+  # 源凭据国密唯一入口（ADR-006）：未配置密钥文件 = 允许启动，登记 / 自检 fail-closed 503（1010S0004）
+  crypto:
+    local:
+      key-file: ${CTDS_SM4_KEY_FILE:}
   connector:
     # 跨域只读调用（服务身份 connector-service / connector-internal；未配置 = 判定不可用 → 503 fail-closed）
     subject:
@@ -40,3 +44,7 @@ ctds:
     # 最小健康度（规格 §7 Q8-A）：最近心跳超过该阈值 = 离线；启动校验 1m~1440m
     health:
       offline-after: 5m
+    # 源接入（WBS-3.6.5 hifi §12）：凭据加密 keyRef（KMS 可覆盖）与适配器探测超时
+    source:
+      credential-key-ref: ${CTDS_CONNECTOR_SOURCE_KEY_REF:connector-source-credential}
+      adapter-timeout: ${CTDS_CONNECTOR_SOURCE_ADAPTER_TIMEOUT:3s}

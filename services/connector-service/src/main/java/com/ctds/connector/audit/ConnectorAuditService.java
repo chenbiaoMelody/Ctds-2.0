@@ -49,6 +49,16 @@ public class ConnectorAuditService {
         record(action, applicationNo, connectorNo, operatorNo, "DENIED", reasonCode, detail);
     }
 
+    /**
+     * 业务失败类动作（3.6.5 源自检不通过：200 业务结论 + 失败原因留痕，不是接口错误）。
+     * 与拒绝留痕同口径独立提交，不随外层回滚丢失。
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void failure(final String action, final String connectorNo, final String operatorNo,
+            final String reasonCode, final String detail) {
+        record(action, null, connectorNo, operatorNo, "FAILURE", reasonCode, detail);
+    }
+
     private void record(final String action, final String applicationNo, final String connectorNo,
             final String operatorNo, final String result, final String reasonCode, final String detail) {
         try {

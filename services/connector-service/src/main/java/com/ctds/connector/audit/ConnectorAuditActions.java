@@ -17,6 +17,12 @@ public final class ConnectorAuditActions {
     public static final String CANCELLED = "connector.cancelled";
     public static final String OCCUPANCY_REGISTER = "connector.occupancy.register";
     public static final String OCCUPANCY_RELEASE = "connector.occupancy.release";
+    /** 3.6.5 源接入动作（登记 / 变更 / 自检 / 读取 / 拒绝）。 */
+    public static final String SOURCE_REGISTER = "source.register";
+    public static final String SOURCE_AMEND = "source.amend";
+    public static final String SOURCE_CHECK = "source.check";
+    public static final String SOURCE_READ = "source.read";
+    public static final String SOURCE_DENIED = "source.denied";
 
     private ConnectorAuditActions() {
     }
