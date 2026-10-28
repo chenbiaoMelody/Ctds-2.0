@@ -86,6 +86,51 @@ class SourceEndpointPolicyTest {
     }
 
     @Test
+    void rejectsCredentialLikeQueryKeys() {
+        assertThatThrownBy(() -> SourceEndpointPolicy.normalize(SourceType.GOV_EXCHANGE,
+                "https://gov.example.com/api?password=Pa55w0rd", false))
+                .isInstanceOf(ConnectorBizException.class);
+        assertThatThrownBy(() -> SourceEndpointPolicy.normalize(SourceType.GOV_EXCHANGE,
+                "https://gov.example.com/api?token=abc123", false))
+                .isInstanceOf(ConnectorBizException.class);
+        assertThatThrownBy(() -> SourceEndpointPolicy.normalize(SourceType.GOV_EXCHANGE,
+                "https://gov.example.com/api?SECRET=y", false))
+                .isInstanceOf(ConnectorBizException.class);
+        assertThatThrownBy(() -> SourceEndpointPolicy.normalize(SourceType.DATABASE,
+                "jdbc:mysql://db.example.com:3306/dataset?password=p", false))
+                .isInstanceOf(ConnectorBizException.class);
+        assertThatThrownBy(() -> SourceEndpointPolicy.normalize(SourceType.API_GATEWAY,
+                "https://gw.example.com/x?api_key=z", false))
+                .isInstanceOf(ConnectorBizException.class);
+        assertThatThrownBy(() -> SourceEndpointPolicy.normalize(SourceType.GOV_EXCHANGE,
+                "mock://gov-exchange/ok?token=abc", false))
+                .isInstanceOf(ConnectorBizException.class);
+    }
+
+    @Test
+    void acceptsInnocuousQueryKeys() {
+        assertThat(SourceEndpointPolicy.normalize(SourceType.GOV_EXCHANGE,
+                "https://gov.example.com/api?charset=utf8&pageSize=10", false))
+                .isEqualTo("https://gov.example.com/api?charset=utf8&pageSize=10");
+        assertThat(SourceEndpointPolicy.normalize(SourceType.DATABASE,
+                "jdbc:mysql://db.example.com:3306/dataset?useSSL=false&characterEncoding=utf8", false))
+                .isEqualTo("jdbc:mysql://db.example.com:3306/dataset?useSSL=false&characterEncoding=utf8");
+    }
+
+    @Test
+    void rejectsEncodedPrivateHostForms() {
+        for (final String endpoint : new String[] {"http://[::ffff:127.0.0.1]/x",
+                "http://[::ffff:7f00:1]/x", "http://010.1.2.3/x", "http://127.1/x",
+                "http://172.016.0.1/x", "http://192.168.001.5/x"}) {
+            assertThatThrownBy(() -> SourceEndpointPolicy.normalize(SourceType.GOV_EXCHANGE, endpoint, false))
+                    .as(endpoint)
+                    .isInstanceOf(ConnectorBizException.class);
+        }
+        assertThat(SourceEndpointPolicy.normalize(SourceType.GOV_EXCHANGE,
+                "http://[::ffff:8.8.8.8]/x", false)).isEqualTo("http://[::ffff:8.8.8.8]/x");
+    }
+
+    @Test
     void mockSchemeIsGovExchangeOnly() {
         assertThatThrownBy(() -> SourceEndpointPolicy.normalize(SourceType.DATABASE, GOV_OK, false))
                 .isInstanceOf(ConnectorBizException.class);
@@ -125,5 +170,30 @@ class SourceEndpointPolicyTest {
     void redactNeutralizesAuditFieldSeparator() {
         assertThat(SourceEndpointPolicy.redact("https://gov.example.com/a;b=c"))
                 .isEqualTo("https://gov.example.com/a%3Bb=c");
+    }
+
+    @Test
+    void redactStripsUserInfoFromLegacyEndpoint() {
+        assertThat(SourceEndpointPolicy.redact("https://svc:Pa55w0rd@gov.example.com/api"))
+                .isEqualTo("https://gov.example.com/api");
+        assertThat(SourceEndpointPolicy.redact("jdbc:mysql://root:Pa55w0rd@db.example.com:3306/d"))
+                .isEqualTo("<redacted>");
+    }
+
+    @Test
+    void rejectsUnparseableUriAndUndecidableHosts() {
+        // Java URI 层即拒绝（语法非法 / IPv4 校验失败 / 数字开头混合段 host 不可判定），默认不放行
+        for (final String endpoint : new String[] {"http://exa mple.com/x", "http://sub.localhost/x",
+                "http://0.0.0.0/x", "http://1.2.3.4.5/x", "http://999.1.2.3/x", "http://172.abc.0.1/x"}) {
+            assertThatThrownBy(() -> SourceEndpointPolicy.normalize(SourceType.GOV_EXCHANGE, endpoint, false))
+                    .as(endpoint)
+                    .isInstanceOf(ConnectorBizException.class);
+        }
+    }
+
+    @Test
+    void redactFallsBackOnUnparseableOrSchemelessInput() {
+        assertThat(SourceEndpointPolicy.redact("http://exa mple.com/x")).isEqualTo("<redacted>");
+        assertThat(SourceEndpointPolicy.redact("/path/only")).isEqualTo("<redacted>");
     }
 }

@@ -13,7 +13,7 @@ import org.springframework.http.MediaType;
 
 /**
  * 源接入边界与负向用例（WBS-3.6.5 评审循环 1 修复批，补 hifi §5 错误面）：
- * 地址安全校验（URL 内嵌凭据 / 非白名单 scheme）、非法枚举、参数越界、分页越界、状态门槛、
+ * 地址安全校验（URL 内嵌凭据 / 查询串凭据键 / 非白名单 scheme）、非法枚举、参数越界、状态门槛、
  * 鉴权拒绝（401 / 403）、读取失败的业务结论、拒绝类留痕、留痕地址脱敏。
  */
 class ConnectorSourceBoundaryApiTest extends ConnectorTestSupport {
@@ -186,15 +186,32 @@ class ConnectorSourceBoundaryApiTest extends ConnectorTestSupport {
     }
 
     @Test
+    void rejectsCredentialLikeQueryKeyEndpoint() throws Exception {
+        final String connectorNo = registerConnector(OWNER, "bnd-query-cred");
+        mockMvc.perform(post(CONNECTORS + connectorNo + SOURCES)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-Ctds-Subject", OWNER)
+                        .header("X-Ctds-Roles", APPLICANT_ROLE)
+                        .content(sourceBody("GOV_EXCHANGE",
+                                "https://gov.example.com/api?password=Pa55w0rd", SOURCE_SECRET)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("1010C0001"));
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM connector_source", Integer.class)).isZero();
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM connector_action_log WHERE detail LIKE '%Pa55w0rd%'", Integer.class))
+                .isZero();
+    }
+
+    @Test
     void auditTrailRedactsEndpointQueryString() throws Exception {
         final String connectorNo = registerConnector(OWNER, "bnd-redact");
-        final String endpoint = "http://127.0.0.1:1/gov?token=abc123";
+        final String endpoint = "http://127.0.0.1:1/gov?stage=demo123";
         registerSource(OWNER, connectorNo, "GOV_EXCHANGE", endpoint, SOURCE_SECRET);
         final String detail = jdbc.queryForObject(
                 "SELECT detail FROM connector_action_log WHERE action = 'source.register' "
                         + "ORDER BY id DESC LIMIT 1", String.class);
         assertThat(detail).contains("endpoint=http://127.0.0.1:1/gov");
-        assertThat(detail).doesNotContain("token").doesNotContain("abc123");
+        assertThat(detail).doesNotContain("stage").doesNotContain("demo123");
     }
 
     @Test
