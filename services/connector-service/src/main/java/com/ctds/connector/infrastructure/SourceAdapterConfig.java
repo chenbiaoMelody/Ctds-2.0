@@ -23,6 +23,12 @@ public class SourceAdapterConfig {
     @Bean
     public SourceAdapter govExchangeSourceAdapter(final CredentialResolver credentialResolver,
             @Value("${ctds.connector.source.adapter-timeout:3s}") final Duration adapterTimeout) {
+        // 启动校验（hifi §12）：超时 1s~30s；越界 = 配置错误，启动即失败而非运行期才暴露
+        if (adapterTimeout == null || adapterTimeout.compareTo(Duration.ofSeconds(1)) < 0
+                || adapterTimeout.compareTo(Duration.ofSeconds(30)) > 0) {
+            throw new IllegalStateException(
+                    "ctds.connector.source.adapter-timeout 须在 1s~30s 之间，实际 = " + adapterTimeout);
+        }
         return new GovExchangeSourceAdapter(credentialResolver, adapterTimeout);
     }
 

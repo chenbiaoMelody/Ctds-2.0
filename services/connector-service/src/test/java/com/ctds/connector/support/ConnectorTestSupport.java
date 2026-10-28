@@ -31,7 +31,9 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * 3.6.5 起：临时密钥文件供源凭据国密（解析路径不落库、不打印）+ 源表清理 + 模拟源计数重置。
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK,
-        properties = {"ctds.audit.enabled=false"})
+        properties = {"ctds.audit.enabled=false",
+                // 仅测试放开回环 / 内网地址（生产默认拒绝，见 SourceEndpointPolicy；502 探测用例需本地桩）
+                "ctds.connector.source.allow-private-endpoint=true"})
 @AutoConfigureMockMvc
 @ActiveProfiles("mysql")
 @Testcontainers(disabledWithoutDocker = true)

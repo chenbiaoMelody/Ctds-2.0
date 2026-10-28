@@ -11,7 +11,8 @@ import com.ctds.connector.domain.ConnectorSource;
 import com.ctds.connector.domain.ConnectorSourceRepository;
 import com.ctds.connector.domain.ConnectorStatus;
 import com.ctds.connector.domain.ConnectorUnavailableException;
-import com.ctds.connector.infrastructure.SourceAdapterRegistry;
+import com.ctds.connector.domain.SourceAdapterCatalog;
+import com.ctds.connector.domain.SourceEndpointPolicy;
 import com.ctds.connector.sdk.spi.SourceAdapter;
 import com.ctds.connector.sdk.spi.SourceReadRequest;
 import com.ctds.connector.sdk.spi.SourceReadResult;
@@ -20,6 +21,9 @@ import com.ctds.connector.sdk.spi.SourceType;
 import java.time.LocalDateTime;
 import java.util.Optional;
 import java.util.regex.Pattern;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 /**
@@ -33,6 +37,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class ConnectorSourceReadService {
 
+    private static final Logger LOG = LoggerFactory.getLogger(ConnectorSourceReadService.class);
     private static final Pattern CONTRACT_NO = Pattern.compile("^[A-Za-z0-9._-]{1,64}$");
     private static final int PURPOSE_MAX = 128;
     private static final int DETAIL_MAX = 240;
@@ -40,16 +45,20 @@ public class ConnectorSourceReadService {
 
     private final ConnectorSourceRepository sourceRepository;
     private final ConnectorRepository connectorRepository;
-    private final SourceAdapterRegistry adapterRegistry;
+    private final SourceAdapterCatalog adapterCatalog;
     private final ConnectorAuditService audit;
+    private final boolean allowPrivateEndpoint;
 
     public ConnectorSourceReadService(final ConnectorSourceRepository sourceRepository,
-            final ConnectorRepository connectorRepository, final SourceAdapterRegistry adapterRegistry,
-            final ConnectorAuditService audit) {
+            final ConnectorRepository connectorRepository, final SourceAdapterCatalog adapterCatalog,
+            final ConnectorAuditService audit,
+            @Value("${ctds.connector.source.allow-private-endpoint:false}")
+            final boolean allowPrivateEndpoint) {
         this.sourceRepository = sourceRepository;
         this.connectorRepository = connectorRepository;
-        this.adapterRegistry = adapterRegistry;
+        this.adapterCatalog = adapterCatalog;
         this.audit = audit;
+        this.allowPrivateEndpoint = allowPrivateEndpoint;
     }
 
     /** 读取源数据（内部面；返回摘要与读取时间，不含数据本体）。 */
@@ -67,15 +76,17 @@ public class ConnectorSourceReadService {
                 .orElseThrow(ConnectorSourceReadService::notFound);
         final SourceType type = parseType(source.sourceType())
                 .orElseThrow(ConnectorSourceReadService::unsupported);
-        final SourceAdapter adapter = adapterRegistry.find(type)
+        final SourceAdapter adapter = adapterCatalog.find(type)
                 .orElseThrow(ConnectorSourceReadService::unsupported);
+        final String endpoint = SourceEndpointPolicy.normalize(type, source.endpoint(), allowPrivateEndpoint);
         final SourceReadResult result;
         try {
-            result = adapter.read(new SourceRegistration(type, source.endpoint(), source.credentialRef(),
+            result = adapter.read(new SourceRegistration(type, endpoint, source.credentialRef(),
                     connectorNo), new SourceReadRequest(normalizedContractNo, normalizedPurpose));
         } catch (final ConnectorUnavailableException e) {
             throw e;
         } catch (final RuntimeException e) {
+            LOG.warn("源读取适配器非预期失败（已收敛为 502）：{}", e.getClass().getName());
             throw new ConnectorAdapterProbeException(e);
         }
         final LocalDateTime readAt = LocalDateTime.now();

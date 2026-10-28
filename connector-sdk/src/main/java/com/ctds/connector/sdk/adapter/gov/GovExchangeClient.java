@@ -1,9 +1,10 @@
 package com.ctds.connector.sdk.adapter.gov;
 
+import java.net.http.HttpClient;
 import java.time.Duration;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 
@@ -19,17 +20,21 @@ final class GovExchangeClient {
     private final RestClient restClient;
 
     GovExchangeClient(final Duration timeout) {
-        final SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-        factory.setConnectTimeout(timeout);
+        // JDK HttpClient（java.net.http，JDK 17 内置）：5xx / 3xx 应答可被读到状态码，
+        // 不会像 HttpURLConnection 那样以 IOException 形式提前中断（否则 401 / 403 / 其它状态分支不可达）；
+        // 重定向默认不跟随（Redirect.NEVER），3xx 一律按非预期应答上抛。
+        final HttpClient httpClient = HttpClient.newBuilder().connectTimeout(timeout).build();
+        final JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(httpClient);
         factory.setReadTimeout(timeout);
         this.restClient = RestClient.builder().requestFactory(factory).build();
     }
 
     /**
-     * 发送标准请求报文。
+     * 发送标准请求报文（应答体由容器关闭：{@code exchange(..., true)}，避免 401 / 403 早退时连接泄漏）。
      *
      * @throws ResourceAccessException 连接失败 / 超时（网络不可达）
-     * @throws IllegalStateException   非预期应答（状态码非 2xx / 401 / 403，或应答不可解析）
+     * @throws IllegalStateException   非预期应答（3xx 重定向 / 其它非 2xx / 应答不可解析）；
+     *                                 POST 不经 HttpURLConnection 自动跟随重定向，重定向一律视为异常
      */
     GovExchangeMessage exchange(final GovExchangeMessage request, final String credential) {
         return restClient.post()
@@ -47,13 +52,13 @@ final class GovExchangeClient {
                                 GovExchangeMessage.INSUFFICIENT_PERMISSION, "权限不足");
                     }
                     if (status < 200 || status >= 300) {
-                        throw new IllegalStateException("政务交换应答状态异常");
+                        throw new IllegalStateException("政务交换应答状态异常（status=" + status + "）");
                     }
                     final GovExchangeMessage body = response.bodyTo(GovExchangeMessage.class);
                     if (body == null) {
                         throw new IllegalStateException("政务交换应答为空");
                     }
                     return body;
-                }, false);
+                }, true);
     }
 }

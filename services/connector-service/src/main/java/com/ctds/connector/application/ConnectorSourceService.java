@@ -13,8 +13,9 @@ import com.ctds.connector.domain.ConnectorSourceCheck;
 import com.ctds.connector.domain.ConnectorSourceRepository;
 import com.ctds.connector.domain.ConnectorStatus;
 import com.ctds.connector.domain.ConnectorUnavailableException;
-import com.ctds.connector.infrastructure.CredentialCipher;
-import com.ctds.connector.infrastructure.SourceAdapterRegistry;
+import com.ctds.connector.domain.CredentialProtector;
+import com.ctds.connector.domain.SourceAdapterCatalog;
+import com.ctds.connector.domain.SourceEndpointPolicy;
 import com.ctds.connector.sdk.spi.SourceAdapter;
 import com.ctds.connector.sdk.spi.SourceCheckResult;
 import com.ctds.connector.sdk.spi.SourceRegistration;
@@ -23,6 +24,9 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,32 +35,36 @@ import org.springframework.transaction.annotation.Transactional;
  * 源接入登记 / 变更 / 清单 / 详情 / 自检编排（规格行为 11~13；hifi §7-①②③）。
  *
  * <p>身份一律由调用方从鉴权上下文取（请求体不含主体编号）；归属与防枚举：非属主 / 不存在 /
- * 跨连接器一律同码同文 {@code 1010C0003}。凭据经 {@link CredentialCipher} 国密加密，任何对外形态只有掩码。
- * 自检失败 = 200 业务结论（三类原因可读 + 失败留痕）；适配器非预期异常 = 502 中性文案。</p>
+ * 跨连接器一律同码同文 {@code 1010C0003}。凭据经 {@link CredentialProtector} 国密加密，任何对外形态只有掩码。
+ * 自检失败 = 200 业务结论（三类原因可读 + 失败留痕）；适配器非预期异常 = 502 中性文案。
+ * 源地址受理规则见 {@link SourceEndpointPolicy}（scheme 白名单 / 禁 URL 内嵌凭据 / 默认拒绝内网地址）。</p>
  */
 @Service
 public class ConnectorSourceService {
 
-    private static final String MOCK_SCHEME = "mock://";
-    private static final int ENDPOINT_MAX = 512;
+    private static final Logger LOG = LoggerFactory.getLogger(ConnectorSourceService.class);
     private static final int CREDENTIAL_MAX = 256;
     private static final int DETAIL_MAX = 240;
     private static final String TEXT_NULL = "null";
 
     private final ConnectorSourceRepository sourceRepository;
     private final ConnectorRepository connectorRepository;
-    private final CredentialCipher cipher;
-    private final SourceAdapterRegistry adapterRegistry;
+    private final CredentialProtector cipher;
+    private final SourceAdapterCatalog adapterCatalog;
     private final ConnectorAuditService audit;
+    private final boolean allowPrivateEndpoint;
 
     public ConnectorSourceService(final ConnectorSourceRepository sourceRepository,
-            final ConnectorRepository connectorRepository, final CredentialCipher cipher,
-            final SourceAdapterRegistry adapterRegistry, final ConnectorAuditService audit) {
+            final ConnectorRepository connectorRepository, final CredentialProtector cipher,
+            final SourceAdapterCatalog adapterCatalog, final ConnectorAuditService audit,
+            @Value("${ctds.connector.source.allow-private-endpoint:false}")
+            final boolean allowPrivateEndpoint) {
         this.sourceRepository = sourceRepository;
         this.connectorRepository = connectorRepository;
         this.cipher = cipher;
-        this.adapterRegistry = adapterRegistry;
+        this.adapterCatalog = adapterCatalog;
         this.audit = audit;
+        this.allowPrivateEndpoint = allowPrivateEndpoint;
     }
 
     /** 源接入登记（四类源均受理；签发 SR+6 位；凭证密文 + 掩码落库；全动作留痕）。 */
@@ -64,7 +72,8 @@ public class ConnectorSourceService {
     public ConnectorSource register(final String subjectNo, final String connectorNo,
             final SourceType sourceType, final String endpoint, final String credential) {
         requireRegisteredOwned(subjectNo, connectorNo);
-        final String normalizedEndpoint = normalizeEndpoint(sourceType, endpoint);
+        final String normalizedEndpoint = SourceEndpointPolicy.normalize(sourceType, endpoint,
+                allowPrivateEndpoint);
         final String normalizedCredential = normalizeCredential(credential);
         if (sourceRepository.existsDuplicate(connectorNo, sourceType.name(), normalizedEndpoint)) {
             audit.denied(ConnectorAuditActions.SOURCE_DENIED, null, connectorNo, subjectNo,
@@ -72,7 +81,7 @@ public class ConnectorSourceService {
             throw paramInvalid();
         }
         final String ciphertext = cipher.encrypt(normalizedCredential);
-        final String masked = CredentialCipher.mask(normalizedCredential);
+        final String masked = cipher.mask(normalizedCredential);
         final String sourceNo = sourceRepository.nextSourceNo();
         final String credentialRef = newCredentialRef();
         try {
@@ -85,7 +94,7 @@ public class ConnectorSourceService {
         }
         audit.success(ConnectorAuditActions.SOURCE_REGISTER, null, connectorNo, subjectNo,
                 detail("sourceNo=" + sourceNo, "type=" + sourceType.name(),
-                        "endpoint=" + normalizedEndpoint, "masked=" + masked));
+                        "endpoint=" + SourceEndpointPolicy.redact(normalizedEndpoint), "masked=" + masked));
         return readBack(sourceNo);
     }
 
@@ -96,7 +105,7 @@ public class ConnectorSourceService {
         requireRegisteredOwned(subjectNo, connectorNo);
         final ConnectorSource current = requireSource(connectorNo, sourceNo);
         final SourceType type = parseType(current.sourceType()).orElseThrow(ConnectorSourceService::unsupported);
-        final String normalizedEndpoint = normalizeEndpoint(type, endpoint);
+        final String normalizedEndpoint = SourceEndpointPolicy.normalize(type, endpoint, allowPrivateEndpoint);
         if (!normalizedEndpoint.equals(current.endpoint())
                 && sourceRepository.existsDuplicate(connectorNo, type.name(), normalizedEndpoint)) {
             throw paramInvalid();
@@ -108,12 +117,19 @@ public class ConnectorSourceService {
         if (credentialChanged) {
             final String normalizedCredential = normalizeCredential(credential);
             ciphertext = cipher.encrypt(normalizedCredential);
-            masked = CredentialCipher.mask(normalizedCredential);
+            masked = cipher.mask(normalizedCredential);
             credentialRef = newCredentialRef();
         }
-        sourceRepository.update(sourceNo, normalizedEndpoint, credentialRef, ciphertext, masked);
+        try {
+            sourceRepository.update(sourceNo, normalizedEndpoint, credentialRef, ciphertext, masked);
+        } catch (final DuplicateKeyException e) {
+            audit.denied(ConnectorAuditActions.SOURCE_DENIED, null, connectorNo, subjectNo,
+                    ConnectorErrorCodes.PARAM_INVALID.value(), "action=source.amend;duplicate=true");
+            throw paramInvalid();
+        }
         audit.success(ConnectorAuditActions.SOURCE_AMEND, null, connectorNo, subjectNo,
-                detail("sourceNo=" + sourceNo, "endpoint=" + current.endpoint() + "->" + normalizedEndpoint,
+                detail("sourceNo=" + sourceNo, "endpoint=" + SourceEndpointPolicy.redact(current.endpoint())
+                                + "->" + SourceEndpointPolicy.redact(normalizedEndpoint),
                         credentialChanged ? "credential=changed;masked=" + masked : "credential=unchanged"));
         return readBack(sourceNo);
     }
@@ -144,19 +160,21 @@ public class ConnectorSourceService {
         requireRegisteredOwned(subjectNo, connectorNo);
         final ConnectorSource source = requireSource(connectorNo, sourceNo);
         final SourceType type = parseType(source.sourceType()).orElseThrow(ConnectorSourceService::unsupported);
-        final SourceAdapter adapter = adapterRegistry.find(type).orElseThrow(() -> {
+        final SourceAdapter adapter = adapterCatalog.find(type).orElseThrow(() -> {
             audit.denied(ConnectorAuditActions.SOURCE_DENIED, null, connectorNo, subjectNo,
                     ConnectorErrorCodes.SOURCE_ADAPTER_UNSUPPORTED.value(),
                     "action=source.check;sourceNo=" + sourceNo);
             return unsupported();
         });
+        final String endpoint = SourceEndpointPolicy.normalize(type, source.endpoint(), allowPrivateEndpoint);
         final SourceCheckResult result;
         try {
-            result = adapter.check(new SourceRegistration(type, source.endpoint(),
+            result = adapter.check(new SourceRegistration(type, endpoint,
                     source.credentialRef(), connectorNo));
         } catch (final ConnectorUnavailableException e) {
             throw e;
         } catch (final RuntimeException e) {
+            LOG.warn("源自检适配器非预期失败（已收敛为 502）：{}", e.getClass().getName());
             audit.failure(ConnectorAuditActions.SOURCE_CHECK, connectorNo, subjectNo, "ADAPTER_ERROR",
                     detail("sourceNo=" + sourceNo, "passed=false", "failureType=" + TEXT_NULL,
                             "message=probe failed"));
@@ -208,20 +226,6 @@ public class ConnectorSourceService {
     private ConnectorSource readBack(final String sourceNo) {
         return sourceRepository.findBySourceNo(sourceNo)
                 .orElseThrow(() -> new IllegalStateException("源登记读回失败"));
-    }
-
-    private static String normalizeEndpoint(final SourceType type, final String endpoint) {
-        if (endpoint == null) {
-            throw paramInvalid();
-        }
-        final String trimmed = endpoint.trim();
-        if (trimmed.isEmpty() || trimmed.length() > ENDPOINT_MAX) {
-            throw paramInvalid();
-        }
-        if (trimmed.startsWith(MOCK_SCHEME) && type != SourceType.GOV_EXCHANGE) {
-            throw paramInvalid();
-        }
-        return trimmed;
     }
 
     private static String normalizeCredential(final String credential) {

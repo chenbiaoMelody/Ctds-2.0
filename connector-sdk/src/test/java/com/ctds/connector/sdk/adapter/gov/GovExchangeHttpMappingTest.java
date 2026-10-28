@@ -1,0 +1,173 @@
+package com.ctds.connector.sdk.adapter.gov;
+
+import static java.nio.charset.StandardCharsets.UTF_8;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import com.ctds.connector.sdk.spi.SourceCheckFailureType;
+import com.ctds.connector.sdk.spi.SourceCheckResult;
+import com.ctds.connector.sdk.spi.SourceReadRequest;
+import com.ctds.connector.sdk.spi.SourceReadResult;
+import com.ctds.connector.sdk.spi.SourceRegistration;
+import com.ctds.connector.sdk.spi.SourceType;
+import com.sun.net.httpserver.HttpServer;
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.time.Duration;
+import java.util.concurrent.atomic.AtomicReference;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+/**
+ * 政务适配器 HTTP 应答映射用例（WBS-3.6.5 评审循环 1 修复批：补 hifi §7-⑤ 五条契约分支）：
+ * 2xx / 401 / 403 / 其它非 2xx / 空应答，以及凭据确实以 Bearer 出站但不回显。
+ *
+ * <p>零外网、零新依赖：JDK 内置 {@link HttpServer} 绑定回环随机端口承载桩应答。</p>
+ */
+class GovExchangeHttpMappingTest {
+
+    private static final String CREDENTIAL = "gov-exchange-secret-0001";
+    private static final String CREDENTIAL_REF = "SC0123456789abcdef0123456789abcdef";
+    private static final String CONNECTOR_NO = "CN000001";
+    private static final String CONTRACT_NO = "CT0000000001";
+    private static final String JSON_OK = "{\"rows\":1,\"code\":\"OK\",\"message\":\"模拟交换报文 1 件\"}";
+    private static final String CONTEXT = "/gov";
+
+    private static final AtomicReference<Integer> SERVER_STATUS = new AtomicReference<>(200);
+    private static final AtomicReference<String> SERVER_BODY = new AtomicReference<>(JSON_OK);
+    private static final AtomicReference<String> LAST_AUTH = new AtomicReference<>();
+
+    private static HttpServer server;
+    private static String baseUrl;
+
+    private GovExchangeSourceAdapter adapter;
+
+    @AfterAll
+    static void stopServer() {
+        server.stop(0);
+    }
+
+    @BeforeEach
+    void setUp() throws IOException {
+        serve(200, JSON_OK);
+        LAST_AUTH.set(null);
+        if (server == null) {
+            startServer();
+        }
+        adapter = new GovExchangeSourceAdapter(ref -> CREDENTIAL, Duration.ofSeconds(2));
+        adapter.mockResetCounters();
+    }
+
+    @Test
+    void maps2xxToPassed() {
+        final SourceCheckResult result = adapter.check(registration());
+        assertThat(result.passed()).isTrue();
+        assertThat(result.failureType()).isNull();
+        assertThat(LAST_AUTH.get()).isEqualTo("Bearer " + CREDENTIAL);
+    }
+
+    @Test
+    void maps401ToInvalidCredential() {
+        serve(401, "{\"code\":\"INVALID_CREDENTIAL\"}");
+        final SourceCheckResult result = adapter.check(registration());
+        assertThat(result.passed()).isFalse();
+        assertThat(result.failureType()).isEqualTo(SourceCheckFailureType.INVALID_CREDENTIAL);
+        assertThat(result.message()).isEqualTo("凭据无效");
+    }
+
+    @Test
+    void maps403ToInsufficientPermission() {
+        serve(403, "{\"code\":\"INSUFFICIENT_PERMISSION\"}");
+        final SourceCheckResult result = adapter.check(registration());
+        assertThat(result.failureType()).isEqualTo(SourceCheckFailureType.INSUFFICIENT_PERMISSION);
+        assertThat(result.message()).isEqualTo("权限不足");
+    }
+
+    @Test
+    void mapsOtherStatusToUnhandledFailure() {
+        serve(500, "{\"code\":\"OK\"}");
+        assertThatThrownBy(() -> adapter.check(registration()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("应答状态异常");
+    }
+
+    @Test
+    void mapsEmptyBodyToUnhandledFailure() {
+        serve(200, "");
+        assertThatThrownBy(() -> adapter.check(registration()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("应答为空");
+    }
+
+    @Test
+    void readFailureCarriesReadableSummaryWithoutCredential() {
+        serve(401, "{\"code\":\"INVALID_CREDENTIAL\"}");
+        final SourceReadResult result = adapter.read(registration(),
+                new SourceReadRequest(CONTRACT_NO, "统计分析"));
+        assertThat(result.success()).isFalse();
+        assertThat(result.summary()).contains("凭据无效");
+        assertThat(result.summary()).doesNotContain(CREDENTIAL);
+    }
+
+    @Test
+    void readSuccessSummaryComesFromResponseAndOmitsCredential() {
+        final SourceReadResult result = adapter.read(registration(),
+                new SourceReadRequest(CONTRACT_NO, "统计分析"));
+        assertThat(result.success()).isTrue();
+        assertThat(result.summary()).isEqualTo("模拟交换报文 1 件");
+        assertThat(result.summary()).doesNotContain(CREDENTIAL);
+    }
+
+    @Test
+    void readSummaryNeverEchoesCredentialOrControlChars() {
+        serve(200, "{\"rows\":1,\"code\":\"OK\",\"message\":\"echo " + CREDENTIAL + " \\n second-line\"}");
+        final SourceReadResult result = adapter.read(registration(),
+                new SourceReadRequest(CONTRACT_NO, "统计分析"));
+        assertThat(result.success()).isTrue();
+        assertThat(result.summary()).doesNotContain(CREDENTIAL).doesNotContain("\n").contains("****");
+    }
+
+    @Test
+    void checkFailureMessageNeverEchoesCredential() {
+        serve(200, "{\"code\":\"INVALID_CREDENTIAL\",\"message\":\"bad token " + CREDENTIAL + "\"}");
+        final SourceCheckResult result = adapter.check(registration());
+        assertThat(result.failureType()).isEqualTo(SourceCheckFailureType.INVALID_CREDENTIAL);
+        assertThat(result.message()).doesNotContain(CREDENTIAL).contains("****");
+    }
+
+    @Test
+    void longUpstreamMessageIsTruncated() {
+        serve(200, "{\"rows\":1,\"code\":\"OK\",\"message\":\"" + "x".repeat(300) + "\"}");
+        final SourceReadResult result = adapter.read(registration(),
+                new SourceReadRequest(CONTRACT_NO, "统计分析"));
+        assertThat(result.summary().length()).isLessThanOrEqualTo(120);
+    }
+
+    private static void startServer() throws IOException {
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext(CONTEXT, exchange -> {
+            LAST_AUTH.set(exchange.getRequestHeaders().getFirst("Authorization"));
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            final byte[] payload = SERVER_BODY.get().getBytes(UTF_8);
+            if (payload.length == 0) {
+                exchange.sendResponseHeaders(SERVER_STATUS.get(), -1);
+            } else {
+                exchange.sendResponseHeaders(SERVER_STATUS.get(), payload.length);
+                exchange.getResponseBody().write(payload);
+            }
+            exchange.close();
+        });
+        server.start();
+        baseUrl = "http://127.0.0.1:" + server.getAddress().getPort() + CONTEXT;
+    }
+
+    private static void serve(final int status, final String body) {
+        SERVER_STATUS.set(status);
+        SERVER_BODY.set(body);
+    }
+
+    private static SourceRegistration registration() {
+        return new SourceRegistration(SourceType.GOV_EXCHANGE, baseUrl, CREDENTIAL_REF, CONNECTOR_NO);
+    }
+}

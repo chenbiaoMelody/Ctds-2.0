@@ -24,6 +24,8 @@ import org.springframework.web.client.ResourceAccessException;
 public final class GovExchangeSourceAdapter implements SourceAdapter {
 
     private static final String READ_FAILURE_PREFIX = "读取失败：";
+    private static final int MESSAGE_MAX = 120;
+    private static final String MASKED = "****";
 
     private final CredentialResolver credentialResolver;
     private final GovExchangeClient client;
@@ -85,13 +87,39 @@ public final class GovExchangeSourceAdapter implements SourceAdapter {
     private GovExchangeMessage exchange(final SourceRegistration registration,
             final GovExchangeMessage request) {
         final String credential = credentialResolver.resolve(registration.credentialRef());
-        if (registration.endpoint() != null && registration.endpoint().startsWith(MockGovExchangeSource.MOCK_PREFIX)) {
-            return mockSource.exchange(request);
+        final GovExchangeMessage response = registration.endpoint() != null
+                && registration.endpoint().startsWith(MockGovExchangeSource.MOCK_PREFIX)
+                ? mockSource.exchange(request)
+                : client.exchange(request, credential);
+        return sanitize(response, credential);
+    }
+
+    /**
+     * 源端可控文本收敛（评审循环 1 ②P1）：去控制字符、屏蔽凭据回显、限长 120。
+     *
+     * <p>应答文案会进 200 结论、留痕 detail 与响应体；源端若把 Authorization 头回显，或以换行 /
+     * 分号伪造留痕字段，在此统一收敛（码位与 rows 不变）。</p>
+     */
+    private static GovExchangeMessage sanitize(final GovExchangeMessage response, final String credential) {
+        final String raw = response.message();
+        if (raw == null) {
+            return response;
         }
-        return client.exchange(request, credential);
+        String message = raw.replaceAll("\\p{Cntrl}", " ");
+        if (credential != null && !credential.isEmpty()) {
+            message = message.replace(credential, MASKED);
+        }
+        if (message.length() > MESSAGE_MAX) {
+            message = message.substring(0, MESSAGE_MAX);
+        }
+        return new GovExchangeMessage(response.sourceNo(), response.endpoint(), response.contractNo(),
+                response.purpose(), response.rows(), response.code(), message);
     }
 
     private static SourceCheckFailureType failureTypeOf(final String code) {
+        if (code == null) {
+            return SourceCheckFailureType.NETWORK_UNREACHABLE;
+        }
         return switch (code) {
             case GovExchangeMessage.INVALID_CREDENTIAL -> SourceCheckFailureType.INVALID_CREDENTIAL;
             case GovExchangeMessage.INSUFFICIENT_PERMISSION -> SourceCheckFailureType.INSUFFICIENT_PERMISSION;

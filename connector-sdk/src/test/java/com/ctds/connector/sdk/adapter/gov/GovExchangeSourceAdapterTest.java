@@ -82,16 +82,16 @@ class GovExchangeSourceAdapterTest {
     void otherMockPathTreatedAsHealthy() {
         final SourceCheckResult result = adapter.check(registration("mock://gov-exchange/anything-else"));
         assertThat(result.passed()).isTrue();
+        assertThat(result.failureType()).isNull();
+        assertThat(result.message()).isEqualTo("连通 / 凭据 / 权限三查通过");
     }
 
     @Test
     void readReturnsSummaryWithoutDataBodyOrCredential() {
         final SourceReadResult result = adapter.read(registration("mock://gov-exchange/ok"), readRequest());
         assertThat(result.success()).isTrue();
-        assertThat(result.summary()).isNotBlank();
+        assertThat(result.summary()).isEqualTo("模拟交换报文 1 件（摘要，不含数据本体）");
         assertThat(result.summary()).doesNotContain(CREDENTIAL);
-        assertThat(result.summary()).contains("1 件");
-        assertThat(result.summary().length()).isLessThanOrEqualTo(120);
     }
 
     @Test
@@ -104,11 +104,35 @@ class GovExchangeSourceAdapterTest {
     }
 
     @Test
+    void readUnreachableAndForbiddenCarryConclusions() {
+        final SourceReadResult unreachable = adapter.read(
+                registration("mock://gov-exchange/unreachable"), readRequest());
+        assertThat(unreachable.success()).isFalse();
+        assertThat(unreachable.summary()).contains("网络不可达");
+        final SourceReadResult forbidden = adapter.read(
+                registration("mock://gov-exchange/forbidden"), readRequest());
+        assertThat(forbidden.success()).isFalse();
+        assertThat(forbidden.summary()).contains("权限不足");
+    }
+
+    @Test
     void checkIsReadOnlyForSourceData() {
         adapter.check(registration("mock://gov-exchange/ok"));
         adapter.read(registration("mock://gov-exchange/ok"), readRequest());
-        assertThat(adapter.mockExchangeCount()).isPositive();
+        assertThat(adapter.mockExchangeCount()).isEqualTo(2);
         assertThat(adapter.mockDataVersion()).isZero();
+    }
+
+    /** 观测面可证伪性自证：写入入口能把版本推上去，故 check / read 后版本仍为 0 才有意义。 */
+    @Test
+    void mockDataVersionTracksExplicitWrite() {
+        final MockGovExchangeSource source = new MockGovExchangeSource();
+        source.applyWrite(GovExchangeMessage.request(registration("mock://gov-exchange/ok"), null, null));
+        assertThat(source.dataVersion()).isEqualTo(1);
+        source.exchange(GovExchangeMessage.request(registration("mock://gov-exchange/ok"), null, null));
+        assertThat(source.dataVersion()).isEqualTo(1);
+        source.reset();
+        assertThat(source.dataVersion()).isZero();
     }
 
     @Test

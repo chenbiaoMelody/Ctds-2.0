@@ -3,6 +3,7 @@ package com.ctds.connector;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -66,6 +67,29 @@ class ConnectorSourceKeyUnavailableApiTest extends ConnectorTestSupport {
         } finally {
             switchableKeyProvider.broken = false;
         }
+    }
+
+    @Test
+    void amendFailsClosedWhenKeyUnavailable() throws Exception {
+        final String connectorNo = registerConnector(OWNER, "key-amend");
+        final String sourceNo = registerSource(OWNER, connectorNo, "GOV_EXCHANGE",
+                "mock://gov-exchange/ok", SOURCE_SECRET);
+        switchableKeyProvider.broken = true;
+        try {
+            mockMvc.perform(put(CONNECTORS + connectorNo + "/sources/" + sourceNo)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .header("X-Ctds-Subject", OWNER)
+                            .header("X-Ctds-Roles", APPLICANT_ROLE)
+                            .content("{\"endpoint\":\"mock://gov-exchange/ok\","
+                                    + "\"credential\":\"rotated-secret-0002\"}"))
+                    .andExpect(status().isServiceUnavailable())
+                    .andExpect(jsonPath("$.code").value("1010S0004"));
+        } finally {
+            switchableKeyProvider.broken = false;
+        }
+        assertThat(jdbc.queryForObject(
+                "SELECT credential_masked FROM connector_source WHERE source_no = ?", String.class, sourceNo))
+                .isEqualTo("****0001");
     }
 
     @Test

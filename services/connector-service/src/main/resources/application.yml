@@ -44,7 +44,9 @@ ctds:
     # 最小健康度（规格 §7 Q8-A）：最近心跳超过该阈值 = 离线；启动校验 1m~1440m
     health:
       offline-after: 5m
-    # 源接入（WBS-3.6.5 hifi §12）：凭据加密 keyRef（KMS 可覆盖）与适配器探测超时
+    # 源接入（WBS-3.6.5 hifi §12）：凭据加密 keyRef（KMS 可覆盖）、适配器探测超时、
+    # 源地址内网放行开关（默认 false = 拒绝回环 / 内网 / 链路本地地址，防 SSRF；仅联调与测试放开）
     source:
       credential-key-ref: ${CTDS_CONNECTOR_SOURCE_KEY_REF:connector-source-credential}
       adapter-timeout: ${CTDS_CONNECTOR_SOURCE_ADAPTER_TIMEOUT:3s}
+      allow-private-endpoint: ${CTDS_CONNECTOR_SOURCE_ALLOW_PRIVATE:false}

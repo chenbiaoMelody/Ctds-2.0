@@ -2,7 +2,7 @@
 
 | 字段 | 内容 |
 | --- | --- |
-| 版本 | **V1.0（✅ 2026-10-27 编排师一次确认 = Q1~Q8 全采 A + D1 不拆分）——编码契约即时生效**；与 lofi 一并提交、一次确认（章程 2.6.3） |
+| 版本 | **V1.1（2026-10-28，评审循环 1 修复批勘正：见 §13；V1.0 的 Q1~Q8 + D1 确认结论零变更）**；V1.0 = ✅ 2026-10-27 编排师一次确认（Q1~Q8 全采 A + D1 不拆分）——编码契约即时生效；与 lofi 一并提交、一次确认（章程 2.6.3） |
 | 契约来源 | lofi Q1~Q8 建议口径 A + D1 不拆分；规格 `docs/specs/C-6.1-6.3-接入连接器.md` V1.0 行为 11 / 12 / 13 / 14 + §7 Q7-A |
 | 交付物 | ① `connector-sdk` 新增 `adapter/gov` 包（政务适配器实现，随 SDK 分发）；② `services/connector-service` 增量：迁移 `V3`（2 表）+ **6 端点**（对外 5 + 内部 1）+ 四层实现 + 测试；③ **ADR-029 连接器源适配契约**（编码段落盘）；④ 本文件 + lofi + 任务卡 |
 
@@ -90,7 +90,7 @@ com.ctds.connector.sdk.adapter.gov
 
 > **`CredentialResolver` 是 SDK 新增的对外面**（平台注入解密能力，明文只在内存流转）→ 编码段在 **ADR-026 补记**（§7 消费方 + §9 演进），不改变既有 7 个 SPI 类型签名。
 
-**`services/connector-service`（+10 主代码类 / 改 3 类）**
+**`services/connector-service`（+13 主代码类 / 改 4 类；V1.1 勘正：原记 +10 / 改 3 类漏计 `ConnectorSourceCheck` / `ConnectorAdapterProbeException` / `SourceAdapterConfig` 与异常出站映射）**
 
 ```
 com.ctds.connector
@@ -117,7 +117,9 @@ com.ctds.connector
     └── CredentialCipher.java                   # 新：Sm4Service 封装（encrypt / decrypt / mask；密钥不可用 → 1010S0004）
 ```
 
-**改既有文件清点（3 个主代码 + yml + 测试基类；均为增量，零端点语义改动）**：`ConnectorErrorCodes`（+2 码 +2 文案）、`ConnectorAuditActions`（+5 常量）、`ConnectorAuditService`（+1 方法）；另 `application.yml` +3 处、`pom.xml` +2 依赖、`ConnectorTestSupport`（清理 2 表 + 辅助方法）。**3.6.3 / 3.6.4 的 6 个控制器与 21 端点零改动**。
+**改既有文件清点（4 个主代码 + yml + 测试基类；均为增量，零端点语义改动）**：`ConnectorErrorCodes`（+2 码 +2 文案）、`ConnectorAuditActions`（+5 常量）、`ConnectorAuditService`（+1 方法）、`ConnectorExceptionHandler`（+1 出站映射，502 中性文案）；另 `application.yml` +4 处（含 `allow-private-endpoint`）、`pom.xml` +2 依赖、`ConnectorTestSupport`（清理 2 表 + 辅助方法 + 测试放开内网地址）。**3.6.3 / 3.6.4 的 6 个控制器与 21 端点零改动**。
+
+**V1.1 新增领域端口（评审修复批，解"应用服务直连基础设施"）**：`domain/CredentialProtector`（凭据保护端口，`infrastructure/CredentialCipher` 实现）、`domain/SourceAdapterCatalog`（适配器目录端口，`infrastructure/SourceAdapterRegistry` 实现）、`domain/SourceEndpointPolicy`（源地址受理规则，纯函数）。
 
 ## §4 关键接口签名（`interfaces/dto/ConnectorSourceViews.java`）
 
@@ -136,16 +138,16 @@ public record ReadRequest(
         @Size(max = 128) String purpose) {}
 
 public record SourceView(String sourceNo, String connectorNo, String sourceType, String endpoint,
-        String credentialRef, String credentialMasked, String createdAt, String updatedAt,
-        CheckSummary lastCheck) {}                  // lastCheck 可空
+        String credentialRef, String credentialMasked, LocalDateTime createdAt, LocalDateTime updatedAt,
+        CheckSummary lastCheck) {}                  // lastCheck 可空；时间字段 V1.1 勘正为 LocalDateTime（沿 ConnectorLifecycleViews）
 
-public record CheckSummary(boolean passed, String failureType, String message, String checkedAt) {}
+public record CheckSummary(boolean passed, String failureType, String message, LocalDateTime checkedAt) {}
 
 public record SourceCheckView(String sourceNo, boolean passed, String failureType, String message,
-        String checkedAt) {}
+        LocalDateTime checkedAt) {}
 
 public record SourceReadView(String sourceNo, String connectorNo, String contractNo, boolean success,
-        String summary, String readAt) {}
+        String summary, LocalDateTime readAt) {}
 ```
 
 > `credential` 只在请求出现（`WRITE_ONLY`，响应永不回显）；`SourceView` **不含密文与明文**。`toString` 不覆盖 `credential` 字段的请求体不入日志（控制器不打印请求体）。
@@ -154,12 +156,12 @@ public record SourceReadView(String sourceNo, String connectorNo, String contrac
 
 | # | 方法 / 路径 | 权限点 | 说明 | 主要错误 |
 | --- | --- | --- | --- | --- |
-| 1 | `POST /api/v1/connectors/{connectorNo}/sources` | `connector.source.manage` | 源接入登记（四类源均受理） | 400 `1010C0001`（类型 / 地址 / 凭据非法，或重复登记）/ `1010C0003`（非属主 / 连接器不存在）/ `1010C0004`（连接器非注册态）/ 503 `1010S0004` |
-| 2 | `PUT /api/v1/connectors/{connectorNo}/sources/{sourceNo}` | `connector.source.manage` | 变更源地址 / 凭据（留痕旧新；凭据掩码） | 400 `1010C0001` / `1010C0003`（源不存在或跨归属，同码同文）/ `1010C0004` / 503 `1010S0004` |
-| 3 | `GET /api/v1/connectors/{connectorNo}/sources` | `connector.read` | 源清单（分页，属主或运营方；不含自检结论） | 400 `1010C0001`（分页越界）/ `1010C0003` |
-| 4 | `GET /api/v1/connectors/{connectorNo}/sources/{sourceNo}` | `connector.read` | 源详情（含最近一次自检结论，可空） | 400 `1010C0003`（源不存在或跨归属） |
-| 5 | `POST /api/v1/connectors/{connectorNo}/sources/{sourceNo}/checks` | `connector.source.manage` | 连通性自检（只读；**200 业务结论**） | 400 `1010C0004`（连接器非注册态）/ `1010C0003` / `1010C0011`（类型未开放）/ 502（适配器非预期异常，中性文案） |
-| 6 | `POST /api/v1/connectors/internal/{connectorNo}/sources/{sourceNo}/reads` | `connector.internal.read` | **内部读取**（仅判定放行后调用；返回摘要） | 400 `1010C0001`（`contractNo` 缺失或越界）/ `1010C0004`（连接器非注册态）/ `1010C0003`（源不存在 / 跨归属）/ `1010C0011`（类型未开放） |
+| 1 | `POST /api/v1/connectors/{connectorNo}/sources` | `connector.source.manage` | 源接入登记（四类源均受理） | 400 `1010C0001`（地址 / 凭据非法、重复登记、URL 内嵌凭据）/ **`1000C0001`（请求体不可解析 / 枚举值非法，V1.1 勘正）** / `1010C0003`（非属主 / 连接器不存在）/ `1010C0004`（连接器非注册态）/ 503 `1010S0004` |
+| 2 | `PUT /api/v1/connectors/{connectorNo}/sources/{sourceNo}` | `connector.source.manage` | 变更源地址 / 凭据（留痕旧新；凭据掩码） | 400 `1010C0001`（含变更撞唯一键）/ `1010C0003`（源不存在或跨归属，同码同文）/ `1010C0004` / 503 `1010S0004` |
+| 3 | `GET /api/v1/connectors/{connectorNo}/sources` | `connector.read` | 源清单（分页，属主或运营方；不含自检结论） | 400 **`1000C0001`（分页越界，V1.1 勘正：走 `common-pagination` 平台口径）** / `1010C0003` |
+| 4 | `GET /api/v1/connectors/{connectorNo}/sources/{sourceNo}` | `connector.read` | 源详情（含最近一次自检结论，可空） | 400 `1010C0003`（源不存在或跨归属）/ **`1010C0001`（路径变量格式非法，V1.1 补登）** |
+| 5 | `POST /api/v1/connectors/{connectorNo}/sources/{sourceNo}/checks` | `connector.source.manage` | 连通性自检（只读；**200 业务结论**） | 400 `1010C0004`（连接器非注册态）/ `1010C0003` / `1010C0011`（类型未开放）/ **502 + `1000S9999`（适配器非预期异常，中性文案；V1.1 补码位）** |
+| 6 | `POST /api/v1/connectors/internal/{connectorNo}/sources/{sourceNo}/reads` | `connector.internal.read` | **内部读取**（仅判定放行后调用；返回摘要） | 400 `1010C0001`（`contractNo` 缺失或越界）/ `1010C0004`（连接器非注册态）/ `1010C0003`（源不存在 / 跨归属）/ `1010C0011`（类型未开放）/ **502 + `1000S9999`（适配器非预期异常；V1.1 补登）** |
 
 > 路径约定沿既有面：业务面 `/api/v1/connectors/{connectorNo}/...`、内部面 `/api/v1/connectors/internal/...`（与占用内部面同前缀，`{connectorNo}` 为单段、`internal` 为具体段，无路由冲突）。
 
@@ -170,8 +172,10 @@ public record SourceReadView(String sourceNo, String connectorNo, String contrac
 | `1010C0011` | 400 | 该源类型的适配承载尚未开放 | 自检 / 读取遇到未注册适配器的源类型（3.6.6 承接） |
 | `1010S0004` | 503 | 源凭据保护组件不可用，暂不能登记或自检 | `common-crypto` 密钥不可用（未配密钥文件 / KMS 不可达）；**fail-closed，禁止明文降级** |
 
-复用（零新增）：`1010C0001` 参数不合法（源类型非法 / 地址或凭据越界 / 重复登记）、`1010C0003` 源不存在或无权限（防枚举同码同文）、`1010C0004` 连接器状态不允许。
+复用（零新增）：`1010C0001` 参数不合法（地址 / 凭据越界、URL 内嵌凭据、重复登记 / 重复变更）、`1010C0003` 源不存在或无权限（防枚举同码同文）、`1010C0004` 连接器状态不允许。
 `1010S0003` 保持 3.6.4 的"段位预留不启用"口径（**零回改 ADR-028**）。
+
+**平台通用码（V1.1 勘正，非 1010 段增量）**：`1000C0001` = 请求体不可解析 / 枚举值非法 / 分页越界（Spring 解析期与 `common-pagination` 既有口径；改造需动共享 advice 并回改既有端点语义，故不改）；`1000S9999` + HTTP 502 = 适配器非预期异常（码位为平台 S 型通用码，状态按"上游失败"覆写，见 §7-③ 与 ADR-029 §2.4）。
 
 ## §7 关键流程与适配器口径
 
@@ -208,6 +212,18 @@ public record SourceReadView(String sourceNo, String connectorNo, String contrac
 **⑥ 掩码规则**：凭据明文长度 ≤4 → 全部 `*`（4 个）；>4 → `****" + 末 4 位`。掩码串落库并随留痕输出；**任何日志 / 异常 / 响应不得出现明文**。
 
 **⑦ 审计动作常量（+5）**：`source.register` / `source.amend` / `source.check` / `source.read` / `source.denied`。
+（V1.1 说明：命名沿本卡契约不加 `connector.` 前缀，与本类既有 `connector.*` 前缀不一致属已知偏离，登记为观察项，不在修复批改名以免回改留痕检索口径。）
+
+**⑧ 源地址受理规则（V1.1 新增，评审循环 1 安全加固；实现 = `domain/SourceEndpointPolicy`）**
+
+| 规则 | 口径 |
+| --- | --- |
+| scheme 白名单（按类型） | `GOV_EXCHANGE`：`mock://gov-exchange/**` / `http` / `https`；`DATABASE`：`http(s)` / `jdbc`；`OBJECT_STORAGE`：`http(s)` / `oss` / `s3`；`API_GATEWAY`：`http(s)`；其余 scheme 一律 400 `1010C0001` |
+| 禁 URL 内嵌凭据 | 分层 URI 查 `userInfo`；不透明 URI（`jdbc:`）在 authority 段查 `@`；命中即 400（凭据只走 `credential` 字段） |
+| 默认拒绝内网主机 | `http(s)` 主机命中 `localhost` / `127.*` / `10.*` / `172.16-31.*` / `192.168.*` / `169.254.*` / `::1` / IPv6 ULA·链路本地 / 十进制整数形态 → 400；`ctds.connector.source.allow-private-endpoint=false` 为默认，联调与测试显式放开（防 SSRF，CWE-918） |
+| 留痕脱敏 | `source.register` / `source.amend` 的 detail 只记 `scheme://authority/path`（去查询串与片段） |
+| 调用期复校 | 自检 / 读取调适配器前按同一规则复校库中地址（存量脏数据不绕过） |
+| 出站客户端 | `JdkClientHttpRequestFactory`（JDK HttpClient）：5xx / 3xx 可读到状态码，避免 `HttpURLConnection` 以 IOException 提前中断导致 401 / 403 / 502 分支不可达；重定向不跟随（3xx → 非预期应答） |
 
 ## §8 跨域装配改动
 
@@ -230,7 +246,19 @@ public record SourceReadView(String sourceNo, String connectorNo, String contrac
 | `ConnectorSourceKeyUnavailableApiTest`（T7） | 密钥不可用（覆盖 `KeyProvider` 抛 `KEY_UNAVAILABLE`）→ 登记 / 自检 503 `1010S0004`；**DB 无明文残留** | 行为 12 规则 2（fail-closed） |
 | `ConnectorSourceNoTouchTest`（T8） | 前置拒绝四情形（未登记 / 跨归属 / 注销 / 类型未开放）→ 适配器 `check` / `read` 调用次数 = 0 | 行为 14 规则 1（可证伪部分） |
 
-测试基建：`SharedMySqlContainer`（既有）+ `ConnectorTestSupport` 扩展（`@BeforeEach` 增清 2 表 + `registerSource` 辅助）；密钥 = `@TempDir` 生成随机 16 字节 Base64 的 `*.keys`（沿 subject / delivery 测试先例，**不入库、不打印**）；**不新增第三方测试依赖、不新增桩服务**（模拟源在 SDK 内进程内实现）。
+测试基建：`SharedMySqlContainer`（既有）+ `ConnectorTestSupport` 扩展（`@BeforeEach` 增清 2 表 + `registerSource` 辅助 + **测试放开 `allow-private-endpoint=true`**）；密钥 = 临时 `*.keys`（运行期生成、JVM 退出删除，**不入库、不打印**；V1.1 勘正：原记"随机 16 字节"，实际为固定测试常量，登记为 P3 观察项）；**不新增第三方测试依赖、不新增桩服务**（模拟源在 SDK 内进程内实现；HTTP 分支用 JDK 内置 `HttpServer` 绑定回环随机端口）。
+
+**V1.1 新增用例类（评审循环 1 修复批，补 ④ 测试质量 P1/P2 缺口）**
+
+| 类 | 用例要点 | 补的缺口 |
+| --- | --- | --- |
+| `GovExchangeHttpMappingTest`（SDK） | 2xx / 401 / 403 / 其它非 2xx / 空应答映射；Bearer 确实出站且摘要不含凭据 | `GovExchangeClient` 分支 0 覆盖（原 11/23 行、0/10 分支） |
+| `SourceEndpointPolicyTest`（服务域单元） | scheme 白名单（含 `jdbc` / `oss` / `s3`）、URL 内嵌凭据、回环 / 内网 / 链路本地 / 整数形态拒绝、`allow-private` 放行、留痕脱敏 | 地址安全规则零覆盖 |
+| `ConnectorSourceBoundaryApiTest`（服务集成） | URL 内嵌凭据 / 非白名单 scheme / mock 误用 / 非法枚举 `1000C0001` / 凭据越界 / 分页越界 `1000C0001` / 注销后自检 `1010C0004` / `contractNo`、`purpose` 越界 / 401 / 各处 403 / 变更撞唯一键 / 读取失败 200 业务结论 / 留痕脱敏 / 重复登记与未开放类型 `source.denied` | hifi §5 六项错误面、鉴权负向、拒绝留痕 |
+| `ConnectorSourceAdapterFailureApiTest`（服务集成） | 源端 5xx → 502 + `1000S9999` + 中性文案、留痕 `ADAPTER_ERROR`、响应与留痕不泄漏内部（自检与读取两面） | 502 链路 0 覆盖（`ConnectorAdapterProbeException` 2 行 0 覆盖） |
+| `ConnectorSourceKeyUnavailableApiTest`（增量） | 变更凭据时密钥不可用 → 503 且掩码不变 | hifi §5 #2 的 503 面 |
+
+**V1.1 断言强度补充**：`MockGovExchangeSource.applyWrite()` 提供真实写入入口，用例先证明计数可被推高、再证明 check / read 后仍为 0（消除"死字段恒真断言"）；`otherMockPathTreatedAsHealthy` 断言 `failureType` 为空 + 文案精确值；`read` 摘要断言精确值（替代 `contains("1 件")` 弱断言）。
 
 ## §10 ADR-029 大纲（编码段落盘，七字段齐备 = 门禁 `adrFieldsCheck`）
 
@@ -261,8 +289,11 @@ public record SourceReadView(String sourceNo, String connectorNo, String contrac
 | --- | --- | --- | --- |
 | `ctds.crypto.local.key-file` | 空（环境变量 `CTDS_SM4_KEY_FILE`） | 凭据国密密钥文件（`*.keys`，gitignored） | 空 = 允许启动（WARN），登记 / 自检 fail-closed 503 |
 | `ctds.connector.source.credential-key-ref` | `connector-source-credential` | 凭据加密 keyRef（KMS 可覆盖） | 非空；字符集沿 `common-crypto` 规则 |
-| `ctds.connector.source.adapter-timeout` | `3s` | 适配器 `check` / `read` 超时 | 1s~30s |
+| `ctds.connector.source.adapter-timeout` | `3s` | 适配器 `check` / `read` 超时 | **已实现**：1s~30s 越界启动失败（`SourceAdapterConfig`） |
+| `ctds.connector.source.allow-private-endpoint` | `false` | 源地址是否允许回环 / 内网 / 链路本地主机（默认拒绝，防 SSRF） | 仅联调与测试显式放开（V1.1 新增） |
 | `ctds.auth.permissions.applicant` | 见 §1 | 追加 `connector.source.manage` | —— |
+
+> V1.1 勘正：`credential-key-ref` 的"非空 + 字符集"校验已在 `CredentialCipher` 构造函数实现（启动即失败），原表"启动校验"列的说法现已落地。
 
 ## 确认记录（V0.9 → V1.0）
 
@@ -271,3 +302,23 @@ public record SourceReadView(String sourceNo, String connectorNo, String contrac
 | 提请确认 | 2026-10-27，lofi Q1~Q8 建议 A + D1 不拆分；请一次确认 |
 | **编排师裁定** | ✅ **2026-10-27 编排师会话回复"确认"** = Q1~Q8 全采 A + D1 不拆分 |
 | 确认后动作（已执行） | ① ✅ 本文件与 lofi 转 V1.0 + 末节回填；② ✅ 任务卡 §二 / 关闭条件① 更新；③ ✅ 确认批提交并推送 origin；④ 🟡 编码段以 §11 十项为第一动作（测试先行，另会冷启动） |
+
+## §13 V1.1 勘正记录（评审循环 1 修复批，2026-10-28）
+
+> 本表是 V1.0 → V1.1 的差异清单，供复审与验收逐条核对；**Q1~Q8 / D1 的确认结论零变更**，勘正仅为"实现与契约对齐"与"安全加固登记"。
+
+| # | 条款 | V1.0 原文 | V1.1 勘正 | 来源 |
+| --- | --- | --- | --- | --- |
+| 1 | §2 库表 | 仅 2 张新表 | 追加"既有 `connector_action_log.reason_code` 16 → 32 加性放宽"（`INSUFFICIENT_PERMISSION` 22 字符；首轮 `Data too long` 被留痕单点吞掉） | ①P1-1 |
+| 2 | §3 类清单 | 服务 +10 类 / 改 3 类 | +13 类 / 改 4 类（含视图 1、`ConnectorSourceCheck`、`ConnectorAdapterProbeException`、`SourceAdapterConfig`、异常出站）；另 +3 领域端口 | ①P2-5 / ③P2-6 |
+| 3 | §4 视图签名 | 时间字段 `String` | `LocalDateTime`（5 处，沿 `ConnectorLifecycleViews`） | ①P2-4 |
+| 4 | §5 #1 | 枚举非法 = `1010C0001` | 枚举 / 请求体解析期错误 = 平台 `1000C0001`（不改共享 advice，零回改既有端点语义） | ①P1-2 |
+| 5 | §5 #3 | 分页越界 = `1010C0001` | `1000C0001`（`common-pagination` 既有口径） | ①P3-9 |
+| 6 | §5 #4 / #6 | 未列 502 与路径格式码 | 补登 `1010C0001`（路径变量）与 502 + `1000S9999` | ①P3-10 / ③P2-2 |
+| 7 | §6 错误码 | 仅 1010 段两码 | 增补平台通用码复用面说明（非 1010 增量） | ③P2-2 |
+| 8 | §7 新增 ⑧ | 无源地址规则 | scheme 按类型白名单 / 禁 URL 内嵌凭据 / 默认拒绝内网主机 / 留痕脱敏 / 调用期复校 / 出站客户端口径 | ②P0-1·P0-2 / ②P2-1 |
+| 9 | §9 测试清单 | U1/U2/T1~T8 | 增 5 个用例类与断言强度补充；测试基建勘正 | ④P1-1~P1-5 / ④P2 |
+| 10 | §12 配置 | 3 键 | +`allow-private-endpoint`；启动校验落地说明 | ①P2-6 / ③P2-5 |
+| 11 | §3 SDK 观测面 | 未列 3 个 mock 观测方法 | 登记为契约内观测面（非测试后门），并补"写入入口自证" | ①P1-3 |
+
+**仍为已知偏离（登记跟踪，不在本批改）**：① 应用服务经 domain 端口访问凭据保护与适配器目录（本批已改），但自检结论仍由源仓储直读 `connector_action_log`（复用既有留痕仓储需泛化其读面，留 3.6.6）；② 审计动作前缀 `source.*` 与既有 `connector.*` 规约不一致；③ 掩码规则为全仓第三处自实现（建议后续沉淀为 `common` 组件）。

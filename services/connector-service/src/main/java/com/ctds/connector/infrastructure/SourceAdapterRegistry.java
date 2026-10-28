@@ -1,5 +1,6 @@
 package com.ctds.connector.infrastructure;
 
+import com.ctds.connector.domain.SourceAdapterCatalog;
 import com.ctds.connector.sdk.spi.SourceAdapter;
 import com.ctds.connector.sdk.spi.SourceType;
 import java.util.EnumMap;
@@ -9,13 +10,14 @@ import java.util.Optional;
 import org.springframework.stereotype.Component;
 
 /**
- * 源适配器注册表（hifi §8）：按 {@link SourceType} 索引适配器；未注册类型 → {@code Optional.empty()}
- * （平台侧映射 400 {@code 1010C0011}，3.6.6 落地只需注册实现，端点与服务零改动）。
+ * 源适配器注册表（{@link SourceAdapterCatalog} 的 infrastructure 实现；hifi §8）：按 {@link SourceType}
+ * 索引适配器；未注册类型 → {@code Optional.empty()}（平台侧映射 400 {@code 1010C0011}，
+ * 3.6.6 落地只需注册实现，端点与服务零改动）。
  *
  * <p>同类型多实现 = 启动失败（防第二实现与行为不一致）。</p>
  */
 @Component
-public class SourceAdapterRegistry {
+public class SourceAdapterRegistry implements SourceAdapterCatalog {
 
     private final Map<SourceType, SourceAdapter> adapters;
 

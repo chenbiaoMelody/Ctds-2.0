@@ -11,8 +11,9 @@ import java.util.concurrent.atomic.AtomicInteger;
  * <p>演示 / 测试共用五类路径（hifi §7-⑤）：{@code /ok} 通过、{@code /bad-credential} 凭据无效、
  * {@code /unreachable} 网络不可达、{@code /forbidden} 权限不足、其余路径视为正常源。</p>
  *
- * <p>观测面（可证伪断言用）：触达计数证明适配器确实与源交互；源端数据版本仅在实际写入时递增——
- * V1.0 SPI 只读（check / read 无写方法），自检前后版本不变即证明"自检零源端变更"。</p>
+ * <p>观测面（可证伪断言用）：触达计数证明适配器确实与源交互；源端数据版本仅在
+ * {@link #applyWrite} 被调用时递增（V1.0 SPI 只读，check / read 路径永不调用写方法）。
+ * 该写入入口只供用例证明"版本计数是活的"——否则"自检后版本仍为 0"将是无失败可能的恒真断言。</p>
  */
 final class MockGovExchangeSource {
 
@@ -33,6 +34,13 @@ final class MockGovExchangeSource {
             default -> new GovExchangeMessage(request.sourceNo(), request.endpoint(),
                     request.contractNo(), request.purpose(), 1, GovExchangeMessage.OK, OK_MESSAGE);
         };
+    }
+
+    /** 模拟源写入（只由用例调用，用于证明 {@link #dataVersion()} 可观测到变更；适配器生产路径不调用）。 */
+    GovExchangeMessage applyWrite(final GovExchangeMessage request) {
+        dataVersion.incrementAndGet();
+        return new GovExchangeMessage(request.sourceNo(), request.endpoint(),
+                request.contractNo(), request.purpose(), 1, GovExchangeMessage.OK, OK_MESSAGE);
     }
 
     int exchangeCount() {
