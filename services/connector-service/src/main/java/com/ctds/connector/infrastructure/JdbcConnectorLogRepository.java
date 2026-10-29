@@ -6,6 +6,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
@@ -59,6 +60,16 @@ public class JdbcConnectorLogRepository implements ConnectorLogRepository {
         final Long count = jdbc.sql("SELECT COUNT(*) FROM connector_action_log WHERE connector_no = :no")
                 .param("no", connectorNo).query(Long.class).single();
         return count == null ? 0L : count;
+    }
+
+    @Override
+    public Optional<ConnectorActionLog> findLatestByDetailPrefix(final String connectorNo,
+            final String action, final String detailPrefix) {
+        return jdbc.sql("SELECT " + COLUMNS + " FROM connector_action_log WHERE connector_no = :no "
+                        + "AND action = :action AND result IN ('SUCCESS', 'FAILURE') "
+                        + "AND detail LIKE :prefix ORDER BY id DESC LIMIT 1")
+                .param("no", connectorNo).param("action", action).param("prefix", detailPrefix)
+                .query(JdbcConnectorLogRepository::map).optional();
     }
 
     /** 行映射（沿 JdbcConnectorRepository.map 先例，单处定义避免重复 lambda）。 */

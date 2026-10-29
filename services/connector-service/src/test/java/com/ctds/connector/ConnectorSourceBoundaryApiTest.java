@@ -83,7 +83,7 @@ class ConnectorSourceBoundaryApiTest extends ConnectorTestSupport {
                         .contentType(MediaType.APPLICATION_JSON)
                         .header("X-Ctds-Subject", OWNER)
                         .header("X-Ctds-Roles", APPLICANT_ROLE)
-                        .content(sourceBody("GOV_EXCHANGE", "mock://gov-exchange/ok", "c".repeat(257))))
+                        .content(sourceBody("GOV_EXCHANGE", "mock://gov-exchange/ok", "c".repeat(1025))))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("1010C0001"));
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM connector_source", Integer.class)).isZero();
@@ -274,19 +274,19 @@ class ConnectorSourceBoundaryApiTest extends ConnectorTestSupport {
     }
 
     @Test
-    void unsupportedTypeCheckWritesDeniedTrail() throws Exception {
-        final String connectorNo = registerConnector(OWNER, "bnd-unsupported");
+    void restrictedHostCheckWritesFailureTrail() throws Exception {
+        final String connectorNo = registerConnector(OWNER, "bnd-restricted");
         final String sourceNo = registerSource(OWNER, connectorNo, "DATABASE",
-                "https://db.example.com/dataset-1", SOURCE_SECRET);
+                "jdbc:mysql://no-such-host.invalid:3306/dataset", "db-user:db-secret-0003");
         mockMvc.perform(post(CONNECTORS + connectorNo + SOURCES + "/" + sourceNo + "/checks")
                         .header("X-Ctds-Subject", OWNER)
                         .header("X-Ctds-Roles", APPLICANT_ROLE))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("1010C0011"))
-                .andExpect(jsonPath("$.message").value("该源类型的适配承载尚未开放"));
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.passed").value(false))
+                .andExpect(jsonPath("$.data.failureType").value("NETWORK_UNREACHABLE"));
         final String reason = jdbc.queryForObject(
-                "SELECT reason_code FROM connector_action_log WHERE action = 'source.denied' "
-                        + "ORDER BY id DESC LIMIT 1", String.class);
-        assertThat(reason).isEqualTo("1010C0011");
+                "SELECT reason_code FROM connector_action_log WHERE action = 'source.check' "
+                        + "AND result = 'FAILURE' ORDER BY id DESC LIMIT 1", String.class);
+        assertThat(reason).isEqualTo("NETWORK_UNREACHABLE");
     }
 }

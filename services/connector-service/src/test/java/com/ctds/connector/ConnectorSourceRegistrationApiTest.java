@@ -27,8 +27,11 @@ class ConnectorSourceRegistrationApiTest extends ConnectorTestSupport {
         final List<String> types = List.of("GOV_EXCHANGE", "DATABASE", "OBJECT_STORAGE", "API_GATEWAY");
         int index = 0;
         for (final String type : types) {
-            final String endpoint = "GOV_EXCHANGE".equals(type)
-                    ? "mock://gov-exchange/ok" : "https://source.example.com/dataset-" + index;
+            final String endpoint = switch (type) {
+                case "GOV_EXCHANGE" -> "mock://gov-exchange/ok";
+                case "DATABASE" -> "jdbc:mysql://db.example.com:3306/dataset-" + index;
+                default -> "https://source.example.com/dataset-" + index;
+            };
             final JsonNode source = data(mockMvc.perform(post(CONNECTORS + connectorNo + "/sources")
                             .contentType(MediaType.APPLICATION_JSON)
                             .header("X-Ctds-Subject", OWNER)
@@ -180,6 +183,77 @@ class ConnectorSourceRegistrationApiTest extends ConnectorTestSupport {
                         .header("X-Ctds-Subject", OWNER)
                         .header("X-Ctds-Roles", APPLICANT_ROLE)
                         .content(sourceBody("GOV_EXCHANGE", "mock://gov-exchange/ok", "")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("1010C0001"));
+    }
+
+    @Test
+    void threeGenericTypesStoreCiphertextMaskAndTrail() throws Exception {
+        final String connectorNo = registerConnector(OWNER, "src-generic");
+        final List<String[]> cases = List.of(
+                new String[] {"DATABASE", "jdbc:mysql://db.example.com:3306/dataset",
+                        "db-user:db-secret-0003"},
+                new String[] {"OBJECT_STORAGE", "oss://dataset-bucket/data/2026",
+                        "https://minio.example.com/bucket/data?X-Amz-Signature=priv-sig-0004"},
+                new String[] {"API_GATEWAY", "https://gateway.example.com/api",
+                        "Bearer gateway-token-0005"});
+        for (final String[] item : cases) {
+            final String sourceNo = registerSource(OWNER, connectorNo, item[0], item[1], item[2]);
+            final String ciphertext = jdbc.queryForObject(
+                    "SELECT credential_ciphertext FROM connector_source WHERE source_no = ?",
+                    String.class, sourceNo);
+            final String masked = jdbc.queryForObject(
+                    "SELECT credential_masked FROM connector_source WHERE source_no = ?",
+                    String.class, sourceNo);
+            assertThat(ciphertext).doesNotContain(item[2]);
+            assertThat(masked).isEqualTo("****" + item[2].substring(item[2].length() - 4));
+            assertThat(jdbc.queryForObject(
+                    "SELECT COUNT(*) FROM connector_action_log WHERE action = 'source.register' "
+                            + "AND connector_no = ? AND detail LIKE ?", Integer.class,
+                    connectorNo, "sourceNo=" + sourceNo + "%")).isEqualTo(1);
+        }
+    }
+
+    @Test
+    void credentialLengthBoundary1024Accepted() throws Exception {
+        final String connectorNo = registerConnector(OWNER, "src-1024");
+        final String credential = "t".repeat(1024);
+
+        final String sourceNo = registerSource(OWNER, connectorNo, "API_GATEWAY",
+                "https://gateway.example.com/api", credential);
+
+        final String ciphertext = jdbc.queryForObject(
+                "SELECT credential_ciphertext FROM connector_source WHERE source_no = ?",
+                String.class, sourceNo);
+        assertThat(ciphertext).hasSizeLessThanOrEqualTo(2048).doesNotContain(credential);
+        assertThat(jdbc.queryForObject(
+                "SELECT credential_masked FROM connector_source WHERE source_no = ?",
+                String.class, sourceNo)).isEqualTo("****tttt");
+    }
+
+    @Test
+    void credentialOver1024Rejected() throws Exception {
+        final String connectorNo = registerConnector(OWNER, "src-1025");
+        mockMvc.perform(post(CONNECTORS + connectorNo + "/sources")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-Ctds-Subject", OWNER)
+                        .header("X-Ctds-Roles", APPLICANT_ROLE)
+                        .content(sourceBody("API_GATEWAY", "https://gateway.example.com/api",
+                                "t".repeat(1025))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("1010C0001"));
+    }
+
+    @Test
+    void dangerousJdbcParameterRejectedAtRegistration() throws Exception {
+        final String connectorNo = registerConnector(OWNER, "src-jdbc-param");
+        mockMvc.perform(post(CONNECTORS + connectorNo + "/sources")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-Ctds-Subject", OWNER)
+                        .header("X-Ctds-Roles", APPLICANT_ROLE)
+                        .content(sourceBody("DATABASE",
+                                "jdbc:mysql://db.example.com:3306/dataset?allowLoadLocalInfile=true",
+                                "db-user:db-secret-0003")))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("1010C0001"));
     }

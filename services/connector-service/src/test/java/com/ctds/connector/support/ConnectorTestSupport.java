@@ -12,6 +12,10 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
+import java.sql.Statement;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -23,6 +27,7 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
@@ -197,6 +202,33 @@ public abstract class ConnectorTestSupport {
     /** 内部读取请求体。 */
     protected static String readBody(final String contractNo, final String purpose) {
         return "{\"contractNo\":\"" + contractNo + "\",\"purpose\":\"" + purpose + "\"}";
+    }
+
+    /** 数据库本源地址（同一 Testcontainers MySQL 的独立库；WBS-3.6.6 三类源用例共用）。 */
+    protected static String databaseUrl() {
+        return SharedMySqlContainer.jdbcUrlFor("ctds_connector_it");
+    }
+
+    /** 数据库本源凭据（容器应用账号，测试专用，非生产密钥）。 */
+    protected static String databaseCredential() {
+        final MySQLContainer<?> container = SharedMySqlContainer.container();
+        return container.getUsername() + ":" + container.getPassword();
+    }
+
+    /** 数据库本源的容器应用账号名（测试专用）。 */
+    protected static String databaseUsername() {
+        return SharedMySqlContainer.container().getUsername();
+    }
+
+    /** 建"无库权限"的受限账号（用于 1044 权限不足映射；测试容器内临时账号）。 */
+    protected static void createLimitedUser() throws SQLException {
+        final MySQLContainer<?> container = SharedMySqlContainer.container();
+        try (Connection connection = DriverManager.getConnection(
+                container.getJdbcUrl(), "root", container.getPassword());
+             Statement statement = connection.createStatement()) {
+            statement.execute("DROP USER IF EXISTS 'w366_limited'@'%'");
+            statement.execute("CREATE USER 'w366_limited'@'%' IDENTIFIED BY 'w366-limited-pass'");
+        }
     }
 
     private static Path createKeyFile() {

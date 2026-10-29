@@ -71,29 +71,37 @@
 
 | 项 | 内容 |
 | --- | --- |
-| 状态 | 🟢 **确认段闭环（2026-10-29）**——编排师"确认" = Q1~Q9 全采 A + D1 不拆分 → lofi / hifi 转 **V1.0（编码契约生效）**、关闭条件① 达成、台账 L17/L19 确认销项、确认批提交（main 受保护，随本卡 PR 入库）；**下一步 = 编码段（另会冷启动，第一动作 = hifi §11 十项前置检查）**；本段零代码 / 零依赖 / 零门禁改动 |
+| 状态 | 🟡 **编码段已交付，待 4 视角评审循环 1（2026-10-29）**——SDK 三类适配器（3 包 10 类）+ 服务侧 `SourceHostGuard` / DB-90 留痕读面泛化 / 装配与码表；**测试先行**（红基线 → 绿）；connector-sdk **105 例**（基线 65，+40）、connector-service **237 例**（基线 206，+31）、两模块 checkstyle **0 违规**；行覆盖 **sdk 90.68% / service 92.11%**；全仓门禁单发执行中（报告出后回填 §五-4）；关闭条件② 本地全绿达成，③④ 待评审 / 验收 |
 | 立卡素材盘点（本会话） | ① **SPI 面**：七类型冻结，`SourceAdapter.type()/check()/read()`；三类适配器零实现；② **服务面**：6 端点 / 2 表 / 凭据三列 / 自检 200 业务结论 / 读取摘要 + 五要素；新增适配器唯一装配点 = `SourceAdapterConfig`；③ **依赖面**：`connector-sdk` 仅 spring-web + jackson（无 JDBC 驱动 / 无对象存储 SDK）；`connector-service` 已有 `mysql-connector-j` + `starter-jdbc`；④ **码位**：`1010C0010` 零占用；`1010C0011` 现有 4 处断言将失效；⑤ **债务**：DB-90 / DB-91 可本卡闭环，**DB-88 须规格变更前置**；⑥ **测试基线**：connector-service 206 例 / connector-sdk 65 例；⑦ **演示**：`sc-mysql` / `sc-minio` 容器在运行，`allow-private-endpoint` 默认 false |
 | 设计文件 | `docs/designs/WBS-3.6.6-lofi.md`（**V1.0，方向定稿**）、`docs/designs/WBS-3.6.6-hifi.md`（**V1.0，编码契约**）；非界面类，无原型 HTML |
 | 确认（编排师） | ✅ **2026-10-29"确认"** = Q1~Q9 全采建议口径 A + D1 不拆分；确认批随本段落盘（**main 受保护，随本卡 PR 入库**） |
 
 ## 五、提交前自检单（章程附录 B1，编码会话填写）
 
-> 编码交付时回填（本段仅立卡，不预填结论）。
+> 编码段回填（2026-10-29）。命令与结果均为本地实测。
 
-1. 两级设计门禁已过：待确认留痕回填；
-2. 映射表：§三已建立初始映射，编码段补测试用例编号；
-3. 复用声明与规格外实现声明：待回填（预期复用 = 3.6.5 登记面 / 凭据链 / 自检编排 / 适配器注册表 / 测试基建；规格外实现应为空）；
-4. 本地全部检查命令与结果：待回填；
-5. 高风险点自查（并发 / 事务 / 加解密 / 性能）：待回填（重点 = JDBC 危险参数、预签名 URL 明文面、DNS 解析 TOCTOU、连接超时）；
-6. 验收剧本更新建议：**无需修改步骤与判定**；维护说明建议补一行"3.6.6 已交付，四类源自检均可用"（经 PO 批准）；
-7. 业务可读交付说明：待回填。
+1. **两级设计门禁已过**：lofi / hifi **V1.0** 经编排师一次确认（2026-10-29"确认" = Q1~Q9 全采 A + D1 不拆分，见 §二）；实现与已确认设计**逐条一致**，偏差 2 项均已登记（见第 3 条）。
+2. **映射表**：§三 已建立"规格条目 → 承载面 → 测试口径"初始映射，编码段实测编号如下——U1 `DatabaseSourceAdapterTest`（11）/ U2 `JdbcUrlPolicyTest`（9）/ U3 `ObjectStorageSourceAdapterTest`（11）/ U4 `ApiGatewaySourceAdapterTest`（9）；T1 `ConnectorSourceCheckAvailabilityApiTest`（3，由 3.6.5"未开放"用例改写）/ T2 `ConnectorSourceRegistrationApiTest` +4 / T3 `ConnectorSourceAmendApiTest` +2 / T4 `ConnectorSourceAdapterFailureApiTest` +6 / T5 `ConnectorSourceHostGuardApiTest`（6）+ `InetAddressSourceHostGuardTest`（7）/ T6 `ConnectorSourceReadApiTest` +4 / T7 `ConnectorSourceCheckApiTest` +2 / T8 既有断言改写 7 处（见下）。
+3. **复用声明与规格外实现声明**：
+   - **复用**（检索过程：`grep 1010C0011` / `grep findLastCheck` / 读 3.6.5 编码批 + ADR-029）：3.6.5 的登记 / 变更 / 自检 / 读取编排、`CredentialProtector` 国密链路、`SourceAdapterRegistry` 按类型索引、`ConnectorAuditService` 留痕、`SharedMySqlContainer` + JDK `HttpServer` 测试基建**全部原样复用**；`CredentialResolver` 沿用 `sdk.adapter.gov` 既有类型（**零新类型**）；`ConnectorActionLog` 直接作为通用读面返回类型（**零新类型**）。
+   - **规格外实现**：**空**。两项"实现偏差"均非新需求：① hifi §4 通用读面签名拟定 `Optional<String> detail`，但既有响应字段 `lastCheck.checkedAt` 需要结论时间 → 返回 `ConnectorActionLog`（含 `createdAt`），语义等价、响应字段零变化；② hifi 写作 `ConnectorAuditRepository` / `JdbcConnectorAuditRepository`，仓库实际类型为 `ConnectorLogRepository` / `JdbcConnectorLogRepository`，按实际类型落地。两偏差见 ADR-030 §2.6。
+   - **T8 断言改写逐条留痕（7 处，属能力开放的必要同步、非削弱）**：① `ConnectorSourceNoTouchTest.unsupportedTypeNeverTouchesAdapter` → `restrictedHostNeverTouchesAdapter`（DATABASE 读取不再 `1010C0011`，改为解析级拒绝 `1010C0010`）；②~④ `ConnectorSourceCheckUnavailableApiTest` 3 例整体改写为 `ConnectorSourceCheckAvailabilityApiTest`（三类源可自检，其中"读取不可用"腿由 T6 三类源摘要用例承接）；⑤ `ConnectorSourceBoundaryApiTest.unsupportedTypeCheckWritesDeniedTrail` → `restrictedHostCheckWritesFailureTrail`（`source.denied/1010C0011` → `source.check FAILURE/NETWORK_UNREACHABLE`）；⑥ `ConnectorSourceBoundaryApiTest.rejectsOversizeCredential` 256 → 1025（凭据上限 256 → 1024，hifi §2）；⑦ `ConnectorSourceOwnershipApiTest` / `ConnectorSourceRegistrationApiTest` 中 DATABASE 端点由 `https://…` 改为 `jdbc:mysql://…`（hifi §7.3 URL 形态；受理期新增 JDBC 形态与参数白名单校验 = hifi §5 #1）。
+4. **本地全部检查命令与结果**（工作区 = `feat/WBS-3.6.6-三类通用源适配器`）：
+   - `mvn -B -ntp -pl connector-sdk,services/connector-service org.jacoco:jacoco-maven-plugin:0.8.12:prepare-agent test org.jacoco:jacoco-maven-plugin:0.8.12:report checkstyle:check` → **BUILD SUCCESS**；connector-sdk **105 例 0 失败 0 跳过**、connector-service **237 例 0 失败 0 跳过**；checkstyle 两模块 **0 违规**（日志 `build-output/w366-final-verify.log`）。
+   - 覆盖率（jacoco.csv 汇总行覆盖）：connector-sdk **90.68%**（642/708）、connector-service **92.11%**（1494/1622），均 ≥70%。
+   - 测试先行红基线留痕：SDK `build-output/w366-red-sdk.log`（编译失败 = 实现缺失）；服务侧 `build-output/w366-red-service.log`（HostGuard 6/6、NoTouch/Read/Registration 等红）。
+   - 已知偶发：`GovExchangeHttpMappingTest.mapsEmptyBodyToUnhandledFailure`（**DB-87** 既有登记，双模块联跑环境类 flaky），本轮复跑绿。
+   - 全仓门禁：单发执行中（PID 留痕于开发日志），报告出后回填本节。
+5. **高风险点自查**：① **JDBC 攻击面**：参数白名单（默认拒绝，9 键）在**受理期**校验 + 连接 `readOnly=true` + 仅执行 `SELECT 1` 与 `information_schema` 计数（无用户 SQL、零写语句，测试以桩驱动断言"无写语句 / 已设只读"）；② **预签名 URL 明文面**：凭据仅 SM4 密文落库、掩码留末 4 位、适配器 `toString` 全掩、日志 / 响应零原文（T2 直查库 + T6 断言摘要）；③ **DNS TOCTOU**：受理期不解析、**调用前**解析判定（`getAllByName` 全量），解析失败 fail-closed；④ **超时**：HTTP 连接 3s / 读 5s、JDBC 语句超时 5s，异常映射"网络不可达"；⑤ **并发 / 事务**：适配器无共享可变状态；拒绝 / 失败留痕为 `REQUIRES_NEW` 独立提交，不随业务异常回滚丢失；⑥ **能力开放后的兜底**：`1010C0011` 保留为防御性分支。
+6. **验收剧本更新建议**：**无需修改步骤与判定**。可选（经 PO 批准）在维护说明补一行："3.6.6 已交付，四类源（政务 / 数据库 / 对象存储 / API 网关）自检与读取均可用；数据库与 API 网关源按只读探测口径使用，对象存储使用提供方生成的临时授权链接。"
+7. **业务可读交付说明**：**完成了什么**——连接器现在支持四类数据源，新增的数据库 / 对象存储 / API 网关三类可以登记、自检、读取摘要；访问前会再校验一次地址（防内网穿透），三类失败原因中文可读；**如何演示**——接口级演示（见日志"业务可读总结"四步）；**注意事项**——对象存储授权链接有有效期；内网源默认不可用（演示需显式放开）；界面与端到端取数分别归 3.6.7 / 3.6.8。
 
 ## 六、体量登记（编码交付时回填）
 
 | 项 | 数值 |
 | --- | --- |
 | 预估（立卡阶段） | SDK 三类适配器 + 客户端/报文 ≈ 450 行；服务侧（装配 3 Bean + HostGuard + 留痕读面泛化）≈ 220 行；测试 ≈ 420 行；ADR-030 ≈ 90 行；**合计 ≈ 900~1200 行**（测试为主，业务代码为加性）；文档（设计约 380 行 + 任务卡/日志约 220 行）另计——沿 3.6.5"含测试与文档"D1 豁免口径申请不拆分 |
-| 实测（编码交付） | 待回填 |
+| 实测（编码交付） | **新增 2 108 行 + 既有修改 578 插入 / 119 删除**（21 个既有文件）：① SDK 新增生产代码 **834 行**（`adapter/database` 4 类 354 / `adapter/objectstorage` 3 类 264 / `adapter/apigateway` 3 类 216）；② 服务侧新增 **154 行**（`SourceHostGuard` 22 + `InetAddressSourceHostGuard` 132）+ 既有 7 类增量修改（装配 / 编排 / 读面 / 码表 / DTO）；③ 新增测试 **1 120 行**（SDK 5 类 779，服务侧 3 类 341）+ 既有 9 个测试类扩展与 7 处断言改写；④ ADR-030 与文档另计。超出 400 行常规 PR 上限（D1 已确认"不拆分"：同一能力链，拆开产生"部分源已适配"的不完整交付，3.6.8 返工——沿 3.6.5 同款豁免口径） |
 
 ---
 

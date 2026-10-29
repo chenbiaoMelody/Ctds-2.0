@@ -23,18 +23,18 @@ public final class ConnectorSourceViews {
     private ConnectorSourceViews() {
     }
 
-    /** 源登记请求（四类源均受理；凭据仅请求侧）。 */
+    /** 源登记请求（四类源均受理；凭据仅请求侧；上限 1024 = 预签名 URL 形态）。 */
     public record RegisterSourceRequest(
             @NotNull SourceType sourceType,
             @NotBlank @Size(max = 512) String endpoint,
-            @NotBlank @Size(max = 256) @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
+            @NotBlank @Size(max = 1024) @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
             String credential) {
     }
 
-    /** 源变更请求（地址必填；凭据空 = 不变）。 */
+    /** 源变更请求（地址必填；凭据空 = 不变；上限 1024）。 */
     public record AmendSourceRequest(
             @NotBlank @Size(max = 512) String endpoint,
-            @Size(max = 256) @JsonProperty(access = JsonProperty.Access.WRITE_ONLY) String credential) {
+            @Size(max = 1024) @JsonProperty(access = JsonProperty.Access.WRITE_ONLY) String credential) {
     }
 
     /** 内部读取请求（判定放行后由交付链调用）。 */
