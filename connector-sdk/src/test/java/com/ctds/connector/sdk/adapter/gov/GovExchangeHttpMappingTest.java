@@ -98,9 +98,15 @@ class GovExchangeHttpMappingTest {
      * <p>DB-87 修复：空应答改用<b>独立桩实例</b>（不再共享 {@code SERVER_STATUS / SERVER_BODY} 静态态），
      * 消除"双模块联跑偶发读到上一用例报文"的竞态；断言口径零变化（仍要求 {@code IllegalStateException}
      * + "应答为空"）。</p>
+     *
+     * <p>DB-87 残余（WBS-3.6.6 门禁第三发 RED 归因）：Windows 回环高频建连偶发<b>立即</b>失败
+     * （门禁实测该用例 0.019s 内未抛、另一共享桩用例连接耗时 0.9s）——{@code check} 按生产语义把
+     * {@code ResourceAccessException} 映射为 NETWORK_UNREACHABLE 正常返回，与"空应答被错误映射"
+     * 在原断言下不可判别。处置：NETWORK_UNREACHABLE 视为基础设施偶发并重试（≤5 次，间隔 100ms）；
+     * 其余映射结果（含通过）立即判红并给出映射结果，空应答映射契约本身（异常类型 + 文案）不变。</p>
      */
     @Test
-    void mapsEmptyBodyToUnhandledFailure() throws IOException {
+    void mapsEmptyBodyToUnhandledFailure() throws Exception {
         final HttpServer emptyBodyServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         emptyBodyServer.createContext(CONTEXT, exchange -> {
             exchange.getResponseHeaders().add("Content-Type", "application/json");
@@ -112,9 +118,23 @@ class GovExchangeHttpMappingTest {
             final SourceRegistration emptyBody = new SourceRegistration(SourceType.GOV_EXCHANGE,
                     "http://127.0.0.1:" + emptyBodyServer.getAddress().getPort() + CONTEXT,
                     CREDENTIAL_REF, CONNECTOR_NO);
-            assertThatThrownBy(() -> adapter.check(emptyBody))
-                    .isInstanceOf(IllegalStateException.class)
-                    .hasMessageContaining("应答为空");
+            IllegalStateException emptyAnswer = null;
+            for (int attempt = 0; attempt < 5 && emptyAnswer == null; attempt++) {
+                try {
+                    final SourceCheckResult result = adapter.check(emptyBody);
+                    if (result.passed()
+                            || result.failureType() != SourceCheckFailureType.NETWORK_UNREACHABLE) {
+                        throw new AssertionError("空应答被映射为 passed=" + result.passed()
+                                + " failureType=" + result.failureType()
+                                + " message=" + result.message());
+                    }
+                    Thread.sleep(100);
+                } catch (final IllegalStateException e) {
+                    emptyAnswer = e;
+                }
+            }
+            assertThat(emptyAnswer).isNotNull();
+            assertThat(emptyAnswer).hasMessageContaining("应答为空");
         } finally {
             emptyBodyServer.stop(0);
         }
