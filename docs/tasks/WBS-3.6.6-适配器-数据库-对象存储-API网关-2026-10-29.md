@@ -71,7 +71,7 @@
 
 | 项 | 内容 |
 | --- | --- |
-| 状态 | 🟡 **编码段已交付，待 4 视角评审循环 1（2026-10-29）**——SDK 三类适配器（3 包 10 类）+ 服务侧 `SourceHostGuard` / DB-90 留痕读面泛化 / 装配与码表；**测试先行**（红基线 → 绿）；connector-sdk **105 例**（基线 65，+40）、connector-service **237 例**（基线 206，+31）、两模块 checkstyle **0 违规**；行覆盖 **sdk 90.68% / service 92.11%**；全仓门禁单发执行中（报告出后回填 §五-4）；关闭条件② 本地全绿达成，③④ 待评审 / 验收 |
+| 状态 | 🟡 **编码段已交付，待 4 视角评审循环 1（2026-10-29）**——SDK 三类适配器（3 包 10 类）+ 服务侧 `SourceHostGuard` / DB-90 留痕读面泛化 / 装配与码表；**测试先行**（红基线 → 绿）；connector-sdk **105 例**（基线 65，+40）、connector-service **237 例**（基线 206，+31）、两模块 checkstyle **0 违规**；行覆盖 **sdk 90.68% / service 92.11%**；**门禁第一发 RED 唯一红灯 = coverage 段的 DB-87 偶发 → 已确定性修复（10/10 绿，`57802d1`）→ 第二发执行中**；关闭条件② 本地全绿达成，①③④ 见 §二 / 评审 / 验收 |
 | 立卡素材盘点（本会话） | ① **SPI 面**：七类型冻结，`SourceAdapter.type()/check()/read()`；三类适配器零实现；② **服务面**：6 端点 / 2 表 / 凭据三列 / 自检 200 业务结论 / 读取摘要 + 五要素；新增适配器唯一装配点 = `SourceAdapterConfig`；③ **依赖面**：`connector-sdk` 仅 spring-web + jackson（无 JDBC 驱动 / 无对象存储 SDK）；`connector-service` 已有 `mysql-connector-j` + `starter-jdbc`；④ **码位**：`1010C0010` 零占用；`1010C0011` 现有 4 处断言将失效；⑤ **债务**：DB-90 / DB-91 可本卡闭环，**DB-88 须规格变更前置**；⑥ **测试基线**：connector-service 206 例 / connector-sdk 65 例；⑦ **演示**：`sc-mysql` / `sc-minio` 容器在运行，`allow-private-endpoint` 默认 false |
 | 设计文件 | `docs/designs/WBS-3.6.6-lofi.md`（**V1.0，方向定稿**）、`docs/designs/WBS-3.6.6-hifi.md`（**V1.0，编码契约**）；非界面类，无原型 HTML |
 | 确认（编排师） | ✅ **2026-10-29"确认"** = Q1~Q9 全采建议口径 A + D1 不拆分；确认批随本段落盘（**main 受保护，随本卡 PR 入库**） |
@@ -91,7 +91,7 @@
    - 覆盖率（jacoco.csv 汇总行覆盖）：connector-sdk **90.68%**（642/708）、connector-service **92.11%**（1494/1622），均 ≥70%。
    - 测试先行红基线留痕：SDK `build-output/w366-red-sdk.log`（编译失败 = 实现缺失）；服务侧 `build-output/w366-red-service.log`（HostGuard 6/6、NoTouch/Read/Registration 等红）。
    - 已知偶发：`GovExchangeHttpMappingTest.mapsEmptyBodyToUnhandledFailure`（**DB-87** 既有登记，双模块联跑环境类 flaky），本轮复跑绿。
-   - 全仓门禁：单发执行中（PID 留痕于开发日志），报告出后回填本节。
+   - 全仓门禁：**第一发 RED**（`gate-report-20261029-213516`，`PASS=14 FAIL=1 SKIP=2 PENDING=5`）——唯一红灯 = `coverage` 段，失败用例 = `GovExchangeHttpMappingTest.mapsEmptyBodyToUnhandledFailure`（既有债务 **DB-87** 偶发；同套全量用例在 `unitTest` 段已 PASS，互为佐证）。按"门禁无特批"完成**确定性修复**（空应答用例改独立桩实例，零断言变化，连跑 **10/10 绿**，提交 `57802d1`），**第二发执行中**（PID 与报告待回填；红灯报告保留，不得隐匿）。
 5. **高风险点自查**：① **JDBC 攻击面**：参数白名单（默认拒绝，9 键）在**受理期**校验 + 连接 `readOnly=true` + 仅执行 `SELECT 1` 与 `information_schema` 计数（无用户 SQL、零写语句，测试以桩驱动断言"无写语句 / 已设只读"）；② **预签名 URL 明文面**：凭据仅 SM4 密文落库、掩码留末 4 位、适配器 `toString` 全掩、日志 / 响应零原文（T2 直查库 + T6 断言摘要）；③ **DNS TOCTOU**：受理期不解析、**调用前**解析判定（`getAllByName` 全量），解析失败 fail-closed；④ **超时**：HTTP 连接 3s / 读 5s、JDBC 语句超时 5s，异常映射"网络不可达"；⑤ **并发 / 事务**：适配器无共享可变状态；拒绝 / 失败留痕为 `REQUIRES_NEW` 独立提交，不随业务异常回滚丢失；⑥ **能力开放后的兜底**：`1010C0011` 保留为防御性分支。
 6. **验收剧本更新建议**：**无需修改步骤与判定**。可选（经 PO 批准）在维护说明补一行："3.6.6 已交付，四类源（政务 / 数据库 / 对象存储 / API 网关）自检与读取均可用；数据库与 API 网关源按只读探测口径使用，对象存储使用提供方生成的临时授权链接。"
 7. **业务可读交付说明**：**完成了什么**——连接器现在支持四类数据源，新增的数据库 / 对象存储 / API 网关三类可以登记、自检、读取摘要；访问前会再校验一次地址（防内网穿透），三类失败原因中文可读；**如何演示**——接口级演示（见日志"业务可读总结"四步）；**注意事项**——对象存储授权链接有有效期；内网源默认不可用（演示需显式放开）；界面与端到端取数分别归 3.6.7 / 3.6.8。
