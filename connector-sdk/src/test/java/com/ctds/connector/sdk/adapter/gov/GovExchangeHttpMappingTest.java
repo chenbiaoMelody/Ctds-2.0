@@ -92,12 +92,32 @@ class GovExchangeHttpMappingTest {
                 .hasMessageContaining("应答状态异常");
     }
 
+    /**
+     * 空应答 = 非预期（上抛 → 平台 502）。
+     *
+     * <p>DB-87 修复：空应答改用<b>独立桩实例</b>（不再共享 {@code SERVER_STATUS / SERVER_BODY} 静态态），
+     * 消除"双模块联跑偶发读到上一用例报文"的竞态；断言口径零变化（仍要求 {@code IllegalStateException}
+     * + "应答为空"）。</p>
+     */
     @Test
-    void mapsEmptyBodyToUnhandledFailure() {
-        serve(200, "");
-        assertThatThrownBy(() -> adapter.check(registration()))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("应答为空");
+    void mapsEmptyBodyToUnhandledFailure() throws IOException {
+        final HttpServer emptyBodyServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        emptyBodyServer.createContext(CONTEXT, exchange -> {
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, -1);
+            exchange.close();
+        });
+        emptyBodyServer.start();
+        try {
+            final SourceRegistration emptyBody = new SourceRegistration(SourceType.GOV_EXCHANGE,
+                    "http://127.0.0.1:" + emptyBodyServer.getAddress().getPort() + CONTEXT,
+                    CREDENTIAL_REF, CONNECTOR_NO);
+            assertThatThrownBy(() -> adapter.check(emptyBody))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("应答为空");
+        } finally {
+            emptyBodyServer.stop(0);
+        }
     }
 
     @Test
