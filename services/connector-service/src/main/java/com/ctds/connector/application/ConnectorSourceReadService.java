@@ -44,6 +44,7 @@ public class ConnectorSourceReadService {
     private static final int PURPOSE_MAX = 128;
     private static final int DETAIL_MAX = 240;
     private static final String READ_FAILED = "READ_FAILED";
+    private static final String ADAPTER_ERROR = "ADAPTER_ERROR";
 
     private final ConnectorSourceRepository sourceRepository;
     private final ConnectorRepository connectorRepository;
@@ -106,6 +107,10 @@ public class ConnectorSourceReadService {
             throw e;
         } catch (final RuntimeException e) {
             LOG.warn("源读取适配器非预期失败（已收敛为 502）：{}", e.getClass().getName());
+            // 不可归类异常的读取腿同样留痕（hifi §7.6；评审循环 1 ①P2），与自检路径口径一致
+            audit.failure(ConnectorAuditActions.SOURCE_READ, connectorNo, operatorNo, ADAPTER_ERROR,
+                    detail("sourceNo=" + sourceNo, "contractNo=" + normalizedContractNo,
+                            "success=false", "summary=probe failed"));
             throw new ConnectorAdapterProbeException(e);
         }
         final LocalDateTime readAt = LocalDateTime.now();

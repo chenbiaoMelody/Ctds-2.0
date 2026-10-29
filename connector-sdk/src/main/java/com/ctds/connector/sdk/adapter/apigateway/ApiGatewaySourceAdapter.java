@@ -9,6 +9,7 @@ import com.ctds.connector.sdk.spi.SourceReadResult;
 import com.ctds.connector.sdk.spi.SourceRegistration;
 import com.ctds.connector.sdk.spi.SourceType;
 import java.io.IOException;
+import java.time.Duration;
 import java.util.Optional;
 
 /**
@@ -25,16 +26,25 @@ public final class ApiGatewaySourceAdapter implements SourceAdapter {
     private static final String MESSAGE_NETWORK = "网络不可达";
     private static final String READ_FAILURE_PREFIX = "读取失败：";
     private static final int MAX_CREDENTIAL_LENGTH = 1024;
+    private static final int SUMMARY_TEXT_MAX = 120;
+    private static final String TEXT_NULL = "unknown";
+    private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(3);
     private static final int STATUS_UNAUTHORIZED = 401;
     private static final int STATUS_FORBIDDEN = 403;
     private static final int SUCCESS_MIN = 200;
     private static final int SUCCESS_MAX_EXCLUSIVE = 300;
 
     private final CredentialResolver credentialResolver;
-    private final ApiGatewayClient client = new ApiGatewayClient();
+    private final ApiGatewayClient client;
 
     public ApiGatewaySourceAdapter(final CredentialResolver credentialResolver) {
+        this(credentialResolver, DEFAULT_TIMEOUT);
+    }
+
+    public ApiGatewaySourceAdapter(final CredentialResolver credentialResolver,
+            final Duration timeout) {
         this.credentialResolver = credentialResolver;
+        this.client = new ApiGatewayClient(timeout);
     }
 
     @Override
@@ -78,7 +88,7 @@ public final class ApiGatewaySourceAdapter implements SourceAdapter {
                     client.probe(registration.endpoint(), authorization.get(), true);
             if (isSuccess(result.status())) {
                 return new SourceReadResult(true, "status=" + result.status() + ";bytes="
-                        + result.bytes() + ";contentType=" + result.contentType());
+                        + result.bytes() + ";contentType=" + sanitize(result.contentType()));
             }
             final SourceCheckFailureType failureType = failureTypeOf(result.status());
             if (failureType == null) {
@@ -117,6 +127,21 @@ public final class ApiGatewaySourceAdapter implements SourceAdapter {
             return SourceCheckFailureType.INSUFFICIENT_PERMISSION;
         }
         return null;
+    }
+
+    /**
+     * 源端可控文本收敛（评审循环 1 ③P2，沿 gov 适配器 sanitize 口径）：去控制字符、{@code ;} 转空格
+     * （留痕 detail 的字段分隔符）、限长 120。
+     */
+    private static String sanitize(final String value) {
+        if (value == null || value.isBlank()) {
+            return TEXT_NULL;
+        }
+        String text = value.replaceAll("\\p{Cntrl}", " ").replace(';', ' ').trim();
+        if (text.length() > SUMMARY_TEXT_MAX) {
+            text = text.substring(0, SUMMARY_TEXT_MAX);
+        }
+        return text;
     }
 
     private static String messageOf(final SourceCheckFailureType failureType) {

@@ -9,6 +9,7 @@ import com.ctds.connector.sdk.spi.SourceReadResult;
 import com.ctds.connector.sdk.spi.SourceRegistration;
 import com.ctds.connector.sdk.spi.SourceType;
 import java.sql.SQLException;
+import java.time.Duration;
 import java.util.Optional;
 
 /**
@@ -33,12 +34,18 @@ public final class DatabaseSourceAdapter implements SourceAdapter {
     private static final int MYSQL_TABLE_ACCESS_DENIED = 1142;
     private static final int MYSQL_SPECIFIC_ACCESS_DENIED = 1227;
     private static final String DRIVER_MISSING_MARK = "no suitable driver";
+    private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(3);
 
     private final CredentialResolver credentialResolver;
-    private final DatabaseSourceClient client = new DatabaseSourceClient();
+    private final DatabaseSourceClient client;
 
     public DatabaseSourceAdapter(final CredentialResolver credentialResolver) {
+        this(credentialResolver, DEFAULT_TIMEOUT);
+    }
+
+    public DatabaseSourceAdapter(final CredentialResolver credentialResolver, final Duration timeout) {
         this.credentialResolver = credentialResolver;
+        this.client = new DatabaseSourceClient(timeout);
     }
 
     @Override

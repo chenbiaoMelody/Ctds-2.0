@@ -64,6 +64,12 @@ class ConnectorSourceNoTouchTest extends ConnectorTestSupport {
         final String sourceNo = registerSource(OWNER, connectorNo, "DATABASE",
                 "jdbc:mysql://no-such-host.invalid:3306/dataset", "db-user:db-secret-0003");
         readExpecting(connectorNo, sourceNo, 400, "1010C0010");
+        // 数据库源无法用政务桩计数判别，改用可判别证据：适配器一旦被调用必写 source.read 留痕
+        // （成功 / 业务失败 / 不可归类异常三条路径均留痕），因此"零 source.read 行" = 适配器零调用。
+        final Integer reads = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM connector_action_log WHERE connector_no = ? AND action = ?",
+                Integer.class, connectorNo, "source.read");
+        assertThat(reads).isZero();
     }
 
     @Test

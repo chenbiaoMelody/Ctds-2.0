@@ -11,19 +11,24 @@ import java.time.Duration;
 /**
  * API 网关只读客户端（hifi §7.5）：JDK {@link HttpClient}，GET，{@code Authorization} 原样放入请求头。
  *
- * <p>读取模式最多消费 1MB 响应体<b>仅用于计字节数</b>，随后丢弃（不落内存、不入摘要、不回传）。</p>
+ * <p>读取模式最多消费 1MB 响应体<b>仅用于计字节数</b>，随后丢弃（不落内存、不入摘要、不回传）。
+ * 超时由装配注入（{@code ctds.connector.source.adapter-timeout}），不在此硬编码（评审循环 1 ③P1）。</p>
  */
 final class ApiGatewayClient {
 
-    private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(3);
-    private static final Duration READ_TIMEOUT = Duration.ofSeconds(5);
     private static final int MAX_BODY_BYTES = 1024 * 1024;
     private static final int BUFFER_SIZE = 8192;
 
-    private final HttpClient client = HttpClient.newBuilder()
-            .connectTimeout(CONNECT_TIMEOUT)
-            .followRedirects(HttpClient.Redirect.NEVER)
-            .build();
+    private final Duration timeout;
+    private final HttpClient client;
+
+    ApiGatewayClient(final Duration timeout) {
+        this.timeout = timeout;
+        this.client = HttpClient.newBuilder()
+                .connectTimeout(timeout)
+                .followRedirects(HttpClient.Redirect.NEVER)
+                .build();
+    }
 
     /**
      * 只读探测。
@@ -35,7 +40,7 @@ final class ApiGatewayClient {
     HttpProbeResult probe(final String endpoint, final String authorization, final boolean countBody)
             throws IOException {
         final HttpRequest request = HttpRequest.newBuilder(URI.create(endpoint))
-                .timeout(READ_TIMEOUT)
+                .timeout(timeout)
                 .header("Authorization", authorization)
                 .GET()
                 .build();

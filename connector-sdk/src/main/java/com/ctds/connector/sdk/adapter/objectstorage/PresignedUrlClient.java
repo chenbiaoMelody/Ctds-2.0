@@ -13,18 +13,23 @@ import java.time.Duration;
  * 预签名 URL 只读客户端（hifi §7.4）：JDK {@link HttpClient}，GET；自检带 {@code Range: bytes=0-0}
  * （兼容只签 GET 的预签名），读取不设 Range 且只取响应头，<b>响应内容不落内存</b>。
  *
- * <p>仅 4xx / 5xx 时读限长片段用于签名类关键字判定（大小写不敏感），成功应答直接关闭流。</p>
+ * <p>仅 4xx / 5xx 时读限长片段用于签名类关键字判定（大小写不敏感），成功应答直接关闭流。
+ * 超时由装配注入（{@code ctds.connector.source.adapter-timeout}），不在此硬编码（评审循环 1 ③P1）。</p>
  */
 final class PresignedUrlClient {
 
-    private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(3);
-    private static final Duration READ_TIMEOUT = Duration.ofSeconds(5);
     private static final int ERROR_BODY_MAX = 2048;
 
-    private final HttpClient client = HttpClient.newBuilder()
-            .connectTimeout(CONNECT_TIMEOUT)
-            .followRedirects(HttpClient.Redirect.NEVER)
-            .build();
+    private final Duration timeout;
+    private final HttpClient client;
+
+    PresignedUrlClient(final Duration timeout) {
+        this.timeout = timeout;
+        this.client = HttpClient.newBuilder()
+                .connectTimeout(timeout)
+                .followRedirects(HttpClient.Redirect.NEVER)
+                .build();
+    }
 
     /**
      * 只读探测。
@@ -34,7 +39,7 @@ final class PresignedUrlClient {
      */
     Probe probe(final String url, final boolean rangeOnly) throws IOException {
         final HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url))
-                .timeout(READ_TIMEOUT)
+                .timeout(timeout)
                 .GET();
         if (rangeOnly) {
             builder.header("Range", "bytes=0-0");

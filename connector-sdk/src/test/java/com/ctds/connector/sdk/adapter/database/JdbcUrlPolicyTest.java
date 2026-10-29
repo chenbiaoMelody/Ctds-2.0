@@ -69,6 +69,21 @@ class JdbcUrlPolicyTest {
                 .isEmpty();
     }
 
+    /** 评审循环 1 ④P2：大小写 / 编码 / 混合键等绕过形态一律拒绝（白名单默认拒绝）。 */
+    @Test
+    void rejectsBypassEncodingsOfDangerousParameters() {
+        assertThat(JdbcUrlPolicy.parse(
+                "jdbc:mysql://db.example.com/dataset?ALLOWLOADLOCALINFILE=true")).isEmpty();
+        assertThat(JdbcUrlPolicy.parse(
+                "jdbc:mysql://db.example.com/dataset?allowLoadLocalInfile%3Dtrue")).isEmpty();
+        assertThat(JdbcUrlPolicy.parse(
+                "jdbc:mysql://db.example.com/dataset?allowLoadLocalInfile=true&useUnicode=true"))
+                .isEmpty();
+        assertThat(JdbcUrlPolicy.parse(
+                "jdbc:mysql://db.example.com/dataset?allowLoadLocalInfile=true;allowMultiQueries=true"))
+                .isEmpty();
+    }
+
     @Test
     void rejectsMissingSchema() {
         assertThat(JdbcUrlPolicy.parse("jdbc:mysql://db.example.com")).isEmpty();

@@ -224,6 +224,8 @@ public interface ConnectorAuditRepository {
 
 **测试基建**：数据库用 `SharedMySqlContainer` 建独立库 + 受限用户；对象存储 / API 网关用 JDK `HttpServer` 桩（沿 `GovExchangeHttpMappingTest` 范式，随机端口）；gurad 用测试 `SourceHostGuard` 或可注入解析器（避免依赖真实 DNS）。
 
+**实测回填（2026-10-29 评审修复批，本表为准）**：U1 `DatabaseSourceAdapterTest` 11 / U2 `JdbcUrlPolicyTest` **10**（+1 绕过形态）/ U3 `ObjectStorageSourceAdapterTest` **12**（+1 超时）/ U4 `ApiGatewaySourceAdapterTest` **11**（+2 1MB 边界 + 超时）；T1 `ConnectorSourceCheckAvailabilityApiTest` 3（**独立类，非原类扩展**，原 `ConnectorSourceCheckUnavailableApiTest` 删除）/ T2 +4 / T3 +2 / T4 +6 / T5 `ConnectorSourceHostGuardApiTest` 6 + `InetAddressSourceHostGuardTest` **10**（+3 保留段 / 内嵌 IPv4 / fail-closed）/ T6 +4 / T7 +2 / T8 **7 处**（原表"4 处"为预估，实测含凭据上限 256→1025 与 DATABASE 端点形态改写）。合计：**SDK 109 例 / service 240 例**，0 失败 0 跳过。
+
 ## §10 ADR-030 大纲（编码段落盘，七字段齐备 = 门禁 `adrFieldsCheck`）
 
 1. **背景**：规格行为 11 三类通用源 + 3.6.5 已交付政务源与登记面；SDK 无 JDBC / 对象存储依赖；

@@ -10,11 +10,14 @@ import java.util.Optional;
  */
 public record DatabaseCredential(String username, String password) {
 
+    /** 凭据明文长度上限（与 hifi §2 凭据上限及各适配器口径一致）。 */
+    public static final int MAX_LENGTH = 1024;
+
     private static final String MASK = "***";
 
     /** 解析凭据明文（形态非法返回空）。 */
     public static Optional<DatabaseCredential> parse(final String plaintext) {
-        if (plaintext == null) {
+        if (plaintext == null || plaintext.length() > MAX_LENGTH) {
             return Optional.empty();
         }
         final int separator = plaintext.indexOf(':');

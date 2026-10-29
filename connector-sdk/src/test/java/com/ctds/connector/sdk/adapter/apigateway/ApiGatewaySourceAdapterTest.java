@@ -15,6 +15,8 @@ import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -28,6 +30,8 @@ import org.junit.jupiter.api.Test;
 class ApiGatewaySourceAdapterTest {
 
     private static final String AUTHORIZATION = "Bearer test-token-0001";
+    private static final int LARGE_BODY_BYTES = 1024 * 1024 + 204800;
+    private static final long SLOW_MILLIS = 1200L;
     private static final AtomicReference<String> LAST_AUTHORIZATION = new AtomicReference<>();
 
     private static HttpServer server;
@@ -40,6 +44,11 @@ class ApiGatewaySourceAdapterTest {
         server.createContext("/unauthorized", exchange -> respond(exchange, 401, "{\"code\":\"denied\"}"));
         server.createContext("/forbidden", exchange -> respond(exchange, 403, "{\"code\":\"forbidden\"}"));
         server.createContext("/broken", exchange -> respond(exchange, 500, "{\"code\":\"boom\"}"));
+        server.createContext("/large", exchange -> respondLarge(exchange, LARGE_BODY_BYTES));
+        server.createContext("/slow", exchange -> {
+            sleep(SLOW_MILLIS);
+            respond(exchange, 200, "{}");
+        });
         server.start();
         baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
     }
@@ -62,6 +71,25 @@ class ApiGatewaySourceAdapterTest {
         exchange.sendResponseHeaders(status, payload.length);
         exchange.getResponseBody().write(payload);
         exchange.close();
+    }
+
+    /** 大响应（超过 1MB 计数上限，用于边界断言）。 */
+    private static void respondLarge(final HttpExchange exchange, final int size) throws IOException {
+        LAST_AUTHORIZATION.set(exchange.getRequestHeaders().getFirst("Authorization"));
+        final byte[] payload = new byte[size];
+        Arrays.fill(payload, (byte) 'x');
+        exchange.getResponseHeaders().add("Content-Type", "application/octet-stream");
+        exchange.sendResponseHeaders(200, payload.length);
+        exchange.getResponseBody().write(payload);
+        exchange.close();
+    }
+
+    private static void sleep(final long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private static ApiGatewaySourceAdapter adapterWithCredential(final String credential) {
@@ -133,6 +161,29 @@ class ApiGatewaySourceAdapterTest {
 
         assertThat(result.success()).isFalse();
         assertThat(result.summary()).isEqualTo("读取失败：凭据无效");
+    }
+
+    /** 评审循环 1 ④P2：读取计数上限 1MB（超出部分丢弃，摘要不随响应体膨胀）。 */
+    @Test
+    void readCapsCountedBytesAtOneMegabyte() {
+        final SourceReadResult result = adapterWithCredential(AUTHORIZATION)
+                .read(registration(baseUrl + "/large"), readRequest());
+
+        assertThat(result.success()).isTrue();
+        assertThat(result.summary())
+                .isEqualTo("status=200;bytes=1048576;contentType=application/octet-stream");
+    }
+
+    /** 评审循环 1 ④P2：读超时（HttpTimeoutException）同样映射"网络不可达"。 */
+    @Test
+    void readTimeoutMapsToNetworkUnreachable() {
+        final ApiGatewaySourceAdapter adapter =
+                new ApiGatewaySourceAdapter(ref -> AUTHORIZATION, Duration.ofMillis(500));
+
+        final SourceCheckResult result = adapter.check(registration(baseUrl + "/slow"));
+
+        assertThat(result.passed()).isFalse();
+        assertThat(result.failureType()).isEqualTo(SourceCheckFailureType.NETWORK_UNREACHABLE);
     }
 
     @Test

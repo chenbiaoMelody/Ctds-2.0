@@ -9,6 +9,7 @@ import com.ctds.connector.sdk.spi.SourceReadResult;
 import com.ctds.connector.sdk.spi.SourceRegistration;
 import com.ctds.connector.sdk.spi.SourceType;
 import java.io.IOException;
+import java.time.Duration;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
@@ -37,11 +38,21 @@ public final class ObjectStorageSourceAdapter implements SourceAdapter {
     private static final Set<String> CREDENTIAL_KEYWORDS = Set.of(
             "signaturedoesnotmatch", "invalidaccesskeyid", "expiredtoken", "expired");
 
+    private static final int SUMMARY_TEXT_MAX = 120;
+    private static final String TEXT_NULL = "unknown";
+    private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(3);
+
     private final CredentialResolver credentialResolver;
-    private final PresignedUrlClient client = new PresignedUrlClient();
+    private final PresignedUrlClient client;
 
     public ObjectStorageSourceAdapter(final CredentialResolver credentialResolver) {
+        this(credentialResolver, DEFAULT_TIMEOUT);
+    }
+
+    public ObjectStorageSourceAdapter(final CredentialResolver credentialResolver,
+            final Duration timeout) {
         this.credentialResolver = credentialResolver;
+        this.client = new PresignedUrlClient(timeout);
     }
 
     @Override
@@ -82,7 +93,7 @@ public final class ObjectStorageSourceAdapter implements SourceAdapter {
         try {
             final PresignedUrlClient.Probe probe = client.probe(credential.get().url(), false);
             if (isSuccess(probe.status())) {
-                return new SourceReadResult(true, "contentType=" + probe.contentType()
+                return new SourceReadResult(true, "contentType=" + sanitize(probe.contentType())
                         + ";size=" + sizeText(probe.contentLength()));
             }
             final SourceCheckFailureType failureType = failureTypeOf(probe);
@@ -133,6 +144,21 @@ public final class ObjectStorageSourceAdapter implements SourceAdapter {
             case INSUFFICIENT_PERMISSION -> MESSAGE_PERMISSION;
             case NETWORK_UNREACHABLE -> MESSAGE_NETWORK;
         };
+    }
+
+    /**
+     * 源端可控文本收敛（评审循环 1 ③P2，沿 gov 适配器 sanitize 口径）：去控制字符、{@code ;} 转空格
+     * （留痕 detail 的字段分隔符）、限长 120；摘要不得成为伪造留痕字段或注入控制字符的通道。
+     */
+    private static String sanitize(final String value) {
+        if (value == null || value.isBlank()) {
+            return TEXT_NULL;
+        }
+        String text = value.replaceAll("\\p{Cntrl}", " ").replace(';', ' ').trim();
+        if (text.length() > SUMMARY_TEXT_MAX) {
+            text = text.substring(0, SUMMARY_TEXT_MAX);
+        }
+        return text;
     }
 
     private static String sizeText(final long contentLength) {

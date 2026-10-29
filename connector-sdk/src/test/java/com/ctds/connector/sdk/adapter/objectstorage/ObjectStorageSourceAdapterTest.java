@@ -15,6 +15,7 @@ import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -27,6 +28,7 @@ import org.junit.jupiter.api.Test;
 class ObjectStorageSourceAdapterTest {
 
     private static final String ENDPOINT = "oss://dataset-bucket/data/2026";
+    private static final long SLOW_MILLIS = 1200L;
     private static final AtomicInteger RANGE_REQUESTS = new AtomicInteger();
 
     private static HttpServer server;
@@ -44,6 +46,10 @@ class ObjectStorageSourceAdapterTest {
                 "<Error><Code>AccessDenied</Code></Error>", false));
         server.createContext("/missing", exchange -> respond(exchange, 404, "text/plain", "no", false));
         server.createContext("/broken", exchange -> respond(exchange, 500, "text/plain", "boom", false));
+        server.createContext("/slow", exchange -> {
+            sleep(SLOW_MILLIS);
+            respond(exchange, 200, "application/octet-stream", "payload", false);
+        });
         server.start();
         baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
     }
@@ -51,6 +57,14 @@ class ObjectStorageSourceAdapterTest {
     @AfterAll
     static void stopServer() {
         server.stop(0);
+    }
+
+    private static void sleep(final long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private static void respond(final HttpExchange exchange, final int status, final String contentType,
@@ -130,6 +144,18 @@ class ObjectStorageSourceAdapterTest {
     void connectionRefusedMapsToNetworkUnreachable() {
         assertThat(adapterWithCredential("http://127.0.0.1:1/object").check(registration()).failureType())
                 .isEqualTo(SourceCheckFailureType.NETWORK_UNREACHABLE);
+    }
+
+    /** 评审循环 1 ④P2：读超时（HttpTimeoutException）映射"网络不可达"。 */
+    @Test
+    void readTimeoutMapsToNetworkUnreachable() {
+        final ObjectStorageSourceAdapter adapter = new ObjectStorageSourceAdapter(
+                ref -> baseUrl + "/slow", Duration.ofMillis(500));
+
+        final SourceCheckResult result = adapter.check(registration());
+
+        assertThat(result.passed()).isFalse();
+        assertThat(result.failureType()).isEqualTo(SourceCheckFailureType.NETWORK_UNREACHABLE);
     }
 
     @Test

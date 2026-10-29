@@ -27,31 +27,42 @@ public class SourceAdapterConfig {
     @Bean
     public SourceAdapter govExchangeSourceAdapter(final CredentialResolver credentialResolver,
             @Value("${ctds.connector.source.adapter-timeout:3s}") final Duration adapterTimeout) {
-        // 启动校验（hifi §12）：超时 1s~30s；越界 = 配置错误，启动即失败而非运行期才暴露
+        return new GovExchangeSourceAdapter(credentialResolver, validatedTimeout(adapterTimeout));
+    }
+
+    /** 数据库适配器（WBS-3.6.6）：JDBC 只读探针 + 参数白名单；驱动由运行宿主提供。 */
+    @Bean
+    public SourceAdapter databaseSourceAdapter(final CredentialResolver credentialResolver,
+            @Value("${ctds.connector.source.adapter-timeout:3s}") final Duration adapterTimeout) {
+        return new DatabaseSourceAdapter(credentialResolver, validatedTimeout(adapterTimeout));
+    }
+
+    /** 对象存储适配器（WBS-3.6.6）：预签名 URL 只读 GET；不做签名实现。 */
+    @Bean
+    public SourceAdapter objectStorageSourceAdapter(final CredentialResolver credentialResolver,
+            @Value("${ctds.connector.source.adapter-timeout:3s}") final Duration adapterTimeout) {
+        return new ObjectStorageSourceAdapter(credentialResolver, validatedTimeout(adapterTimeout));
+    }
+
+    /** API 网关适配器（WBS-3.6.6）：GET 只读；Authorization 原样出站。 */
+    @Bean
+    public SourceAdapter apiGatewaySourceAdapter(final CredentialResolver credentialResolver,
+            @Value("${ctds.connector.source.adapter-timeout:3s}") final Duration adapterTimeout) {
+        return new ApiGatewaySourceAdapter(credentialResolver, validatedTimeout(adapterTimeout));
+    }
+
+    /**
+     * 运行期超时统一校验（hifi §12）：1s~30s；越界 = 配置错误，启动即失败而非运行期才暴露。
+     *
+     * <p>四类适配器共用同一配置键（评审循环 1 ③P1）：不得出现"运维改配置只对政务源生效"。</p>
+     */
+    private static Duration validatedTimeout(final Duration adapterTimeout) {
         if (adapterTimeout == null || adapterTimeout.compareTo(Duration.ofSeconds(1)) < 0
                 || adapterTimeout.compareTo(Duration.ofSeconds(30)) > 0) {
             throw new IllegalStateException(
                     "ctds.connector.source.adapter-timeout 须在 1s~30s 之间，实际 = " + adapterTimeout);
         }
-        return new GovExchangeSourceAdapter(credentialResolver, adapterTimeout);
-    }
-
-    /** 数据库适配器（WBS-3.6.6）：JDBC 只读探针 + 参数白名单；驱动由运行宿主提供。 */
-    @Bean
-    public SourceAdapter databaseSourceAdapter(final CredentialResolver credentialResolver) {
-        return new DatabaseSourceAdapter(credentialResolver);
-    }
-
-    /** 对象存储适配器（WBS-3.6.6）：预签名 URL 只读 GET；不做签名实现。 */
-    @Bean
-    public SourceAdapter objectStorageSourceAdapter(final CredentialResolver credentialResolver) {
-        return new ObjectStorageSourceAdapter(credentialResolver);
-    }
-
-    /** API 网关适配器（WBS-3.6.6）：GET 只读；Authorization 原样出站。 */
-    @Bean
-    public SourceAdapter apiGatewaySourceAdapter(final CredentialResolver credentialResolver) {
-        return new ApiGatewaySourceAdapter(credentialResolver);
+        return adapterTimeout;
     }
 
     /**

@@ -72,4 +72,28 @@ class InetAddressSourceHostGuardTest {
         assertThatCode(() -> strict.assertAllowed(SourceType.OBJECT_STORAGE,
                 "s3://dataset-bucket/object", null)).doesNotThrowAnyException();
     }
+
+    /** 评审循环 1 ②P1：保留 / 特殊用途段（云元数据、基准段、保留段、0/8）同样拒绝。 */
+    @Test
+    void rejectsReservedIpv4Ranges() {
+        assertRejected(strict, SourceType.API_GATEWAY, "http://100.100.100.200/latest/meta-data", null);
+        assertRejected(strict, SourceType.API_GATEWAY, "http://192.0.0.192/latest", null);
+        assertRejected(strict, SourceType.API_GATEWAY, "http://198.18.0.1/api", null);
+        assertRejected(strict, SourceType.API_GATEWAY, "http://240.0.0.1/api", null);
+        assertRejected(strict, SourceType.API_GATEWAY, "http://0.1.2.3/api", null);
+    }
+
+    /** 评审循环 1 ②P1：IPv6 转换前缀内嵌的私网 IPv4 需再判一次。 */
+    @Test
+    void rejectsIpv6EmbeddedPrivateIpv4() {
+        assertRejected(strict, SourceType.API_GATEWAY, "http://[64:ff9b::a00:1]/api", null);
+        assertRejected(strict, SourceType.API_GATEWAY, "http://[2002:a00:1::]/api", null);
+    }
+
+    /** 评审循环 1 ②P2：提取不到主机 = 无法证明安全 → fail-closed（不得静默放行）。 */
+    @Test
+    void rejectsWhenNoHostCanBeExtracted() {
+        assertRejected(strict, SourceType.DATABASE, "https://db.example.com/dataset", "user:password");
+        assertRejected(strict, SourceType.API_GATEWAY, "s3://dataset-bucket/object", null);
+    }
 }
