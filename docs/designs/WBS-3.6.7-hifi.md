@@ -120,7 +120,8 @@ export interface RegistrationRecord {
   createdAt: string; updatedAt: string
 }
 export interface ConnectorRecord {
-  connectorNo: string; subjectNo: string; connectorName: string; connectorType: string;
+  // 勘误 E1（编码段实测）：治理列表含待核验档案（summary 直接取申请行），connectorNo 可为 null。
+  connectorNo: string | null; subjectNo: string; connectorName: string; connectorType: string;
   connectorVersion: string; status: ConnectorStatus;
   did: string | null; didStatus: string | null; verified: boolean; online: boolean;
   lastHeartbeatAt: string | null; updatedAt: string
@@ -150,11 +151,11 @@ export interface VersionChangeRecord {
 }
 export interface ActionLogRecord {
   applicationNo: string | null; connectorNo: string | null; operatorNo: string;
-  action: string; result: 'SUCCESS' | 'DENIED'; reasonCode: string | null;
+  action: string; result: 'SUCCESS' | 'DENIED' | 'FAILURE'; reasonCode: string | null;
   detail: string | null; createdAt: string
 }
 export interface CheckSummary {
-  passed: boolean; failureType: 'NETWORK_UNREACHABLE' | 'INVALID_CREDENTIAL' | 'INSUFFICIENT_PERMISSION' | null;
+  passed: boolean; failureType?: 'NETWORK_UNREACHABLE' | 'INVALID_CREDENTIAL' | 'INSUFFICIENT_PERMISSION' | null;
   message: string; checkedAt: string
 }
 export interface SourceRecord {
@@ -164,7 +165,7 @@ export interface SourceRecord {
 }
 export interface SourceCheckRecord {
   sourceNo: string; passed: boolean;
-  failureType: 'NETWORK_UNREACHABLE' | 'INVALID_CREDENTIAL' | 'INSUFFICIENT_PERMISSION' | null;
+  failureType?: 'NETWORK_UNREACHABLE' | 'INVALID_CREDENTIAL' | 'INSUFFICIENT_PERMISSION' | null;
   message: string; checkedAt: string
 }
 ```
@@ -440,7 +441,12 @@ nginx 零改动（部署面无 API 代理；沿 3.2.6 / 3.3.6 / 3.4.7 / 3.5.6 �
 
 | # | 设计原文 | 实测 / 修正 | 来源 |
 | --- | --- | --- | --- |
-| —— | （V0.9 无勘误；编码段前置检查与掤针结果逐条回填） | —— | —— |
+| E1 | §2.1 `ConnectorRecord.connectorNo: string` | 治理列表（G1）含待核验档案，`ConnectorView.summary` 直接取申请行 → **`connectorNo` 可为 null**；前端类型改 `string \| null`，列表详情入口以 `v-if` 守卫，导航函数空值早退 | 编码段 T10 测试实测（待核验行无编号） |
+| E2 | §3.2 源登记弹窗「类型下拉四类」 | 下拉未展开时选项文案不在 DOM（EP 懒挂载）→ 弹窗增一行「支持类型：…」（由 `SOURCE_TYPE_OPTIONS` 标签拼装，单一常量源），既满足可读性也锚定四类源展示 | 编码段 T9 测试 |
+| E3 | §9 前置检查第 3 项「`mvn -pl services/connector-service test`」 | 本地仓库 `connector-sdk` 安装件为 10-27 旧版（缺 3.6.6 三类适配器）→ 先 `mvn -pl connector-sdk install -DskipTests` 再跑服务测试；门禁配置零改动 | 编码段前置检查实测 |
+| E4 | §9 前置检查第 4/5 项「20 端点角色矩阵实探 + 服务与演示环境」 | 编码段当时三容器在线（3306/9000/6379）但 subject 8080 / did 8082 / connector 8088 / 前端 5173 未启动，且服务环境变量由人侧提供 → **静态矩阵已逐端点核对（Controller `@RequirePermission` + `application.yml` 角色映射）**；**实探与界面走查合并到验收段执行**（需人侧拉起服务并留痕） | 编码段前置检查实测 |
+| E5 | §2.2 / §5 常量清单 | 实现新增并通过评审：留痕结果补 **`FAILURE`**（后端对源自检 / 源读取失败写入，action-logs 不过滤 → 前端原会显示英文码；§2.2 类型块同步改 `'SUCCESS' \| 'DENIED' \| 'FAILURE'`）；`CheckSummary` / `SourceCheckRecord.failureType` 改可选（后端 `@JsonInclude(NON_NULL)`，通过时字段缺省）；新增 `DID_STATUS_LABELS` / 成功提示（补正 / 撤回 / 升级登记 / 注销 / 源登记 / 源变更 / 自检失败）/ 空态与概览后缀 / 「全部」筛选选项 / 返回入口文案；均属展示层常量，不构成业务规则 | 评审③ P1-1/P1-2 + 编码段 |
+| E6 | §1.1 R6 归属 / §3.2 升级占位 | R6 撤回实际在 `ConnectorLifecycleController`（非 `ConnectorRegistrationController`）；升级弹窗占位改为**当前版本下一补丁版本**（`nextVersionHint` 计算，无版本时给示例）；源登记弹窗增加「支持类型」提示行（E2 同源） | 评审① P2 / 评审③ P2 |
 
 ## 11. 边界与纪律复述
 
