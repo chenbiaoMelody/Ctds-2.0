@@ -89,6 +89,49 @@ class ConnectorSourceAmendApiTest extends ConnectorTestSupport {
     }
 
     @Test
+    void amendGenericSourceRecordsMaskOnly() throws Exception {
+        final String connectorNo = registerConnector(OWNER, "amd-generic");
+        final String sourceNo = registerSource(OWNER, connectorNo, "API_GATEWAY",
+                "https://gateway.example.com/api", "Bearer gateway-token-0005");
+
+        mockMvc.perform(put(CONNECTORS + connectorNo + "/sources/" + sourceNo)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-Ctds-Subject", OWNER)
+                        .header("X-Ctds-Roles", APPLICANT_ROLE)
+                        .content(amendBody("https://gateway.example.com/api-v2",
+                                "Bearer rotated-token-0009")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.credentialMasked").value("****0009"));
+
+        final String detail = jdbc.queryForObject(
+                "SELECT detail FROM connector_action_log WHERE action = 'source.amend' "
+                        + "AND connector_no = ? ORDER BY id DESC LIMIT 1", String.class, connectorNo);
+        assertThat(detail).contains("https://gateway.example.com/api")
+                .contains("api-v2")
+                .contains("credential=changed;masked=****0009");
+        assertThat(detail).doesNotContain("rotated-token-0009")
+                .doesNotContain("gateway-token-0005");
+    }
+
+    @Test
+    void amendedDatabaseSourceChecksPass() throws Exception {
+        final String connectorNo = registerConnector(OWNER, "amd-db");
+        final String sourceNo = registerSource(OWNER, connectorNo, "DATABASE",
+                databaseUrl(), "wrong-user:wrong-password");
+        mockMvc.perform(put(CONNECTORS + connectorNo + "/sources/" + sourceNo)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-Ctds-Subject", OWNER)
+                        .header("X-Ctds-Roles", APPLICANT_ROLE)
+                        .content(amendBody(databaseUrl(), databaseCredential())))
+                .andExpect(status().isOk());
+        mockMvc.perform(post(CONNECTORS + connectorNo + "/sources/" + sourceNo + "/checks")
+                        .header("X-Ctds-Subject", OWNER)
+                        .header("X-Ctds-Roles", APPLICANT_ROLE))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.passed").value(true));
+    }
+
+    @Test
     void crossOwnershipAmendHidden() throws Exception {
         final String connectorNo = registerConnector(OWNER, "amd-cross");
         final String sourceNo = registerSource(OWNER, connectorNo, "GOV_EXCHANGE",

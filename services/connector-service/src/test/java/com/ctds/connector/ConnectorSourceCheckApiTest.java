@@ -136,6 +136,42 @@ class ConnectorSourceCheckApiTest extends ConnectorTestSupport {
     }
 
     @Test
+    void detailLastCheckMatchesLatestSuccessTrail() throws Exception {
+        final String[] ids = checkedSource("chk-db90-ok", "mock://gov-exchange/ok");
+        mockMvc.perform(post(checkPath(ids))
+                        .header("X-Ctds-Subject", OWNER)
+                        .header("X-Ctds-Roles", APPLICANT_ROLE))
+                .andExpect(status().isOk());
+        final String trailDetail = jdbc.queryForObject(
+                "SELECT detail FROM connector_action_log WHERE action = 'source.check' "
+                        + "AND connector_no = ? ORDER BY id DESC LIMIT 1",
+                String.class, ids[0]);
+        mockMvc.perform(get(detailPath(ids))
+                        .header("X-Ctds-Subject", OWNER)
+                        .header("X-Ctds-Roles", APPLICANT_ROLE))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.lastCheck.passed").value(true))
+                .andExpect(jsonPath("$.data.lastCheck.message")
+                        .value(trailDetail.replaceAll(".*message=", "")));
+    }
+
+    @Test
+    void detailLastCheckMatchesLatestFailureTrail() throws Exception {
+        final String[] ids = checkedSource("chk-db90-fail", "mock://gov-exchange/bad-credential");
+        mockMvc.perform(post(checkPath(ids))
+                        .header("X-Ctds-Subject", OWNER)
+                        .header("X-Ctds-Roles", APPLICANT_ROLE))
+                .andExpect(status().isOk());
+        mockMvc.perform(get(detailPath(ids))
+                        .header("X-Ctds-Subject", OWNER)
+                        .header("X-Ctds-Roles", APPLICANT_ROLE))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.lastCheck.passed").value(false))
+                .andExpect(jsonPath("$.data.lastCheck.failureType").value("INVALID_CREDENTIAL"))
+                .andExpect(jsonPath("$.data.lastCheck.message").value("凭据无效"));
+    }
+
+    @Test
     void detailWithoutCheckHasNoConclusion() throws Exception {
         final String[] ids = checkedSource("chk-none", "mock://gov-exchange/ok");
         mockMvc.perform(get(detailPath(ids))

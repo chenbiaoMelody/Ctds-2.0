@@ -13,6 +13,8 @@ import com.ctds.connector.domain.ConnectorStatus;
 import com.ctds.connector.domain.ConnectorUnavailableException;
 import com.ctds.connector.domain.SourceAdapterCatalog;
 import com.ctds.connector.domain.SourceEndpointPolicy;
+import com.ctds.connector.domain.SourceHostGuard;
+import com.ctds.connector.sdk.adapter.gov.CredentialResolver;
 import com.ctds.connector.sdk.spi.SourceAdapter;
 import com.ctds.connector.sdk.spi.SourceReadRequest;
 import com.ctds.connector.sdk.spi.SourceReadResult;
@@ -42,22 +44,28 @@ public class ConnectorSourceReadService {
     private static final int PURPOSE_MAX = 128;
     private static final int DETAIL_MAX = 240;
     private static final String READ_FAILED = "READ_FAILED";
+    private static final String ADAPTER_ERROR = "ADAPTER_ERROR";
 
     private final ConnectorSourceRepository sourceRepository;
     private final ConnectorRepository connectorRepository;
     private final SourceAdapterCatalog adapterCatalog;
     private final ConnectorAuditService audit;
+    private final CredentialResolver credentialResolver;
+    private final SourceHostGuard hostGuard;
     private final boolean allowPrivateEndpoint;
 
     public ConnectorSourceReadService(final ConnectorSourceRepository sourceRepository,
             final ConnectorRepository connectorRepository, final SourceAdapterCatalog adapterCatalog,
-            final ConnectorAuditService audit,
+            final ConnectorAuditService audit, final CredentialResolver credentialResolver,
+            final SourceHostGuard hostGuard,
             @Value("${ctds.connector.source.allow-private-endpoint:false}")
             final boolean allowPrivateEndpoint) {
         this.sourceRepository = sourceRepository;
         this.connectorRepository = connectorRepository;
         this.adapterCatalog = adapterCatalog;
         this.audit = audit;
+        this.credentialResolver = credentialResolver;
+        this.hostGuard = hostGuard;
         this.allowPrivateEndpoint = allowPrivateEndpoint;
     }
 
@@ -79,6 +87,18 @@ public class ConnectorSourceReadService {
         final SourceAdapter adapter = adapterCatalog.find(type)
                 .orElseThrow(ConnectorSourceReadService::unsupported);
         final String endpoint = SourceEndpointPolicy.normalize(type, source.endpoint(), allowPrivateEndpoint);
+        final String credentialPlain = credentialResolver.resolve(source.credentialRef());
+        try {
+            hostGuard.assertAllowed(type, endpoint, credentialPlain);
+        } catch (final ConnectorBizException e) {
+            if (ConnectorErrorCodes.SOURCE_ENDPOINT_NOT_ALLOWED.value().equals(e.getErrorCode().value())) {
+                // 解析级拒绝：适配器零触达 + 拒绝留痕（独立事务，不随异常回滚丢失）
+                audit.denied(ConnectorAuditActions.SOURCE_DENIED, null, connectorNo, operatorNo,
+                        ConnectorErrorCodes.SOURCE_ENDPOINT_NOT_ALLOWED.value(),
+                        detail("sourceNo=" + sourceNo, "action=source.read;denied=restricted-host"));
+            }
+            throw e;
+        }
         final SourceReadResult result;
         try {
             result = adapter.read(new SourceRegistration(type, endpoint, source.credentialRef(),
@@ -87,6 +107,10 @@ public class ConnectorSourceReadService {
             throw e;
         } catch (final RuntimeException e) {
             LOG.warn("源读取适配器非预期失败（已收敛为 502）：{}", e.getClass().getName());
+            // 不可归类异常的读取腿同样留痕（hifi §7.6；评审循环 1 ①P2），与自检路径口径一致
+            audit.failure(ConnectorAuditActions.SOURCE_READ, connectorNo, operatorNo, ADAPTER_ERROR,
+                    detail("sourceNo=" + sourceNo, "contractNo=" + normalizedContractNo,
+                            "success=false", "summary=probe failed"));
             throw new ConnectorAdapterProbeException(e);
         }
         final LocalDateTime readAt = LocalDateTime.now();

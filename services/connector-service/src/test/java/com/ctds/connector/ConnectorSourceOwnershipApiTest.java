@@ -103,7 +103,8 @@ class ConnectorSourceOwnershipApiTest extends ConnectorTestSupport {
     void listIsPagedAndExcludesCheckConclusion() throws Exception {
         final String connectorNo = registerConnector(OWNER, "own-page");
         registerSource(OWNER, connectorNo, "GOV_EXCHANGE", "mock://gov-exchange/ok", SOURCE_SECRET);
-        registerSource(OWNER, connectorNo, "DATABASE", "https://source.example.com/db-1", "db-secret-0003");
+        registerSource(OWNER, connectorNo, "DATABASE",
+                "jdbc:mysql://db.example.com:3306/db-1", "db-user:db-secret-0003");
         mockMvc.perform(get(CONNECTORS + connectorNo + "/sources")
                         .param("pageNum", "1")
                         .param("pageSize", "1")

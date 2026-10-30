@@ -1,5 +1,7 @@
 package com.ctds.connector.infrastructure;
 
+import com.ctds.connector.domain.ConnectorActionLog;
+import com.ctds.connector.domain.ConnectorLogRepository;
 import com.ctds.connector.domain.ConnectorSource;
 import com.ctds.connector.domain.ConnectorSourceCheck;
 import com.ctds.connector.domain.ConnectorSourceRepository;
@@ -17,8 +19,9 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * 源登记 JdbcClient 仓储（hifi §2）：手写 SQL，沿 3.6.3 / 3.6.4 仓储形态。
  *
- * <p>自检结论不建表：{@link #findLastCheck} 从动作留痕取最近一条 {@code source.check}；
- * 留痕 detail 首段固定 {@code sourceNo=SRxxxxxx;}，保证按源可检索（同连接器多源互不串扰）。</p>
+ * <p>自检结论不建表：{@link #findLastCheck} 复用留痕仓储通用读面（DB-90）取最近一条 {@code source.check}；
+ * 留痕 detail 首段固定 {@code sourceNo=SRxxxxxx;}，保证按源可检索（同连接器多源互不串扰）。
+ * detail 解析只在本类（派生视图口径），不再自造查询 SQL。</p>
  */
 @Repository
 public class JdbcConnectorSourceRepository implements ConnectorSourceRepository {
@@ -31,9 +34,12 @@ public class JdbcConnectorSourceRepository implements ConnectorSourceRepository 
     private static final String NULL_TEXT = "null";
 
     private final JdbcClient jdbc;
+    private final ConnectorLogRepository logRepository;
 
-    public JdbcConnectorSourceRepository(final JdbcClient jdbc) {
+    public JdbcConnectorSourceRepository(final JdbcClient jdbc,
+            final ConnectorLogRepository logRepository) {
         this.jdbc = jdbc;
+        this.logRepository = logRepository;
     }
 
     @Override
@@ -116,12 +122,8 @@ public class JdbcConnectorSourceRepository implements ConnectorSourceRepository 
 
     @Override
     public Optional<ConnectorSourceCheck> findLastCheck(final String connectorNo, final String sourceNo) {
-        return jdbc.sql("SELECT detail, created_at FROM connector_action_log WHERE connector_no = :no "
-                        + "AND action = :action AND result IN ('SUCCESS', 'FAILURE') AND detail LIKE :prefix "
-                        + "ORDER BY id DESC LIMIT 1")
-                .param("no", connectorNo).param("action", CHECK_ACTION)
-                .param("prefix", SOURCE_NO_PREFIX + sourceNo + ";%")
-                .query(JdbcConnectorSourceRepository::mapCheck).optional();
+        return logRepository.findLatestByDetailPrefix(connectorNo, CHECK_ACTION,
+                SOURCE_NO_PREFIX + sourceNo + ";%").map(JdbcConnectorSourceRepository::toCheck);
     }
 
     private static ConnectorSource map(final ResultSet rs, final int rowNum) throws SQLException {
@@ -139,10 +141,9 @@ public class JdbcConnectorSourceRepository implements ConnectorSourceRepository 
                 rs.getObject("updated_at", LocalDateTime.class));
     }
 
-    private static ConnectorSourceCheck mapCheck(final ResultSet rs, final int rowNum) throws SQLException {
-        final String detail = rs.getString("detail");
+    private static ConnectorSourceCheck toCheck(final ConnectorActionLog log) {
         final Map<String, String> fields = new HashMap<>();
-        for (final String part : detail.split(";")) {
+        for (final String part : log.detail().split(";")) {
             final int separator = part.indexOf('=');
             if (separator > 0) {
                 fields.put(part.substring(0, separator), part.substring(separator + 1));
@@ -154,6 +155,6 @@ public class JdbcConnectorSourceRepository implements ConnectorSourceRepository 
                 "true".equals(fields.get("passed")),
                 failureType == null || NULL_TEXT.equals(failureType) ? null : failureType,
                 fields.get("message"),
-                rs.getObject("created_at", LocalDateTime.class));
+                log.createdAt());
     }
 }

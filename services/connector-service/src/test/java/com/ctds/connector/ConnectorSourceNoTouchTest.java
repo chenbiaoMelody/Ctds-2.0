@@ -11,7 +11,10 @@ import org.springframework.http.MediaType;
 
 /**
  * 拒绝不触达源（WBS-3.6.5 hifi §9 T8；规格行为 14 规则 1 可证伪部分）：
- * 未登记 / 跨归属 / 注销后 / 类型未开放四种前置拒绝，适配器零调用（模拟源触达计数 = 0）。
+ * 未登记 / 跨归属 / 注销后 / 解析级主机拒绝四种前置拒绝，适配器零调用（模拟源触达计数 = 0）。
+ *
+ * <p>WBS-3.6.6 改写：原"类型未开放 → {@code 1010C0011}"改为"受限主机 → {@code 1010C0010}"
+ * （三类源适配承载已开放，前置拒绝改由调用边界解析级校验承接；属能力开放的必要同步）。</p>
  */
 class ConnectorSourceNoTouchTest extends ConnectorTestSupport {
 
@@ -56,11 +59,17 @@ class ConnectorSourceNoTouchTest extends ConnectorTestSupport {
     }
 
     @Test
-    void unsupportedTypeNeverTouchesAdapter() throws Exception {
-        final String connectorNo = registerConnector(OWNER, "touch-unsupported");
+    void restrictedHostNeverTouchesAdapter() throws Exception {
+        final String connectorNo = registerConnector(OWNER, "touch-restricted");
         final String sourceNo = registerSource(OWNER, connectorNo, "DATABASE",
-                "jdbc:mysql://db.example.com:3306/dataset", "db-secret-0003");
-        readExpecting(connectorNo, sourceNo, 400, "1010C0011");
+                "jdbc:mysql://no-such-host.invalid:3306/dataset", "db-user:db-secret-0003");
+        readExpecting(connectorNo, sourceNo, 400, "1010C0010");
+        // 数据库源无法用政务桩计数判别，改用可判别证据：适配器一旦被调用必写 source.read 留痕
+        // （成功 / 业务失败 / 不可归类异常三条路径均留痕），因此"零 source.read 行" = 适配器零调用。
+        final Integer reads = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM connector_action_log WHERE connector_no = ? AND action = ?",
+                Integer.class, connectorNo, "source.read");
+        assertThat(reads).isZero();
     }
 
     @Test

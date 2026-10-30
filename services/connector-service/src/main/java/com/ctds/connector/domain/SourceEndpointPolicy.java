@@ -286,7 +286,14 @@ public final class SourceEndpointPolicy {
         }
     }
 
-    /** IPv4 四元组的私有 / 回环 / 链路本地判定（含 {@code 0.0.0.0}）；段越界返回 false。 */
+    /**
+     * IPv4 四元组的私有 / 回环 / 链路本地 / 保留段判定；段越界返回 false。
+     *
+     * <p><b>与调用期 {@code InetAddressSourceHostGuard} 判定集保持相等</b>（评审循环 1 ②P1）：
+     * {@code 0.0.0.0/8}、{@code 100.64.0.0/10}（CGNAT / 云元数据）、{@code 192.0.0.0/24}、
+     * {@code 192.0.2.0/24}、{@code 198.18.0.0/15}、{@code 198.51.100.0/24}、
+     * {@code 203.0.113.0/24}、{@code 240.0.0.0/4} 一律视为受限。</p>
+     */
     private static boolean withV4Bytes(final long a, final long b, final long c, final long d) {
         if (a < 0 || b < 0 || c < 0 || d < 0
                 || a > IPV4_MAX || b > IPV4_MAX || c > IPV4_MAX || d > IPV4_MAX) {
@@ -294,7 +301,13 @@ public final class SourceEndpointPolicy {
         }
         return a == 127 || a == 10 || (a == 172 && b >= 16 && b <= 31)
                 || (a == 192 && b == 168) || (a == 169 && b == 254)
-                || (a == 0 && b == 0 && c == 0 && d == 0);
+                || a == 0
+                || (a == 100 && b >= 64 && b <= 127)
+                || (a == 192 && b == 0 && (c == 0 || c == 2))
+                || (a == 198 && (b == 18 || b == 19))
+                || (a == 198 && b == 51 && c == 100)
+                || (a == 203 && b == 0 && c == 113)
+                || a >= 240;
     }
 
     private static String stripBrackets(final String host) {

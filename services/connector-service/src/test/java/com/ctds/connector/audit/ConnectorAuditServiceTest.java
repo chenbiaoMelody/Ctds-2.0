@@ -104,5 +104,12 @@ class ConnectorAuditServiceTest {
         public long countByConnectorNo(final String connectorNo) {
             return rows.size();
         }
+
+        @Override
+        public java.util.Optional<com.ctds.connector.domain.ConnectorActionLog>
+                findLatestByDetailPrefix(final String connectorNo, final String action,
+                        final String detailPrefix) {
+            return java.util.Optional.empty();
+        }
     }
 }

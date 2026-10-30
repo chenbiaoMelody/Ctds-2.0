@@ -16,7 +16,11 @@ import com.ctds.connector.domain.ConnectorUnavailableException;
 import com.ctds.connector.domain.CredentialProtector;
 import com.ctds.connector.domain.SourceAdapterCatalog;
 import com.ctds.connector.domain.SourceEndpointPolicy;
+import com.ctds.connector.domain.SourceHostGuard;
+import com.ctds.connector.sdk.adapter.database.JdbcUrlPolicy;
+import com.ctds.connector.sdk.adapter.gov.CredentialResolver;
 import com.ctds.connector.sdk.spi.SourceAdapter;
+import com.ctds.connector.sdk.spi.SourceCheckFailureType;
 import com.ctds.connector.sdk.spi.SourceCheckResult;
 import com.ctds.connector.sdk.spi.SourceRegistration;
 import com.ctds.connector.sdk.spi.SourceType;
@@ -43,20 +47,24 @@ import org.springframework.transaction.annotation.Transactional;
 public class ConnectorSourceService {
 
     private static final Logger LOG = LoggerFactory.getLogger(ConnectorSourceService.class);
-    private static final int CREDENTIAL_MAX = 256;
+    private static final int CREDENTIAL_MAX = 1024;
     private static final int DETAIL_MAX = 240;
     private static final String TEXT_NULL = "null";
+    private static final String MESSAGE_NETWORK = "网络不可达";
 
     private final ConnectorSourceRepository sourceRepository;
     private final ConnectorRepository connectorRepository;
     private final CredentialProtector cipher;
     private final SourceAdapterCatalog adapterCatalog;
     private final ConnectorAuditService audit;
+    private final CredentialResolver credentialResolver;
+    private final SourceHostGuard hostGuard;
     private final boolean allowPrivateEndpoint;
 
     public ConnectorSourceService(final ConnectorSourceRepository sourceRepository,
             final ConnectorRepository connectorRepository, final CredentialProtector cipher,
             final SourceAdapterCatalog adapterCatalog, final ConnectorAuditService audit,
+            final CredentialResolver credentialResolver, final SourceHostGuard hostGuard,
             @Value("${ctds.connector.source.allow-private-endpoint:false}")
             final boolean allowPrivateEndpoint) {
         this.sourceRepository = sourceRepository;
@@ -64,6 +72,8 @@ public class ConnectorSourceService {
         this.cipher = cipher;
         this.adapterCatalog = adapterCatalog;
         this.audit = audit;
+        this.credentialResolver = credentialResolver;
+        this.hostGuard = hostGuard;
         this.allowPrivateEndpoint = allowPrivateEndpoint;
     }
 
@@ -74,6 +84,7 @@ public class ConnectorSourceService {
         requireRegisteredOwned(subjectNo, connectorNo);
         final String normalizedEndpoint = SourceEndpointPolicy.normalize(sourceType, endpoint,
                 allowPrivateEndpoint);
+        requireAcceptableEndpoint(sourceType, normalizedEndpoint);
         final String normalizedCredential = normalizeCredential(credential);
         if (sourceRepository.existsDuplicate(connectorNo, sourceType.name(), normalizedEndpoint)) {
             audit.denied(ConnectorAuditActions.SOURCE_DENIED, null, connectorNo, subjectNo,
@@ -106,6 +117,7 @@ public class ConnectorSourceService {
         final ConnectorSource current = requireSource(connectorNo, sourceNo);
         final SourceType type = parseType(current.sourceType()).orElseThrow(ConnectorSourceService::unsupported);
         final String normalizedEndpoint = SourceEndpointPolicy.normalize(type, endpoint, allowPrivateEndpoint);
+        requireAcceptableEndpoint(type, normalizedEndpoint);
         if (!normalizedEndpoint.equals(current.endpoint())
                 && sourceRepository.existsDuplicate(connectorNo, type.name(), normalizedEndpoint)) {
             throw paramInvalid();
@@ -167,6 +179,20 @@ public class ConnectorSourceService {
             return unsupported();
         });
         final String endpoint = SourceEndpointPolicy.normalize(type, source.endpoint(), allowPrivateEndpoint);
+        final String credentialPlain = credentialResolver.resolve(source.credentialRef());
+        try {
+            hostGuard.assertAllowed(type, endpoint, credentialPlain);
+        } catch (final ConnectorBizException e) {
+            if (ConnectorErrorCodes.SOURCE_ENDPOINT_NOT_ALLOWED.value().equals(e.getErrorCode().value())) {
+                // 调用边界拒绝 = 业务结论（200 + 网络不可达），不是接口错误；适配器零调用
+                final SourceCheckResult denied = SourceCheckResult.fail(
+                        SourceCheckFailureType.NETWORK_UNREACHABLE, MESSAGE_NETWORK);
+                final LocalDateTime deniedAt = LocalDateTime.now();
+                recordCheck(connectorNo, subjectNo, sourceNo, denied);
+                return new CheckOutcome(denied, deniedAt);
+            }
+            throw e;
+        }
         final SourceCheckResult result;
         try {
             result = adapter.check(new SourceRegistration(type, endpoint,
@@ -226,6 +252,13 @@ public class ConnectorSourceService {
     private ConnectorSource readBack(final String sourceNo) {
         return sourceRepository.findBySourceNo(sourceNo)
                 .orElseThrow(() -> new IllegalStateException("源登记读回失败"));
+    }
+
+    /** 数据库源地址必须是合法 JDBC URL（含 schema、参数白名单）；其余源类型沿用 scheme 受理规则。 */
+    private static void requireAcceptableEndpoint(final SourceType type, final String endpoint) {
+        if (type == SourceType.DATABASE && JdbcUrlPolicy.parse(endpoint).isEmpty()) {
+            throw paramInvalid();
+        }
     }
 
     private static String normalizeCredential(final String credential) {

@@ -33,15 +33,21 @@ class ConnectorSourceAdapterFailureApiTest extends ConnectorTestSupport {
     @BeforeAll
     static void startServer() throws IOException {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-        server.createContext("/gov", exchange -> {
-            final byte[] payload = "{\"code\":\"UPSTREAM_ERROR\"}".getBytes(StandardCharsets.UTF_8);
-            exchange.getResponseHeaders().add("Content-Type", "application/json");
-            exchange.sendResponseHeaders(500, payload.length);
-            exchange.getResponseBody().write(payload);
-            exchange.close();
-        });
+        server.createContext("/gov", exchange -> respondStatus(exchange, 500, "UPSTREAM_ERROR"));
+        server.createContext("/unauthorized", exchange -> respondStatus(exchange, 401, "DENIED"));
+        server.createContext("/forbidden", exchange -> respondStatus(exchange, 403, "FORBIDDEN"));
+        server.createContext("/missing", exchange -> respondStatus(exchange, 404, "MISSING"));
         server.start();
-        baseUrl = "http://127.0.0.1:" + server.getAddress().getPort() + "/gov";
+        baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
+    }
+
+    private static void respondStatus(final com.sun.net.httpserver.HttpExchange exchange,
+            final int code, final String message) throws IOException {
+        final byte[] payload = ("{\"code\":\"" + message + "\"}").getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().add("Content-Type", "application/json");
+        exchange.sendResponseHeaders(code, payload.length);
+        exchange.getResponseBody().write(payload);
+        exchange.close();
     }
 
     @AfterAll
@@ -52,7 +58,8 @@ class ConnectorSourceAdapterFailureApiTest extends ConnectorTestSupport {
     @Test
     void checkMapsAdapterFailureTo502WithNeutralText() throws Exception {
         final String connectorNo = registerConnector(OWNER, "probe-check");
-        final String sourceNo = registerSource(OWNER, connectorNo, "GOV_EXCHANGE", baseUrl, SOURCE_SECRET);
+        final String sourceNo = registerSource(OWNER, connectorNo, "GOV_EXCHANGE",
+                baseUrl + "/gov", SOURCE_SECRET);
         final MvcResult result = mockMvc.perform(
                         post(CONNECTORS + connectorNo + "/sources/" + sourceNo + "/checks")
                                 .header("X-Ctds-Subject", OWNER)
@@ -77,7 +84,8 @@ class ConnectorSourceAdapterFailureApiTest extends ConnectorTestSupport {
     @Test
     void readMapsAdapterFailureTo502WithNeutralText() throws Exception {
         final String connectorNo = registerConnector(OWNER, "probe-read");
-        final String sourceNo = registerSource(OWNER, connectorNo, "GOV_EXCHANGE", baseUrl, SOURCE_SECRET);
+        final String sourceNo = registerSource(OWNER, connectorNo, "GOV_EXCHANGE",
+                baseUrl + "/gov", SOURCE_SECRET);
         mockMvc.perform(post(INTERNAL + connectorNo + "/sources/" + sourceNo + "/reads")
                         .contentType(MediaType.APPLICATION_JSON)
                         .header("X-Ctds-Subject", "delivery-service")
@@ -86,5 +94,72 @@ class ConnectorSourceAdapterFailureApiTest extends ConnectorTestSupport {
                 .andExpect(status().isBadGateway())
                 .andExpect(jsonPath("$.code").value("1000S9999"))
                 .andExpect(jsonPath("$.message").value("源连通性探测失败，请稍后重试"));
+    }
+
+    private void expectCheckFailure(final String connectorNo, final String sourceNo,
+            final String failureType) throws Exception {
+        mockMvc.perform(post(CONNECTORS + connectorNo + "/sources/" + sourceNo + "/checks")
+                        .header("X-Ctds-Subject", OWNER)
+                        .header("X-Ctds-Roles", APPLICANT_ROLE))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("0"))
+                .andExpect(jsonPath("$.data.passed").value(false))
+                .andExpect(jsonPath("$.data.failureType").value(failureType));
+    }
+
+    @Test
+    void databaseWrongPasswordMapsToInvalidCredential() throws Exception {
+        final String connectorNo = registerConnector(OWNER, "db-badpass");
+        final String sourceNo = registerSource(OWNER, connectorNo, "DATABASE",
+                databaseUrl(), databaseUsername() + ":wrong-password");
+
+        expectCheckFailure(connectorNo, sourceNo, "INVALID_CREDENTIAL");
+    }
+
+    @Test
+    void databaseWithoutSchemaPrivilegeMapsToInsufficientPermission() throws Exception {
+        createLimitedUser();
+        final String connectorNo = registerConnector(OWNER, "db-nopriv");
+        final String sourceNo = registerSource(OWNER, connectorNo, "DATABASE",
+                databaseUrl() + "?allowPublicKeyRetrieval=true&useSSL=false",
+                "w366_limited:w366-limited-pass");
+
+        expectCheckFailure(connectorNo, sourceNo, "INSUFFICIENT_PERMISSION");
+    }
+
+    @Test
+    void databaseUnreachableMapsToNetworkUnreachable() throws Exception {
+        final String connectorNo = registerConnector(OWNER, "db-unreachable");
+        final String sourceNo = registerSource(OWNER, connectorNo, "DATABASE",
+                "jdbc:mysql://127.0.0.1:1/dataset", "db-user:db-password");
+
+        expectCheckFailure(connectorNo, sourceNo, "NETWORK_UNREACHABLE");
+    }
+
+    @Test
+    void objectStorageUnauthorizedMapsToInvalidCredential() throws Exception {
+        final String connectorNo = registerConnector(OWNER, "oss-401");
+        final String sourceNo = registerSource(OWNER, connectorNo, "OBJECT_STORAGE",
+                "oss://dataset-bucket/data", baseUrl + "/unauthorized");
+
+        expectCheckFailure(connectorNo, sourceNo, "INVALID_CREDENTIAL");
+    }
+
+    @Test
+    void objectStorageNotFoundMapsToInsufficientPermission() throws Exception {
+        final String connectorNo = registerConnector(OWNER, "oss-404");
+        final String sourceNo = registerSource(OWNER, connectorNo, "OBJECT_STORAGE",
+                "oss://dataset-bucket/data", baseUrl + "/missing");
+
+        expectCheckFailure(connectorNo, sourceNo, "INSUFFICIENT_PERMISSION");
+    }
+
+    @Test
+    void apiGatewayForbiddenMapsToInsufficientPermission() throws Exception {
+        final String connectorNo = registerConnector(OWNER, "api-403");
+        final String sourceNo = registerSource(OWNER, connectorNo, "API_GATEWAY",
+                baseUrl + "/forbidden", "Bearer test-token");
+
+        expectCheckFailure(connectorNo, sourceNo, "INSUFFICIENT_PERMISSION");
     }
 }
