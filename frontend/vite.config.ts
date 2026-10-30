@@ -60,6 +60,12 @@ export default defineConfig({
         target: 'http://localhost:8087',
         changeOrigin: true,
       },
+      // WBS-3.6.7 连接器域（8088）：界面走查经 5173 访问连接器服务（开发期转发，不改服务契约与
+      // 门禁配置；nginx 容器配置零改动）。键须位于下方通用 '/api' 前缀键之前（键序先行）。
+      '/api/v1/connectors': {
+        target: 'http://localhost:8088',
+        changeOrigin: true,
+      },
       // WBS-3.2.6 空间域（8083）：界面走查经 5173 访问空间服务（开发期转发，不改服务契约与门禁配置）。
       '/api/v1/data-spaces': {
         target: 'http://localhost:8083',

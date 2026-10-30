@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>WBS-3.6.7 连接器管理界面 线框原型 V0.9</title>
+<style>
+  :root {
+    --ink: #1f2733;
+    --muted: #6b7684;
+    --line: #d9dee5;
+    --soft: #f4f6f9;
+    --brand: #2f6bff;
+    --ok: #1f9d55;
+    --warn: #b7791f;
+    --bad: #c53030;
+    --side: #1f2a44;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 24px;
+    font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
+    color: var(--ink);
+    background: #eef1f5;
+  }
+  h1 { font-size: 20px; margin: 0 0 6px; }
+  h2 { font-size: 15px; margin: 0 0 4px; }
+  h3 { font-size: 13px; margin: 0 0 8px; color: var(--muted); font-weight: 600; }
+  .intro { color: var(--muted); font-size: 12px; line-height: 1.7; margin-bottom: 18px; }
+  .legend { font-size: 12px; color: var(--muted); margin-bottom: 18px; }
+  .legend b { color: var(--ink); }
+  .screen {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    margin-bottom: 22px;
+    overflow: hidden;
+    box-shadow: 0 1px 2px rgba(20, 30, 50, .06);
+  }
+  .screen-head {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line);
+    background: var(--soft);
+  }
+  .screen-head .tag {
+    font-size: 11px;
+    color: #fff;
+    background: var(--brand);
+    border-radius: 10px;
+    padding: 2px 8px;
+  }
+  .screen-head .note { font-size: 12px; color: var(--muted); }
+  .app { display: flex; min-height: 360px; }
+  .side {
+    width: 176px;
+    flex: none;
+    background: var(--side);
+    color: #c9d2e3;
+    padding: 12px 0;
+    font-size: 12px;
+  }
+  .side .brand { color: #fff; font-weight: 700; padding: 0 14px 12px; }
+  .side a {
+    display: block;
+    padding: 7px 14px;
+    color: #c9d2e3;
+    text-decoration: none;
+    border-left: 3px solid transparent;
+  }
+  .side a.on { background: rgba(255,255,255,.08); color: #fff; border-left-color: #6ea0ff; }
+  .side .dim { opacity: .55; }
+  .main { flex: 1; padding: 14px 16px 18px; }
+  .topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+    color: var(--muted);
+    border-bottom: 1px dashed var(--line);
+    padding-bottom: 8px;
+    margin-bottom: 12px;
+  }
+  .toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+  .btn {
+    font-size: 12px;
+    border: 1px solid var(--line);
+    background: #fff;
+    border-radius: 4px;
+    padding: 5px 10px;
+    color: var(--ink);
+  }
+  .btn.primary { background: var(--brand); border-color: var(--brand); color: #fff; }
+  .btn.link { border: none; background: none; color: var(--brand); padding: 2px 4px; }
+  .btn.danger { color: var(--bad); border-color: #f0b4b4; }
+  .spacer { flex: 1; }
+  .input, .select {
+    font-size: 12px;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 5px 8px;
+    color: var(--muted);
+    background: #fff;
+    min-width: 140px;
+  }
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 10px; }
+  .tabs span { font-size: 12px; padding: 7px 12px; color: var(--muted); border-bottom: 2px solid transparent; }
+  .tabs span.on { color: var(--brand); border-bottom-color: var(--brand); font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { background: var(--soft); color: var(--muted); font-weight: 600; white-space: nowrap; }
+  td .muted { color: var(--muted); }
+  .tag {
+    display: inline-block;
+    font-size: 11px;
+    border-radius: 10px;
+    padding: 1px 8px;
+    border: 1px solid var(--line);
+    background: #fff;
+    white-space: nowrap;
+  }
+  .tag.ok { color: var(--ok); border-color: #bfe3cc; background: #f0fbf4; }
+  .tag.warn { color: var(--warn); border-color: #f2ddb3; background: #fffaf0; }
+  .tag.bad { color: var(--bad); border-color: #f0b4b4; background: #fff5f5; }
+  .tag.info { color: var(--muted); background: var(--soft); }
+  .pager { font-size: 12px; color: var(--muted); margin-top: 8px; text-align: right; }
+  .empty { font-size: 12px; color: var(--muted); text-align: center; padding: 26px 0; }
+  .cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+  .card { border: 1px solid var(--line); border-radius: 6px; padding: 10px; background: #fff; }
+  .card .k { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+  .card .v { font-size: 13px; font-weight: 600; }
+  .section { border: 1px solid var(--line); border-radius: 6px; margin-bottom: 12px; }
+  .section-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    background: var(--soft);
+    border-bottom: 1px solid var(--line);
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .section-body { padding: 10px; }
+  .kv { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 14px; font-size: 12px; }
+  .kv .k { color: var(--muted); }
+  .hint { font-size: 11px; color: var(--muted); line-height: 1.6; margin-top: 8px; }
+  .alert {
+    font-size: 12px;
+    border: 1px solid #f2ddb3;
+    background: #fffaf0;
+    color: #7a5312;
+    border-radius: 4px;
+    padding: 8px 10px;
+    margin-bottom: 10px;
+  }
+  .alert.info { border-color: #c9d8ff; background: #f5f8ff; color: #2b4a90; }
+  .alert.bad { border-color: #f0b4b4; background: #fff5f5; color: #8a2020; }
+  .dialog {
+    max-width: 480px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    margin: 10px auto;
+    overflow: hidden;
+    box-shadow: 0 6px 18px rgba(20,30,50,.12);
+  }
+  .dialog .head { padding: 10px 12px; font-size: 13px; font-weight: 700; border-bottom: 1px solid var(--line); background: var(--soft); }
+  .dialog .body { padding: 12px; }
+  .dialog .foot { padding: 10px 12px; border-top: 1px solid var(--line); text-align: right; display: flex; gap: 8px; justify-content: flex-end; }
+  .field { display: grid; grid-template-columns: 92px 1fr; gap: 8px; align-items: center; margin-bottom: 10px; font-size: 12px; }
+  .field label { color: var(--muted); }
+  .field .input, .field .select { width: 100%; }
+  .field .req { color: var(--bad); }
+  .mono { font-family: Consolas, "Courier New", monospace; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .footer-note { font-size: 11px; color: var(--muted); margin-top: 14px; line-height: 1.7; }
+  @media (max-width: 900px) {
+    .cards, .kv, .two { grid-template-columns: 1fr; }
+    .side { display: none; }
+  }
+</style>
+</head>
+<body>
+<h1>WBS-3.6.7 连接器管理界面 · 静态线框原型 V0.9</h1>
+<div class="intro">
+  用途：方向确认（低保真）。画面只表达页面结构、字段、状态与操作位置，不代表最终视觉样式。<br />
+  口径：界面只做已交付连接器域端点的界面化；业务判定一律在服务端；凭据只显掩码；运营档不展示源接入区（DB-88 挂起）。
+</div>
+<div class="legend">
+  <b>状态色</b>：绿色 = 成功 / 在线 / 已注册；黄色 = 待核验 / 待确认；灰色 = 已注销 / 已解除 / 已作废；红色 = 拒绝 / 失败。<b>「本页筛选」</b>= 服务端无该过滤参数的列，前端仅筛当前页，界面必须明示。
+</div>
+
+<!-- A -->
+<div class="screen">
+  <div class="screen-head"><span class="tag">A</span><h2>连接器管理 · 注册申请</h2><span class="note">/connectors · menuOrder 20 · 登录可见</span></div>
+  <div class="app">
+    <div class="side">
+      <div class="brand">C-TDS 演示台</div>
+      <a>工作台</a><a>数据目录</a><a>合约工作台</a><a>交付记录</a>
+      <a class="on">连接器管理</a><a class="dim">连接器治理（admin）</a>
+    </div>
+    <div class="main">
+      <div class="topbar"><span>连接器管理</span><span>演示身份：普通主体 / 星河 S20260922000001</span></div>
+      <div class="toolbar">
+        <button class="btn primary">申请接入</button>
+        <div class="spacer"></div>
+        <button class="btn">刷新</button>
+      </div>
+      <div class="tabs"><span class="on">注册申请</span><span>我的连接器</span></div>
+      <div class="toolbar">
+        <select class="select"><option>全部状态（本页筛选）</option><option>待核验</option><option>已注册</option><option>已注销</option></select>
+        <input class="input" placeholder="申请单号 / 名称（本页筛选）" />
+        <button class="btn">查询</button><button class="btn">重置</button>
+      </div>
+      <table>
+        <thead><tr><th>申请单号</th><th>连接器编号</th><th>名称</th><th>类型</th><th>版本</th><th>状态</th><th>最近拒绝理由</th><th>申请时间</th><th>操作</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">CA000001</td><td class="muted">—</td><td>星河标准连接器</td><td>标准连接器</td><td>1.0.0</td><td><span class="tag warn">待核验</span></td><td class="muted">—</td><td>2026-10-30 21:40</td><td><button class="btn link">补正</button><button class="btn link">撤回</button></td></tr>
+          <tr><td class="mono">CA000002</td><td class="mono">CN000001</td><td>星河数据交换器</td><td>标准连接器</td><td>1.1.0</td><td><span class="tag ok">已注册</span></td><td class="muted">—</td><td>2026-10-29 16:02</td><td><button class="btn link">查看连接器</button></td></tr>
+          <tr><td class="mono">CA000003</td><td class="mono">CN000003</td><td>星河测试连接器</td><td>标准连接器</td><td>1.0.0</td><td><span class="tag info">已注销</span></td><td class="muted">—</td><td>2026-10-28 09:15</td><td><button class="btn link">查看连接器</button></td></tr>
+        </tbody>
+      </table>
+      <div class="pager">共 3 条 · 第 1 / 1 页</div>
+    </div>
+  </div>
+</div>
+
+<!-- B -->
+<div class="screen">
+  <div class="screen-head"><span class="tag">B</span><h2>连接器管理 · 我的连接器（健康度展示）</h2><span class="note">在线 = 服务端 online 字段（心跳未超阈值，默认 5 分钟）</span></div>
+  <div class="app">
+    <div class="side">
+      <div class="brand">C-TDS 演示台</div>
+      <a>工作台</a><a>数据目录</a><a>合约工作台</a><a>交付记录</a>
+      <a class="on">连接器管理</a><a class="dim">连接器治理（admin）</a>
+    </div>
+    <div class="main">
+      <div class="topbar"><span>连接器管理</span><span>演示身份：普通主体 / 星河 S20260922000001</span></div>
+      <div class="tabs"><span>注册申请</span><span class="on">我的连接器</span></div>
+      <div class="toolbar">
+        <select class="select"><option>全部在线状态（本页筛选）</option><option>在线</option><option>离线</option></select>
+        <input class="input" placeholder="编号 / 名称（本页筛选）" />
+        <button class="btn">查询</button><button class="btn">重置</button>
+        <div class="spacer"></div><button class="btn">刷新</button>
+      </div>
+      <table>
+        <thead><tr><th>连接器编号</th><th>名称</th><th>类型</th><th>当前版本</th><th>状态</th><th>在线</th><th>最近心跳</th><th>更新时间</th><th>操作</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">CN000001</td><td>星河数据交换器</td><td>标准连接器</td><td>1.1.0</td><td><span class="tag ok">已注册</span></td><td><span class="tag ok">在线</span></td><td>2026-10-30 21:36</td><td>2026-10-30 21:36</td><td><button class="btn link">详情</button><button class="btn link">上报心跳</button></td></tr>
+          <tr><td class="mono">CN000004</td><td>星河备份连接器</td><td>标准连接器</td><td>1.0.0</td><td><span class="tag ok">已注册</span></td><td><span class="tag info">离线</span></td><td>2026-10-30 20:01</td><td>2026-10-30 20:01</td><td><button class="btn link">详情</button><button class="btn link">上报心跳</button></td></tr>
+        </tbody>
+      </table>
+      <div class="hint">在线状态由服务端按最近心跳与阈值派生；界面不本地计算、不自动轮询。「上报心跳」仅属主 + 已注册态可用。</div>
+      <div class="pager">共 2 条 · 第 1 / 1 页</div>
+    </div>
+  </div>
+</div>
+
+<!-- C -->
+<div class="screen">
+  <div class="screen-head"><span class="tag">C</span><h2>申请接入 / 补正弹窗</h2><span class="note">无前端业务校验；服务端文案原样展示</span></div>
+  <div class="app"><div class="main">
+    <div class="dialog">
+      <div class="head">申请接入</div>
+      <div class="body">
+        <div class="field"><label><span class="req">*</span> 连接器名称</label><input class="input" value="星河标准连接器" /></div>
+        <div class="field"><label><span class="req">*</span> 连接器类型</label><select class="select"><option>标准连接器（STANDARD）</option></select></div>
+        <div class="field"><label><span class="req">*</span> 版本</label><input class="input" placeholder="主.次.修订，如 1.0.0" /></div>
+        <div class="alert bad">连接器版本不能为空（服务端返回原文，界面不改写）</div>
+        <div class="hint">三要素为空或格式非法均可提交，由服务端返回可读文案；补正弹窗预填当前三要素。</div>
+      </div>
+      <div class="foot"><button class="btn">取消</button><button class="btn primary">提交</button></div>
+    </div>
+  </div></div>
+</div>
+
+<!-- D -->
+<div class="screen">
+  <div class="screen-head"><span class="tag">D</span><h2>连接器详情 · 基本信息 / 健康度 / DID 绑定</h2><span class="note">/connectors/:connectorNo · 不占菜单</span></div>
+  <div class="app">
+    <div class="side">
+      <div class="brand">C-TDS 演示台</div>
+      <a>工作台</a><a>数据目录</a><a>合约工作台</a><a>交付记录</a>
+      <a class="on">连接器管理</a><a class="dim">连接器治理（admin）</a>
+    </div>
+    <div class="main">
+      <div class="topbar"><span>← 返回连接器管理</span><span>演示身份：普通主体 / 星河</span></div>
+      <div class="toolbar">
+        <strong>星河数据交换器</strong><span class="mono">CN000001</span>
+        <span class="tag ok">已注册</span><span class="tag ok">在线</span>
+        <div class="spacer"></div><button class="btn danger">注销连接器</button>
+      </div>
+      <div class="cards">
+        <div class="card"><div class="k">所属主体</div><div class="v mono">S20260922000001</div></div>
+        <div class="card"><div class="k">当前版本</div><div class="v">1.1.0</div></div>
+        <div class="card"><div class="k">最近心跳</div><div class="v">2026-10-30 21:36</div></div>
+      </div>
+      <div class="two">
+        <div class="section">
+          <div class="section-head">健康度 <span class="tag ok">在线</span></div>
+          <div class="section-body">
+            <div class="kv">
+              <div><span class="k">在线状态</span><br />在线</div>
+              <div><span class="k">最近心跳</span><br />2026-10-30 21:36</div>
+              <div><span class="k">在途作业</span><br />0</div>
+            </div>
+            <div class="hint">在线 = 最近心跳未超过服务端阈值（默认 5 分钟）；状态以服务端返回为准。</div>
+            <div style="margin-top:8px"><button class="btn">上报心跳</button> <button class="btn">刷新</button></div>
+          </div>
+        </div>
+        <div class="section">
+          <div class="section-head">DID 绑定 <span class="tag ok">已绑定</span></div>
+          <div class="section-body">
+            <div class="kv">
+              <div><span class="k">所属主体 DID</span><br /><span class="mono">did:ctds:S20260922000001.2</span></div>
+              <div><span class="k">建立时间</span><br />2026-10-29 16:03</div>
+              <div><span class="k">实时状态</span><br /><span class="tag ok">ACTIVE</span> 查验通过</div>
+            </div>
+            <div class="hint">绑定查验将实时读取 DID 服务并产生服务端留痕；DID 不可用时不冒充结论。</div>
+            <div style="margin-top:8px"><button class="btn">绑定查验</button></div>
+          </div>
+        </div>
+      </div>
+      <div class="section">
+        <div class="section-head">版本管理 <span class="tag warn">存在待确认升级</span></div>
+        <div class="section-body">
+          <div class="alert">存在待确认的不兼容升级（1.1.0 → 2.0.0），确认前当前版本 1.1.0 继续有效。</div>
+          <div class="toolbar"><button class="btn primary">升级登记</button></div>
+          <table>
+            <thead><tr><th>升级单号</th><th>版本变更</th><th>兼容性</th><th>状态</th><th>提交人</th><th>提交时间</th><th>确认人</th><th>生效时间</th></tr></thead>
+            <tbody>
+              <tr><td class="mono">UC000002</td><td>1.1.0 → 2.0.0</td><td><span class="tag warn">不兼容</span></td><td><span class="tag warn">待确认</span></td><td class="mono">S20260922000001</td><td>2026-10-30 20:10</td><td class="muted">—</td><td class="muted">—</td></tr>
+              <tr><td class="mono">UC000001</td><td>1.0.0 → 1.1.0</td><td><span class="tag ok">兼容</span></td><td><span class="tag ok">已生效</span></td><td class="mono">S20260922000001</td><td>2026-10-29 16:20</td><td class="muted">—</td><td>2026-10-29 16:20</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- E -->
+<div class="screen">
+  <div class="screen-head"><span class="tag">E</span><h2>连接器详情 · 源接入（普通档）</h2><span class="note">四类源 / 凭据掩码 / 政务模拟源如实标注 / 自检不等于授权</span></div>
+  <div class="app"><div class="main">
+    <div class="section">
+      <div class="section-head">源接入 <button class="btn primary" style="margin-left:auto">登记源</button></div>
+      <div class="section-body">
+        <div class="alert info">政务共享交换平台 V1.0 为标准报文模拟源；真实政务平台生产对接属部署实施期事项。自检通过仅证明连得上，不构成业务授权；读取仍受平台判定约束。</div>
+        <table>
+          <thead><tr><th>源编号</th><th>类型</th><th>源地址</th><th>凭据</th><th>更新时间</th><th>操作</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">SR000001</td><td>数据库</td><td class="mono">jdbc:mysql://127.0.0.1:3306/demo</td><td class="mono">******（掩码）</td><td>2026-10-30 20:20</td><td><button class="btn link">自检</button><button class="btn link">变更</button><button class="btn link">最近自检</button></td></tr>
+            <tr><td class="mono">SR000002</td><td>对象存储</td><td class="mono">oss://demo-bucket/source</td><td class="mono">******（掩码）</td><td>2026-10-30 20:05</td><td><button class="btn link">自检</button><button class="btn link">变更</button><button class="btn link">最近自检</button></td></tr>
+            <tr><td class="mono">SR000003</td><td>政务共享交换平台（模拟源）</td><td class="mono">mock://gov-exchange/demo</td><td class="mono">******（掩码）</td><td>2026-10-30 19:58</td><td><button class="btn link">自检</button><button class="btn link">变更</button><button class="btn link">最近自检</button></td></tr>
+            <tr><td class="mono">SR000004</td><td>API 网关</td><td class="mono">https://api.example.gov/demo</td><td class="mono">******（掩码）</td><td>2026-10-30 19:40</td><td><button class="btn link">自检</button><button class="btn link">变更</button><button class="btn link">最近自检</button></td></tr>
+          </tbody>
+        </table>
+        <div class="alert bad" style="margin-top:10px">自检结果（示例）：SR000002 失败 — 凭据无效（服务端 message 原文）；SR000004 失败 — 网络不可达；SR000001 / SR000003 通过。自检为只读探测，不产生源端变更。</div>
+        <div class="hint">清单端点不返回最近自检结论（3.6.5 契约）；点「最近自检」打开详情抽屉读取 lastCheck，点「自检」即时探测并弹出结论。凭据仅以掩码展示，提交后不再回显；登记 / 变更弹窗中的凭据为密码框，提交成功后清空。变更时凭据留空 = 不修改。</div>
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-head">动作留痕</div>
+      <div class="section-body">
+        <table>
+          <thead><tr><th>时间</th><th>动作</th><th>结果</th><th>原因码</th><th>操作人</th><th>详情</th></tr></thead>
+          <tbody>
+            <tr><td>2026-10-30 21:36</td><td>心跳上报</td><td><span class="tag ok">成功</span></td><td class="muted">—</td><td class="mono">S20260922000001</td><td class="muted">—</td></tr>
+            <tr><td>2026-10-30 20:22</td><td>源自检</td><td><span class="tag ok">成功</span></td><td class="muted">—</td><td class="mono">S20260922000001</td><td>sourceNo=SR000001</td></tr>
+            <tr><td>2026-10-30 20:10</td><td>升级登记（不兼容待确认）</td><td><span class="tag ok">成功</span></td><td class="muted">—</td><td class="mono">S20260922000001</td><td>from=1.1.0, to=2.0.0</td></tr>
+            <tr><td>2026-10-29 16:03</td><td>绑定查验</td><td><span class="tag ok">成功</span></td><td class="muted">—</td><td class="mono">S20260922000001</td><td>didStatus=ACTIVE</td></tr>
+          </tbody>
+        </table>
+        <div class="pager">共 4 条 · 第 1 / 1 页</div>
+      </div>
+    </div>
+  </div></div>
+</div>
+
+<!-- F -->
+<div class="screen">
+  <div class="screen-head"><span class="tag">F</span><h2>连接器治理 · 全平台连接器 / 健康总览</h2><span class="note">/connector-governance · admin · Q3-A 新增只读列表</span></div>
+  <div class="app">
+    <div class="side">
+      <div class="brand">C-TDS 演示台</div>
+      <a>工作台</a><a>数据目录</a><a>合约工作台</a><a>交付记录</a>
+      <a class="dim">连接器管理</a><a class="on">连接器治理</a>
+    </div>
+    <div class="main">
+      <div class="topbar"><span>连接器治理</span><span>演示身份：平台运营方 / admin</span></div>
+      <div class="tabs"><span class="on">全平台连接器</span><span>注册核验</span><span>升级确认</span></div>
+      <div class="toolbar">
+        <select class="select"><option>全部状态</option><option>待核验</option><option>已注册</option><option>已注销</option></select>
+        <button class="btn">查询</button><button class="btn">重置</button>
+        <div class="spacer"></div><button class="btn">刷新</button>
+      </div>
+      <div class="alert info">本页在线 2 / 离线 1（仅已注册态计入；本页统计，不代表全量）。</div>
+      <table>
+        <thead><tr><th>连接器编号</th><th>所属主体</th><th>名称</th><th>类型</th><th>当前版本</th><th>状态</th><th>在线</th><th>最近心跳</th><th>操作</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">CN000001</td><td class="mono">S20260922000001</td><td>星河数据交换器</td><td>标准连接器</td><td>1.1.0</td><td><span class="tag ok">已注册</span></td><td><span class="tag ok">在线</span></td><td>2026-10-30 21:36</td><td><button class="btn link">详情</button></td></tr>
+          <tr><td class="mono">CN000004</td><td class="mono">S20260922000001</td><td>星河备份连接器</td><td>标准连接器</td><td>1.0.0</td><td><span class="tag ok">已注册</span></td><td><span class="tag info">离线</span></td><td>2026-10-30 20:01</td><td><button class="btn link">详情</button></td></tr>
+          <tr><td class="mono">CN000005</td><td class="mono">S20260925000001</td><td>蓝天数据连接器</td><td>标准连接器</td><td>1.0.0</td><td><span class="tag ok">已注册</span></td><td><span class="tag ok">在线</span></td><td>2026-10-30 21:30</td><td><button class="btn link">详情</button></td></tr>
+          <tr><td class="mono">CN000003</td><td class="mono">S20260922000001</td><td>星河测试连接器</td><td>标准连接器</td><td>1.0.0</td><td><span class="tag info">已注销</span></td><td><span class="tag info">—</span></td><td class="muted">—</td><td><button class="btn link">详情</button></td></tr>
+          <tr><td class="muted">—</td><td class="mono">S20260915000001</td><td>待核验示例</td><td>标准连接器</td><td>1.0.0</td><td><span class="tag warn">待核验</span></td><td><span class="tag info">—</span></td><td class="muted">—</td><td class="muted">—</td></tr>
+        </tbody>
+      </table>
+      <div class="pager">共 5 条 · 第 1 / 1 页</div>
+      <div class="hint">运营档详情不展示源接入区（DB-88 口径挂起）；列表摘要不查 DID，不展示 verified。</div>
+    </div>
+  </div>
+</div>
+
+<!-- G -->
+<div class="screen">
+  <div class="screen-head"><span class="tag">G</span><h2>连接器治理 · 注册核验</h2><span class="note">核验三查；拒绝 = HTTP 200 业务结论</span></div>
+  <div class="app"><div class="main">
+    <div class="tabs"><span>全平台连接器</span><span class="on">注册核验</span><span>升级确认</span></div>
+    <table>
+      <thead><tr><th>申请单号</th><th>所属主体</th><th>名称</th><th>类型</th><th>版本</th><th>申请时间</th><th>操作</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">CA000001</td><td class="mono">S20260922000001</td><td>星河标准连接器</td><td>标准连接器</td><td>1.0.0</td><td>2026-10-30 21:40</td><td><button class="btn primary">核验</button></td></tr>
+        <tr><td class="mono">CA000004</td><td class="mono">S20260915000001</td><td>未入驻主体连接器</td><td>标准连接器</td><td>1.0.0</td><td>2026-10-30 18:10</td><td><button class="btn primary">核验</button></td></tr>
+      </tbody>
+    </table>
+    <div class="section" style="margin-top:12px">
+      <div class="section-head">核验结论</div>
+      <div class="section-body">
+        <div class="alert bad">核验拒绝：主体资格不满足（SUBJECT_ADMISSION）；主体未入驻或状态不可接入连接器。补正后可重新核验。</div>
+        <div class="hint">通过时展示：连接器编号 + 绑定摘要（DID / 建立时间）+「查看连接器」；拒绝时：不通过项 + 原因码 + 服务端理由原文。</div>
+      </div>
+    </div>
+  </div></div>
+</div>
+
+<!-- H -->
+<div class="screen">
+  <div class="screen-head"><span class="tag">H</span><h2>连接器治理 · 升级确认</h2><span class="note">不兼容升级须运营方显式确认后才替换版本</span></div>
+  <div class="app"><div class="main">
+    <div class="tabs"><span>全平台连接器</span><span>注册核验</span><span class="on">升级确认</span></div>
+    <table>
+      <thead><tr><th>升级单号</th><th>连接器编号</th><th>所属主体</th><th>版本变更</th><th>兼容性</th><th>提交人</th><th>提交时间</th><th>操作</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">UC000002</td><td class="mono">CN000001</td><td class="mono">S20260922000001</td><td>1.1.0 → 2.0.0</td><td><span class="tag warn">不兼容</span></td><td class="mono">S20260922000001</td><td>2026-10-30 20:10</td><td><button class="btn primary">确认</button><button class="btn link">查看连接器</button></td></tr>
+      </tbody>
+    </table>
+    <div class="hint">确认后新版本立即生效，确认人与时间入留痕；确认前旧版本继续有效。二次确认文案：「确认后新版本立即生效；是否继续？」</div>
+  </div></div>
+</div>
+
+<!-- I -->
+<div class="screen">
+  <div class="screen-head"><span class="tag">I</span><h2>注销确认与已注销态</h2><span class="note">终态不可逆；前置检查在途作业；历史保留</span></div>
+  <div class="app"><div class="main">
+    <div class="dialog">
+      <div class="head">注销连接器</div>
+      <div class="body">
+        <div class="alert">注销为终态且不可逆，连接器编号终身不复用；绑定关系解除但记录保留。是否继续？</div>
+        <div class="kv">
+          <div><span class="k">连接器</span><br /><span class="mono">CN000001</span></div>
+          <div><span class="k">当前状态</span><br /><span class="tag ok">已注册</span></div>
+          <div><span class="k">在途作业</span><br />1（拒绝对照）</div>
+        </div>
+        <div class="alert bad" style="margin-top:10px">存在进行中的交付作业，请先完结或终止后再注销（服务端原文，界面不改写）</div>
+      </div>
+      <div class="foot"><button class="btn">取消</button><button class="btn danger">确认注销</button></div>
+    </div>
+    <div class="section" style="margin-top:14px">
+      <div class="section-head">已注销态（只读）</div>
+      <div class="section-body">
+        <div class="kv">
+          <div><span class="k">状态</span><br /><span class="tag info">已注销</span></div>
+          <div><span class="k">注销时间</span><br />2026-10-30 21:45</div>
+          <div><span class="k">绑定</span><br /><span class="tag info">已解除</span> 2026-10-30 21:45</div>
+        </div>
+        <div class="hint">写动作（心跳 / 升级 / 注销 / 源接入）全部隐藏；详情、版本链、绑定解除记录、动作留痕、源历史保持可查。历史档案经「注册申请」Tab（含已注销）持续可查。</div>
+      </div>
+    </div>
+  </div></div>
+</div>
+
+<div class="footer-note">
+  原型口径说明：① 画面 D/E 为同一详情页的不同分区，实际实现为单页分区；② 画面 F/G/H 为治理页三个 Tab；③ 「注册申请」与「我的连接器」的过滤为「本页筛选」（服务端无该过滤参数），治理列表的状态过滤为服务端筛选；④ 所有错误文案以服务端响应为准，原型中的文字仅为示例；⑤ 运营档不展示源接入区（DB-88 挂起），普通档不展示治理页。
+</div>
+</body>
+</html>

@@ -144,6 +144,27 @@ const routes = [
         component: () => import('../views/delivery/DeliveryGovernanceView.vue'),
         meta: { title: '交付治理', menu: true, menuOrder: 19, icon: 'Stamp', permission: 'delivery.governance' },
       },
+      // WBS-3.6.7 连接器域：两菜单（20/21）+ 详情深链（不占菜单；须声明在 connectors
+      // 之后，深链匹配不吞噬清单页；无权限点——门槛在服务端）。连接器管理登录可见
+      // （参与方视角），连接器治理为运营方专属（connector.review）。
+      {
+        path: 'connectors',
+        name: 'connector-manage',
+        component: () => import('../views/connector/ConnectorManageView.vue'),
+        meta: { title: '连接器管理', menu: true, menuOrder: 20, icon: 'Link' },
+      },
+      {
+        path: 'connectors/:connectorNo',
+        name: 'connector-detail',
+        component: () => import('../views/connector/ConnectorDetailView.vue'),
+        meta: { title: '连接器详情' },
+      },
+      {
+        path: 'connector-governance',
+        name: 'connector-governance',
+        component: () => import('../views/connector/ConnectorGovernanceView.vue'),
+        meta: { title: '连接器治理', menu: true, menuOrder: 21, icon: 'Tools', permission: 'connector.review' },
+      },
       {
         path: 'admin-only',
         name: 'admin-only',
