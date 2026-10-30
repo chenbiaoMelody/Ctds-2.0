@@ -85,3 +85,12 @@ export function contractRolesHeader(): string {
 export function deliveryRolesHeader(): string {
   return pageRolesHeader('admin', 'requester,provider')
 }
+
+/**
+ * 连接器域页面级角色头（WBS-3.6.7 Q2-A）：普通档 `applicant`（申请 / 读 / 心跳 / 升级 / 注销 / 源管理）/
+ * 运营档 `admin`（核验 / 读 / 升级确认 / 注销）。硬约束（T2）：**普通档不得携带 `admin`**；
+ * 任何档位不得携带服务身份内部角色（内部面零接触，N8）。
+ */
+export function connectorRolesHeader(): string {
+  return pageRolesHeader('admin', 'applicant')
+}

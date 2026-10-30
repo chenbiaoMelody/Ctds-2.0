@@ -1,5 +1,11 @@
 import { describe, it, expect, afterEach } from 'vitest'
-import { deliveryRolesHeader, getActorMode, setActorMode, spaceRolesHeader } from './demoIdentity'
+import {
+  connectorRolesHeader,
+  deliveryRolesHeader,
+  getActorMode,
+  setActorMode,
+  spaceRolesHeader,
+} from './demoIdentity'
 import { getDemoSubject, setDemoSubject } from '../api/client'
 
 /**
@@ -69,5 +75,36 @@ describe('交付域页面级角色头（WBS-3.5.6 Q2-A / T2）', () => {
   it('运营档 = admin（治理读面 + 审核写面）', () => {
     setActorMode('operator')
     expect(deliveryRolesHeader()).toBe('admin')
+  })
+})
+
+/**
+ * WBS-3.6.7 Q2-A：连接器域页面级角色头——普通档 applicant（申请 / 读 / 心跳 / 升级 / 注销 / 源管理），
+ * 运营档 admin（核验 / 读 / 升级确认 / 注销）。硬约束 = 普通档不带 admin、任何档位不带 connector-internal。
+ */
+describe('连接器域页面级角色头（WBS-3.6.7 Q2-A / T2）', () => {
+  afterEach(() => {
+    localStorage.clear()
+  })
+
+  it('普通档 = applicant（不得混入 admin——核验类越权对照不失真）', () => {
+    setActorMode('subject')
+    expect(connectorRolesHeader()).toBe('applicant')
+    expect(connectorRolesHeader()).not.toContain('admin')
+  })
+
+  it('运营档 = admin（connector.review / upgrade.confirm 由服务端角色映射承载）', () => {
+    setActorMode('operator')
+    expect(connectorRolesHeader()).toBe('admin')
+  })
+
+  it('硬约束：任何档位不含 connector-internal 及其内部权限点（内部面零接触）', () => {
+    for (const mode of ['subject', 'operator'] as const) {
+      setActorMode(mode)
+      const header = connectorRolesHeader()
+      expect(header).not.toContain('connector-internal')
+      expect(header).not.toContain('connector.internal.read')
+      expect(header).not.toContain('connector.internal.write')
+    }
   })
 })

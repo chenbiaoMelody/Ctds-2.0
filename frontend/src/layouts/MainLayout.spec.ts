@@ -66,22 +66,24 @@ describe('权限菜单显隐（H4）', () => {
     localStorage.clear()
   })
 
-  it('普通用户：菜单渲染 7 项，不含权限保护菜单（WBS-3.5.6 新增交付记录/沙箱任务两项登录可见）', () => {
+  it('普通用户：菜单渲染 8 项，不含权限保护菜单（WBS-3.6.7 新增"连接器管理"登录可见；治理页 admin 专属）', () => {
     setDemoRole('user')
     const wrapper = mountLayout()
     const items = wrapper.findAll('.el-menu-item')
-    expect(items.length).toBe(7)
+    expect(items.length).toBe(8)
     expect(wrapper.text()).not.toContain('仅管理员可见')
     expect(wrapper.text()).not.toContain('主体审核')
     expect(wrapper.text()).not.toContain('DID 管理')
     expect(wrapper.text()).toContain('入驻进度查询')
+    expect(wrapper.text()).toContain('连接器管理')
+    expect(wrapper.text()).not.toContain('连接器治理')
   })
 
-  it('admin 角色：菜单渲染 16 项，含"仅管理员可见"、"主体审核"、"DID 管理"、空间域两项、目录域三项与合约域三项（WBS-3.4.7 新增）', () => {
+  it('admin 角色：菜单渲染 21 项，含"仅管理员可见"、"主体审核"、"DID 管理"、四域菜单与连接器两菜单（WBS-3.6.7 新增）', () => {
     setDemoRole('admin')
     const wrapper = mountLayout()
     const items = wrapper.findAll('.el-menu-item')
-    expect(items.length).toBe(19)
+    expect(items.length).toBe(21)
     expect(wrapper.text()).toContain('仅管理员可见')
     expect(wrapper.text()).toContain('主体审核')
     expect(wrapper.text()).toContain('DID 管理')
@@ -93,6 +95,8 @@ describe('权限菜单显隐（H4）', () => {
     expect(wrapper.text()).toContain('合约模板')
     expect(wrapper.text()).toContain('合约工作台')
     expect(wrapper.text()).toContain('合约治理')
+    expect(wrapper.text()).toContain('连接器管理')
+    expect(wrapper.text()).toContain('连接器治理')
   })
 
   it('侧边栏菜单溢出可达：.sidebar 纵向可滚（overflow-y: auto——16 项菜单超出视口高时末位"合约治理"可达；走查缺陷 2 修复守卫）', () => {

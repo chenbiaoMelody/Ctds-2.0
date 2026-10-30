@@ -19,6 +19,10 @@ import '../views/catalog/ProductDetailView.vue'
 import '../views/catalog/DatasetManageView.vue'
 import '../views/catalog/ProductManageView.vue'
 import '../views/catalog/GovernanceView.vue'
+// WBS-3.6.7：连接器域三视图为懒加载路由，同款静态预热
+import '../views/connector/ConnectorManageView.vue'
+import '../views/connector/ConnectorDetailView.vue'
+import '../views/connector/ConnectorGovernanceView.vue'
 
 /**
  * WBS-2.4.9 H3/H4 测试：
@@ -56,7 +60,7 @@ describe('路由表结构（H3）', () => {
     const permissionRouteNames = ['admin-only', 'review-queue', 'did-management', 'space-list', 'platform-policy',
       'catalog-datasets', 'catalog-products', 'catalog-governance',
       'contract-templates', 'contract-workbench', 'contract-governance',
-      'delivery-governance']
+      'delivery-governance', 'connector-governance']
     const normalRoutes = children.filter(
       (r) => r.meta?.menu === true && !permissionRouteNames.includes(String(r.name)),
     )
@@ -66,9 +70,9 @@ describe('路由表结构（H3）', () => {
   })
 
   it('DID 管理路由（WBS-3.1.11）：menuOrder=8、icon=Key、did.admin 权限；演示页不占菜单', () => {
-    // 菜单末尾追加（lofi Q1/Q8：不重排既有菜单）；WBS-3.5.6 追加 menuOrder 17/18/19 后全站最大值为 19
+    // 菜单末尾追加（lofi Q1/Q8：不重排既有菜单）；WBS-3.6.7 追加 menuOrder 20/21 后全站最大值为 21
     const menuOrders = children.filter((r) => r.meta?.menu === true).map((r) => r.meta?.menuOrder ?? 0)
-    expect(Math.max(...menuOrders)).toBe(19)
+    expect(Math.max(...menuOrders)).toBe(21)
     const didRoute = children.find((r) => r.name === 'did-management')
     expect(didRoute?.path).toBe('did')
     expect(didRoute?.meta?.title).toBe('DID 管理')
@@ -137,10 +141,10 @@ describe('路由表结构（H3）', () => {
     expect(progressRoute?.meta?.permission).toBeUndefined()
     // menuOrder=7 为入驻进度查询占位；WBS-3.1.11（8）与 WBS-3.2.6（9/10）追加后全站最大值为 10；
     // WBS-3.3.6（11/12/13）追加后全站最大值为 13；WBS-3.4.7（14/15/16）追加后全站最大值为 16；
-    // WBS-3.5.6（17/18/19）追加后全站最大值为 19
+    // WBS-3.5.6（17/18/19）追加后全站最大值为 19；WBS-3.6.7（20/21）追加后全站最大值为 21
     const menuOrders = children.filter((r) => r.meta?.menu === true).map((r) => r.meta?.menuOrder ?? 0)
     expect(menuOrders).toContain(7)
-    expect(Math.max(...menuOrders)).toBe(19)
+    expect(Math.max(...menuOrders)).toBe(21)
   })
 
   it('空间管理界面路由（WBS-3.2.6 §3）：菜单 9/10、权限点 space.member / platform.policy，"我的邀请"不占菜单且在 :id 之前', () => {
@@ -451,5 +455,66 @@ describe('交付域路由（WBS-3.5.6 T3）', () => {
     expect(route?.meta?.menuOrder).toBe(19)
     expect(route?.meta?.permission).toBe('delivery.governance')
   })
+})
+
+describe('连接器域路由（WBS-3.6.7 T3 / T15）', () => {
+  const root = routes.find((r) => r.path === '/')
+  const children = root && 'children' in root ? (root.children ?? []) : []
+
+  it('连接器管理：menuOrder=20、登录可见（无权限点）、icon=Link', () => {
+    const route = children.find((r) => r.name === 'connector-manage')
+    expect(route?.path).toBe('connectors')
+    expect(route?.meta?.title).toBe('连接器管理')
+    expect(route?.meta?.menu).toBe(true)
+    expect(route?.meta?.menuOrder).toBe(20)
+    expect(route?.meta?.icon).toBe('Link')
+    expect(route?.meta?.permission).toBeUndefined()
+  })
+
+  it('连接器治理：menuOrder=21、admin 权限点 connector.review、icon=Tools', () => {
+    const route = children.find((r) => r.name === 'connector-governance')
+    expect(route?.path).toBe('connector-governance')
+    expect(route?.meta?.title).toBe('连接器治理')
+    expect(route?.meta?.menu).toBe(true)
+    expect(route?.meta?.menuOrder).toBe(21)
+    expect(route?.meta?.icon).toBe('Tools')
+    expect(route?.meta?.permission).toBe('connector.review')
+  })
+
+  it('详情深链 /connectors/:connectorNo：不占菜单、无权限点、声明在列表之后（不吞噬列表页）', () => {
+    const detail = children.find((r) => r.name === 'connector-detail')
+    expect(detail?.meta?.menu).toBeUndefined()
+    expect(detail?.meta?.permission).toBeUndefined()
+    const paths = children.map((r) => r.path)
+    expect(paths.indexOf('connectors')).toBeLessThan(paths.indexOf('connectors/:connectorNo'))
+  })
+
+  it('普通用户直连 /connector-governance：守卫拦截重定向工作台带 denied', async () => {
+    const { default: router } = await import('../router/index')
+    signInDemo()
+    setDemoRole('user')
+    await router.push('/dashboard')
+    await router.push('/connector-governance')
+    expect(router.currentRoute.value.name).toBe('dashboard')
+    expect(router.currentRoute.value.query.denied).toBe('1')
+  })
+
+  it('admin 直连连接器治理与详情深链：放行（深链无权限点，门槛在服务端）', async () => {
+    const { default: router } = await import('../router/index')
+    signInDemo()
+    setDemoRole('admin')
+    await router.push('/connector-governance')
+    expect(router.currentRoute.value.name).toBe('connector-governance')
+    await router.push('/connectors/CN000001')
+    expect(router.currentRoute.value.name).toBe('connector-detail')
+  }, 30000)
+
+  it('普通用户直连连接器管理：登录可见（无权限点）', async () => {
+    const { default: router } = await import('../router/index')
+    signInDemo()
+    setDemoRole('user')
+    await router.push('/connectors')
+    expect(router.currentRoute.value.name).toBe('connector-manage')
+  }, 30000)
 })
 

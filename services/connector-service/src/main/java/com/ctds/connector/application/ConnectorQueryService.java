@@ -84,6 +84,16 @@ public class ConnectorQueryService {
         return repository.countRegistrations(subjectNo, ConnectorStatus.REGISTERED);
     }
 
+    /** 运营方全平台连接器列表（WBS-3.6.7 Q3-A；status 空 = 三态全部）。 */
+    public List<ConnectorRegistration> governanceConnectors(final ConnectorStatus status,
+            final PageQuery page) {
+        return repository.findRegistrations(null, status, page.offset(), page.pageSize());
+    }
+
+    public long countGovernanceConnectors(final ConnectorStatus status) {
+        return repository.countRegistrations(null, status);
+    }
+
     /** 连接器详情（含绑定与实时 DID 状态）。 */
     public ConnectorDetail detail(final String callerNo, final boolean operator, final String connectorNo) {
         final ConnectorRegistration registration = requireVisible(callerNo, operator, connectorNo);
