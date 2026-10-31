@@ -46,13 +46,20 @@ public class GatewayProperties {
         return policy;
     }
 
-    /** 静态路由定义（id / uri / predicates / filters）。 */
+    /** 静态路由定义（id / uri / predicates / filters / delivery-face）。 */
     public static class Route {
 
         private String id;
         private String uri;
         private List<String> predicates = new ArrayList<>();
         private List<String> filters = new ArrayList<>();
+        /**
+         * 交付面路由标记（WBS-3.6.8 W1 前置实测勘误：交付链过滤器族此前隐含"全部路由 = 交付面"，
+         * V1.0 单路由下从未暴露；六门面普通代理路由上线后须显式区分——标记路由继续受白名单
+         * fail-closed / 合约头强制 / 判定 / 计量约束（语义零改动），未标记路由 = 普通代理
+         * （仅鉴权链 + 限流，判定语义归各下游服务）。
+         */
+        private boolean deliveryFace;
 
         public String getId() {
             return id;
@@ -84,6 +91,14 @@ public class GatewayProperties {
 
         public void setFilters(final List<String> value) {
             this.filters = value == null ? new ArrayList<>() : value;
+        }
+
+        public boolean isDeliveryFace() {
+            return deliveryFace;
+        }
+
+        public void setDeliveryFace(final boolean value) {
+            this.deliveryFace = value;
         }
     }
 

@@ -40,6 +40,14 @@ public final class DeliveryErrorCodes {
     public static final ErrorCode PACKAGE_OPERATION_FAILED = ErrorCode.of("1009S0003");
     public static final String PACKAGE_OPERATION_FAILED_MESSAGE = "交付包生成或读取失败";
 
+    /** 连接器真实源取数失败（WBS-3.6.8；1009 段实测顺延——沙箱域已占用至 1009S0005）→ 500。 */
+    public static final ErrorCode FETCH_FAILED = ErrorCode.of("1009S0006");
+    public static final String FETCH_FAILED_MESSAGE = "交付取数失败";
+    /** 属主不一致（WBS-3.6.8 E5；复用既有权限语义码 + 专属可读文案，防借他方连接器）。 */
+    public static final String OWNER_MISMATCH_MESSAGE = "连接器属主与合约提供方不一致";
+    /** 连接器状态不允许作业（WBS-3.6.8 E6；复用既有范围不符语义码 + 专属可读文案）。 */
+    public static final String CONNECTOR_STATE_MESSAGE = "连接器当前状态不允许该作业";
+
     private DeliveryErrorCodes() {
     }
 }

@@ -23,6 +23,13 @@ public class GatewayRouteConfig {
     /** 路由元数据键：路径模板（配置值原样，形如 /api/v1/catalog/products/**）。 */
     public static final String PATH_TEMPLATE_METADATA = "path-template";
 
+    /**
+     * 路由元数据键：交付面标记（WBS-3.6.8 W1 前置实测勘误）。{@code true} = 交付面路由
+     * （白名单 fail-closed + 合约头强制 + 判定 + 计量，语义零改动）；缺省 {@code false} =
+     * 普通代理路由（六门面；仅鉴权链 + 限流，判定语义归下游服务）。
+     */
+    public static final String DELIVERY_FACE_METADATA = "delivery-face";
+
     private static final String PATH_PREDICATE_PREFIX = "Path=";
 
     @Bean
@@ -35,6 +42,7 @@ public class GatewayRouteConfig {
             final String template = pathTemplate(definition);
             routes.route(definition.getId(), route -> route.path(template)
                     .metadata(PATH_TEMPLATE_METADATA, template)
+                    .metadata(DELIVERY_FACE_METADATA, definition.isDeliveryFace())
                     .uri(definition.getUri()));
         }
         return routes.build();

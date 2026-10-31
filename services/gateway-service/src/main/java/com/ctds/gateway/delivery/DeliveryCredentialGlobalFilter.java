@@ -8,6 +8,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.regex.Pattern;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
+import org.springframework.cloud.gateway.route.Route;
+import org.springframework.cloud.gateway.support.ServerWebExchangeUtils;
 import org.springframework.core.Ordered;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
@@ -48,6 +50,11 @@ public class DeliveryCredentialGlobalFilter implements GlobalFilter, Ordered {
 
     @Override
     public Mono<Void> filter(final ServerWebExchange exchange, final GatewayFilterChain chain) {
+        final Route route = exchange.getAttribute(ServerWebExchangeUtils.GATEWAY_ROUTE_ATTR);
+        // WBS-3.6.8 W1：合约头强制仅约束交付面路由（语义零改动）；普通代理路由交由下游鉴权
+        if (route != null && !DeliveryWhitelistGlobalFilter.isDeliveryFace(route)) {
+            return chain.filter(exchange);
+        }
         final String contractNo = normalize(exchange.getRequest().getHeaders()
                 .getFirst(properties.getDelivery().getContractNoHeader()));
         if (contractNo == null || !CONTRACT_NO.matcher(contractNo).matches()) {

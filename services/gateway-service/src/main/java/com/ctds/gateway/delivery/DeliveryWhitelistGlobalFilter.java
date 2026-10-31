@@ -2,6 +2,7 @@ package com.ctds.gateway.delivery;
 
 import com.ctds.gateway.config.GatewayFilterOrders;
 import com.ctds.gateway.config.GatewayProperties;
+import com.ctds.gateway.config.GatewayRouteConfig;
 import com.ctds.gateway.error.GatewayErrorCodes;
 import com.ctds.gateway.error.GatewayErrorWriter;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
@@ -36,12 +37,20 @@ public class DeliveryWhitelistGlobalFilter implements GlobalFilter, Ordered {
     @Override
     public Mono<Void> filter(final ServerWebExchange exchange, final GatewayFilterChain chain) {
         final Route route = exchange.getAttribute(ServerWebExchangeUtils.GATEWAY_ROUTE_ATTR);
-        if (route == null || properties.getDelivery().getRoutes().contains(route.getId())) {
+        // WBS-3.6.8 W1：fail-closed 仅约束交付面路由（delivery-face 元数据，语义零改动）；
+        // 普通代理路由（六门面）与无路由请求不进入本门，鉴权与判定语义归下游服务
+        if (route == null || !isDeliveryFace(route)
+                || properties.getDelivery().getRoutes().contains(route.getId())) {
             return chain.filter(exchange);
         }
         return errorWriter.writeDenied(exchange, HttpStatus.NOT_FOUND,
                 GatewayErrorCodes.DELIVERY_ROUTE_NOT_OPEN,
                 GatewayErrorCodes.DELIVERY_ROUTE_NOT_OPEN_MESSAGE);
+    }
+
+    /** 交付面标记（配置经路由 metadata 传递；缺省 {@code false} = 普通代理）。 */
+    public static boolean isDeliveryFace(final Route route) {
+        return Boolean.TRUE.equals(route.getMetadata().get(GatewayRouteConfig.DELIVERY_FACE_METADATA));
     }
 
     @Override

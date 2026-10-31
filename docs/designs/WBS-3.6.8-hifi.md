@@ -12,14 +12,19 @@
 
 ### 1-A 网关路由增量（W1；`services/gateway-service/src/main/resources/application.yml`）
 
+> **前置检查③实测回填（2026-10-31）**：六服务端口实测 = subject **8080** / did **8082** / space **8083** / catalog **8084** / contract **8085** / delivery **8087** / connector 8088（均 127.0.0.1、无 context-path）；SDK 9 路径前缀归属实测 = `subject/registrations`→subject、`did`→did、`datasets/mine`→**catalog**（`DatasetController` 类级 `/api/v1` + 方法级 `/datasets/mine`）、`data-spaces`→space、`data-products(+/mine)`→catalog（既有路由）、`contracts(+/mine +/{no}/usage-summary)`→contract（Usage 摘要挂 contracts 前缀下）、`deliveries`→delivery；`GatewayRouteConfig.java` 通用装配实测仅支持**单 `Path=` 谓词** + 空 filters + id 唯一校验 → **新增 6 条普通路由**（§2"5 条"勘误：resource 拆 datasets / data-spaces 两条，各一 id 一 Path）。
+>
+> **⚠ 编码段重大实测勘误（2026-10-31，绿相第一轮发现）**：本文与立卡盘点"交付链过滤器对白名单外路由直接放行、Java 零改动"的前提**失实**——绿相实测 `DeliveryWhitelistGlobalFilter` 对**一切已匹配路由**做白名单 fail-closed（白名单外 404+1009C0004），且 `DeliveryCredentialGlobalFilter` / `PolicyExecutionGlobalFilter` 对一切路由强制合约头与判定（V1.0 单路由架构下三过滤器从未暴露此隐含前提，六门面路由一经添加即全部 404/400）。**修正实现（判定链语义零改动）**：引入**交付面路由标记**——`GatewayProperties.Route` 增 `delivery-face` 配置（经 `GatewayRouteConfig` 写入路由 metadata `delivery-face`），既有探针路由打 `delivery-face: true`；`DeliveryWhitelistGlobalFilter`（fail-closed 404）/ `DeliveryCredentialGlobalFilter`（合约头强制）/ `PolicyExecutionGlobalFilter`（判定）三个过滤器的守卫从"全部路由"收窄为"仅交付面路由"（**语义对交付面路由逐字保持**：白名单外 404 / 缺合约头 400 / 判定 fail-closed / 计量埋点全部不变；既有网关测试 0 改动全绿——含 `GatewayWhitelistRejectIntegrationTest` 的"白名单外逐字同封套"断言）；六门面路由不带标记 = 普通代理（仅鉴权链 + 限流，判定语义归各下游 `@RequirePermission`）。既有行为清单核对：`GatewayEmptyWhitelistStartIntegrationTest` / `GatewayRateLimit*` / `GatewayPolicyUnavailable*` / `GatewayDeliveryChainIntegrationTest` 全部不受影响（其断言对象均为交付面路由或无路由请求）。
+
 | 路由 id（拟） | Path | 下游 | 说明 |
 | --- | --- | --- | --- |
-| `connector-identity-subject` | `/api/v1/subject/**` | subject-service（前置检查实测端口，现网直连 8080） | SDK `querySubject`（Identity） |
-| `connector-identity-did` | `/api/v1/did/**` | did-service（现网直连 8082） | SDK `resolveDid`（Identity） |
-| `connector-resource-*` | `/api/v1/datasets/**`、`/api/v1/data-spaces/**` | 目录 / 空间服务（前置检查实测服务名与端口） | SDK Resource 两方法 |
-| `connector-product-*` | `/api/v1/data-products/**`、`/api/v1/data-products/mine` | 既有路由 `delivery-catalog-products` 已覆盖 | 零改动（既有唯一路由） |
-| `connector-contract` | `/api/v1/contracts/**` | contract-service（前置检查实测） | SDK Contract 三方法 |
-| `connector-delivery` | `/api/v1/deliveries/**` | delivery-service（前置检查实测） | SDK Delivery 剩余两方法 + Usage `getUsageSummary`（路径归属前置检查核对） |
+| `connector-identity-subject` | `/api/v1/subject/**` | subject-service（实测 8080） | SDK `querySubject`（Identity） |
+| `connector-identity-did` | `/api/v1/did/**` | did（实测 8082） | SDK `resolveDid`（Identity） |
+| `connector-resource-datasets` | `/api/v1/datasets/**` | catalog-service（实测 8084，`/datasets/mine` 实测归属 catalog） | SDK Resource `datasets/mine` |
+| `connector-resource-spaces` | `/api/v1/data-spaces/**` | space-service（实测 8083） | SDK Resource `data-spaces` |
+| `connector-product-*` | `/api/v1/data-products/**`、`/api/v1/data-products/mine` | 既有路由 `delivery-catalog-products` 已覆盖（catalog 8084） | 零改动（既有唯一路由） |
+| `connector-contract` | `/api/v1/contracts/**` | contract-service（实测 8085，含 `{no}/usage-summary` 归属实测） | SDK Contract 三方法 + Usage `getUsageSummary` |
+| `connector-delivery` | `/api/v1/deliveries/**` | delivery-service（实测 8087） | SDK Delivery 剩余两方法 |
 
 - **形态约束**（既有 `GatewayRouteConfig.java:28-57` 通用装配，Java 零改动）：仅 `Path=` 谓词、`filters` 为空；路由 id 唯一；
 - **判定链白名单零改动**：`ctds.gateway.delivery.routes`（application.yml:52-54）不新增——新增路由为**普通代理**，不进合约头强制 / 判定 / 计量过滤器链（`DeliveryWhitelistGlobalFilter.java:38-45` 对白名单外路由直接放行）；六门面动作的鉴权 = 各下游服务既有 `@RequirePermission` + `X-Ctds-Subject` / `X-Ctds-Roles` 头（SDK 侧组装，`PlatformClient.java:36` 合约头仅交付 / 使用腿携带）；
@@ -32,6 +37,8 @@
 | 端点 | `POST /api/v1/deliveries`（既有端点复用，零新端点；`@RequirePermission("delivery.request")` / 幂等键沿既有） |
 | 请求增量 | `deliveryType` 新枚举值 `CONNECTOR`；请求 DTO 新增可选字段 `connectorNo`（`^CN\d{6}$`）、`sourceNo`（`^SR\d{6}$`）——`deliveryType=CONNECTOR` 时**必填**，其余形态必须为空（混带即 400 参数无效，`1009` 段既有参数码） |
 | 处理顺序（`DeliveryCommandService.create()` 新分支） | ① 幂等查重（既有）→ ② 合约摘要 + 申请人一致性（既有）→ ③ 产品形态校验（`validateForm` 增 CONNECTOR 规则：允许形态与 FILE 同构，前置检查核对 `validateForm` 现行矩阵后落定并回填本文）→ ④ **策略判定** `contractPort.check(contractNo, requester, purpose, territory)`（先判定——拒绝即 `DENIED` 留痕，零触达源、零计量）→ ⑤ 签发交付编号 → ⑥ **占用登记** `occupy(connectorNo, jobRef=deliveryNo)`（新客户端；连接器未注册 / 并发冲突 → 拒绝）→ ⑦ **连接器属主核对**：经内部读连接器端点取属主主体，与合约 `providerNo` 比对（不一致 → 拒绝，防"借他方连接器读己方合约标的"）→ ⑧ **内部源读取**（携带 `jobRef` + `contractNo` + `purpose`；见 1-C）→ ⑨ `release`（finally 兜底）→ ⑩ SM4 加密落包 + SM3 摘要 + 交付记录 / 动作留痕落库（字段与 FILE 同构：`sourceFileId` 位记 `connectorNo:sourceNo`、包体 / 校验和 / 密钥引用同口径） |
+
+> **前置检查④实测回填（2026-10-31）**：`validateForm` 现行矩阵（`DeliveryCommandService.java:239-246`）= API→仅 `API`；FILE→`{DATASET, REPORT, MODEL}`（`FILE_FORMS` 常量）；其余形态（含 `SANDBOX_EXPORT`）→ `DELIVERY_SCOPE_MISMATCH` 拒绝。**落定：CONNECTOR 允许形态 = 与 FILE 同构 `{DATASET, REPORT, MODEL}`**。另实测 `validateFileId`（:215-227）对**非 API 形态一律强制要求 fileId 匹配 `FILE_ID` 正则**——CONNECTOR 分支须同步改造：CONNECTOR 禁带 `fileId`、必填 `connectorNo`/`sourceNo`（`^CN\d{6}$` / `^SR\d{6}$`）；API / FILE / SANDBOX_EXPORT 禁带 `connectorNo` / `sourceNo`（E2 互斥校验落点）。
 | 失败映射（对外 1009 段，不透传 1010 内部码） | 占用失败 → 既有"状态冲突"语义码 + 文案"连接器当前状态不允许该作业"；属主不一致 → 既有参数 / 权限语义码 + 可读文案；内部读取失败（网络不可达 / 凭据无效 / 权限不足 / 源拒绝 / 未登记 / 跨归属）→ **新增 1009 段码 1 个**：`取数失败`（detail 沿内部读取返回的业务可读摘要归类，不含源数据本体）；判定拒绝沿既有 DENIED 口径（拒绝零计量不变） |
 | 记录与计量 | 交付记录 / 留痕 / 计量事件口径与 C-5.1 完全一致（统一事件源）；CONNECTOR 腿无网关判定链参与 → 计量沿交付记录事件源，拒绝零计量（行为 14 规则 3） |
 | 事务边界 | 占用 / 读取 / 释放为跨服务 HTTP 调用，**不在 delivery 本地事务内**；`release` 以 finally 兜底 + 幂等（重复释放幂等）；进程崩溃残留 OCCUPY 为已知限制（演示期）：经内部占用清单端点可查、release 幂等可手工补，**如实登记不虚报自动对账** |
@@ -60,7 +67,8 @@
 | 项 | 契约 |
 | --- | --- |
 | 端点 | `GET /api/v1/connectors/internal/{connectorNo}`（W9 统一后形态；现状 `/internal/connectors/{no}`，`InternalConnectorController.java:21`） |
-| 用途 | delivery-service 取属主主体编号，与合约摘要 `providerNo` 比对（1-B-⑦）；返回 DTO 复用既有（前置检查核对属主字段名后回填） |
+| 用途 | delivery-service 取属主主体编号，与合约摘要 `providerNo` 比对（1-B-⑦）；返回 DTO 复用既有 |
+| **前置检查⑤实测回填（2026-10-31）** | 属主字段 = **`ConnectorView.subjectNo`**（`ConnectorViews.java:43-55`，取自 `ConnectorRegistration.subjectNo()`）；属主不一致比对落点 = `connectorView.subjectNo()` vs `ContractSummary.providerNo()` |
 
 ### 1-F occupy / cancel 原子谓词契约（W5 / DB-75；connector-service 服务端语义修复）
 
@@ -74,13 +82,13 @@
 
 | 模块 | 文件 | 改动 |
 | --- | --- | --- |
-| gateway | `src/main/resources/application.yml` | `ctds.gateway.routes` 增 5 条普通路由（1-A；精确 id / 下游前置检查回填）；白名单 / 限流 / 过滤器零改动 |
+| gateway | `src/main/resources/application.yml` | `ctds.gateway.routes` 增 **6 条**普通路由（1-A；前置检查③实测勘误：GatewayRouteConfig 仅支持单 Path 谓词，resource 拆两条）；白名单 / 限流 / 过滤器零改动 |
 | gateway | `src/test/...`（既有路由测试类旁）★ | 新增路由装配与转发断言用例（Path 匹配 / 白名单外不进判定链 / 未知路由 404 既有语义不回归） |
 | delivery | `domain/DeliveryType.java` | 枚举值 `CONNECTOR` |
 | delivery | `interfaces/dto/*`（请求 / 视图） | 请求增 `connectorNo` / `sourceNo` 可选字段 + 形态条件校验；视图沿既有（记录字段复用） |
 | delivery | `application/DeliveryCommandService.java` | `validateForm` 增 CONNECTOR 规则；`create()` 增分支（1-B 顺序）；失败映射 |
 | delivery | `infrastructure/ConnectorInternalClient.java` ★ | 内部面客户端（源读取 / 占用登记 / 释放 / 读连接器属主；服务身份头常量；超时与错误收敛沿 `SubjectAdmissionClient` 同构——不引入新 HTTP 基座，DB-71 沉淀建议另登记） |
-| delivery | `domain/DeliveryErrorCodes.java` | 新增 1 个取数失败码（1009 段顺延，前置检查核对既有段内最大值）+ 文案常量 |
+| delivery | `domain/DeliveryErrorCodes.java` | 新增 1 个取数失败码（前置检查⑤实测落定：**`1009S0006`**——**勘误（编码段实测）**：1009 段经沙箱域 `SandboxErrorCodes` 扩至 C 段最大 `1009C0016` / S 段最大 `1009S0005`，初测仅核 `DeliveryErrorCodes` 漏沙箱段；取数失败 = 平台侧失败语义归 S 型，处理器 `statusOf` default → 500）+ 文案常量 |
 | delivery | `src/test/...` ★ | T2 / T3 组（判定拒绝零触达 / 全链成功 / 失败映射 / finally 释放 / 幂等重放 / 客户端桩 500·超时） |
 | connector | `infrastructure/JdbcConnectorOccupancyRepository.java` | `occupy` 谓词化 SQL（1-F） |
 | connector | `application/ConnectorCancellationService.java` + `infrastructure/*Repository` | `cancel` 谓词化 UPDATE（1-F） |

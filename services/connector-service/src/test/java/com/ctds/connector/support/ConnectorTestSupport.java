@@ -204,6 +204,15 @@ public abstract class ConnectorTestSupport {
         return "{\"contractNo\":\"" + contractNo + "\",\"purpose\":\"" + purpose + "\"}";
     }
 
+    /**
+     * 内部读取请求体（WBS-3.6.8 W6 / DB-89：必填作业凭证 jobRef；调用方须先 occupy 同键）。
+     */
+    protected static String readBodyWithJobRef(final String contractNo, final String purpose,
+            final String jobRef) {
+        return "{\"contractNo\":\"" + contractNo + "\",\"purpose\":\"" + purpose
+                + "\",\"jobRef\":\"" + jobRef + "\"}";
+    }
+
     /** 数据库本源地址（同一 Testcontainers MySQL 的独立库；WBS-3.6.6 三类源用例共用）。 */
     protected static String databaseUrl() {
         return SharedMySqlContainer.jdbcUrlFor("ctds_connector_it");

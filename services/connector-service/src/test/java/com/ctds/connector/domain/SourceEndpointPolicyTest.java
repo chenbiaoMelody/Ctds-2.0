@@ -196,4 +196,28 @@ class SourceEndpointPolicyTest {
         assertThat(SourceEndpointPolicy.redact("http://exa mple.com/x")).isEqualTo("<redacted>");
         assertThat(SourceEndpointPolicy.redact("/path/only")).isEqualTo("<redacted>");
     }
+
+    /**
+     * 放行对照腿逐段 1 例（WBS-3.6.8 W7 / DB-93，hifi §3 T8）：受限判定集的每个保留段
+     * （0.0.0.0/8、100.64/10、192.0.0/24、192.0.2/24、198.18/15、198.51.100/24、203.0.113/24、240/4）
+     * 与受限判定共用短路分支——默认模式逐段拒绝、显式放开（{@code allow-private-endpoint=true}）
+     * 逐段放行，双向同测防"只放开机制不放开段"或"逐段判定集漂移"。
+     */
+    @Test
+    void permissiveSwitchAdmitsEachRestrictedSegmentAsCounterLeg() {
+        final String[] restrictedSegments = {"0.0.0.1", "100.64.0.1", "192.0.0.1", "192.0.2.1",
+                "198.18.0.1", "198.51.100.1", "203.0.113.1", "240.0.0.1"};
+        for (final String ip : restrictedSegments) {
+            assertThat(SourceEndpointPolicy.isPrivateHost(ip))
+                    .as("保留段 " + ip + " 属受限判定集（对照前提）").isTrue();
+            final String endpoint = "http://" + ip + "/dataset";
+            assertThatThrownBy(() -> SourceEndpointPolicy.normalize(SourceType.API_GATEWAY,
+                    endpoint, false))
+                    .as("默认模式逐段拒绝：" + ip)
+                    .isInstanceOf(ConnectorBizException.class);
+            assertThat(SourceEndpointPolicy.normalize(SourceType.API_GATEWAY, endpoint, true))
+                    .as("显式放开逐段放行：" + ip)
+                    .isEqualTo(endpoint);
+        }
+    }
 }

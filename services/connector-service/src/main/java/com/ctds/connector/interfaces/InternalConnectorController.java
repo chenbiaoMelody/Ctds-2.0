@@ -16,9 +16,12 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * 服务间内部只读端点（hifi §5 #12）：供 3.6.4 生命周期 / 3.6.7 控制台 / 3.6.8 集成与 SDK 校验消费。
  * 功能门槛 = 服务身份专用权限点 connector.internal.read（本卡由 admin 直调验证，消费方角色随各卡追加）。
+ *
+ * <p>WBS-3.6.8 W9 / DB-68 路径统一：收敛为全仓内部面惯例 {@code /api/v1/{域}/internal/{资源}}
+ * （消除重复域段 {@code internal/connectors}；首个平台消费方 3.6.8 交付链上线前统一，ADR-027 回写）。</p>
  */
 @RestController
-@RequestMapping("/api/v1/connectors/internal/connectors")
+@RequestMapping("/api/v1/connectors/internal")
 public class InternalConnectorController {
 
     private static final Pattern CONNECTOR_NO = Pattern.compile("^CN\\d{6}$");

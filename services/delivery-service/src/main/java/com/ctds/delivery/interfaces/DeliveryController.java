@@ -57,7 +57,7 @@ public class DeliveryController {
             @RequestBody final DeliveryRequest request) {
         final DeliveryCommand command = new DeliveryCommand(AuthContext.subject(), request.contractNo(),
                 request.deliveryType(), request.fileId(), request.purpose(), request.territory(),
-                idempotencyKey);
+                idempotencyKey, request.connectorNo(), request.sourceNo());
         return ApiResult.ok(commandService.create(command));
     }
 

@@ -171,11 +171,12 @@ class ConnectorSourceBoundaryApiTest extends ConnectorTestSupport {
         final String connectorNo = registerConnector(OWNER, "bnd-read-fail");
         final String sourceNo = registerSource(OWNER, connectorNo, "GOV_EXCHANGE",
                 "mock://gov-exchange/bad-credential", SOURCE_SECRET);
+        occupy(connectorNo, "job-1");
         mockMvc.perform(post(INTERNAL + connectorNo + SOURCES + "/" + sourceNo + "/reads")
                         .contentType(MediaType.APPLICATION_JSON)
                         .header("X-Ctds-Subject", "delivery-service")
                         .header("X-Ctds-Roles", INTERNAL_ROLE)
-                        .content(readBody(CONTRACT_NO, "统计分析")))
+                        .content(readBodyWithJobRef(CONTRACT_NO, "统计分析", "job-1")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.success").value(false))
                 .andExpect(jsonPath("$.data.summary").value(org.hamcrest.Matchers.containsString("凭据无效")));

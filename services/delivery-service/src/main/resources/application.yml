@@ -37,6 +37,11 @@ ctds:
     catalog:
       base-url: ${CTDS_DELIVERY_CATALOG_BASEURL:}
       timeout: 3s
+    # 连接器内部面（WBS-3.6.8 W3/W4）：占用登记 / 释放 / 读属主 / 内部源读取；
+    # 未配置 = CONNECTOR 交付不可用（fail-closed），API / FILE 腿不受影响
+    connector:
+      base-url: ${CTDS_DELIVERY_CONNECTOR_BASEURL:}
+      timeout: 3s
     source-root: ${CTDS_DELIVERY_SOURCE_ROOT:}
     storage-root: ${CTDS_DELIVERY_STORAGE_ROOT:}
     file:

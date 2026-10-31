@@ -86,11 +86,12 @@ class ConnectorSourceAdapterFailureApiTest extends ConnectorTestSupport {
         final String connectorNo = registerConnector(OWNER, "probe-read");
         final String sourceNo = registerSource(OWNER, connectorNo, "GOV_EXCHANGE",
                 baseUrl + "/gov", SOURCE_SECRET);
+        occupy(connectorNo, "job-1");
         mockMvc.perform(post(INTERNAL + connectorNo + "/sources/" + sourceNo + "/reads")
                         .contentType(MediaType.APPLICATION_JSON)
                         .header("X-Ctds-Subject", "delivery-service")
                         .header("X-Ctds-Roles", INTERNAL_ROLE)
-                        .content(readBody(CONTRACT_NO, "统计分析")))
+                        .content(readBodyWithJobRef(CONTRACT_NO, "统计分析", "job-1")))
                 .andExpect(status().isBadGateway())
                 .andExpect(jsonPath("$.code").value("1000S9999"))
                 .andExpect(jsonPath("$.message").value("源连通性探测失败，请稍后重试"));

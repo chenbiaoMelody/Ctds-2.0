@@ -7,7 +7,7 @@ import com.ctds.delivery.domain.SandboxErrorCodes;
 import org.junit.jupiter.api.Test;
 
 /** 交付错误码表与出站处理器集合一致性（防止码表↔处理器漂移；WBS-3.5.4 增沙箱码值；
- * WBS-3.5.5 增结果物码值）。 */
+ * WBS-3.5.5 增结果物码值；WBS-3.6.8 增取数失败 1009S0006）。 */
 class DeliveryExceptionHandlerTest {
 
     @Test
@@ -21,6 +21,7 @@ class DeliveryExceptionHandlerTest {
                 DeliveryErrorCodes.PACKAGE_NOT_ALLOWED.value(),
                 DeliveryErrorCodes.DELIVERY_DEPENDENCY_UNAVAILABLE.value(),
                 DeliveryErrorCodes.PACKAGE_OPERATION_FAILED.value(),
+                DeliveryErrorCodes.FETCH_FAILED.value(),
                 SandboxErrorCodes.SANDBOX_NOT_VISIBLE.value(),
                 SandboxErrorCodes.SANDBOX_STATE_CONFLICT.value(),
                 SandboxErrorCodes.SANDBOX_DATA_DENIED.value(),
@@ -43,5 +44,6 @@ class DeliveryExceptionHandlerTest {
         assertThat(DeliveryExceptionHandler.statusOf("1009C0016").value()).isEqualTo(409);
         assertThat(DeliveryExceptionHandler.statusOf("1009S0004").value()).isEqualTo(503);
         assertThat(DeliveryExceptionHandler.statusOf("1009S0005").value()).isEqualTo(500);
+        assertThat(DeliveryExceptionHandler.statusOf("1009S0006").value()).isEqualTo(500);
     }
 }
