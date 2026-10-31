@@ -16,12 +16,12 @@ const viewSources = import.meta.glob('./*.vue', {
   import: 'default',
   eager: true,
 }) as Record<string, string>
-const apiSources = import.meta.glob('../../api/catalog.ts', {
+const apiSources = import.meta.glob(['../../api/catalog.ts', '../../api/order.ts'], {
   query: '?raw',
   import: 'default',
   eager: true,
 }) as Record<string, string>
-const constantsSources = import.meta.glob('../../constants/catalog.ts', {
+const constantsSources = import.meta.glob(['../../constants/catalog.ts', '../../constants/order.ts'], {
   query: '?raw',
   import: 'default',
   eager: true,
@@ -56,20 +56,26 @@ function view(name: string): string {
 }
 
 describe('门户源集守卫（T9）', () => {
-  it('扫描目标非空：两个门户视图 + api/catalog.ts + constants/catalog.ts 均被读入', () => {
+  it('扫描目标非空：五个门户视图 + api 两模块 + constants 两模块均被读入', () => {
     expect(Object.keys(withoutSpecs(viewSources)).sort()).toEqual([
       './PortalHomeView.vue',
+      './PortalOrderDetailView.vue',
+      './PortalOrderDialog.vue',
+      './PortalOrderListView.vue',
       './PortalProductDetailView.vue',
     ])
-    expect(Object.keys(withoutSpecs(apiSources)).length).toBe(1)
-    expect(Object.keys(withoutSpecs(constantsSources)).length).toBe(1)
+    expect(Object.keys(withoutSpecs(apiSources)).length).toBe(2)
+    expect(Object.keys(withoutSpecs(constantsSources)).length).toBe(2)
   })
 
   it('零 /internal/ 调用、零治理读面调用（GOVERNANCE_VIEW 留痕面不得用于前台浏览）', () => {
     // /internal/ 对门户视图与 API 模块全域禁用；治理函数 / 路径仅约束门户视图
-    // （api/catalog.ts 为其他管理页保留治理函数导出，门户不得引用）
+    // （api/catalog.ts 为其他管理页保留治理函数导出，门户不得引用；R-OR3 治理检索
+    // 界面归 3.7.7——Q8-A，api/order.ts 不封装 governance 端点）
     expect(hits(uiScanned(), '/internal/')).toBe(0)
-    const portalViews = [view('PortalHomeView.vue'), view('PortalProductDetailView.vue')].join('\n')
+    const portalViews = [view('PortalHomeView.vue'), view('PortalProductDetailView.vue'),
+      view('PortalOrderDialog.vue'), view('PortalOrderListView.vue'),
+      view('PortalOrderDetailView.vue')].join('\n')
     expect(hits(portalViews, 'getProductGovernance')).toBe(0)
     expect(hits(portalViews, 'getDatasetGovernance')).toBe(0)
     expect(hits(portalViews, '/governance')).toBe(0)
@@ -78,9 +84,11 @@ describe('门户源集守卫（T9）', () => {
     expect(hits('getProductGovernance(7)', 'getProductGovernance')).toBe(1)
   })
 
-  it('零原始 fetch(：一律经 api/catalog.ts 的 apiJson / makeDomainJson 封装', () => {
+  it('零原始 fetch(：一律经 api 模块的 apiJson / makeDomainJson 封装', () => {
     expect(hits(withoutComments(uiScanned()), 'fetch(')).toBe(0)
     expect(hits(withoutComments(apiSources['../../api/catalog.ts'] ?? ''), 'makeDomainJson(catalogRolesHeader)'))
+      .toBe(1)
+    expect(hits(withoutComments(apiSources['../../api/order.ts'] ?? ''), 'makeDomainJson(contractRolesHeader)'))
       .toBe(1)
     // 反向探针
     expect(hits('const r = await fetch(url)', 'fetch(')).toBe(1)
@@ -98,17 +106,21 @@ describe('门户源集守卫（T9）', () => {
       !allowed.has(path) && source.includes('admin')).length).toBe(1)
   })
 
-  it('零订单 / 计费端点与假动作（3.7.3+ 才实现）', () => {
+  it('订单域收口：端点仅经 api/order.ts（WBS-3.7.3 开放）；计费/账单/支付仍禁用', () => {
+    // 3.7.3 开放订购：/orders 由 api/order.ts 单点封装（门户视图不直拼订单 URL）；
+    // 计费 / 账单 / 支付 / 发票仍属后续卡（3.7.5+ / C-7.3），全域禁用
     const source = withoutComments(uiScanned())
-    for (const endpoint of ['/orders', '/billing', '/bills', '/metering', '/payments', '/invoices']) {
+    for (const endpoint of ['/billing', '/bills', '/metering', '/payments', '/invoices']) {
       expect(source).not.toContain(endpoint)
     }
-    // 反向探针
-    expect('apiJson("/api/v1/orders")').toContain('/orders')
+    expect(hits(withoutComments(apiSources['../../api/order.ts'] ?? ''), '/api/v1/orders/mine')).toBe(1)
+    // 计量/账单端点在订单视图中零出现（B6 静态纪律——无推送/轮询/账单入口）
+    expect(hits(withoutComments(view('PortalOrderDetailView.vue')), '/metering')).toBe(0)
   })
 
   it('零数据本体 / 敏感原文（注释引述除外）', () => {
-    for (const name of ['PortalHomeView.vue', 'PortalProductDetailView.vue']) {
+    for (const name of ['PortalHomeView.vue', 'PortalProductDetailView.vue',
+      'PortalOrderDialog.vue', 'PortalOrderListView.vue', 'PortalOrderDetailView.vue']) {
       expect(hits(view(name), '本体')).toBe(0)
       expect(hits(view(name), '敏感原文')).toBe(0)
       expect(hits(view(name), '数据内容')).toBe(0)
@@ -152,7 +164,12 @@ describe('门户源集守卫（T9）', () => {
     expect(view('PortalHomeView.vue')).toContain('PRICING_MODEL_LABELS')
     expect(view('PortalProductDetailView.vue')).toContain('PRODUCT_NOT_ACCESSIBLE_TIP')
     expect(view('PortalProductDetailView.vue')).toContain('formatPortalPricing')
-    expect(view('PortalProductDetailView.vue')).toContain('PORTAL_ORDER_PLACEHOLDER_TIP')
+    // WBS-3.7.3 开放订购：详情页接线订购弹窗；订单视图经 constants/order.ts 收口文案
+    expect(view('PortalProductDetailView.vue')).toContain('PortalOrderDialog')
+    expect(view('PortalOrderListView.vue')).toContain('ORDER_STATUS_LABELS')
+    expect(view('PortalOrderDetailView.vue')).toContain('ORDER_NOT_FOUND_TIP')
+    expect(view('PortalOrderDetailView.vue')).toContain('ORDER_ACTION_LABELS')
+    expect(view('PortalOrderDialog.vue')).toContain('formatPortalPricing')
   })
 
   it('api/catalog.ts 类型扩展：detail 加性 priceAmount: string | null（零新函数）', () => {

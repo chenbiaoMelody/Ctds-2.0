@@ -23,14 +23,17 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @RestControllerAdvice
 public class ContractExceptionHandler {
 
-    /** 允许精确映射的 1008 段码值（ContractErrorCodes 定稿集；新码须同步登记——一致性由
-     * interfaces 包测试锚定，码表↔处理器集合不得漂移，沿 catalog 先例）。
-     * WBS-3.4.3 续延：C0010~C0019（协商与签署域）+ S0002/S0003（did/目录不可达）。 */
+    /** 允许精确映射的码值（ContractErrorCodes / OrderErrorCodes 定稿集；新码须同步登记——
+     * 一致性由 interfaces 包测试锚定，码表↔处理器集合不得漂移，沿 catalog 先例）。
+     * WBS-3.4.3 续延：C0010~C0019（协商与签署域）+ S0002/S0003（did/目录不可达）。
+     * WBS-3.7.3 续延：1011 段（订单域，OrderErrorCodes 定稿集——hifi 勘误：双 advice 会按
+     * 异常类型劫持 ContractBizException，故与 1008 段共用本处理器登记制，不另设 advice）。 */
     static final Set<String> MAPPED_CODES = Set.of("1008C0001", "1008C0002", "1008C0003", "1008C0004",
             "1008C0005", "1008C0006", "1008C0007", "1008C0008", "1008C0009",
             "1008C0010", "1008C0011", "1008C0012", "1008C0013", "1008C0014", "1008C0015",
             "1008C0016", "1008C0017", "1008C0018", "1008C0019", "1008C0020",
-            "1008S0001", "1008S0002", "1008S0003");
+            "1008S0001", "1008S0002", "1008S0003",
+            "1011C0001", "1011C0002", "1011C0003", "1011C0004");
 
     @ExceptionHandler(ContractBizException.class)
     public ResponseEntity<ApiResult<Void>> onContractBizException(final ContractBizException ex) {
@@ -64,6 +67,11 @@ public class ContractExceptionHandler {
                  "1008C0019" -> HttpStatus.CONFLICT;
             case "1008C0004", "1008C0008", "1008C0014", "1008C0015", "1008C0016",
                  "1008C0018" -> HttpStatus.BAD_REQUEST;
+            // WBS-3.7.3 订单域（hifi §1.5）：C0001 重复订购 409 / C0002 防枚举 404 /
+            // C0003 参数 400 / C0004 并发 409
+            case "1011C0002" -> HttpStatus.NOT_FOUND;
+            case "1011C0001", "1011C0004" -> HttpStatus.CONFLICT;
+            case "1011C0003" -> HttpStatus.BAD_REQUEST;
             default -> HttpStatus.SERVICE_UNAVAILABLE;   // 1008S0001 / 1008S0002 / 1008S0003
         };
     }

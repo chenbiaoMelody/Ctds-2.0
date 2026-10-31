@@ -79,6 +79,8 @@
 | 上游 C-4.2 发起 / 签署 / 终止（复用） | 订单专用发起通路（行为等价提取）+ 状态联动 | C-4.2 剧本既有步骤 | T4 / T5 / T6 |
 
 > 权限点复用（**零新增**）：创建 = `contract.deal`；本方读 = `contract.read`；运营检索 = `contract.governance`。**不调用** `/internal/**`、任何评价 / 计费 / 账单 / 支付端点。订单创建复用合约发起门槛链（ADMITTED / 在架 / 异主体 / 模板 / 条款），不复制业务判定。
+>
+> **✅ 测试锚点回填（编码段实测，2026-11-01）**：T1~T11/T13 → `ProductOrderFlowIntegrationTest`（8 例：t1 创建同事务快照一致 / t2 重复订购 1011C0001 / t3 幂等重放 / t4 关闭后重购 / t5 双签生效联动+首签不动 / t6 协商终止关闭+原因+留痕 / t9 防枚举同码同文+拒绝留痕+零数据本体 / t10 requestId 校验零业务请求；T12 迁移断言归既有 `ContractMigrationIntegrationTest` 三模板行数锚零改动、T14 网关归 `GatewayConnectorRoutesIntegrationTest` 七门面）；前端 T1~T12 → `src/api/order.spec.ts`（API 形态+常量+透传）+ `PortalOrderDialog.spec.ts`（必填前置/requestId 复用/成功 emit/失败不重置）+ `PortalOrderListView.spec.ts`（渲染/双角色/过滤/空态/错误态/深链）+ `PortalOrderDetailView.spec.ts`（快照/深链/时间线过滤/关闭信息/非法号零请求/404 同形）+ `PortalProductDetailView.spec.ts`（订购入口接线/成功跳转）+ `PortalSourceGuard.spec.ts`（源集守卫五视图+订单端点收口+计费禁用）+ `router.spec.ts`（菜单 23/深链顺序）+ `MainLayout.spec.ts`（普通 10/admin 23）。红相归档 `build-output/w373-red-backend.log`（8 例全红 404）+ `w373-red-frontend.log`（4 文件收集红）。
 
 ## 四、执行记录
 
@@ -86,12 +88,14 @@
 | --- | --- |
 | 立卡段（2026-11-01） | 🟡 **立卡段完成（确认见下行）**：任务卡 + lofi **V0.9** + hifi **V0.9** + 原型 HTML（4 画面）落盘；素材盘点八项（无订单表/服务、1011 段零占用、合约表定价快照、发起幂等缓存风险、合约事务挂接点、网关/vite 增量、门禁基线）；分支 `feat/WBS-3.7.3-订购与订单流程` 自本地 main `0e2c235` 创建（3.7.2 收口批随本卡 PR 入库）；**本段零代码、零依赖、零门禁配置改动，未动 `main`**；台账"进行中"行暂未改（沿 3.7.2 先例，编码段更新）；立卡批 `c73f656` 已提交（未推送）。 |
 | 确认段（2026-11-01 00:42） | ✅ **编排师一次确认"全部按建议确认"**：Q1~Q8 全采建议口径 A + D1 不拆分；lofi / hifi 同批转 **V1.0**（方向定稿 / 编码契约即时生效）；任务卡 §二回填确认留痕 + 设计文件行同步；确认批本地提交（未推送、未建 PR）；**本段零代码 / 零配置 / 零门禁改动，未动 `main`**；下一关口 = **编码段（新会话冷启动，测试先行，第一动作 = hifi §7 前置检查 12 项逐项实测留痕）**。 |
+| 编码段（2026-11-01 新会话冷启动） | ✅ **编码段完成（测试先行全链）**：① 前置检查 12 项逐项实测留痕（分支/工作树 clean、前端 53 文件/703 例 + 四步 EXIT=0、contract **实测 244 例**全绿〔勘误：任务卡原记 184 为陈旧口径——3.5.3 起即 244，git `d567145` 留痕〕、checkstyle 0、网关全绿、菜单 9/22、1011 段零占用双查、合约快照列、W5 幂等键 `DEAL:需方:产品:模板:版本:条款指纹` + 结果 TTL 600s、`sign/terminate` 均 `@Transactional`+行锁、门户占位/编辑器 props、演示环境三容器+数据齐备〔应用服务未启动——留待走查段启动避免陈旧构件〕、gates 哈希零漂移、connector-orders/vite 前置不存在=预期）；② 红相先行：后端 `ProductOrderFlowIntegrationTest` 8 例全红（404）+ 前端 4 件收集红，归档 `w373-red-backend/frontend.log`；③ 实现：迁移 V4 三表（`product_order` 含 `active_order_key` 生成列唯一索引 / `product_order_action_log` / `product_order_no_seq`）+ 订单领域六件（Order/OrderStatus/OrderAction/OrderActionLog/OrderRepository/OrderErrorCodes 1011 四码）+ `JdbcOrderRepository`/`ContractStatusReader` + `ContractInitiationService` 行为等价提取（prepare/persist 两段；W5 幂等注解原地保留）+ `OrderCommandService`（`@Idempotent` 需方+requestId；TransactionTemplate 同事务：合约 persist 三写 + 订单取号落库 + CREATE 留痕；DuplicateKey 回查分译 1011C0001/C0004）+ `OrderQueryService`（mine 双角色/detail 防枚举+拒绝留痕/governance）+ `ContractOrderSyncService`（sign/terminate 挂接同事务联动，Q7-A 边界）+ `ContractExceptionHandler` 1011 四码登记（**勘误 E2：hifi 原设计独立 OrderExceptionHandler——双 advice 按异常类型劫持会吞 1008 段，故与 1008 共用处理器登记制**）+ 端点两控制器 + 网关 `connector-orders` 路由 + 路由测试七门面 + vite 转发键 + 前端 `api/order.ts`/`constants/order.ts`/弹窗/列表/详情/路由菜单 23/订购区接线；④ 转绿：contract **252 例**全绿（244 零回归 + 8 新增）+ checkstyle 0 + 码表一致性锚扩双段（1008+1011=27）；前端 **57 文件/730 例**全绿 + typecheck/lint/build EXIT=0；⑤ 剧本 C-7.1 转 **V1.2**（S2-1~7+13 界面路径 + 附录 A 另一笔订单改界面产生；业务判定一字不改，**待 PO 批准**）；⑥ 台账"进行中"行更新待验收态。**零越界复核：合约端点语义/错误码零改动（发起提取=行为等价重构）、零新服务/端口/库/镜像/依赖/权限点、`gates-config.json` 零改动、零 `/internal/`、零 admin 混入普通档、零数据本体**；本批未推送、未建 PR；下一关口 = 4 视角评审。 |
 
 ## 五、体量登记（立卡时填写）
 
 | 项 | 数值 / 说明 |
 | --- | --- |
 | 实测（立卡段） | 任务卡 **99 行**；`docs/designs/WBS-3.7.3-lofi.md` **91 行**；`docs/designs/WBS-3.7.3-hifi.md` **307 行**；`docs/designs/WBS-3.7.3-原型-订购与订单.html` **440 行** → 合计 **937 行**（行数口径 = 文件实际行数实测，2026-11-01 立卡段）；**无代码、无测试、零 npm/Maven 依赖引入** |
+| 实测（编码段，2026-11-01） | 后端：迁移 V4 1 件（~90 行）+ 订单领域/仓储/应用/联动/端点/DTO ~14 件 + 测试 1 件 8 例 + 既有测试同步 2 件（治理单测构造器 + 码表一致性锚扩双段）+ 网关 yml/路由测试；前端：`api/order.ts` + `constants/order.ts` + 三视图 + 三 spec + `api/order.spec.ts` + 路由/详情页接线 + `MainLayout.spec`/`router.spec`/`PortalSourceGuard.spec` 计数与守卫更新；剧本 V1.2 修订。D1 登记制豁免沿立卡确认口径（编排师 2026-11-01 一次确认"全部按建议确认"含 D1 不拆分） |
 | 预估（编码段） | 有效变更 **2200~3000 行**：迁移 V4 ≈90 + 订单领域 ≈180 + 仓储 ≈280 + 应用服务 ≈320 + 合约发起提取 ≈120 + 状态联动编排 ≈120 + DTO/控制器/异常 ≈200 + 后端测试 ≈450~550 + 前端 API/常量 ≈120 + 订购弹窗 ≈250 + 订单列表 ≈200 + 订单详情 ≈220 + 路由/计数/网关/vite ≈60 + 前端测试 ≈450~550 + 剧本/文档 ≈250~350；**1 个编码会话**；零新依赖 / 镜像 / 服务 / 端口 / 权限点；新增迁移 1 件（三表） |
 | 超 400 行指引说明 | 本卡为"订购与订单"原子集（订单后端 + 状态联动 + 门户订购/订单界面 + 剧本核对一次性）；拆则 C-7.1 S2 的订购 → 合约衔接 → 生效/关闭 → 订单查询走查链断裂；请编排师在 **D1** 一并表态 |
 

@@ -179,6 +179,20 @@ const routes = [
         component: () => import('../views/portal/PortalProductDetailView.vue'),
         meta: { title: '门户产品详情' },
       },
+      // WBS-3.7.3 订单域：独立菜单（23，登录可见、无权限点——Q5-A；服务端 contract.read
+      // + 归属判定）+ 详情深链（不占菜单；须声明在列表之后，深链匹配不吞噬列表页）
+      {
+        path: 'portal/orders',
+        name: 'portal-order-list',
+        component: () => import('../views/portal/PortalOrderListView.vue'),
+        meta: { title: '我的订单', menu: true, menuOrder: 23, icon: 'List' },
+      },
+      {
+        path: 'portal/orders/:orderNo',
+        name: 'portal-order-detail',
+        component: () => import('../views/portal/PortalOrderDetailView.vue'),
+        meta: { title: '订单详情' },
+      },
       {
         path: 'admin-only',
         name: 'admin-only',

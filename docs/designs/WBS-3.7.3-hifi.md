@@ -302,6 +302,11 @@ createdAt: string
 ## 8. 边界、勘误与文件清单
 
 - **边界复述**：订单只做 B3 / B4 / B6 + B12-1 订单读面；不改合约端点语义 / 错误码 / 状态机；不做评价 / 计费 / 账单 / 支付 / 运营界面 / 推送；零新服务 / 端口 / 库 / 镜像 / 依赖 / 权限点；零数据本体 / 零内部面 / 零 `admin` 混入普通档；剧本业务判定一字不改。
-- **勘误表**：编码段 / 评审段回填（V1.0 暂无）。
+- **勘误表**：编码段回填（2026-11-01）——
+  **E1 基线口径**：任务卡/hifi 记载 contract-service 基线 **184 例**为陈旧口径（3.4.3 时代）；前置检查实测 **244 例**（3.5.3 起即 244/244，git `d567145` 留痕），编码后 252 例全绿——零回归结论不受影响。
+  **E2 处理器落点**：§3.1 规划独立 `OrderExceptionHandler`——实做发现双 `@RestControllerAdvice` 均监听 `ContractBizException` 会按类型劫持（先匹配 advice 拿走全部异常，1008 段映射被吞），故 1011 四码并入 `ContractExceptionHandler.MAPPED_CODES` 登记制（码表↔处理器一致性锚同步扩为双段 27 码），接口行为与本表 §1.5 状态映射逐字一致。
+  **E3 测试夹具**：§6.1 T 系列以 `ProductOrderFlowIntegrationTest` 8 例承载核心锚（t1~t6/t9/t10）；共享库跨轮残留敏感（B3-2 唯一性对固定主体/产品组合），补 `@BeforeEach` TRUNCATE 清态（序号表保留——编号全局递增不回退）。
+  **E4 priceAmount 形态**：§1.4 `priceAmount: string|null`（toPlainString）——前端测试断言须用文本比较（`asText()`），`decimalValue()` 对文本节点返回 0。
+  **E5 订购弹窗测试夹具**：模板夹具含两必填槽位——fill 须覆盖全部 required 槽位，否则必填前置拦截（零请求）导致提交链用例假红。
 - **文件清单（预估）**：迁移 V4；后端 order 包（domain / infrastructure / application / interfaces）≈ 12~16 文件；`ContractInitiationService` / `ContractOrderSyncService` / `ContractStatusReader`；网关 yml + 路由测试；前端 3 视图 + 3 spec + `api/order.ts` + `constants/order.ts` + `order.spec.ts` + 路由 / 布局 / 守卫计数更新；C-7.1 剧本；任务卡 / lofi / hifi / 原型 / 台账 / 日志。
 - **体量**：预估 2200~3000 行；超 400 行按 D1 登记豁免。
