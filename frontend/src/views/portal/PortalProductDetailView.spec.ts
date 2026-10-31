@@ -174,14 +174,17 @@ describe('元数据与定价（T6 / B2-4）', () => {
     expect(wrapper.find('.product-name').exists()).toBe(false)
   })
 
-  it('非法深链 id：不发起详情 / 收藏 / 订阅请求，展示同形不可达提示', async () => {
-    const { wrapper } = await mountPage('/portal/products/abc')
-    expect(mockedDetail).not.toHaveBeenCalled()
-    expect(mockedFavorites).not.toHaveBeenCalled()
-    expect(mockedSubscriptions).not.toHaveBeenCalled()
-    expect(wrapper.text()).toContain(PRODUCT_NOT_ACCESSIBLE_TIP)
-    expect(wrapper.find('.product-name').exists()).toBe(false)
-  })
+  it.each(['abc', '0', '-1'])(
+    '非法深链 id（%s）：不发起详情 / 收藏 / 订阅请求，展示同形不可达提示',
+    async (rawId) => {
+      const { wrapper } = await mountPage(`/portal/products/${rawId}`)
+      expect(mockedDetail).not.toHaveBeenCalled()
+      expect(mockedFavorites).not.toHaveBeenCalled()
+      expect(mockedSubscriptions).not.toHaveBeenCalled()
+      expect(wrapper.text()).toContain(PRODUCT_NOT_ACCESSIBLE_TIP)
+      expect(wrapper.find('.product-name').exists()).toBe(false)
+    },
+  )
 })
 
 describe('订购禁用占位（T6 / Q3-A）', () => {
