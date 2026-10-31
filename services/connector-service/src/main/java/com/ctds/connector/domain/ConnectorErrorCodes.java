@@ -48,6 +48,8 @@ public final class ConnectorErrorCodes {
     public static final String SUBJECT_UNAVAILABLE_MESSAGE = "主体服务暂不可用，请稍后重试";
     public static final String DID_UNAVAILABLE_MESSAGE = "DID 服务暂不可用，请稍后重试";
     public static final String JOB_IN_PROGRESS_MESSAGE = "存在进行中的交付作业，请先完结或终止后再注销";
+    /** 作业凭证无效（WBS-3.6.8 W6 / DB-89：占用记录缺失或已释放；凭证不可伪造）。 */
+    public static final String OCCUPANCY_CREDENTIAL_MESSAGE = "作业未登记或已释放";
     public static final String VERSION_UNCHANGED_MESSAGE = "目标版本与当前版本相同，无需升级";
     public static final String SOURCE_ENDPOINT_NOT_ALLOWED_MESSAGE = "源地址不被允许（解析到受限网络或访问形态不支持）";
     public static final String SOURCE_ADAPTER_UNSUPPORTED_MESSAGE = "该源类型的适配承载尚未开放";

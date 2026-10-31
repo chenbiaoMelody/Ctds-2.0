@@ -132,8 +132,11 @@ public class JdbcConnectorRepository implements ConnectorRepository {
 
     @Override
     public int cancel(final String connectorNo, final LocalDateTime now) {
+        // WBS-3.6.8 W5 / DB-75：状态变更原子谓词——并发窗口内出现 OCCUPY 在途占用时 0 行（E12）
         return jdbc.sql("UPDATE connector_registration SET status = 'CANCELLED', cancelled_at = :now "
-                        + "WHERE connector_no = :no AND status IN ('PENDING_REVIEW', 'REGISTERED')")
+                        + "WHERE connector_no = :no AND status IN ('PENDING_REVIEW', 'REGISTERED') "
+                        + "AND NOT EXISTS (SELECT 1 FROM connector_job_occupancy o "
+                        + "WHERE o.connector_no = :no AND o.status = 'OCCUPY')")
                 .param("now", now).param("no", connectorNo).update();
     }
 

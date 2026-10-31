@@ -38,15 +38,50 @@ ctds:
       secret: ${CTDS_GATEWAY_JWT_SECRET:}
       issuer: ${CTDS_GATEWAY_JWT_ISSUER:}
   gateway:
-    # 静态路由（hifi §1.6）：V1.0 仅暴露交付面探针路由（被交付资源以既有只读端点承载，
-    # 真实数据源接入归连接器 3.6.x）；不引入服务发现（登记演进项）。
+    # 静态路由（hifi §1.6 + WBS-3.6.8 W1 扩路由）：交付面探针路由（白名单内，进判定链）+
+    # 连接器六门面普通代理路由（白名单外，不进判定链 / 零计量；判定语义 = 各下游服务既有
+    # @RequirePermission + 服务身份头，ADR-026 §4-1）。不引入服务发现（登记演进项）。
     # 探针路径按实测登记（hifi §5-3 / DB-47 缺陷 A）：catalog 真实读面 = /api/v1/data-products/**，
     # 旧值 /api/v1/catalog/products/** 在 catalog 不存在（放行后取货腿恒 404）。
+    # 六门面路由归属按前置检查③实测（SDK 9 路径前缀；datasets/mine 归 catalog 8084）。
     routes:
       - id: delivery-catalog-products
         uri: ${CTDS_GATEWAY_CATALOG_BASEURL:http://127.0.0.1:8084}
         predicates:
           - Path=/api/v1/data-products/**
+        filters: []
+        # 交付面标记（WBS-3.6.8 W1 前置实测勘误）：交付链过滤器族（白名单 fail-closed /
+        # 合约头强制 / 判定 / 计量）仅约束带此标记的路由；六门面普通代理路由不带标记
+        delivery-face: true
+      - id: connector-identity-subject
+        uri: ${CTDS_GATEWAY_SUBJECT_BASEURL:http://127.0.0.1:8080}
+        predicates:
+          - Path=/api/v1/subject/**
+        filters: []
+      - id: connector-identity-did
+        uri: ${CTDS_GATEWAY_DID_BASEURL:http://127.0.0.1:8082}
+        predicates:
+          - Path=/api/v1/did/**
+        filters: []
+      - id: connector-resource-datasets
+        uri: ${CTDS_GATEWAY_CATALOG_BASEURL:http://127.0.0.1:8084}
+        predicates:
+          - Path=/api/v1/datasets/**
+        filters: []
+      - id: connector-resource-spaces
+        uri: ${CTDS_GATEWAY_SPACE_BASEURL:http://127.0.0.1:8083}
+        predicates:
+          - Path=/api/v1/data-spaces/**
+        filters: []
+      - id: connector-contract
+        uri: ${CTDS_GATEWAY_CONTRACT_BASEURL:http://127.0.0.1:8085}
+        predicates:
+          - Path=/api/v1/contracts/**
+        filters: []
+      - id: connector-delivery
+        uri: ${CTDS_GATEWAY_DELIVERY_BASEURL:http://127.0.0.1:8087}
+        predicates:
+          - Path=/api/v1/deliveries/**
         filters: []
     delivery:
       # 交付面白名单（routeId 显式列举；默认空 = 无交付面可用，fail-closed，hifi §5-1）

@@ -37,10 +37,11 @@ public final class ConnectorSourceViews {
             @Size(max = 1024) @JsonProperty(access = JsonProperty.Access.WRITE_ONLY) String credential) {
     }
 
-    /** 内部读取请求（判定放行后由交付链调用）。 */
+    /** 内部读取请求（判定放行后由交付链调用；WBS-3.6.8 W6 / DB-89：必填作业凭证 jobRef）。 */
     public record ReadRequest(
             @NotBlank @Size(max = 64) String contractNo,
-            @Size(max = 128) String purpose) {
+            @Size(max = 128) String purpose,
+            @NotBlank @Size(max = 64) String jobRef) {
     }
 
     /** 最近一次自检结论摘要。 */

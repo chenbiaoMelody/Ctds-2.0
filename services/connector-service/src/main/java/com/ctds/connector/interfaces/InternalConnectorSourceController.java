@@ -46,7 +46,7 @@ public class InternalConnectorSourceController {
         requireConnectorNo(connectorNo);
         requireSourceNo(sourceNo);
         final ReadOutcome outcome = readService.read(AuthContext.subject(), connectorNo, sourceNo,
-                request.contractNo(), request.purpose());
+                request.jobRef(), request.contractNo(), request.purpose());
         return ApiResult.ok(SourceReadView.of(sourceNo, connectorNo, request.contractNo(),
                 outcome.result().success(), outcome.result().summary(), outcome.readAt()));
     }

@@ -88,11 +88,12 @@ class ConnectorSourceHostGuardApiTest extends ConnectorTestSupport {
 
     private void read(final String path) throws Exception {
         final String[] parts = path.split("/");
+        occupy(parts[0], "job-1");
         mockMvc.perform(post(INTERNAL + parts[0] + "/sources/" + parts[1] + "/reads")
                         .contentType(MediaType.APPLICATION_JSON)
                         .header("X-Ctds-Subject", "delivery-service")
                         .header("X-Ctds-Roles", INTERNAL_ROLE)
-                        .content(readBody(CONTRACT_NO, "统计分析")))
+                        .content(readBodyWithJobRef(CONTRACT_NO, "统计分析", "job-1")))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("1010C0010"))
                 .andExpect(jsonPath("$.message").value("源地址不被允许（解析到受限网络或访问形态不支持）"));

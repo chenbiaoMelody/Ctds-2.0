@@ -5,12 +5,15 @@ import com.ctds.connector.audit.ConnectorAuditService;
 import com.ctds.connector.domain.ConnectorAdapterProbeException;
 import com.ctds.connector.domain.ConnectorBizException;
 import com.ctds.connector.domain.ConnectorErrorCodes;
+import com.ctds.connector.domain.ConnectorJobOccupancy;
+import com.ctds.connector.domain.ConnectorOccupancyRepository;
 import com.ctds.connector.domain.ConnectorRegistration;
 import com.ctds.connector.domain.ConnectorRepository;
 import com.ctds.connector.domain.ConnectorSource;
 import com.ctds.connector.domain.ConnectorSourceRepository;
 import com.ctds.connector.domain.ConnectorStatus;
 import com.ctds.connector.domain.ConnectorUnavailableException;
+import com.ctds.connector.domain.OccupancyStatus;
 import com.ctds.connector.domain.SourceAdapterCatalog;
 import com.ctds.connector.domain.SourceEndpointPolicy;
 import com.ctds.connector.domain.SourceHostGuard;
@@ -42,12 +45,14 @@ public class ConnectorSourceReadService {
     private static final Logger LOG = LoggerFactory.getLogger(ConnectorSourceReadService.class);
     private static final Pattern CONTRACT_NO = Pattern.compile("^[A-Za-z0-9._-]{1,64}$");
     private static final int PURPOSE_MAX = 128;
+    private static final int JOB_REF_MAX = 64;
     private static final int DETAIL_MAX = 240;
     private static final String READ_FAILED = "READ_FAILED";
     private static final String ADAPTER_ERROR = "ADAPTER_ERROR";
 
     private final ConnectorSourceRepository sourceRepository;
     private final ConnectorRepository connectorRepository;
+    private final ConnectorOccupancyRepository occupancyRepository;
     private final SourceAdapterCatalog adapterCatalog;
     private final ConnectorAuditService audit;
     private final CredentialResolver credentialResolver;
@@ -55,13 +60,16 @@ public class ConnectorSourceReadService {
     private final boolean allowPrivateEndpoint;
 
     public ConnectorSourceReadService(final ConnectorSourceRepository sourceRepository,
-            final ConnectorRepository connectorRepository, final SourceAdapterCatalog adapterCatalog,
+            final ConnectorRepository connectorRepository,
+            final ConnectorOccupancyRepository occupancyRepository,
+            final SourceAdapterCatalog adapterCatalog,
             final ConnectorAuditService audit, final CredentialResolver credentialResolver,
             final SourceHostGuard hostGuard,
             @Value("${ctds.connector.source.allow-private-endpoint:false}")
             final boolean allowPrivateEndpoint) {
         this.sourceRepository = sourceRepository;
         this.connectorRepository = connectorRepository;
+        this.occupancyRepository = occupancyRepository;
         this.adapterCatalog = adapterCatalog;
         this.audit = audit;
         this.credentialResolver = credentialResolver;
@@ -69,11 +77,14 @@ public class ConnectorSourceReadService {
         this.allowPrivateEndpoint = allowPrivateEndpoint;
     }
 
-    /** 读取源数据（内部面；返回摘要与读取时间，不含数据本体）。 */
+    /** 读取源数据（内部面；返回摘要与读取时间，不含数据本体）。
+     * WBS-3.6.8 W6 / DB-89：jobRef 必填且须在册 OCCUPY 占用（判定放行凭证，占用仅
+     * connector-internal 服务身份可写 → 凭证不可伪造）；核验顺序 = 参数 → 凭证 → 本地四校验。 */
     public ReadOutcome read(final String operatorNo, final String connectorNo, final String sourceNo,
-            final String contractNo, final String purpose) {
+            final String jobRef, final String contractNo, final String purpose) {
         final String normalizedContractNo = normalizeContractNo(contractNo);
         final String normalizedPurpose = normalizePurpose(purpose);
+        requireOccupancyCredential(connectorNo, jobRef);
         final ConnectorRegistration connector = connectorRepository.findByConnectorNo(connectorNo)
                 .orElseThrow(ConnectorSourceReadService::notFound);
         if (connector.status() != ConnectorStatus.REGISTERED) {
@@ -143,6 +154,23 @@ public class ConnectorSourceReadService {
             throw paramInvalid();
         }
         return trimmed;
+    }
+
+    /** 占用凭证核验（DB-89）：jobRef 非空 ≤64 且存在 OCCUPY 在册占用，否则拒绝（适配器零调用）。 */
+    private void requireOccupancyCredential(final String connectorNo, final String jobRef) {
+        if (jobRef == null || jobRef.isBlank() || jobRef.length() > JOB_REF_MAX) {
+            throw paramInvalid();
+        }
+        final ConnectorJobOccupancy occupancy = occupancyRepository.find(connectorNo, jobRef)
+                .orElseThrow(ConnectorSourceReadService::jobCredentialInvalid);
+        if (occupancy.status() != OccupancyStatus.OCCUPY) {
+            throw jobCredentialInvalid();
+        }
+    }
+
+    private static ConnectorBizException jobCredentialInvalid() {
+        return new ConnectorBizException(ConnectorErrorCodes.STATE_NOT_ALLOWED,
+                ConnectorErrorCodes.OCCUPANCY_CREDENTIAL_MESSAGE);
     }
 
     private static Optional<SourceType> parseType(final String value) {

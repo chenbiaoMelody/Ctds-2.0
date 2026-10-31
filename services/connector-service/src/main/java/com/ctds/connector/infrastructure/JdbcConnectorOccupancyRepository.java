@@ -24,9 +24,12 @@ public class JdbcConnectorOccupancyRepository implements ConnectorOccupancyRepos
     }
 
     @Override
-    public void occupy(final String connectorNo, final String jobRef, final LocalDateTime now) {
-        jdbc.sql("INSERT INTO connector_job_occupancy (connector_no, job_ref, status, occupied_at) "
-                        + "VALUES (:no, :ref, 'OCCUPY', :now) "
+    public int occupy(final String connectorNo, final String jobRef, final LocalDateTime now) {
+        // WBS-3.6.8 W5 / DB-75：INSERT…SELECT 谓词原子化（注册态检查与落行同语句，消除服务层
+        // 读后写 TOCTOU 窗口；源 0 行 = 非 REGISTERED，0 落行）；同键幂等复位沿 upsert 语义
+        return jdbc.sql("INSERT INTO connector_job_occupancy (connector_no, job_ref, status, occupied_at) "
+                        + "SELECT :no, :ref, 'OCCUPY', :now FROM connector_registration "
+                        + "WHERE connector_no = :no AND status = 'REGISTERED' "
                         + "ON DUPLICATE KEY UPDATE status = 'OCCUPY', occupied_at = :now, released_at = NULL")
                 .param("no", connectorNo).param("ref", jobRef).param("now", now).update();
     }

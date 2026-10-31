@@ -9,8 +9,12 @@ import java.util.Optional;
  */
 public interface ConnectorOccupancyRepository {
 
-    /** 登记在途占用（同 (connectorNo, jobRef) 幂等：复位为 OCCUPY 并刷新登记时间）。 */
-    void occupy(String connectorNo, String jobRef, LocalDateTime now);
+    /**
+     * 登记在途占用（同 (connectorNo, jobRef) 幂等：复位为 OCCUPY 并刷新登记时间）。
+     * WBS-3.6.8 W5 / DB-75：SQL 谓词原子化——仅 {@code connector_registration.status='REGISTERED'}
+     * 时落行，返回受影响行数（0 = 连接器不存在 / 非 REGISTERED；服务层以 find 幂等重放复核）。
+     */
+    int occupy(String connectorNo, String jobRef, LocalDateTime now);
 
     /** 释放（返回受影响行数；仅 OCCUPY → RELEASED 生效）。 */
     int release(String connectorNo, String jobRef, LocalDateTime now);

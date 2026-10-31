@@ -62,6 +62,8 @@ class ConnectorSourceReadApiTest extends ConnectorTestSupport {
 
     private String internalRead(final String connectorNo, final String sourceNo, final String body)
             throws Exception {
+        // W6 / DB-89：读取须持占用凭证——先以服务身份登记在途（同键 jobRef 随请求体）
+        occupy(connectorNo, "job-1");
         return mockMvc.perform(post(INTERNAL_READ + connectorNo + "/sources/" + sourceNo + "/reads")
                         .contentType(MediaType.APPLICATION_JSON)
                         .header("X-Ctds-Subject", "delivery-service")
@@ -75,11 +77,12 @@ class ConnectorSourceReadApiTest extends ConnectorTestSupport {
         final String connectorNo = registerConnector(OWNER, "read-ok");
         final String sourceNo = registerSource(OWNER, connectorNo, "GOV_EXCHANGE",
                 "mock://gov-exchange/ok", SOURCE_SECRET);
+        occupy(connectorNo, "job-1");
         mockMvc.perform(post(INTERNAL_READ + connectorNo + "/sources/" + sourceNo + "/reads")
                         .contentType(MediaType.APPLICATION_JSON)
                         .header("X-Ctds-Subject", "delivery-service")
                         .header("X-Ctds-Roles", INTERNAL_ROLE)
-                        .content(readBody(CONTRACT_NO, "统计分析")))
+                        .content(readBodyWithJobRef(CONTRACT_NO, "统计分析", "job-1")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value("0"))
                 .andExpect(jsonPath("$.data.success").value(true))
@@ -106,21 +109,24 @@ class ConnectorSourceReadApiTest extends ConnectorTestSupport {
         final String connectorNo = registerConnector(OWNER, "read-summary");
         final String sourceNo = registerSource(OWNER, connectorNo, "GOV_EXCHANGE",
                 "mock://gov-exchange/ok", SOURCE_SECRET);
-        final String body = internalRead(connectorNo, sourceNo, readBody(CONTRACT_NO, "统计分析"));
+        final String body = internalRead(connectorNo, sourceNo,
+                readBodyWithJobRef(CONTRACT_NO, "统计分析", "job-1"));
         assertThat(body).doesNotContain(SOURCE_SECRET);
         assertThat(body).doesNotContain("payload").doesNotContain("row-data");
     }
 
     @Test
     void readWorksWithoutPriorCheck() throws Exception {
+        // W6 / DB-89 同步：读取无需 source.check（自检不等于授权），但须持占用凭证（先 occupy）
         final String connectorNo = registerConnector(OWNER, "read-nocheck");
         final String sourceNo = registerSource(OWNER, connectorNo, "GOV_EXCHANGE",
                 "mock://gov-exchange/ok", SOURCE_SECRET);
+        occupy(connectorNo, "job-1");
         mockMvc.perform(post(INTERNAL_READ + connectorNo + "/sources/" + sourceNo + "/reads")
                         .contentType(MediaType.APPLICATION_JSON)
                         .header("X-Ctds-Subject", "delivery-service")
                         .header("X-Ctds-Roles", INTERNAL_ROLE)
-                        .content(readBody(CONTRACT_NO, "统计分析")))
+                        .content(readBodyWithJobRef(CONTRACT_NO, "统计分析", "job-1")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.success").value(true));
         final Integer checks = jdbc.queryForObject(
@@ -132,11 +138,12 @@ class ConnectorSourceReadApiTest extends ConnectorTestSupport {
     @Test
     void unregisteredSourceRejected() throws Exception {
         final String connectorNo = registerConnector(OWNER, "read-unregistered");
+        occupy(connectorNo, "job-1");
         mockMvc.perform(post(INTERNAL_READ + connectorNo + "/sources/SR999999/reads")
                         .contentType(MediaType.APPLICATION_JSON)
                         .header("X-Ctds-Subject", "delivery-service")
                         .header("X-Ctds-Roles", INTERNAL_ROLE)
-                        .content(readBody(CONTRACT_NO, "统计分析")))
+                        .content(readBodyWithJobRef(CONTRACT_NO, "统计分析", "job-1")))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("1010C0003"))
                 .andExpect(jsonPath("$.message").value("未找到该记录或无权访问"));
@@ -148,14 +155,15 @@ class ConnectorSourceReadApiTest extends ConnectorTestSupport {
         final String sourceNo = registerSource(OWNER, connectorNo, "GOV_EXCHANGE",
                 "mock://gov-exchange/ok", SOURCE_SECRET);
         cancel(OWNER, APPLICANT_ROLE, connectorNo);
+        // W6 凭证核验先于注册态检查（hifi 1-C 顺序）：已注销且无占用 → 凭证拒绝（同码 1010C0004）
         mockMvc.perform(post(INTERNAL_READ + connectorNo + "/sources/" + sourceNo + "/reads")
                         .contentType(MediaType.APPLICATION_JSON)
                         .header("X-Ctds-Subject", "delivery-service")
                         .header("X-Ctds-Roles", INTERNAL_ROLE)
-                        .content(readBody(CONTRACT_NO, "统计分析")))
+                        .content(readBodyWithJobRef(CONTRACT_NO, "统计分析", "job-1")))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("1010C0004"))
-                .andExpect(jsonPath("$.message").value("当前状态不允许该操作"));
+                .andExpect(jsonPath("$.message").value("作业未登记或已释放"));
         mockMvc.perform(get(CONNECTORS + connectorNo + "/sources/" + sourceNo)
                         .header("X-Ctds-Subject", OWNER)
                         .header("X-Ctds-Roles", APPLICANT_ROLE))
@@ -196,12 +204,13 @@ class ConnectorSourceReadApiTest extends ConnectorTestSupport {
         final String connectorNo = registerConnector(OWNER, "read-db");
         final String sourceNo = registerSource(OWNER, connectorNo, "DATABASE",
                 databaseUrl(), databaseCredential());
+        occupy(connectorNo, "job-1");
 
         mockMvc.perform(post(INTERNAL_READ + connectorNo + "/sources/" + sourceNo + "/reads")
                         .contentType(MediaType.APPLICATION_JSON)
                         .header("X-Ctds-Subject", "delivery-service")
                         .header("X-Ctds-Roles", INTERNAL_ROLE)
-                        .content(readBody(CONTRACT_NO, "统计分析")))
+                        .content(readBodyWithJobRef(CONTRACT_NO, "统计分析", "job-1")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.success").value(true))
                 .andExpect(jsonPath("$.data.summary",
@@ -219,12 +228,13 @@ class ConnectorSourceReadApiTest extends ConnectorTestSupport {
         final String connectorNo = registerConnector(OWNER, "read-oss");
         final String sourceNo = registerSource(OWNER, connectorNo, "OBJECT_STORAGE",
                 "oss://dataset-bucket/object-1", sourceBaseUrl + "/object?X-Amz-Signature=test");
+        occupy(connectorNo, "job-1");
 
         mockMvc.perform(post(INTERNAL_READ + connectorNo + "/sources/" + sourceNo + "/reads")
                         .contentType(MediaType.APPLICATION_JSON)
                         .header("X-Ctds-Subject", "delivery-service")
                         .header("X-Ctds-Roles", INTERNAL_ROLE)
-                        .content(readBody(CONTRACT_NO, "统计分析")))
+                        .content(readBodyWithJobRef(CONTRACT_NO, "统计分析", "job-1")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.success").value(true))
                 .andExpect(jsonPath("$.data.summary")
@@ -238,12 +248,13 @@ class ConnectorSourceReadApiTest extends ConnectorTestSupport {
         final String sourceNo = registerSource(OWNER, connectorNo, "DATABASE",
                 databaseUrl() + "?allowPublicKeyRetrieval=true&useSSL=false",
                 "w366_reader:w366-reader-pass");
+        occupy(connectorNo, "job-1");
 
         mockMvc.perform(post(INTERNAL_READ + connectorNo + "/sources/" + sourceNo + "/reads")
                         .contentType(MediaType.APPLICATION_JSON)
                         .header("X-Ctds-Subject", "delivery-service")
                         .header("X-Ctds-Roles", INTERNAL_ROLE)
-                        .content(readBody(CONTRACT_NO, "统计分析")))
+                        .content(readBodyWithJobRef(CONTRACT_NO, "统计分析", "job-1")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.success").value(true))
                 .andExpect(jsonPath("$.data.summary")
@@ -270,7 +281,8 @@ class ConnectorSourceReadApiTest extends ConnectorTestSupport {
         final String sourceNo = registerSource(OWNER, connectorNo, "API_GATEWAY",
                 sourceBaseUrl + "/api", "Bearer test-token");
 
-        final String body = internalRead(connectorNo, sourceNo, readBody(CONTRACT_NO, "统计分析"));
+        final String body = internalRead(connectorNo, sourceNo,
+                readBodyWithJobRef(CONTRACT_NO, "统计分析", "job-1"));
 
         assertThat(body).contains("status=200;bytes=10;contentType=application/json")
                 .doesNotContain("0123456789")

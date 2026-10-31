@@ -17,7 +17,8 @@ class DeliveryErrorCodesTest {
             DeliveryErrorCodes.FILE_TOO_LARGE,
             DeliveryErrorCodes.PACKAGE_NOT_ALLOWED,
             DeliveryErrorCodes.DELIVERY_DEPENDENCY_UNAVAILABLE,
-            DeliveryErrorCodes.PACKAGE_OPERATION_FAILED);
+            DeliveryErrorCodes.PACKAGE_OPERATION_FAILED,
+            DeliveryErrorCodes.FETCH_FAILED);
 
     @Test
     void codesFollowNineDigitFormatAndDeliverySegment() {
@@ -38,7 +39,8 @@ class DeliveryErrorCodesTest {
                 DeliveryErrorCodes.FILE_TOO_LARGE_MESSAGE,
                 DeliveryErrorCodes.PACKAGE_NOT_ALLOWED_MESSAGE,
                 DeliveryErrorCodes.DELIVERY_DEPENDENCY_UNAVAILABLE_MESSAGE,
-                DeliveryErrorCodes.PACKAGE_OPERATION_FAILED_MESSAGE))
+                DeliveryErrorCodes.PACKAGE_OPERATION_FAILED_MESSAGE,
+                DeliveryErrorCodes.FETCH_FAILED_MESSAGE))
                 .allSatisfy(message -> assertThat(message).isNotBlank());
         // 与网关 1009C0003 同值同文（hifi §7.2 一致性锚）
         assertThat(DeliveryErrorCodes.REQUESTER_NOT_ALLOWED_MESSAGE)

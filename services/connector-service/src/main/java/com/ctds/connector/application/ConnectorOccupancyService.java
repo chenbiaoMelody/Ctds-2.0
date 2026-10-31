@@ -12,6 +12,7 @@ import com.ctds.connector.domain.ConnectorStatus;
 import com.ctds.connector.domain.OccupancyStatus;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -33,12 +34,21 @@ public class ConnectorOccupancyService {
         this.audit = audit;
     }
 
-    /** 登记在途作业（仅已注册态；同 jobRef 幂等）。 */
+    /** 登记在途作业（仅已注册态；同 jobRef 幂等）。WBS-3.6.8 W5：原子性以 SQL 谓词为准，
+     * 服务层前置检查保留为快路径（可读拒绝理由），0 落行时以幂等重放复核区分竞态。 */
     @Transactional
     public ConnectorJobOccupancy occupy(final String operatorNo, final String connectorNo,
             final String jobRef) {
         final ConnectorRegistration registration = requireRegistered(connectorNo);
-        occupancyRepository.occupy(connectorNo, jobRef, LocalDateTime.now());
+        final int rows = occupancyRepository.occupy(connectorNo, jobRef, LocalDateTime.now());
+        if (rows == 0) {
+            // 谓词 0 行：并发窗口内注册态变更，或同键幂等重放（值未变返回 0）——以在册 OCCUPY 行复核
+            final Optional<ConnectorJobOccupancy> replay = occupancyRepository.find(connectorNo, jobRef);
+            if (replay.isEmpty() || replay.get().status() != OccupancyStatus.OCCUPY) {
+                throw new ConnectorBizException(ConnectorErrorCodes.STATE_NOT_ALLOWED,
+                        ConnectorErrorCodes.STATE_NOT_ALLOWED_MESSAGE);
+            }
+        }
         audit.success(ConnectorAuditActions.OCCUPANCY_REGISTER, registration.applicationNo(), connectorNo,
                 operatorNo, "jobRef=" + jobRef);
         return occupancyRepository.find(connectorNo, jobRef)

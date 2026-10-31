@@ -2,11 +2,14 @@ package com.ctds.gateway.policy;
 
 import com.ctds.gateway.config.GatewayFilterOrders;
 import com.ctds.gateway.delivery.DeliveryAttributes;
+import com.ctds.gateway.delivery.DeliveryWhitelistGlobalFilter;
 import com.ctds.gateway.error.GatewayErrorCodes;
 import com.ctds.gateway.error.GatewayErrorWriter;
 import com.ctds.gateway.identity.IdentityHeaderResolver;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
+import org.springframework.cloud.gateway.route.Route;
+import org.springframework.cloud.gateway.support.ServerWebExchangeUtils;
 import org.springframework.core.Ordered;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
@@ -44,6 +47,12 @@ public class PolicyExecutionGlobalFilter implements GlobalFilter, Ordered {
 
     @Override
     public Mono<Void> filter(final ServerWebExchange exchange, final GatewayFilterChain chain) {
+        final Route route = exchange.getAttribute(ServerWebExchangeUtils.GATEWAY_ROUTE_ATTR);
+        // WBS-3.6.8 W1：判定仅约束交付面路由（语义零改动）；普通代理路由不进入判定，
+        // 防御分支（缺 CONTRACT_NO）只对交付面路由生效
+        if (route != null && !DeliveryWhitelistGlobalFilter.isDeliveryFace(route)) {
+            return chain.filter(exchange);
+        }
         final String contractNo = exchange.getAttribute(DeliveryAttributes.CONTRACT_NO);
         if (contractNo == null) {
             // 防御分支：凭据过滤器恒先执行；缺属性即 fail-closed（绝不静默放行）

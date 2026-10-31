@@ -24,6 +24,8 @@ public class DeliveryProperties {
 
     private final Catalog catalog = new Catalog();
 
+    private final Connector connector = new Connector();
+
     private final File file = new File();
 
     /** 文件源清单（fileId 精确键 → productId + 相对路径 + 展示名）。 */
@@ -51,6 +53,10 @@ public class DeliveryProperties {
 
     public Catalog getCatalog() {
         return catalog;
+    }
+
+    public Connector getConnector() {
+        return connector;
     }
 
     public File getFile() {
@@ -92,6 +98,31 @@ public class DeliveryProperties {
 
     /** 目录内部产品只读衔接。 */
     public static class Catalog {
+
+        private String baseUrl;
+
+        @DurationUnit(ChronoUnit.SECONDS)
+        private Duration timeout = Duration.ofSeconds(3);
+
+        public String getBaseUrl() {
+            return baseUrl;
+        }
+
+        public void setBaseUrl(final String value) {
+            this.baseUrl = value;
+        }
+
+        public Duration getTimeout() {
+            return timeout;
+        }
+
+        public void setTimeout(final Duration value) {
+            this.timeout = value;
+        }
+    }
+
+    /** 连接器内部面衔接（WBS-3.6.8 W3/W4；服务身份头见 ConnectorInternalClient）。 */
+    public static class Connector {
 
         private String baseUrl;
 

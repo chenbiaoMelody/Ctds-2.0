@@ -11,7 +11,7 @@ import org.junit.jupiter.api.Test;
 class ConnectorInternalApiTest extends ConnectorTestSupport {
 
     private static final String OWNER = "S20261026000051";
-    private static final String INTERNAL = "/api/v1/connectors/internal/connectors/";
+    private static final String INTERNAL = "/api/v1/connectors/internal/";
 
     @Test
     void internalReadableByServiceIdentity() throws Exception {
@@ -73,5 +73,17 @@ class ConnectorInternalApiTest extends ConnectorTestSupport {
                         .header("X-Ctds-Roles", INTERNAL_ROLE))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("1010C0003"));
+    }
+
+    /** W9 / DB-68 路径统一：全仓内部面惯例 {@code /api/v1/{域}/internal/{资源}}，消除重复域段。 */
+    @Test
+    void internalReadableOnUnifiedPath() throws Exception {
+        final String connectorNo = registerConnector(OWNER, "conn-unified");
+        mockMvc.perform(get(INTERNAL + connectorNo)
+                        .header("X-Ctds-Subject", "connector-service")
+                        .header("X-Ctds-Roles", INTERNAL_ROLE))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.connectorNo").value(connectorNo))
+                .andExpect(jsonPath("$.data.subjectNo").value(OWNER));
     }
 }

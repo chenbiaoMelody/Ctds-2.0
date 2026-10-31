@@ -36,6 +36,7 @@ public class DeliveryExceptionHandler {
             DeliveryErrorCodes.PACKAGE_NOT_ALLOWED.value(),
             DeliveryErrorCodes.DELIVERY_DEPENDENCY_UNAVAILABLE.value(),
             DeliveryErrorCodes.PACKAGE_OPERATION_FAILED.value(),
+            DeliveryErrorCodes.FETCH_FAILED.value(),
             SandboxErrorCodes.SANDBOX_NOT_VISIBLE.value(),
             SandboxErrorCodes.SANDBOX_STATE_CONFLICT.value(),
             SandboxErrorCodes.SANDBOX_DATA_DENIED.value(),

@@ -24,11 +24,13 @@ class ConnectorSourceNoTouchTest extends ConnectorTestSupport {
 
     private void readExpecting(final String connectorNo, final String sourceNo, final int httpStatus,
             final String code) throws Exception {
+        // W6 / DB-89 同步：凭证前置（先 occupy），拒绝仍由前置四校验 / 主机守卫承载，适配器零触达
+        occupy(connectorNo, "job-1");
         mockMvc.perform(post(INTERNAL + connectorNo + "/sources/" + sourceNo + "/reads")
                         .contentType(MediaType.APPLICATION_JSON)
                         .header("X-Ctds-Subject", "delivery-service")
                         .header("X-Ctds-Roles", INTERNAL_ROLE)
-                        .content(readBody(CONTRACT_NO, "统计分析")))
+                        .content(readBodyWithJobRef(CONTRACT_NO, "统计分析", "job-1")))
                 .andExpect(status().is(httpStatus))
                 .andExpect(jsonPath("$.code").value(code));
         assertThat(govAdapter().mockExchangeCount()).isZero();
@@ -55,7 +57,15 @@ class ConnectorSourceNoTouchTest extends ConnectorTestSupport {
         final String sourceNo = registerSource(OWNER, connectorNo, "GOV_EXCHANGE",
                 "mock://gov-exchange/ok", SOURCE_SECRET);
         cancel(OWNER, APPLICANT_ROLE, connectorNo);
-        readExpecting(connectorNo, sourceNo, 400, "1010C0004");
+        // W5/W6：已注销连接器不可占用（谓词拒绝），凭证核验先于注册态检查 → 凭证拒绝同码 1010C0004
+        mockMvc.perform(post(INTERNAL + connectorNo + "/sources/" + sourceNo + "/reads")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-Ctds-Subject", "delivery-service")
+                        .header("X-Ctds-Roles", INTERNAL_ROLE)
+                        .content(readBodyWithJobRef(CONTRACT_NO, "统计分析", "job-1")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("1010C0004"));
+        assertThat(govAdapter().mockExchangeCount()).isZero();
     }
 
     @Test
@@ -77,11 +87,12 @@ class ConnectorSourceNoTouchTest extends ConnectorTestSupport {
         final String connectorNo = registerConnector(OWNER, "touch-ok");
         final String sourceNo = registerSource(OWNER, connectorNo, "GOV_EXCHANGE",
                 "mock://gov-exchange/ok", SOURCE_SECRET);
+        occupy(connectorNo, "job-1");
         mockMvc.perform(post(INTERNAL + connectorNo + "/sources/" + sourceNo + "/reads")
                         .contentType(MediaType.APPLICATION_JSON)
                         .header("X-Ctds-Subject", "delivery-service")
                         .header("X-Ctds-Roles", INTERNAL_ROLE)
-                        .content(readBody(CONTRACT_NO, "统计分析")))
+                        .content(readBodyWithJobRef(CONTRACT_NO, "统计分析", "job-1")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.success").value(true));
         assertThat(govAdapter().mockExchangeCount()).isEqualTo(1);

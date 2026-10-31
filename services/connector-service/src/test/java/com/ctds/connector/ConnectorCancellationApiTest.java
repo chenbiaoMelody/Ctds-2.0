@@ -103,7 +103,7 @@ class ConnectorCancellationApiTest extends ConnectorTestSupport {
                         .header("X-Ctds-Roles", APPLICANT_ROLE))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("1010C0003"));
-        mockMvc.perform(get(INTERNAL + "connectors/" + connectorNo)
+        mockMvc.perform(get(INTERNAL + connectorNo)
                         .header("X-Ctds-Subject", "gateway-service")
                         .header("X-Ctds-Roles", INTERNAL_ROLE))
                 .andExpect(status().isBadRequest())

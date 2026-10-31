@@ -61,6 +61,11 @@ public class ConnectorCancellationService {
         }
         final LocalDateTime now = LocalDateTime.now();
         if (repository.cancel(connectorNo, now) == 0) {
+            // WBS-3.6.8 W5：谓词 0 行 = 并发窗口内出现占用（E12）或状态已变更——复核给可读理由
+            if (occupancyRepository.countInProgress(connectorNo) > 0) {
+                throw new ConnectorBizException(ConnectorErrorCodes.JOB_IN_PROGRESS,
+                        ConnectorErrorCodes.JOB_IN_PROGRESS_MESSAGE);
+            }
             throw stateNotAllowed();
         }
         bindingRepository.release(connectorNo, now);
