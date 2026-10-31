@@ -9,6 +9,11 @@ import com.ctds.connector.sdk.model.ContractView;
 import com.ctds.connector.sdk.model.DatasetView;
 import com.ctds.connector.sdk.model.DeliveryView;
 import com.ctds.connector.sdk.model.PageResult;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.Set;
+import java.util.TreeSet;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
@@ -20,9 +25,12 @@ import org.springframework.web.client.RestClient;
  * 门面映射样本 = <b>走查环境真实响应 JSON 原文</b>（2026-10-31 经网关 8086 实测采集，
  * 探针证据 {@code build-output/w368-probe-chain*.log}）——mock 样本升级为真实样本，
  * 断言 SDK 收窄视图逐字段与真实响应一致（多余字段安全忽略 = 收窄契约显式化）。
- * 主代码零改动；14 方法路径核对由 {@link CapabilityRoutingTest} 承载。
+ * 主代码零改动；14 方法路径核对由 {@link CapabilityRoutingTest}（10 方法）与
+ * {@code DeliveryCapabilityTest} / {@code UsageControlFailClosedTest}（其余 4 方法）共同承载。
  */
 class RealResponseFieldComparisonTest {
+
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private static final String BASE = "http://platform.test";
 
@@ -77,6 +85,12 @@ class RealResponseFieldComparisonTest {
         assertThat(view.productName()).isEqualTo("普惠金融服务");
         assertThat(view.deliveryType()).as("CONNECTOR 形态经网关真实回传").isEqualTo("CONNECTOR");
         assertThat(view.result()).isEqualTo("SUCCESS");
+        // 样本字段集契约：真实样本 data 字段面 = 视图承载 6 字段 + 有意收窄忽略 8 字段（显式清单，
+        // 样本新增/删减字段须同步更新本断言——评审采纳：收窄视图对未断言字段漂移的预警）
+        assertThat(fieldNamesOf(parse(REAL_DELIVERY_JSON).path("data")))
+                .containsExactlyInAnyOrder("deliveryNo", "contractNo", "productId", "productName",
+                        "deliveryType", "requesterNo", "providerNo", "fileId", "fileName",
+                        "fileSize", "packageId", "checksum", "result", "createdAt");
         server.verify();
     }
 
@@ -93,6 +107,13 @@ class RealResponseFieldComparisonTest {
         assertThat(view.myRole()).isEqualTo("PROVIDER");
         assertThat(view.counterpartySubjectNo()).isEqualTo("S20260922000001");
         assertThat(view.productName()).isEqualTo("普惠金融服务");
+        // 样本字段集契约：分页信封 5 字段 + 行 8 字段 = 视图承载 5 + 有意忽略 3（行内无 productId 等视图字段）
+        assertThat(fieldNamesOf(parse(REAL_CONTRACT_JSON).path("data")))
+                .containsExactlyInAnyOrder("list", "total", "pageNum", "pageSize", "totalPages");
+        assertThat(fieldNamesOf(parse(REAL_CONTRACT_JSON)
+                .path("data").path("list").get(0)))
+                .containsExactlyInAnyOrder("contractNo", "productName", "counterpartySubjectNo",
+                        "myRole", "status", "currentClauseVersion", "effectiveAt", "updatedAt");
         server.verify();
     }
 
@@ -107,6 +128,31 @@ class RealResponseFieldComparisonTest {
         assertThat(view.id()).isEqualTo(15L);
         assertThat(view.name()).isEqualTo("联调资源-337-C");
         assertThat(view.type()).isEqualTo("DATASET");
+        assertThat(view.intro()).as("视图承载字段逐字段断言补齐").isEqualTo("联调探针资源C");
+        // 样本字段集契约：分页信封 4 字段（无 totalPages）+ 行 12 字段 = 视图承载 4 + 有意忽略 8
+        assertThat(fieldNamesOf(parse(REAL_DATASETS_JSON).path("data")))
+                .containsExactlyInAnyOrder("list", "total", "pageNum", "pageSize");
+        assertThat(fieldNamesOf(parse(REAL_DATASETS_JSON)
+                .path("data").path("list").get(0)))
+                .containsExactlyInAnyOrder("id", "dataNo", "spaceId", "name", "type", "intro",
+                        "tags", "declareCategory", "declareLevel", "declareImportant", "status",
+                        "createdAt");
         server.verify();
+    }
+
+    /** 内置真实样本解析（样本为编译期常量，解析失败 = 测试样本常量错误，快速失败）。 */
+    private static JsonNode parse(final String json) {
+        try {
+            return MAPPER.readTree(json);
+        } catch (final JsonProcessingException e) {
+            throw new IllegalStateException("内置真实样本非法（测试样本常量错误）", e);
+        }
+    }
+
+    /** 样本字段名收集（有序集）：供"样本字段面 = 显式清单"契约断言。 */
+    private static Set<String> fieldNamesOf(final JsonNode node) {
+        final Set<String> names = new TreeSet<>();
+        node.fieldNames().forEachRemaining(names::add);
+        return names;
     }
 }

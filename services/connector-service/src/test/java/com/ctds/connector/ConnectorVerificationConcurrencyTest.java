@@ -14,6 +14,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -88,6 +89,8 @@ class ConnectorVerificationConcurrencyTest extends ConnectorTestSupport {
             final CyclicBarrier barrier = new CyclicBarrier(2);
             final ExecutorService pool = Executors.newFixedThreadPool(2);
             try {
+                final AtomicReference<String> oneFault = new AtomicReference<>();
+                final AtomicReference<String> otherFault = new AtomicReference<>();
                 final Future<Boolean> one = pool.submit((Callable<Boolean>) () -> {
                     barrier.await(10, TimeUnit.SECONDS);
                     upgradeService.request(OWNER, connectorNo, "2.0." + raceRound, "INCOMPATIBLE");
@@ -98,11 +101,13 @@ class ConnectorVerificationConcurrencyTest extends ConnectorTestSupport {
                     upgradeService.request(OWNER, connectorNo, "3.0." + raceRound, "INCOMPATIBLE");
                     return true;
                 });
-                final boolean oneWon = await(one);
-                final boolean otherWon = await(other);
+                final boolean oneWon = await(one, oneFault);
+                final boolean otherWon = await(other, otherFault);
+                final String faultNote = oneFault.get() == null && otherFault.get() == null ? ""
+                        : "，异常=[" + oneFault.get() + "/" + otherFault.get() + "]";
                 assertThat(oneWon ^ otherWon)
                         .as("第 " + round + " 轮：两条不兼容升级恰一成功（"
-                                + oneWon + "/" + otherWon + "）")
+                                + oneWon + "/" + otherWon + "）" + faultNote)
                         .isTrue();
             } finally {
                 pool.shutdownNow();
@@ -136,10 +141,12 @@ class ConnectorVerificationConcurrencyTest extends ConnectorTestSupport {
         return null;
     }
 
-    private static boolean await(final Future<Boolean> future) {
+    /** await 失败显性化：业务拒绝（干净 false）与意外崩溃（异常记入 fault）在断言消息中可区分。 */
+    private static boolean await(final Future<Boolean> future, final AtomicReference<String> fault) {
         try {
             return future.get(90, TimeUnit.SECONDS);
         } catch (final Exception e) {
+            fault.set(e.getClass().getSimpleName() + ": " + String.valueOf(e.getMessage()));
             return false;
         }
     }

@@ -13,6 +13,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -70,6 +71,8 @@ class ConnectorOccupancyPredicateTest extends ConnectorTestSupport {
             final CyclicBarrier barrier = new CyclicBarrier(2);
             final ExecutorService pool = Executors.newFixedThreadPool(2);
             try {
+                final AtomicReference<String> occupyFault = new AtomicReference<>();
+                final AtomicReference<String> cancelFault = new AtomicReference<>();
                 final Future<Boolean> occupyWon = pool.submit((Callable<Boolean>) () -> {
                     barrier.await(10, TimeUnit.SECONDS);
                     occupancyService.occupy("delivery-service", connectorNo, "job-race-" + raceRound);
@@ -80,8 +83,8 @@ class ConnectorOccupancyPredicateTest extends ConnectorTestSupport {
                     cancellationService.cancel(OWNER, false, connectorNo);
                     return true;
                 });
-                final boolean occupied = await(occupyWon);
-                final boolean cancelled = await(cancelWon);
+                final boolean occupied = await(occupyWon, occupyFault);
+                final boolean cancelled = await(cancelWon, cancelFault);
                 final String status = jdbc.queryForObject(
                         "SELECT status FROM connector_registration WHERE connector_no = ?",
                         String.class, connectorNo);
@@ -89,8 +92,11 @@ class ConnectorOccupancyPredicateTest extends ConnectorTestSupport {
                         "SELECT COUNT(*) FROM connector_job_occupancy "
                                 + "WHERE connector_no = ? AND status = 'OCCUPY'",
                         Integer.class, connectorNo);
+                final String faultNote = occupyFault.get() == null && cancelFault.get() == null ? ""
+                        : "，异常=[占用=" + occupyFault.get() + "，注销=" + cancelFault.get() + "]";
                 assertThat(occupied ^ cancelled)
-                        .as("第 " + round + " 轮：恰一成功（占用=" + occupied + "，注销=" + cancelled + "）")
+                        .as("第 " + round + " 轮：恰一成功（占用=" + occupied + "，注销=" + cancelled + "）"
+                                + faultNote)
                         .isTrue();
                 if (occupied) {
                     assertThat(status).as("占用成功 = 连接器保持 REGISTERED").isEqualTo("REGISTERED");
@@ -105,10 +111,12 @@ class ConnectorOccupancyPredicateTest extends ConnectorTestSupport {
         }
     }
 
-    private static boolean await(final Future<Boolean> future) {
+    /** await 失败显性化：业务拒绝（干净 false）与意外崩溃（异常记入 fault）在断言消息中可区分。 */
+    private static boolean await(final Future<Boolean> future, final AtomicReference<String> fault) {
         try {
             return future.get(60, TimeUnit.SECONDS);
         } catch (final Exception e) {
+            fault.set(e.getClass().getSimpleName() + ": " + String.valueOf(e.getMessage()));
             return false;
         }
     }

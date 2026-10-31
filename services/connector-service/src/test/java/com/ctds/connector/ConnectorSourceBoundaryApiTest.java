@@ -119,18 +119,20 @@ class ConnectorSourceBoundaryApiTest extends ConnectorTestSupport {
         final String connectorNo = registerConnector(OWNER, "bnd-read-param");
         final String sourceNo = registerSource(OWNER, connectorNo, "GOV_EXCHANGE",
                 "mock://gov-exchange/ok", SOURCE_SECRET);
+        // 请求形态同步新契约（occupy + jobRef）：超长参数在目标分支被拒，不依赖校验顺序
+        occupy(connectorNo, "job-1");
         mockMvc.perform(post(INTERNAL + connectorNo + SOURCES + "/" + sourceNo + "/reads")
                         .contentType(MediaType.APPLICATION_JSON)
                         .header("X-Ctds-Subject", "delivery-service")
                         .header("X-Ctds-Roles", INTERNAL_ROLE)
-                        .content(readBody("C".repeat(65), "统计分析")))
+                        .content(readBodyWithJobRef("C".repeat(65), "统计分析", "job-1")))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("1010C0001"));
         mockMvc.perform(post(INTERNAL + connectorNo + SOURCES + "/" + sourceNo + "/reads")
                         .contentType(MediaType.APPLICATION_JSON)
                         .header("X-Ctds-Subject", "delivery-service")
                         .header("X-Ctds-Roles", INTERNAL_ROLE)
-                        .content(readBody(CONTRACT_NO, "统".repeat(129))))
+                        .content(readBodyWithJobRef(CONTRACT_NO, "统".repeat(129), "job-1")))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("1010C0001"));
     }

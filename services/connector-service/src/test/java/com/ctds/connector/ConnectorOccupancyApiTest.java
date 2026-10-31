@@ -172,6 +172,20 @@ class ConnectorOccupancyApiTest extends ConnectorTestSupport {
     }
 
     @Test
+    void adminForbiddenOnOccupyWrite() throws Exception {
+        // E10 双向补齐（DB-89）：admin 仅持 connector.internal.read，不可自造占用凭证——
+        // 占位端负向（读端 admin 直调见 ConnectorSourceReadCredentialTest）
+        final String connectorNo = registerConnector(OWNER, "conn-a");
+        mockMvc.perform(post(INTERNAL + connectorNo + "/occupancies")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-Ctds-Subject", OPERATOR)
+                        .header("X-Ctds-Roles", ADMIN_ROLE)
+                        .content("{\"jobRef\":\"job-1\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("1000C0005"));
+    }
+
+    @Test
     void unauthenticatedRejected() throws Exception {
         final String connectorNo = registerConnector(OWNER, "conn-a");
         mockMvc.perform(get(INTERNAL + connectorNo + "/occupancies"))

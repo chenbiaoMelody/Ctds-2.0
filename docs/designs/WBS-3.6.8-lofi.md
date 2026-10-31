@@ -41,7 +41,7 @@
 
 | 模块 | 改动 |
 | --- | --- |
-| `gateway-service` | `application.yml` 路由表 + 测试（W1；Java 装配零改动——`GatewayRouteConfig` 通用装配已支持多路由） |
+| `gateway-service` | `application.yml` 路由表 + 测试（W1；Java 装配零改动——`GatewayRouteConfig` 通用装配已支持多路由）**【2026-10-31 勘误指针（评审③ F-8）】W1 实装含交付面路由标记最小 Java 改造五处，以 hifi §1-A "重大实测勘误"标注与 ADR-026 §10 为准** |
 | `delivery-service` | CONNECTOR 形态：`DeliveryType` 枚举值 + 请求 DTO 可选字段（连接器 / 源编号）+ 形态校验 + `create()` 分支（判定 → 占用 → 内部读取 → 释放 → 加密落包 → 记录）+ 连接器内部面客户端（新 infra 类：源读取 / 占用登记 / 释放 / 连接器属主读取）+ 1009 段加性错误码（取数失败业务可读映射）+ 测试 |
 | `connector-service` | W5 occupy/cancel 原子谓词 + W6 读取请求作业凭证校验 + W8 三类直测 + W9 路径统一 + 并发用例组（Testcontainers 既有共享容器基建）+ ADR-029 §2.6 / ADR-027 §2.10 修订留痕 |
 | `connector-sdk` | **主代码零变更**（ADR-026 承诺兑现：扩路由后 SDK 零代码变更）；测试补运行期字段级比对用例（mock 响应体更新为真实服务实测样本） |

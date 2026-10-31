@@ -12,7 +12,6 @@ class ConnectorInternalApiTest extends ConnectorTestSupport {
 
     private static final String OWNER = "S20261026000051";
     private static final String INTERNAL = "/api/v1/connectors/internal/";
-    private static final String UNIFIED_INTERNAL = "/api/v1/connectors/internal/";
 
     @Test
     void internalReadableByServiceIdentity() throws Exception {
@@ -80,7 +79,7 @@ class ConnectorInternalApiTest extends ConnectorTestSupport {
     @Test
     void internalReadableOnUnifiedPath() throws Exception {
         final String connectorNo = registerConnector(OWNER, "conn-unified");
-        mockMvc.perform(get(UNIFIED_INTERNAL + connectorNo)
+        mockMvc.perform(get(INTERNAL + connectorNo)
                         .header("X-Ctds-Subject", "connector-service")
                         .header("X-Ctds-Roles", INTERNAL_ROLE))
                 .andExpect(status().isOk())

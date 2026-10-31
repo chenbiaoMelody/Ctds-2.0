@@ -1,8 +1,14 @@
 package com.ctds.delivery;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
+import com.ctds.delivery.application.DeliveryPersistenceService;
+import com.ctds.delivery.domain.Delivery;
+import com.ctds.delivery.domain.DeliveryActionLog;
+import com.ctds.delivery.domain.DeliveryErrorCodes;
 import com.ctds.delivery.support.SharedMySqlContainer;
 import com.ctds.delivery.support.StubDependencyServer;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -15,6 +21,7 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.Timestamp;
 import java.util.Base64;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -33,6 +40,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -42,7 +50,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * <ul>
  *   <li><b>T2</b>：全链成功（判定 → 占用 → 属主核对 → 内部读取 → 释放 → SM4 落包 → 记录与留痕）+
  *       判定拒绝零触达源（占用 / 读取 / 释放桩计数全零）+ 幂等重放不重复取数；</li>
- *   <li><b>T3</b>：失败矩阵（E1~E3 / E5 / E6 / E8 / E15）——finally 释放、零交付记录、零计量、
+ *   <li><b>T3</b>：失败矩阵（E1~E3 / E5 / E6 / E8 / E15 / E16）——finally 释放、零交付记录、零计量、
  *       失败可读映射不透传内部码。</li>
  * </ul>
  */
@@ -106,6 +114,9 @@ class DeliveryConnectorIntegrationTest {
     private MockMvc mockMvc;
     @Autowired
     private JdbcTemplate jdbc;
+    /** E16 落库失败注入半桩：默认真实委托，仅 persist 失败用例打桩（每用例后自动重置）。 */
+    @MockitoSpyBean
+    private DeliveryPersistenceService persistence;
 
     @BeforeEach
     void reset() throws Exception {
@@ -160,6 +171,9 @@ class DeliveryConnectorIntegrationTest {
         assertThat(jdbc.queryForObject(
                 "SELECT contract_no FROM delivery WHERE delivery_no = ?", String.class, deliveryNo))
                 .as("合约编号同源").isEqualTo("CO000001");
+        assertThat(jdbc.queryForObject(
+                "SELECT created_at FROM delivery WHERE delivery_no = ?", Timestamp.class, deliveryNo))
+                .as("留痕五要素之'何时'非空").isNotNull();
         final Integer createRows = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM delivery_action_log WHERE action = 'delivery.create' "
                         + "AND result = 'SUCCESS'", Integer.class);
@@ -252,6 +266,8 @@ class DeliveryConnectorIntegrationTest {
         final MvcResult result = createConnectorDelivery("srcfail");
         assertThat(result.getResponse().getStatus()).isEqualTo(500);
         assertThat(codeOf(result)).as("取数失败新码").isEqualTo("1009S0006");
+        assertThat(messageOf(result)).as("失败文案业务可读（基础文案 + 归类摘要后缀）")
+                .startsWith(DeliveryErrorCodes.FETCH_FAILED_MESSAGE);
         assertThat(CONNECTOR_STUB.releaseCount.get()).as("finally 释放兜底").isEqualTo(1);
         assertThat(countDeliveries()).as("零交付记录").isZero();
         assertThat(storageEmpty()).as("零包体残留").isTrue();
@@ -282,6 +298,25 @@ class DeliveryConnectorIntegrationTest {
         assertThat(codeOf(result)).isEqualTo("1009S0006");
         assertThat(CONNECTOR_STUB.releaseCount.get()).isEqualTo(1);
         assertThat(countDeliveries()).isZero();
+    }
+
+    @Test
+    void persistFailureReleasesOccupancyAndDeletesPackage() throws Exception {
+        // E16：落库失败（RuntimeException）→ 补偿删包 + finally 释放兜底 + 1009 段可读失败；
+        // 共享补偿分支由 SANDBOX 腿既有用例承载，本例补 CONNECTOR 腿"落库失败时占用已释放"回归锚
+        doThrow(new RuntimeException("persist-boom")).when(persistence)
+                .persist(any(Delivery.class), any(DeliveryActionLog.class));
+        final MvcResult result = createConnectorDelivery("persistfail");
+        assertThat(result.getResponse().getStatus()).isEqualTo(500);
+        assertThat(codeOf(result)).as("落库失败可读映射").isEqualTo("1009S0003");
+        assertThat(CONNECTOR_STUB.readCount.get()).as("取数已发生").isEqualTo(1);
+        assertThat(CONNECTOR_STUB.releaseCount.get()).as("落库失败 finally 释放兜底").isEqualTo(1);
+        assertThat(countDeliveries()).as("落库失败零交付记录").isZero();
+        assertThat(storageEmpty()).as("补偿删包零残留").isTrue();
+        final Integer failureRows = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM delivery_action_log WHERE result = 'FAILURE' "
+                        + "AND reason_code = '1009S0003'", Integer.class);
+        assertThat(failureRows).as("平台侧失败留痕").isEqualTo(1);
     }
 
     private void assertParamInvalid(final String body, final String label) throws Exception {
@@ -326,6 +361,11 @@ class DeliveryConnectorIntegrationTest {
     private String codeOf(final MvcResult result) throws IOException {
         return MAPPER.readTree(result.getResponse().getContentAsString(StandardCharsets.UTF_8))
                 .path("code").asText();
+    }
+
+    private String messageOf(final MvcResult result) throws IOException {
+        return MAPPER.readTree(result.getResponse().getContentAsString(StandardCharsets.UTF_8))
+                .path("message").asText();
     }
 
     /** 连接器内部面桩（四端点可编程行为 + 计数；响应契约 = ConnectorInternalClient 解析形态）。 */

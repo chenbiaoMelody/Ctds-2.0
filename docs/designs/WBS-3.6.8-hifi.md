@@ -36,7 +36,7 @@
 | --- | --- |
 | 端点 | `POST /api/v1/deliveries`（既有端点复用，零新端点；`@RequirePermission("delivery.request")` / 幂等键沿既有） |
 | 请求增量 | `deliveryType` 新枚举值 `CONNECTOR`；请求 DTO 新增可选字段 `connectorNo`（`^CN\d{6}$`）、`sourceNo`（`^SR\d{6}$`）——`deliveryType=CONNECTOR` 时**必填**，其余形态必须为空（混带即 400 参数无效，`1009` 段既有参数码） |
-| 处理顺序（`DeliveryCommandService.create()` 新分支） | ① 幂等查重（既有）→ ② 合约摘要 + 申请人一致性（既有）→ ③ 产品形态校验（`validateForm` 增 CONNECTOR 规则：允许形态与 FILE 同构，前置检查核对 `validateForm` 现行矩阵后落定并回填本文）→ ④ **策略判定** `contractPort.check(contractNo, requester, purpose, territory)`（先判定——拒绝即 `DENIED` 留痕，零触达源、零计量）→ ⑤ 签发交付编号 → ⑥ **占用登记** `occupy(connectorNo, jobRef=deliveryNo)`（新客户端；连接器未注册 / 并发冲突 → 拒绝）→ ⑦ **连接器属主核对**：经内部读连接器端点取属主主体，与合约 `providerNo` 比对（不一致 → 拒绝，防"借他方连接器读己方合约标的"）→ ⑧ **内部源读取**（携带 `jobRef` + `contractNo` + `purpose`；见 1-C）→ ⑨ `release`（finally 兜底）→ ⑩ SM4 加密落包 + SM3 摘要 + 交付记录 / 动作留痕落库（字段与 FILE 同构：`sourceFileId` 位记 `connectorNo:sourceNo`、包体 / 校验和 / 密钥引用同口径） |
+| 处理顺序（`DeliveryCommandService.create()` 新分支） | ① 幂等查重（既有）→ ② 合约摘要 + 申请人一致性（既有）→ ③ 产品形态校验（`validateForm` 增 CONNECTOR 规则：允许形态与 FILE 同构，前置检查核对 `validateForm` 现行矩阵后落定并回填本文）→ ④ **策略判定** `contractPort.check(contractNo, requester, purpose, territory)`（先判定——拒绝即 `DENIED` 留痕，零触达源、零计量）→ ⑤ 签发交付编号 → ⑥ **占用登记** `occupy(connectorNo, jobRef=deliveryNo)`（新客户端；连接器未注册 / 并发冲突 → 拒绝）→ ⑦ **连接器属主核对**：经内部读连接器端点取属主主体，与合约 `providerNo` 比对（不一致 → 拒绝，防"借他方连接器读己方合约标的"）→ ⑧ **内部源读取**（携带 `jobRef` + `contractNo` + `purpose`；见 1-C）→ ⑨ `release`（finally 兜底）→ ⑩ SM4 加密落包 + SM3 摘要 + 交付记录 / 动作留痕落库（字段与 FILE 同构：`sourceFileId` 位记 `connectorNo:sourceNo`、包体 / 校验和 / 密钥引用同口径）**【编码段实测回填（评审① P2-5 采纳）】"包体同口径"的落地口径 = 包体为取数结果摘要文档（适配器读真实源产出摘要，不含数据本体；数据本体传输腿归真实源演进）——V1.0 演示形态，T2 全链与真实样本 T10（DL000023，fileSize=25 字节摘要包）印证** |
 
 > **前置检查④实测回填（2026-10-31）**：`validateForm` 现行矩阵（`DeliveryCommandService.java:239-246`）= API→仅 `API`；FILE→`{DATASET, REPORT, MODEL}`（`FILE_FORMS` 常量）；其余形态（含 `SANDBOX_EXPORT`）→ `DELIVERY_SCOPE_MISMATCH` 拒绝。**落定：CONNECTOR 允许形态 = 与 FILE 同构 `{DATASET, REPORT, MODEL}`**。另实测 `validateFileId`（:215-227）对**非 API 形态一律强制要求 fileId 匹配 `FILE_ID` 正则**——CONNECTOR 分支须同步改造：CONNECTOR 禁带 `fileId`、必填 `connectorNo`/`sourceNo`（`^CN\d{6}$` / `^SR\d{6}$`）；API / FILE / SANDBOX_EXPORT 禁带 `connectorNo` / `sourceNo`（E2 互斥校验落点）。
 | 失败映射（对外 1009 段，不透传 1010 内部码） | 占用失败 → 既有"状态冲突"语义码 + 文案"连接器当前状态不允许该作业"；属主不一致 → 既有参数 / 权限语义码 + 可读文案；内部读取失败（网络不可达 / 凭据无效 / 权限不足 / 源拒绝 / 未登记 / 跨归属）→ **新增 1009 段码 1 个**：`取数失败`（detail 沿内部读取返回的业务可读摘要归类，不含源数据本体）；判定拒绝沿既有 DENIED 口径（拒绝零计量不变） |
@@ -77,6 +77,7 @@
 | `occupy` | 服务层 `requireRegistered`（读后写，TOCTOU）+ 无谓词 upsert（`JdbcConnectorOccupancyRepository.java:27-32`） | SQL 改 `INSERT … SELECT … FROM connector_registration WHERE connector_no=? AND status='REGISTERED'`（0 行 → 业务拒绝 `1010C0004` 语义）；服务层前置检查保留为快路径，**原子性以 SQL 谓词为准** |
 | `cancel`（`ConnectorCancellationService.java:55-67`） | 先 `countInProgress` 再改状态（读-改-写，TOCTOU） | 状态变更改原子谓词 UPDATE（`… SET status='CANCELLED' WHERE connector_no=? AND status='REGISTERED'`，影响 0 行 → 拒绝）；计数前置检查保留为可读拒绝理由；后续解除绑定 / 作废待确认升级逻辑不变 |
 | 并发断言 | —— | 真并发窗口（CountDownLatch 握手）下"CANCELLED 连接器上不得残留 OCCUPY 行"、"并发双核验仅一成功"（T4 组） |
+| 隔离级别前提（评审② P2-3 采纳登记，2026-10-31） | —— | 谓词原子性以 MySQL 默认 REPEATABLE READ 下 `INSERT…SELECT` 对源行的锁定读为前提；若数据源配置改 READ COMMITTED 需重估并发语义（当前连接配置零改动，登记防静默漂移） |
 
 ## 2. 模块改动清单（逐文件，编码段按此对账；★ = 新文件）
 
@@ -117,7 +118,7 @@
 | E12 | 并发：注销与占用登记同时提交 | 谓词原子性保证二者恰一成功：要么占用成功且注销被拒，要么注销成功且占用失败；无中间态 |
 | E13 | 并发：同一申请双核验 / 同请求重复提交 / 两条不兼容升级双写 | 恰一成功，其余业务码拒绝；编号唯一、仅一条绑定、DB 唯一索引兜底可达（`1010C0004`） |
 | E14 | 幂等键重放 CONNECTOR 交付 | 返回首次交付结果（既有幂等语义），不重复取数 |
-| E15 | 内部面客户端超时 / 5xx | 交付侧按取数失败收敛（可读文案 + 留痕），不重试（N3：平台拒绝与源失败均不盲目重试） |
+| E15 | 内部面客户端超时 / 5xx | 交付侧按取数失败收敛（可读文案 + 留痕），不重试（N3：平台拒绝与源失败均不盲目重试）**【评审备注 2026-10-31（②P2-2 / ①P2-2）】occupy 腿传输失败现行映射 = 既有码 `1009C0006` + "连接器当前状态不允许该作业"文案（1-B 字面落地）——连接器整机不可达时文案与真实原因有偏差（fail-closed 不变、零侧效）；文案可分辨性归后续硬化批，残留占用（occupy 超时但连接器侧已落行）经占用清单端点可查、release 幂等可补（1-B 已知限制同口径）** |
 | E16 | 落库失败（DuplicateKey / RuntimeException） | 既有补偿（删包 + 幂等重放 / 失败码）不回归；占用已释放 |
 
 ## 4. 测试锚点（测试先行：红相归档 → 实现 → 绿相；命名沿既有惯例）

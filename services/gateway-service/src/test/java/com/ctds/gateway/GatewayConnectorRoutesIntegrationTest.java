@@ -2,8 +2,10 @@ package com.ctds.gateway;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.ctds.gateway.audit.GatewayAuditActions;
 import com.ctds.gateway.config.GatewayProperties;
 import com.ctds.gateway.support.RecordingAuditConfiguration;
+import com.ctds.gateway.support.RecordingAuditRecorder;
 import com.ctds.gateway.support.StubServer;
 import com.ctds.gateway.support.TestTokens;
 import java.util.List;
@@ -79,6 +81,9 @@ class GatewayConnectorRoutesIntegrationTest {
     @Autowired
     private GatewayProperties properties;
 
+    @Autowired
+    private RecordingAuditRecorder recorder;
+
     private WebTestClient client;
 
     @BeforeEach
@@ -122,6 +127,8 @@ class GatewayConnectorRoutesIntegrationTest {
         assertThat(UPSTREAM.lastPath()).as("上游实收路径 = 请求实例路径").isEqualTo(path);
         assertThat(JUDGE.requestCount()).as("白名单外路由不进交付判定链（判定器零调用）")
                 .isEqualTo(0);
+        assertThat(recorder.eventsOf(GatewayAuditActions.DELIVERY_METERING))
+                .as("六门面普通代理零计量事件（评审采纳：计量零触发的直接断言）").isEmpty();
     }
 
     @Test
@@ -134,6 +141,8 @@ class GatewayConnectorRoutesIntegrationTest {
 
         assertThat(UPSTREAM.lastPath()).as("交付读面经网关转发").isEqualTo(path);
         assertThat(JUDGE.requestCount()).as("读面不触发判定链").isEqualTo(0);
+        assertThat(recorder.eventsOf(GatewayAuditActions.DELIVERY_METERING))
+                .as("交付读面普通代理零计量事件").isEmpty();
     }
 
     @Test
@@ -142,5 +151,21 @@ class GatewayConnectorRoutesIntegrationTest {
         assertThat(properties.getDelivery().getRoutes())
                 .as("交付判定链白名单仅含既有探针路由（W1 零改动）")
                 .containsExactly("delivery-catalog-products");
+    }
+
+    @Test
+    void deliveryFaceMarkerCoversWhitelistRoutes() {
+        // fail-closed 交叉钉（评审采纳）：白名单每个 routeId 必须打 delivery-face 标记——
+        // 防"白名单扩了、标记漏打"的配置漂移把判定面路由静默降级为普通代理
+        for (final String whitelistId : properties.getDelivery().getRoutes()) {
+            final GatewayProperties.Route route = properties.getRoutes().stream()
+                    .filter(item -> whitelistId.equals(item.getId()))
+                    .findFirst()
+                    .orElseThrow(() -> new AssertionError(
+                            "白名单路由 " + whitelistId + " 未在网关路由表装配"));
+            assertThat(route.isDeliveryFace())
+                    .as("白名单路由 %s 必须标记 delivery-face（白名单 ⊆ 交付面）", whitelistId)
+                    .isTrue();
+        }
     }
 }
