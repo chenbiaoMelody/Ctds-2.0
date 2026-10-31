@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>WBS-3.7.2 数据产品门户 线框原型 V0.9</title>
+<style>
+  :root {
+    --ink: #1f2733;
+    --muted: #6b7684;
+    --line: #d9dee5;
+    --soft: #f4f6f9;
+    --brand: #2f6bff;
+    --ok: #1f9d55;
+    --warn: #b7791f;
+    --bad: #c53030;
+    --side: #1f2a44;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 24px;
+    font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
+    color: var(--ink);
+    background: #eef1f5;
+  }
+  h1 { font-size: 20px; margin: 0 0 6px; }
+  h2 { font-size: 15px; margin: 0 0 4px; }
+  h3 { font-size: 13px; margin: 0 0 8px; color: var(--muted); font-weight: 600; }
+  .intro { color: var(--muted); font-size: 12px; line-height: 1.7; margin-bottom: 18px; }
+  .legend { font-size: 12px; color: var(--muted); margin-bottom: 18px; }
+  .legend b { color: var(--ink); }
+  .screen {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    margin-bottom: 22px;
+    overflow: hidden;
+    box-shadow: 0 1px 2px rgba(20, 30, 50, .06);
+  }
+  .screen-head {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line);
+    background: var(--soft);
+  }
+  .screen-head .tag {
+    font-size: 11px;
+    color: #fff;
+    background: var(--brand);
+    border-radius: 10px;
+    padding: 2px 8px;
+  }
+  .screen-head .note { font-size: 12px; color: var(--muted); }
+  .app { display: flex; min-height: 360px; }
+  .side {
+    width: 176px;
+    flex: none;
+    background: var(--side);
+    color: #cdd6e6;
+    padding: 12px 0;
+    font-size: 12px;
+  }
+  .side .brand { color: #fff; font-weight: 600; padding: 0 14px 12px; font-size: 13px; }
+  .side .item { padding: 7px 14px; border-left: 3px solid transparent; }
+  .side .item.active { background: rgba(47, 107, 255, .18); border-left-color: var(--brand); color: #fff; }
+  .main { flex: 1; min-width: 0; padding: 14px 18px; }
+  .topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+    color: var(--muted);
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 8px;
+    margin-bottom: 14px;
+  }
+  .pill { display: inline-block; padding: 1px 7px; border-radius: 9px; font-size: 11px; background: #eef2f8; color: #42526b; }
+  .pill.ok { background: #e6f5ec; color: var(--ok); }
+  .pill.warn { background: #fdf3e2; color: var(--warn); }
+  .pill.bad { background: #fdeaea; color: var(--bad); }
+  .btn {
+    display: inline-block;
+    padding: 5px 12px;
+    border-radius: 5px;
+    border: 1px solid var(--line);
+    background: #fff;
+    font-size: 12px;
+    color: var(--ink);
+  }
+  .btn.primary { background: var(--brand); border-color: var(--brand); color: #fff; }
+  .btn.ghost { color: var(--muted); }
+  .btn.disabled { background: #f1f3f6; color: #9aa4b2; border-color: #e2e6ec; cursor: not-allowed; }
+  .searchbar { display: flex; gap: 8px; margin-bottom: 12px; }
+  .input {
+    flex: 1;
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    height: 30px;
+    line-height: 30px;
+    padding: 0 10px;
+    color: #9aa4b2;
+    font-size: 12px;
+    background: #fff;
+  }
+  .body-two { display: flex; gap: 16px; }
+  .cats { width: 180px; flex: none; border-right: 1px solid var(--line); padding-right: 10px; font-size: 12px; }
+  .cats .cat { padding: 5px 6px; color: #42526b; }
+  .cats .cat.active { background: #eef3ff; color: var(--brand); border-radius: 4px; }
+  .grid { flex: 1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  .card {
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    background: #fff;
+  }
+  .card .name { font-size: 13px; font-weight: 600; }
+  .card .desc { font-size: 12px; color: var(--muted); line-height: 1.5; height: 36px; overflow: hidden; }
+  .card .meta { font-size: 11px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 10px; }
+  .card .foot { margin-top: auto; display: flex; justify-content: space-between; align-items: center; }
+  .pager { margin-top: 12px; font-size: 12px; color: var(--muted); display: flex; justify-content: flex-end; gap: 6px; }
+  .pager span { border: 1px solid var(--line); border-radius: 4px; padding: 2px 8px; }
+  .pager span.on { background: var(--brand); border-color: var(--brand); color: #fff; }
+  .page-title { font-size: 16px; font-weight: 600; margin: 0 0 4px; }
+  .page-desc { font-size: 12px; color: var(--muted); margin: 0 0 12px; }
+  .panel { border: 1px solid var(--line); border-radius: 6px; padding: 12px; margin-bottom: 12px; }
+  .desc-grid { display: grid; grid-template-columns: 140px 1fr 140px 1fr; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; font-size: 12px; }
+  .desc-grid div { padding: 7px 10px; border-bottom: 1px solid var(--line); }
+  .desc-grid .k { background: var(--soft); color: var(--muted); border-right: 1px solid var(--line); }
+  .desc-grid .v { border-right: 1px solid var(--line); }
+  .price-box { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px dashed #cdd8ea; border-radius: 6px; background: #f7faff; font-size: 13px; }
+  .price-big { font-size: 22px; color: var(--brand); font-weight: 700; }
+  .actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 12px 0; }
+  .hint { font-size: 12px; color: var(--warn); }
+  .muted { color: var(--muted); }
+  .alert { border: 1px solid #f3d9a4; background: #fffaf0; color: #8a5a12; border-radius: 6px; padding: 10px 12px; font-size: 12px; }
+  .empty { border: 1px dashed var(--line); border-radius: 6px; padding: 40px; text-align: center; color: var(--muted); font-size: 12px; }
+  .anno { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+  .anno span { background: #eef3ff; color: #2f5bb7; border-radius: 10px; padding: 2px 8px; font-size: 11px; }
+  .login-wrap { display: flex; align-items: center; justify-content: center; min-height: 320px; background: #f7f9fc; }
+  .login-card { width: 320px; background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 20px; }
+  .login-card .title { font-size: 16px; font-weight: 600; margin-bottom: 12px; text-align: center; }
+  .login-card .input { width: 100%; margin-bottom: 10px; }
+  .err-code { font-family: Consolas, monospace; font-size: 11px; color: var(--muted); }
+</style>
+</head>
+<body>
+  <h1>WBS-3.7.2 数据产品门户 · 静态线框原型 V0.9</h1>
+  <p class="intro">
+    本原型用于低保真方向确认（不含真实数据与交互）。四个画面：① 门户首页；② 产品详情；③ 未登录引导；
+    ④ 不可达与空态。对应设计：<b>lofi §1~§4</b> / hifi §3。
+    关键决策：<b>Q1</b> 新增独立门户菜单（保留数据目录）；<b>Q2</b> R7 详情加性补 priceAmount；
+    <b>Q3</b> 订购入口禁用占位；<b>Q4</b> 检索完全复用 R5/R6；<b>Q6</b> 沿用登录守卫与目录角色头。
+  </p>
+  <div class="legend"><b>图例：</b>蓝色标签 = 建议新增；橙色 = 诚实占位 / 说明；红色 = 负向与不可达；灰色 = 既有页面（不在本卡改动范围）。</div>
+
+  <!-- ============ Screen 1 ============ -->
+  <section class="screen">
+    <div class="screen-head"><span class="tag">画面 1</span><h2>数据产品门户首页（/portal）</h2><span class="note">Q1-A 新增菜单 menuOrder 22 · 登录可见 · 无权限点</span></div>
+    <div class="app">
+      <aside class="side">
+        <div class="brand">城市可信数据空间</div>
+        <div class="item">工作台</div>
+        <div class="item">标准能力</div>
+        <div class="item">数据目录</div>
+        <div class="item">资源登记</div>
+        <div class="item">产品上架</div>
+        <div class="item active">数据产品门户</div>
+        <div class="item">合约工作台</div>
+        <div class="item">交付记录</div>
+        <div class="item">连接器管理</div>
+      </aside>
+      <div class="main">
+        <div class="topbar"><span>演示模式 · 普通主体</span><span class="pill">需方视角</span></div>
+        <div class="page-title">数据产品门户</div>
+        <p class="page-desc">浏览平台已上架的数据产品；订购与评价将在后续版本开放。</p>
+
+        <div class="searchbar">
+          <div class="input">产品名称 / 简介关键字</div>
+          <span class="btn primary">查询</span>
+          <span class="btn">重置</span>
+        </div>
+
+        <div class="body-two">
+          <div class="cats">
+            <h3>类目（R5）</h3>
+            <div class="cat active">全部</div>
+            <div class="cat">交通出行</div>
+            <div class="cat">医疗健康</div>
+            <div class="cat">金融服务</div>
+            <div class="cat">城市治理</div>
+          </div>
+          <div>
+            <div class="grid">
+              <div class="card">
+                <div class="name">城市交通流量数据集</div>
+                <span class="pill warn">按次</span>
+                <div class="desc">某市主干道分时交通流量与拥堵指数，适合交通态势分析。</div>
+                <div class="meta"><span>形态：数据集</span><span>类目：交通出行</span></div>
+                <div class="meta"><span>提供方 S2026…B</span><span>上架 2026-10-20</span></div>
+                <div class="foot"><span class="muted">已上架</span><span class="btn primary">查看详情</span></div>
+              </div>
+              <div class="card">
+                <div class="name">企业信用评分 API</div>
+                <span class="pill warn">包月</span>
+                <div class="desc">面向企业信用评估的标准化评分接口，按月订阅使用。</div>
+                <div class="meta"><span>形态：API接口</span><span>类目：金融服务</span></div>
+                <div class="meta"><span>提供方 S2026…B</span><span>上架 2026-10-19</span></div>
+                <div class="foot"><span class="muted">已上架</span><span class="btn primary">查看详情</span></div>
+              </div>
+              <div class="card">
+                <div class="name">区域医疗资源分析报告</div>
+                <span class="pill warn">交易额分成</span>
+                <div class="desc">区域医疗资源配置分析报告，按交易额分成模式提供。</div>
+                <div class="meta"><span>形态：报告</span><span>类目：医疗健康</span></div>
+                <div class="meta"><span>提供方 S2026…B</span><span>上架 2026-10-18</span></div>
+                <div class="foot"><span class="muted">已上架</span><span class="btn primary">查看详情</span></div>
+              </div>
+              <div class="card">
+                <div class="name">公共停车泊位开放数据</div>
+                <span class="pill ok">免费</span>
+                <div class="desc">公共停车场泊位占用与开放时间数据，免费开放。</div>
+                <div class="meta"><span>形态：数据集</span><span>类目：交通出行</span></div>
+                <div class="meta"><span>提供方 S2026…B</span><span>上架 2026-10-17</span></div>
+                <div class="foot"><span class="muted">已上架</span><span class="btn primary">查看详情</span></div>
+              </div>
+              <div class="card">
+                <div class="name">城市气象预警模型</div>
+                <span class="pill warn">按次</span>
+                <div class="desc">面向城市气象预警的模型服务，按调用次数计费。</div>
+                <div class="meta"><span>形态：模型</span><span>类目：城市治理</span></div>
+                <div class="meta"><span>提供方 S2026…B</span><span>上架 2026-10-16</span></div>
+                <div class="foot"><span class="muted">已上架</span><span class="btn primary">查看详情</span></div>
+              </div>
+              <div class="card">
+                <div class="name">公共交通线网基础数据</div>
+                <span class="pill ok">免费</span>
+                <div class="desc">公交线路、站点与运营时段基础数据，免费开放。</div>
+                <div class="meta"><span>形态：数据集</span><span>类目：交通出行</span></div>
+                <div class="meta"><span>提供方 S2026…B</span><span>上架 2026-10-15</span></div>
+                <div class="foot"><span class="muted">已上架</span><span class="btn primary">查看详情</span></div>
+              </div>
+            </div>
+            <div class="pager"><span>上一页</span><span class="on">1</span><span>2</span><span>下一页</span></div>
+            <div class="anno">
+              <span>Q1-A 新增菜单，数据目录原样保留</span>
+              <span>B2-1 同一数据面：R5 + R6 原样调用</span>
+              <span>列表恒仅已上架（R6 服务端过滤）</span>
+              <span>Q4-A 无排序 / 无本地过滤</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ Screen 2 ============ -->
+  <section class="screen">
+    <div class="screen-head"><span class="tag">画面 2</span><h2>门户产品详情（/portal/products/:productId）</h2><span class="note">Q2-A 定价数值读面 · Q3-A 订购禁用占位</span></div>
+    <div class="app">
+      <aside class="side">
+        <div class="brand">城市可信数据空间</div>
+        <div class="item">工作台</div>
+        <div class="item active">数据产品门户</div>
+        <div class="item">数据目录</div>
+        <div class="item">交付记录</div>
+      </aside>
+      <div class="main">
+        <div class="topbar"><span>← 返回数据产品门户</span><span class="pill ok">已上架</span></div>
+        <div class="page-title">城市交通流量数据集</div>
+        <p class="page-desc">仅目录元数据展示（检索 ≠ 可访问；不含数据本体与敏感原文）。</p>
+
+        <div class="panel">
+          <h3>产品信息</h3>
+          <div class="desc-grid">
+            <div class="k">简介</div><div class="v">某市主干道分时交通流量与拥堵指数，适合交通态势分析。</div>
+            <div class="k">形态</div><div class="v">数据集</div>
+            <div class="k">类目</div><div class="v">交通出行</div>
+            <div class="k">提供方主体编号</div><div class="v">S2026…B</div>
+            <div class="k">上架时间</div><div class="v">2026-10-20 10:00</div>
+            <div class="k">定价</div><div class="v"><b>按次（3.00）</b></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h3>定价（R7 加性 priceAmount）</h3>
+          <div class="price-box">
+            <span class="price-big">按次（3.00）</span>
+            <span class="muted">免费档此处显式为「免费」，不得空缺；付费档展示登记数值（不臆造单位）</span>
+          </div>
+        </div>
+
+        <div class="actions">
+          <span class="btn primary">收藏</span>
+          <span class="btn">订阅</span>
+          <span class="btn disabled">发起订购</span>
+          <span class="hint">订购与订单流程将在后续版本开放（WBS-3.7.3）</span>
+        </div>
+        <p class="muted" style="font-size:12px;margin:0 0 10px;">收藏 / 订阅为目录域既有动作（W4~W7）；订购为禁用占位，点击零请求、零订单。</p>
+
+        <div class="anno">
+          <span>Q2-A R7 加性字段，零新端点零迁移</span>
+          <span>Q3-A 订购禁用占位（3.7.3 开放）</span>
+          <span>B6 无推送 / 无消息角标</span>
+          <span>运营档隐藏动作条</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ Screen 3 ============ -->
+  <section class="screen">
+    <div class="screen-head"><span class="tag">画面 3</span><h2>未登录访问门户（B1-2 负向）</h2><span class="note">既有登录守卫；不返回任何产品数据</span></div>
+    <div class="login-wrap">
+      <div class="login-card">
+        <div class="title">登录城市可信数据空间</div>
+        <div class="input">演示主体编号</div>
+        <div class="input">演示密码</div>
+        <span class="btn primary" style="display:block;text-align:center;">登录</span>
+        <p class="muted" style="font-size:11px;margin:10px 0 0;">未登录访问 /portal 或 /portal/products/… → 重定向本页；不发起目录请求、不返回产品数据。</p>
+      </div>
+    </div>
+    <div class="main" style="padding-top:0;">
+      <div class="anno"><span>S1-5 负向：引导登录，不返回数据</span><span>不提供匿名浏览入口（§4-8 非目标）</span></div>
+    </div>
+  </section>
+
+  <!-- ============ Screen 4 ============ -->
+  <section class="screen">
+    <div class="screen-head"><span class="tag">画面 4</span><h2>不可达与空态</h2><span class="note">P4 已下架 / P5 待上架 / 不存在 → 同一条提示；检索无结果 = 空态</span></div>
+    <div class="main">
+      <h3>详情不可达（1007C0011 同形）</h3>
+      <div class="alert">产品不存在或未在架 <span class="err-code">（不区分不存在 / 未上架 / 已下架 / 已注销）</span></div>
+      <p class="muted" style="font-size:12px;">页面不渲染任何产品字段；不做存在性探测。</p>
+
+      <h3 style="margin-top:18px;">检索空态</h3>
+      <div class="empty">没有找到符合条件的产品</div>
+      <div class="anno"><span>S1-4 负向：P4/P5 列表不可见，详情明确提示不可用</span><span>空态不是报错</span></div>
+    </div>
+  </section>
+
+  <p class="intro" style="margin-top:18px;">
+    备注：本原型为方向确认稿，不包含真实数据、真实身份与真实接口调用；所有业务判定以服务端为准。
+    页面文案与常量以 `frontend/src/constants/catalog.ts` 为单一源（原型中的示例文案不构成编码契约）。
+  </p>
+</body>
+</html>
