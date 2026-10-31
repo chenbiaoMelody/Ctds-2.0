@@ -98,7 +98,7 @@ public class JdbcProductFavoriteRepository implements ProductFavoriteRepository 
 
     private static CatalogProductRow mapRow(final ResultSet rs) throws SQLException {
         return new CatalogProductRow(rs.getLong("id"), rs.getString("product_name"), rs.getString("intro"),
-                rs.getString("product_type"), rs.getString("pricing_model"),
+                rs.getString("product_type"), rs.getString("pricing_model"), null,
                 ProductStatus.valueOf(rs.getString("status")), rs.getString("provider_subject_no"),
                 rs.getString("category_code"), rs.getString("category_name"),
                 rs.getTimestamp("listed_at") == null ? null : rs.getTimestamp("listed_at").toLocalDateTime(),

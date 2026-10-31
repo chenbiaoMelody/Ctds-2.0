@@ -190,7 +190,7 @@ export function pricingModelTagType(value: string): string {
 | 浏览列表 / 检索 / 详情 | ✅ | ✅ | 登录即可见；服务端 `catalog.read` + ADMITTED |
 | 收藏 / 取消收藏 | ✅（详情页） | ❌（不渲染） | `catalog.interact` 服务端判定 |
 | 订阅 / 退订 | ✅（详情页） | ❌（不渲染） | 同上 |
-| 发起订购 | ❌ 禁用占位 | ❌ 禁用占位 | 3.7.3 实现前零请求 |
+| 发起订购 | ❌ 禁用占位（普通档可见） | ❌ 不渲染（E-3） | 3.7.3 实现前零请求；运营档不显示订购区 |
 | 查看变更记录 / 互动留痕 | —— | —— | 归「数据目录」既有页面（3.3.6） |
 
 > 「不渲染」均为前端体验层；服务端以权限点 / 归属判定兜底，界面隐藏不构成权限。
@@ -279,7 +279,9 @@ export function pricingModelTagType(value: string): string {
 
 | # | 设计原文 | 实测 / 修正 | 来源 |
 | --- | --- | --- | --- |
-| —— | —— | （编码段回填） | —— |
+| E-1 | §2.1 `CatalogProductDetail.priceAmount` 加性字段 | 类型扩展迫使既有 `ProductDetailView.spec.ts` 测试夹具补 `priceAmount: null`；3.3.x 页面仅更新过时注释（原「R7 出参无 priceAmount」→ 改为不展示价格数值行；零行为改动） | 编码段 `typecheck` + 评审 P3-3 |
+| E-2 | §8.1 T4/T5 tag 色断言 | Element Plus `el-tag` 的 `type` 类渲染在 transition 包裹内的 `.el-tag` 根上；测试按 `.pricing-tag .el-tag` 取根元素断言（实现零偏差） | 编码段测试 |
+| E-3 | §3.2 运营档「不显示…订购区」与 §4 动作矩阵「运营档 发起订购 ❌ 禁用占位」 | 编排师 2026-10-31 评审裁决采 A：运营档**不渲染订购区**（与 §3.2 一致）；§4 矩阵「禁用占位」仅约束普通档。实现 `PortalProductDetailView.vue` 订购区加 `v-if="isProviderMode"`，测试断言运营档 `.order-area` 不存在 | 评审 P2-1 + 编排师裁决 |
 
 ## 11. 边界与纪律复述
 

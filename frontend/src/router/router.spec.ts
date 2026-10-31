@@ -23,6 +23,9 @@ import '../views/catalog/GovernanceView.vue'
 import '../views/connector/ConnectorManageView.vue'
 import '../views/connector/ConnectorDetailView.vue'
 import '../views/connector/ConnectorGovernanceView.vue'
+// WBS-3.7.2：门户前台两视图为懒加载路由，同款静态预热
+import '../views/portal/PortalHomeView.vue'
+import '../views/portal/PortalProductDetailView.vue'
 
 /**
  * WBS-2.4.9 H3/H4 测试：
@@ -70,9 +73,9 @@ describe('路由表结构（H3）', () => {
   })
 
   it('DID 管理路由（WBS-3.1.11）：menuOrder=8、icon=Key、did.admin 权限；演示页不占菜单', () => {
-    // 菜单末尾追加（lofi Q1/Q8：不重排既有菜单）；WBS-3.6.7 追加 menuOrder 20/21 后全站最大值为 21
+    // 菜单末尾追加（lofi Q1/Q8：不重排既有菜单）；WBS-3.7.2 追加 menuOrder 22 后全站最大值为 22
     const menuOrders = children.filter((r) => r.meta?.menu === true).map((r) => r.meta?.menuOrder ?? 0)
-    expect(Math.max(...menuOrders)).toBe(21)
+    expect(Math.max(...menuOrders)).toBe(22)
     const didRoute = children.find((r) => r.name === 'did-management')
     expect(didRoute?.path).toBe('did')
     expect(didRoute?.meta?.title).toBe('DID 管理')
@@ -141,10 +144,11 @@ describe('路由表结构（H3）', () => {
     expect(progressRoute?.meta?.permission).toBeUndefined()
     // menuOrder=7 为入驻进度查询占位；WBS-3.1.11（8）与 WBS-3.2.6（9/10）追加后全站最大值为 10；
     // WBS-3.3.6（11/12/13）追加后全站最大值为 13；WBS-3.4.7（14/15/16）追加后全站最大值为 16；
-    // WBS-3.5.6（17/18/19）追加后全站最大值为 19；WBS-3.6.7（20/21）追加后全站最大值为 21
+    // WBS-3.5.6（17/18/19）追加后全站最大值为 19；WBS-3.6.7（20/21）追加后全站最大值为 21；
+    // WBS-3.7.2（22）追加后全站最大值为 22
     const menuOrders = children.filter((r) => r.meta?.menu === true).map((r) => r.meta?.menuOrder ?? 0)
     expect(menuOrders).toContain(7)
-    expect(Math.max(...menuOrders)).toBe(21)
+    expect(Math.max(...menuOrders)).toBe(22)
   })
 
   it('空间管理界面路由（WBS-3.2.6 §3）：菜单 9/10、权限点 space.member / platform.policy，"我的邀请"不占菜单且在 :id 之前', () => {
@@ -516,5 +520,55 @@ describe('连接器域路由（WBS-3.6.7 T3 / T15）', () => {
     await router.push('/connectors')
     expect(router.currentRoute.value.name).toBe('connector-manage')
   }, 30000)
+})
+
+describe('门户前台路由（WBS-3.7.2 T3 / T8）', () => {
+  const root = routes.find((r) => r.path === '/')
+  const children = root && 'children' in root ? (root.children ?? []) : []
+
+  it('数据产品门户：menuOrder=22、icon=ShoppingCart、登录可见（无权限点）', () => {
+    const route = children.find((r) => r.name === 'portal-home')
+    expect(route?.path).toBe('portal')
+    expect(route?.meta?.title).toBe('数据产品门户')
+    expect(route?.meta?.menu).toBe(true)
+    expect(route?.meta?.menuOrder).toBe(22)
+    expect(route?.meta?.icon).toBe('ShoppingCart')
+    expect(route?.meta?.permission).toBeUndefined()
+  })
+
+  it('详情深链 /portal/products/:productId：不占菜单、无权限点、声明在 /portal 之后', () => {
+    const detail = children.find((r) => r.name === 'portal-product-detail')
+    expect(detail?.path).toBe('portal/products/:productId')
+    expect(detail?.meta?.title).toBe('门户产品详情')
+    expect(detail?.meta?.menu).toBeUndefined()
+    expect(detail?.meta?.permission).toBeUndefined()
+    const paths = children.map((r) => r.path)
+    expect(paths.indexOf('portal')).toBeLessThan(paths.indexOf('portal/products/:productId'))
+  })
+
+  it('普通用户登录后直连门户列表与详情：放行（登录即可见，门槛在服务端）', async () => {
+    localStorage.clear()
+    const { default: router } = await import('../router/index')
+    signInDemo()
+    setDemoRole('user')
+    await router.push('/dashboard')
+    await router.push('/portal')
+    expect(router.currentRoute.value.name).toBe('portal-home')
+    await router.push('/portal/products/15')
+    expect(router.currentRoute.value.name).toBe('portal-product-detail')
+  }, 30000)
+
+  it('未登录访问门户列表与详情深链：重定向 /login（B1-2 / T8 负向）', async () => {
+    localStorage.clear()
+    const { default: router } = await import('../router/index')
+    signInDemo()
+    await router.push('/dashboard')
+    signOutDemo()
+    await router.push('/portal')
+    expect(router.currentRoute.value.name).toBe('login')
+    expect(isDemoAuthed()).toBe(false)
+    await router.push('/portal/products/15')
+    expect(router.currentRoute.value.name).toBe('login')
+  })
 })
 

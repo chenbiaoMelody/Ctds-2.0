@@ -34,8 +34,8 @@ public class JdbcDataProductRepository implements DataProductRepository {
 
     /** 目录行 select 列（join category_node 取类目名；interacted_at 由读面端点按需补，恒 null）。 */
     private static final String PRODUCT_COLUMNS = "p.id, p.product_name, p.intro, p.product_type, "
-            + "p.pricing_model, p.status, p.provider_subject_no, p.category_code, c.category_name, "
-            + "p.listed_at";
+            + "p.pricing_model, p.price_amount, p.status, p.provider_subject_no, p.category_code, "
+            + "c.category_name, p.listed_at";
     /** 基础 FROM/JOIN 段。 */
     private static final String PRODUCT_FROM = "FROM data_product p "
             + "LEFT JOIN category_node c ON c.category_code = p.category_code";
@@ -276,6 +276,7 @@ public class JdbcDataProductRepository implements DataProductRepository {
             throws SQLException {
         return new CatalogProductRow(rs.getLong("id"), rs.getString("product_name"), rs.getString("intro"),
                 rs.getString("product_type"), rs.getString("pricing_model"),
+                rs.getBigDecimal("price_amount"),
                 ProductStatus.valueOf(rs.getString("status")), rs.getString("provider_subject_no"),
                 rs.getString("category_code"), rs.getString("category_name"),
                 rs.getTimestamp("listed_at") == null ? null : rs.getTimestamp("listed_at").toLocalDateTime(),

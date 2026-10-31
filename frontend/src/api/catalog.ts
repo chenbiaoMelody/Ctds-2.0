@@ -39,10 +39,12 @@ export interface CatalogProduct {
   listedAt: string | null
 }
 
-/** 产品详情（R7：R6 字段 + status 全文 intro）。 */
+/** 产品详情（R7：R6 字段 + status 全文 intro；WBS-3.7.2 Q2-A 加性 priceAmount）。 */
 export interface CatalogProductDetail extends CatalogProduct {
   status: string
   createdAt: string
+  /** 定价数值（BigDecimal.toPlainString；免费 / 未登记 = null）。 */
+  priceAmount: string | null
 }
 
 /** 产品变更留痕（R8：订阅者可见值域六码）。 */

@@ -50,6 +50,23 @@ export function productStatusType(value: string): string {
   return (key && PRODUCT_STATUS_TYPES[key]) || 'info'
 }
 
+/**
+ * 门户定价展示（WBS-3.7.2 hifi §2.2；单一常量源，免费档显式"免费"，不空缺）：
+ * - 免费档 + 无数值 → "免费"；
+ * - 付费档 + 数值 → "按次（3.00）" / "包月（19.90）" / "交易额分成（5.00）"；
+ * - 付费档无数值（理论不发生：上架门槛要求付费档有价格）→ 仅模型名。
+ */
+export function formatPortalPricing(pricingModel: string, priceAmount: string | null | undefined): string {
+  if (!priceAmount) return pricingModel
+  return `${pricingModel}（${priceAmount}）`
+}
+
+/** 门户定价 tag 色（按中文显示名反查枚举键；免费 success，其余 info——仅视觉，不含业务判定）。 */
+export function pricingModelTagType(value: string): string {
+  const key = Object.entries(PRICING_MODEL_LABELS).find(([, label]) => label === value)?.[0]
+  return key === 'FREE' ? 'success' : 'info'
+}
+
 /** 「重新上架」动作按钮标签（动作码复用 PUBLISH，UI 面独立标签）。 */
 export const REPUBLISH_LABEL = '重新上架'
 
@@ -162,6 +179,14 @@ export const CATALOG_ADMISSION_REQUIRED_MESSAGE = '主体未入驻或不存在�
 
 /** 运营档打开提供方面页面的体验层提示（服务端 1000C0005 原样展示之外的档位引导）。 */
 export const OPERATOR_MODE_TIP = '当前为平台运营方档，提供方页面请切回普通主体档'
+
+// ==== 门户前台文案（WBS-3.7.2 hifi §5；单一常量源） ====
+
+/** 门户页头说明（Q5-A：无推送 / 消息承诺）。 */
+export const PORTAL_BROWSE_DESC = '浏览平台已上架的数据产品；订购与评价将在后续版本开放。'
+
+/** 订购禁用占位提示（Q3-A；3.7.3 实现前零请求、零订单）。 */
+export const PORTAL_ORDER_PLACEHOLDER_TIP = '订购与订单流程将在后续版本开放（WBS-3.7.3）'
 
 // ==== 必填前置拦截提示（零请求） ====
 

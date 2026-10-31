@@ -319,7 +319,67 @@ class CatalogProductSearchIntegrationTest {
                 .as("pageSize=100 通过且页数据正常").isEqualTo(1);
     }
 
+    // ==== WBS-3.7.2 T10：R7 加性 priceAmount（Q2-A；R6/R9/R10 契约不变）====
+
+    @Test
+    void detailExposesRegisteredPriceAmountAdditively() throws Exception {
+        final long paidId = insertPricedProduct("按次付费详情产品", "PER_CALL", "3.00", "LISTED");
+        final long freeId = insertPricedProduct("免费详情产品", "FREE", null, "LISTED");
+
+        final MvcResult paid = mockMvc.perform(
+                auth(get(PRODUCTS + "/" + paidId), "reader-p1", PROVIDER)).andReturn();
+        assertThat(paid.getResponse().getStatus()).as(body(paid)).isEqualTo(200);
+        final JsonNode paidData = payload(paid);
+        assertThat(paidData.get("priceAmount").asText())
+                .as("R7 加性 priceAmount = 登记数值（BigDecimal.toPlainString）").isEqualTo("3.00");
+        assertThat(paidData.properties().stream().map(java.util.Map.Entry::getKey).toList())
+                .as("R7 出站字段 = 既有 9 字段 + status + priceAmount")
+                .containsExactlyInAnyOrder("productId", "productName", "intro", "productType",
+                        "pricingModel", "priceAmount", "categoryCode", "categoryName",
+                        "providerSubjectNo", "listedAt", "status");
+
+        final MvcResult free = mockMvc.perform(
+                auth(get(PRODUCTS + "/" + freeId), "reader-p1", PROVIDER)).andReturn();
+        assertThat(free.getResponse().getStatus()).as(body(free)).isEqualTo(200);
+        assertThat(payload(free).get("priceAmount").isNull())
+                .as("免费档 priceAmount = null（界面显式展示'免费'）").isTrue();
+
+        final JsonNode page = payload(mockMvc.perform(
+                auth(get(PRODUCTS), "reader-p1", PROVIDER)).andReturn());
+        assertThat(page.get("list").get(0).properties().stream()
+                .map(java.util.Map.Entry::getKey).toList())
+                .as("R6 出参契约不变（不含 priceAmount）").doesNotContain("priceAmount");
+    }
+
+    @Test
+    void detailRejectionKeepsSameShapeAfterPriceAmountExtension() throws Exception {
+        final long draftId = insertPricedProduct("未上架付费产品", "PER_CALL", "9.99", "DRAFT");
+
+        final MvcResult draft = mockMvc.perform(
+                auth(get(PRODUCTS + "/" + draftId), "reader-p2", PROVIDER)).andReturn();
+        assertThat(draft.getResponse().getStatus()).as("未上架详情同形 404").isEqualTo(404);
+        assertThat(codeOf(draft)).isEqualTo("1007C0011");
+        assertThat(root(draft).get("message").asText()).isEqualTo("产品不存在或未在架");
+        assertThat(root(draft).get("data").isNull()).as("拒绝响应不泄漏定价数值").isTrue();
+
+        final JsonNode page = payload(mockMvc.perform(
+                auth(get(PRODUCTS), "reader-p2", PROVIDER)).andReturn());
+        assertThat(namesOf(page)).as("R6 恒仅已上架").doesNotContain("未上架付费产品");
+    }
+
     // ==== 助手 ====
+
+    private long insertPricedProduct(final String productName, final String pricingModel,
+            final String priceAmount, final String status) {
+        jdbc.update("INSERT INTO data_product (product_name, intro, product_type, pricing_model, "
+                        + "price_amount, status, provider_subject_no, dataset_id, category_code, listed_at) "
+                        + "VALUES (?, '简介', 'DATASET', ?, ?, ?, 'provider-s', 1, 'transport', ?)",
+                productName, pricingModel,
+                priceAmount == null ? null : new java.math.BigDecimal(priceAmount), status,
+                "LISTED".equals(status) ? Timestamp.valueOf(LocalDateTime.now()) : null);
+        return jdbc.queryForObject("SELECT id FROM data_product WHERE product_name = ?", Long.class,
+                productName);
+    }
 
     private long insertProduct(final String productName, final String intro, final String status,
             final String categoryCode, final LocalDateTime listedAt) {
