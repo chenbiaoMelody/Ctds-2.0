@@ -1,5 +1,6 @@
 package com.ctds.catalog.domain;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
@@ -12,6 +13,7 @@ import java.time.LocalDateTime;
  * @param intro             产品简介
  * @param productType       产品形态（DatasetType 枚举名，沿资源四类同款）
  * @param pricingModel      定价模型（PricingModel 枚举名）
+ * @param priceAmount       定价数值（WBS-3.7.2 Q2-A：仅 R7 详情出站；R6 读入不映射出参，R9/R10 行载体传 null）
  * @param status            当前状态（R6 检索恒 LISTED；R9/R10 读时计算 = 产品当前状态，Q5-A）
  * @param providerSubjectNo 提供方主体编号
  * @param categoryCode      所属类目码（字符串载体，可为 null）
@@ -20,6 +22,6 @@ import java.time.LocalDateTime;
  * @param interactedAt      交互时间（R9 = 收藏时间 / R10 = 订阅时间；R6/R7 恒 null）
  */
 public record CatalogProductRow(long productId, String productName, String intro, String productType,
-        String pricingModel, ProductStatus status, String providerSubjectNo, String categoryCode,
-        String categoryName, LocalDateTime listedAt, LocalDateTime interactedAt) {
+        String pricingModel, BigDecimal priceAmount, ProductStatus status, String providerSubjectNo,
+        String categoryCode, String categoryName, LocalDateTime listedAt, LocalDateTime interactedAt) {
 }

@@ -165,6 +165,20 @@ const routes = [
         component: () => import('../views/connector/ConnectorGovernanceView.vue'),
         meta: { title: '连接器治理', menu: true, menuOrder: 21, icon: 'Tools', permission: 'connector.review' },
       },
+      // WBS-3.7.2 门户前台：独立菜单（22，登录可见、无权限点；服务端 catalog.read + ADMITTED 门槛）
+      // + 详情深链（不占菜单；须声明在 portal 之后，深链匹配不吞噬列表页）
+      {
+        path: 'portal',
+        name: 'portal-home',
+        component: () => import('../views/portal/PortalHomeView.vue'),
+        meta: { title: '数据产品门户', menu: true, menuOrder: 22, icon: 'ShoppingCart' },
+      },
+      {
+        path: 'portal/products/:productId',
+        name: 'portal-product-detail',
+        component: () => import('../views/portal/PortalProductDetailView.vue'),
+        meta: { title: '门户产品详情' },
+      },
       {
         path: 'admin-only',
         name: 'admin-only',

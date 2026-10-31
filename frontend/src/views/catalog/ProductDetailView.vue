@@ -181,7 +181,7 @@ onMounted(() => {
         </div>
 
         <el-descriptions :column="2" border class="meta-descriptions">
-          <!-- 字段清单 = hifi §6.3；R7 出参无 priceAmount（3.3.4 既有契约）→ 不得展示"价格数值"行 -->
+          <!-- 字段清单 = hifi §6.3；本页为 3.3.4 交付形态，不展示价格数值行；R7 自 WBS-3.7.2 起含加性 priceAmount（由门户详情展示） -->
           <el-descriptions-item label="简介">{{ detail.intro ?? '—' }}</el-descriptions-item>
           <el-descriptions-item label="形态">{{ detail.productType }}</el-descriptions-item>
           <el-descriptions-item label="定价模型">{{ detail.pricingModel }}</el-descriptions-item>

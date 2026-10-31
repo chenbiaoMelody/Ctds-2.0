@@ -180,6 +180,12 @@ class CatalogProductInteractionIntegrationTest {
         final JsonNode subscriptions = payload(mockMvc.perform(
                 auth(get("/api/v1/catalog/subscriptions"), "owner-i6", PROVIDER)).andReturn());
         assertThat(subscriptions.get("total").asLong()).as("R10 恒仅本人条目").isEqualTo(1);
+        assertThat(subscriptions.get("list").get(0).properties().stream()
+                .map(java.util.Map.Entry::getKey).toList())
+                .as("R10 出站字段 = 目录元数据 + productStatus + subscribedAt")
+                .containsExactlyInAnyOrder("productId", "productName", "intro", "productType",
+                        "pricingModel", "categoryCode", "categoryName", "providerSubjectNo", "listedAt",
+                        "productStatus", "subscribedAt");
         assertThat(subscriptions.get("list").get(0).get("subscribedAt").asText()).isNotBlank();
     }
 

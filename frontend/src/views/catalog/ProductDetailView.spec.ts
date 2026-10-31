@@ -56,6 +56,8 @@ function detail(over: Partial<CatalogProductDetail> = {}): CatalogProductDetail 
     intro: '面向普惠金融场景的目录元数据产品（全文）',
     productType: '数据集',
     pricingModel: '按次',
+    // WBS-3.7.2 Q2-A：R7 加性字段（既有页面不展示；测试夹具补齐类型）
+    priceAmount: null,
     categoryCode: 'finance',
     categoryName: '金融',
     providerSubjectNo: 'S20260925000001',

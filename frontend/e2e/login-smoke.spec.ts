@@ -49,6 +49,8 @@ test.describe('登录冒烟（E1–E5）', () => {
     await expect(page.getByRole('menuitem', { name: '工作台' })).toBeVisible()
     await expect(page.getByRole('menuitem', { name: '标准能力' })).toBeVisible()
     await expect(page.getByRole('menuitem', { name: '数据目录' })).toBeVisible()
+    // WBS-3.7.2：门户前台菜单登录可见（不计数）
+    await expect(page.getByRole('menuitem', { name: '数据产品门户' })).toBeVisible()
     // B1 直接断言（评审④P3-2 补）：登录成功即写入演示登录态
     const authed = await page.evaluate((key) => localStorage.getItem(key), DEMO_AUTH_KEY)
     expect(authed).toBe('1')
