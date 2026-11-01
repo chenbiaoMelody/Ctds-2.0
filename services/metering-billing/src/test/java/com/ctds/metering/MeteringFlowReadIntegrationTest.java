@@ -20,6 +20,7 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.ResultMatcher;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
@@ -81,6 +82,16 @@ class MeteringFlowReadIntegrationTest {
             throws Exception {
         final MvcResult result = mockMvc.perform(get(path)
                         .header("X-Ctds-Subject", subject).header("X-Ctds-Roles", roles))
+                .andReturn();
+        return MAPPER.readTree(result.getResponse().getContentAsString(StandardCharsets.UTF_8));
+    }
+
+    /** 负向读数变体（评审修复轮 F2）：同 getJson 并锚定 HTTP 状态（hifi §8 T8 404 同形 / 1000C0001 → 400）。 */
+    private JsonNode getJson(final String subject, final String roles, final String path,
+            final ResultMatcher expectedStatus) throws Exception {
+        final MvcResult result = mockMvc.perform(get(path)
+                        .header("X-Ctds-Subject", subject).header("X-Ctds-Roles", roles))
+                .andExpect(expectedStatus)
                 .andReturn();
         return MAPPER.readTree(result.getResponse().getContentAsString(StandardCharsets.UTF_8));
     }
@@ -158,12 +169,12 @@ class MeteringFlowReadIntegrationTest {
                 "2026-10-05 09:00:00");
 
         final JsonNode other = getJson(OTHER, "requester",
-                "/api/v1/metering/contracts/CO300005/flows");
+                "/api/v1/metering/contracts/CO300005/flows", status().isNotFound());
         assertThat(other.path("code").asText()).isEqualTo("1011C0008");
         assertThat(other.path("message").asText()).isEqualTo("计量数据不存在或不可读");
 
         final JsonNode missing = getJson(REQUESTER, "requester",
-                "/api/v1/metering/contracts/CO999999/flows");
+                "/api/v1/metering/contracts/CO999999/flows", status().isNotFound());
         assertThat(missing.path("code").asText())
                 .as("同码同文防枚举：不存在与非本方同形").isEqualTo("1011C0008");
         assertThat(missing.path("message").asText()).isEqualTo("计量数据不存在或不可读");
@@ -190,7 +201,7 @@ class MeteringFlowReadIntegrationTest {
                 "2026-10-07 09:00:00");
 
         final JsonNode body = getJson(ADMIN, "admin",
-                "/api/v1/metering/contracts/CO300007/flows");
+                "/api/v1/metering/contracts/CO300007/flows", status().isNotFound());
         assertThat(body.path("code").asText()).isEqualTo("1011C0008");
     }
 
@@ -198,7 +209,7 @@ class MeteringFlowReadIntegrationTest {
     @Test
     void invalidContractNoIsParamInvalid() throws Exception {
         final JsonNode body = getJson(REQUESTER, "requester",
-                "/api/v1/metering/contracts/not-a-contract/flows");
+                "/api/v1/metering/contracts/not-a-contract/flows", status().isBadRequest());
         assertThat(body.path("code").asText()).isEqualTo("1000C0001");
     }
 
