@@ -25,7 +25,6 @@ import {
 } from '../../api/catalog'
 import {
   PRODUCT_NOT_ACCESSIBLE_TIP,
-  PORTAL_ORDER_PLACEHOLDER_TIP,
   PRICING_MODEL_LABELS,
   INTERACTION_ACTION_LABELS,
   labelOf,
@@ -34,6 +33,7 @@ import {
   formatPortalPricing,
 } from '../../constants/catalog'
 import { guideToLoginIfAuthFailed } from '../../api/authGuide'
+import PortalOrderDialog from './PortalOrderDialog.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -47,6 +47,18 @@ const favoriteLoading = ref(false)
 const subscriptionLoading = ref(false)
 
 const isProviderMode = computed(() => getActorMode() !== 'operator')
+
+/** 订购弹窗显隐（WBS-3.7.3 开放订购入口——hifi §4.1 仅改订购区，其余零改动）。 */
+const orderDialogVisible = ref(false)
+
+function onSubscribeOrder(): void {
+  orderDialogVisible.value = true
+}
+
+function onOrderCreated(orderNo: string): void {
+  orderDialogVisible.value = false
+  void router.push(`/portal/orders/${orderNo}`)
+}
 
 function showError(error: unknown): void {
   if (guideToLoginIfAuthFailed(error, router)) return
@@ -191,7 +203,7 @@ onMounted(() => {
           <el-descriptions-item label="简介">{{ detail.intro ?? '—' }}</el-descriptions-item>
           <el-descriptions-item label="形态">{{ detail.productType }}</el-descriptions-item>
           <el-descriptions-item label="定价">
-            <span class="pricing-value">{{ formatPortalPricing(detail.pricingModel, detail.priceAmount) }}</span>
+            <span class="pricing-value">{{ formatPortalPricing(labelOf(PRICING_MODEL_LABELS, detail.pricingModel), detail.priceAmount) }}</span>
           </el-descriptions-item>
           <el-descriptions-item label="类目">{{ detail.categoryName ?? '—' }}</el-descriptions-item>
           <el-descriptions-item label="提供方主体编号">{{ detail.providerSubjectNo }}</el-descriptions-item>
@@ -227,8 +239,16 @@ onMounted(() => {
         </div>
 
         <div v-if="isProviderMode" class="order-area">
-          <el-button class="order-btn" type="primary" disabled>发起订购</el-button>
-          <span class="order-tip">{{ PORTAL_ORDER_PLACEHOLDER_TIP }}</span>
+          <el-button class="order-btn" type="primary" @click="onSubscribeOrder">发起订购</el-button>
+          <PortalOrderDialog
+            v-if="orderDialogVisible"
+            :product-id="parseProductId() ?? 0"
+            :product-name="detail?.productName ?? ''"
+            :pricing-model="detail?.pricingModel ?? ''"
+            :price-amount="detail?.priceAmount ?? null"
+            @close="orderDialogVisible = false"
+            @ordered="onOrderCreated"
+          />
         </div>
       </template>
     </el-card>

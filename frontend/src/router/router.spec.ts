@@ -72,10 +72,30 @@ describe('路由表结构（H3）', () => {
     }
   })
 
+  it('订单域路由（WBS-3.7.3）：/portal/orders 菜单 23 登录可见无权限点；详情深链不占菜单且声明在列表后', () => {
+    const listRoute = children.find((r) => r.name === 'portal-order-list')
+    expect(listRoute?.path).toBe('portal/orders')
+    expect(listRoute?.meta?.title).toBe('我的订单')
+    expect(listRoute?.meta?.menu).toBe(true)
+    expect(listRoute?.meta?.menuOrder).toBe(23)
+    expect(listRoute?.meta?.icon).toBe('List')
+    expect(listRoute?.meta?.permission).toBeUndefined()
+
+    const detailRoute = children.find((r) => r.name === 'portal-order-detail')
+    expect(detailRoute?.path).toBe('portal/orders/:orderNo')
+    expect(detailRoute?.meta?.title).toBe('订单详情')
+    expect(detailRoute?.meta?.menu).toBeUndefined()
+    expect(detailRoute?.meta?.permission).toBeUndefined()
+
+    // 声明顺序：portal/orders/:orderNo 必须在 portal/orders 之后（深链匹配不吞噬列表页）
+    const paths = children.map((r) => r.path)
+    expect(paths.indexOf('portal/orders')).toBeLessThan(paths.indexOf('portal/orders/:orderNo'))
+  })
+
   it('DID 管理路由（WBS-3.1.11）：menuOrder=8、icon=Key、did.admin 权限；演示页不占菜单', () => {
-    // 菜单末尾追加（lofi Q1/Q8：不重排既有菜单）；WBS-3.7.2 追加 menuOrder 22 后全站最大值为 22
+    // 菜单末尾追加（lofi Q1/Q8：不重排既有菜单）；WBS-3.7.3 追加 menuOrder 23 后全站最大值为 23
     const menuOrders = children.filter((r) => r.meta?.menu === true).map((r) => r.meta?.menuOrder ?? 0)
-    expect(Math.max(...menuOrders)).toBe(22)
+    expect(Math.max(...menuOrders)).toBe(23)
     const didRoute = children.find((r) => r.name === 'did-management')
     expect(didRoute?.path).toBe('did')
     expect(didRoute?.meta?.title).toBe('DID 管理')
@@ -145,10 +165,10 @@ describe('路由表结构（H3）', () => {
     // menuOrder=7 为入驻进度查询占位；WBS-3.1.11（8）与 WBS-3.2.6（9/10）追加后全站最大值为 10；
     // WBS-3.3.6（11/12/13）追加后全站最大值为 13；WBS-3.4.7（14/15/16）追加后全站最大值为 16；
     // WBS-3.5.6（17/18/19）追加后全站最大值为 19；WBS-3.6.7（20/21）追加后全站最大值为 21；
-    // WBS-3.7.2（22）追加后全站最大值为 22
+    // WBS-3.7.2（22）追加后全站最大值为 22；WBS-3.7.3（23）追加后全站最大值为 23
     const menuOrders = children.filter((r) => r.meta?.menu === true).map((r) => r.meta?.menuOrder ?? 0)
     expect(menuOrders).toContain(7)
-    expect(Math.max(...menuOrders)).toBe(22)
+    expect(Math.max(...menuOrders)).toBe(23)
   })
 
   it('空间管理界面路由（WBS-3.2.6 §3）：菜单 9/10、权限点 space.member / platform.policy，"我的邀请"不占菜单且在 :id 之前', () => {

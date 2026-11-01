@@ -50,6 +50,12 @@ export default defineConfig({
         target: 'http://localhost:8085',
         changeOrigin: true,
       },
+      // WBS-3.7.3 订单域（8085）：界面走查经 5173 访问订单端点（开发期转发，不改服务契约与
+      // 门禁配置——沿 3.4.7 合约域转发先例）。
+      '/api/v1/orders': {
+        target: 'http://localhost:8085',
+        changeOrigin: true,
+      },
       // WBS-3.5.6 交付域（8087）：界面走查经 5173 访问交付服务（开发期转发，不改服务契约与
       // 门禁配置；nginx 容器配置零改动——沿 3.2.6/3.3.6/3.4.7 界面包先例，部署面无 API 代理）。
       '/api/v1/deliveries': {

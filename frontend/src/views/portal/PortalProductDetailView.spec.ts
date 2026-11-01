@@ -20,7 +20,6 @@ import { ApiError, setDemoSubject } from '../../api/client'
 import { setActorMode } from '../../stores/demoIdentity'
 import {
   PRODUCT_NOT_ACCESSIBLE_TIP,
-  PORTAL_ORDER_PLACEHOLDER_TIP,
 } from '../../constants/catalog'
 
 /**
@@ -37,6 +36,10 @@ vi.mock('../../api/catalog', () => ({
   unsubscribeProduct: vi.fn(),
   listFavorites: vi.fn(),
   listSubscriptions: vi.fn(),
+}))
+vi.mock('../../api/contract', () => ({
+  listTemplates: vi.fn(),
+  getTemplate: vi.fn(),
 }))
 
 const mockedDetail = vi.mocked(getProductDetail)
@@ -95,6 +98,7 @@ async function mountPage(path = '/portal/products/15') {
     routes: [
       { path: '/portal', name: 'portal-home', component: { template: '<div />' } },
       { path: '/portal/products/:productId', name: 'portal-product-detail', component: PortalProductDetailView },
+      { path: '/portal/orders/:orderNo', name: 'portal-order-detail', component: { template: '<div />' } },
       { path: '/login', name: 'login', component: { template: '<div />' } },
     ],
   })
@@ -187,19 +191,33 @@ describe('元数据与定价（T6 / B2-4）', () => {
   )
 })
 
-describe('订购禁用占位（T6 / Q3-A）', () => {
-  it('「发起订购」为禁用态并常驻提示；点击零请求、零状态变化', async () => {
+describe('订购入口（WBS-3.7.3 开放 / hifi §4.1 仅改订购区）', () => {
+  it('「发起订购」启用；点击挂载订购弹窗；关闭弹窗零跳转、收藏订阅零误触', async () => {
     const { wrapper, router } = await mountPage()
     const orderBtn = wrapper.find('.order-btn')
     expect(orderBtn.exists()).toBe(true)
-    expect(orderBtn.attributes('disabled')).toBeDefined()
-    expect(wrapper.text()).toContain(PORTAL_ORDER_PLACEHOLDER_TIP)
+    expect(orderBtn.attributes('disabled')).toBeUndefined()
 
     await orderBtn.trigger('click')
     await flushPromises()
+    const dialog = wrapper.findComponent({ name: 'PortalOrderDialog' })
+    expect(dialog.exists()).toBe(true)
+    expect(router.currentRoute.value.name).toBe('portal-product-detail')
     expect(mockedFavorite).not.toHaveBeenCalled()
     expect(mockedSubscribe).not.toHaveBeenCalled()
-    expect(router.currentRoute.value.name).toBe('portal-product-detail')
+
+    dialog.vm.$emit('close')
+    await flushPromises()
+    expect(wrapper.findComponent({ name: 'PortalOrderDialog' }).exists()).toBe(false)
+  })
+
+  it('订购成功：关闭弹窗并路由跳转订单详情深链', async () => {
+    const { wrapper, router } = await mountPage()
+    await wrapper.find('.order-btn').trigger('click')
+    await flushPromises()
+    wrapper.findComponent({ name: 'PortalOrderDialog' }).vm.$emit('ordered', 'OD000001')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/portal/orders/OD000001')
   })
 })
 

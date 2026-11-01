@@ -23,11 +23,12 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.reactive.server.WebTestClient;
 
 /**
- * 连接器六门面网关扩路由契约（WBS-3.6.8 W1，hifi §1-A）：六条<b>普通代理</b>路由
+ * 连接器门面网关扩路由契约（WBS-3.6.8 W1，hifi §1-A；WBS-3.7.3 续延 connector-orders）：
+ * 七条<b>普通代理</b>路由
  * （subject / did / datasets / data-spaces / contracts / deliveries）装配与转发。
  *
  * <ul>
- *   <li><b>T1-①</b>：六条路由装配（id 唯一、单 {@code Path=} 谓词、filters 为空）；</li>
+ *   <li><b>T1-①</b>：七条路由装配（id 唯一、单 {@code Path=} 谓词、filters 为空）；</li>
  *   <li><b>T1-②</b>：新路由转发到配置路径模板的实例路径（白名单外不进交付判定链——
  *       无合约头放行、判定器零调用、计量零触发）；</li>
  *   <li><b>T1-③</b>：既有探针路由（交付白名单）不回归——判定链语义零改动。</li>
@@ -45,13 +46,15 @@ class GatewayConnectorRoutesIntegrationTest {
     private static final StubServer UPSTREAM = new StubServer();
     private static final StubServer JUDGE = new StubServer();
 
-    /** 六门面路由增量（hifi §1-A 前置检查③实测回填：六条，各一 id 一 Path）。 */
+    /** 门面路由清单（hifi §1-A 前置检查③实测回填；WBS-3.7.3 续延 connector-orders——七条，
+     * 各一 id 一 Path；orders 与 contract 同下游 8085，CTDS_GATEWAY_CONTRACT_BASEURL 已注册）。 */
     private static final List<String[]> NEW_ROUTES = List.of(
             new String[] {"connector-identity-subject", "/api/v1/subject/**"},
             new String[] {"connector-identity-did", "/api/v1/did/**"},
             new String[] {"connector-resource-datasets", "/api/v1/datasets/**"},
             new String[] {"connector-resource-spaces", "/api/v1/data-spaces/**"},
             new String[] {"connector-contract", "/api/v1/contracts/**"},
+            new String[] {"connector-orders", "/api/v1/orders/**"},
             new String[] {"connector-delivery", "/api/v1/deliveries/**"});
 
     private static final String REQUESTER = "S-req-368";
@@ -59,7 +62,7 @@ class GatewayConnectorRoutesIntegrationTest {
     @DynamicPropertySource
     static void gatewayProperties(final DynamicPropertyRegistry registry) {
         registry.add("ctds.auth.jwt.secret", () -> TestTokens.TEST_SECRET);
-        // 六条新路由下游统一指向同一 stub（转发断言看实收路径，不看下游差异）
+        // 七条门面路由下游统一指向同一 stub（转发断言看实收路径，不看下游差异）
         registry.add("CTDS_GATEWAY_SUBJECT_BASEURL", () -> UPSTREAM.baseUrl());
         registry.add("CTDS_GATEWAY_DID_BASEURL", () -> UPSTREAM.baseUrl());
         registry.add("CTDS_GATEWAY_SPACE_BASEURL", () -> UPSTREAM.baseUrl());
@@ -96,7 +99,7 @@ class GatewayConnectorRoutesIntegrationTest {
     }
 
     @Test
-    void sixConnectorRoutesAssembledWithPlainPathPredicates() {
+    void sevenConnectorRoutesAssembledWithPlainPathPredicates() {
         for (final String[] expected : NEW_ROUTES) {
             final GatewayProperties.Route route = properties.getRoutes().stream()
                     .filter(item -> expected[0].equals(item.getId()))
@@ -128,7 +131,7 @@ class GatewayConnectorRoutesIntegrationTest {
         assertThat(JUDGE.requestCount()).as("白名单外路由不进交付判定链（判定器零调用）")
                 .isEqualTo(0);
         assertThat(recorder.eventsOf(GatewayAuditActions.DELIVERY_METERING))
-                .as("六门面普通代理零计量事件（评审采纳：计量零触发的直接断言）").isEmpty();
+                .as("门面普通代理零计量事件（评审采纳：计量零触发的直接断言）").isEmpty();
     }
 
     @Test
@@ -147,7 +150,7 @@ class GatewayConnectorRoutesIntegrationTest {
 
     @Test
     void deliveryWhitelistUnchanged() {
-        // 判定链白名单零改动锚：六门面普通代理路由不进白名单，既有语义不回归
+        // 判定链白名单零改动锚：门面普通代理路由不进白名单，既有语义不回归
         assertThat(properties.getDelivery().getRoutes())
                 .as("交付判定链白名单仅含既有探针路由（W1 零改动）")
                 .containsExactly("delivery-catalog-products");

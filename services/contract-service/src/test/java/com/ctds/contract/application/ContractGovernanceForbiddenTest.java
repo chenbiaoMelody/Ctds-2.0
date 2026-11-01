@@ -9,7 +9,6 @@ import static org.mockito.Mockito.verify;
 import com.ctds.common.auth.AuthContext;
 import com.ctds.common.auth.AuthUser;
 import com.ctds.common.crypto.Sm3Service;
-import com.ctds.contract.domain.CatalogProductPort;
 import com.ctds.contract.domain.ContractAction;
 import com.ctds.contract.domain.ContractActionLog;
 import com.ctds.contract.domain.ContractBizException;
@@ -52,7 +51,9 @@ class ContractGovernanceForbiddenTest {
     @Mock
     private SubjectAdmissionPort subjectAdmissionPort;
     @Mock
-    private CatalogProductPort catalogProductPort;
+    private ContractInitiationService contractInitiationService;
+    @Mock
+    private ContractOrderSyncService contractOrderSyncService;
     @Mock
     private DidPort didPort;
     @Mock
@@ -65,7 +66,8 @@ class ContractGovernanceForbiddenTest {
     @BeforeEach
     void setUp() {
         commandService = new ContractCommandService(repository, templateQueryService,
-                subjectAdmissionPort, catalogProductPort, didPort, dealTextCipher, sm3Service,
+                subjectAdmissionPort, contractInitiationService, contractOrderSyncService,
+                didPort, dealTextCipher, sm3Service,
                 Clock.fixed(Instant.parse("2026-10-06T00:00:00Z"), ZoneOffset.UTC));
     }
 

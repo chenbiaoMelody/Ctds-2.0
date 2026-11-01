@@ -3,7 +3,6 @@ package com.ctds.contract.application;
 import com.ctds.common.auth.AuthContext;
 import com.ctds.common.crypto.Sm3Service;
 import com.ctds.common.idempotency.Idempotent;
-import com.ctds.contract.domain.CatalogProductPort;
 import com.ctds.contract.domain.ClauseValues;
 import com.ctds.contract.domain.Contract;
 import com.ctds.contract.domain.ContractAction;
@@ -58,21 +57,18 @@ public class ContractCommandService {
     /** 密文回读 JSON 解析（存储形态已校验合法；Mapper 线程安全共享）。 */
     private static final com.fasterxml.jackson.databind.ObjectMapper CIPHER_JSON_MAPPER =
             new com.fasterxml.jackson.databind.ObjectMapper();
-    /** 合约编号前缀（Q1-A：CO + 6 位全局序号）。 */
-    private static final String CONTRACT_NO_PREFIX = "CO";
     /** 演示期平台运营方角色名（yml ctds.auth.permissions.admin 映射；模板服务同款先例）。 */
     private static final String ADMIN_ROLE = "admin";
     /** 强制终止理由长度上限（hifi §2.3 W12：必填 1~512）。 */
     private static final int FORCE_TERMINATE_REASON_MAX = 512;
-    /** 产品在架状态硬门槛（行为 2 规则 2；状态原值来自 catalog 内部端点）。 */
-    private static final String STATUS_LISTED = "LISTED";
     /** DID 有效状态（签署前解析校验——hifi §6.4 ②）。 */
     private static final String DID_STATUS_ACTIVE = "ACTIVE";
 
     private final ContractRepository repository;
     private final TemplateQueryService templateQueryService;
     private final SubjectAdmissionPort subjectAdmissionPort;
-    private final CatalogProductPort catalogProductPort;
+    private final ContractInitiationService contractInitiationService;
+    private final ContractOrderSyncService contractOrderSyncService;
     private final DidPort didPort;
     private final DealTextCipher dealTextCipher;
     private final Sm3Service sm3Service;
@@ -81,12 +77,14 @@ public class ContractCommandService {
     public ContractCommandService(final ContractRepository repository,
             final TemplateQueryService templateQueryService,
             final SubjectAdmissionPort subjectAdmissionPort,
-            final CatalogProductPort catalogProductPort, final DidPort didPort,
+            final ContractInitiationService contractInitiationService,
+            final ContractOrderSyncService contractOrderSyncService, final DidPort didPort,
             final DealTextCipher dealTextCipher, final Sm3Service sm3Service, final Clock clock) {
         this.repository = repository;
         this.templateQueryService = templateQueryService;
         this.subjectAdmissionPort = subjectAdmissionPort;
-        this.catalogProductPort = catalogProductPort;
+        this.contractInitiationService = contractInitiationService;
+        this.contractOrderSyncService = contractOrderSyncService;
         this.didPort = didPort;
         this.dealTextCipher = dealTextCipher;
         this.sm3Service = sm3Service;
@@ -104,88 +102,9 @@ public class ContractCommandService {
     @Idempotent(key = "'DEAL:' + #cmd.requesterNo + ':' + #cmd.productId + ':' + #cmd.templateNo "
             + "+ ':' + #cmd.templateVersionNo + ':' + #cmd.requestFingerprint")
     public InitiateResult initiate(final InitiateCommand cmd) {
-        requireAdmitted(cmd.requesterNo(), null,
-                ContractErrorCodes.INITIATE_ADMISSION_REQUIRED_MESSAGE);
-        // ② 产品事实三态（1008C0010 同码同文防枚举 / 1008S0003 不冒充）
-        final CatalogProductPort.CatalogProductResult productResult =
-                catalogProductPort.fetch(cmd.productId());
-        if (productResult.state() == CatalogProductPort.CatalogProductResult.State.UNAVAILABLE) {
-            throw new ContractBizException(ContractErrorCodes.CATALOG_SERVICE_UNAVAILABLE,
-                    ContractErrorCodes.CATALOG_SERVICE_UNAVAILABLE_MESSAGE);
-        }
-        if (productResult.state() == CatalogProductPort.CatalogProductResult.State.NOT_FOUND
-                || !STATUS_LISTED.equals(productResult.product().status())) {
-            throw new ContractBizException(ContractErrorCodes.PRODUCT_NOT_AVAILABLE_FOR_DEAL,
-                    ContractErrorCodes.PRODUCT_NOT_AVAILABLE_FOR_DEAL_MESSAGE);
-        }
-        final CatalogProductPort.CatalogProduct product = productResult.product();
-        // ③ 双方须为不同主体（剧本 S1-6）
-        if (product.providerSubjectNo().equals(cmd.requesterNo())) {
-            throw new ContractBizException(ContractErrorCodes.SELF_DEAL_FORBIDDEN,
-                    ContractErrorCodes.SELF_DEAL_FORBIDDEN_MESSAGE);
-        }
-        // ④ 模板 QV1（无效三态出站统一 C0017——明细入日志）+ QV2 锁定版本框架全文
-        final InitiationCheck check = templateQueryService.validateForInitiation(cmd.templateNo(),
-                cmd.templateVersionNo());
-        if (!check.valid()) {
-            log.info("模板不可用于发起: templateNo={}, versionNo={}, reason={}",
-                    cmd.templateNo(), cmd.templateVersionNo(), check.invalidReason());
-            throw new ContractBizException(
-                    ContractErrorCodes.TEMPLATE_NOT_AVAILABLE_FOR_INITIATION,
-                    ContractErrorCodes.TEMPLATE_NOT_AVAILABLE_FOR_INITIATION_MESSAGE);
-        }
-        final var frameworkVersion = templateQueryService
-                .loadFramework(cmd.templateNo(), cmd.templateVersionNo())
-                .orElseThrow(() -> new ContractBizException(
-                        ContractErrorCodes.TEMPLATE_NOT_AVAILABLE_FOR_INITIATION,
-                        ContractErrorCodes.TEMPLATE_NOT_AVAILABLE_FOR_INITIATION_MESSAGE));
-        // ⑤ 条款值校验（槽位框架 C0014 / 策略基础取值 C0015——明细入日志，响应仅常量文案）
-        final ClauseValues.Parsed parsed = ClauseValues.parse(cmd.clauseValues());
-        if (parsed.hasSlotViolations()) {
-            log.info("条款值与模板框架不符: productId={}, violations={}", cmd.productId(),
-                    parsed.slotViolations());
-            throw new ContractBizException(ContractErrorCodes.CLAUSE_VALUES_INVALID,
-                    ContractErrorCodes.CLAUSE_VALUES_INVALID_MESSAGE);
-        }
-        // 策略校验单点全查（解析结果即违规清单——发起路径不再二次取值校验）
-        if (parsed.hasStrategyViolations()) {
-            log.info("策略条款不符合使用控制约定: productId={}, violations={}", cmd.productId(),
-                    parsed.strategyViolations());
-            throw new ContractBizException(ContractErrorCodes.POLICY_CLAUSE_INVALID,
-                    ContractErrorCodes.POLICY_CLAUSE_INVALID_MESSAGE);
-        }
-        final List<String> frameworkViolations =
-                parsed.values().frameworkViolations(frameworkVersion.clauseFrameworkJson());
-        if (!frameworkViolations.isEmpty()) {
-            log.info("条款值与模板框架不符: productId={}, violations={}", cmd.productId(),
-                    frameworkViolations);
-            throw new ContractBizException(ContractErrorCodes.CLAUSE_VALUES_INVALID,
-                    ContractErrorCodes.CLAUSE_VALUES_INVALID_MESSAGE);
-        }
-        // ⑥ 锁定快照写库（取号 + contract + 版本 V1 + 留痕 CREATE 同事务）
-        final LocalDateTime now = LocalDateTime.now(clock);
-        final String contractNo = CONTRACT_NO_PREFIX
-                + String.format("%06d", repository.nextContractNoSeq());
-        final Contract contract = new Contract(null, contractNo, product.productId(),
-                product.productName(), product.providerSubjectNo(), cmd.requesterNo(),
-                cmd.templateNo(), cmd.templateVersionNo(), product.pricingModel(),
-                product.priceAmount(), 1, ContractStatus.NEGOTIATING, null, null, null,
-                null, null, null, null, cmd.requesterNo(), now, now);
-        final ContractClauseVersion versionV1 = new ContractClauseVersion(null, 0L, 1,
-                dealTextCipher.encrypt(parsed.values().toStorageText()), null, null, null,
-                cmd.requesterNo(), now, null, null);
-        final ContractActionLog logRow = new ContractActionLog(null, contractNo, 1,
-                ContractAction.CREATE, cmd.requesterNo(), null, null, "1", now);
-        try {
-            repository.create(contract, versionV1, logRow);
-        } catch (final DuplicateKeyException e) {
-            log.warn("合约发起并发撞编号唯一索引(uk_contract_no): requesterNo={}, productId={}",
-                    cmd.requesterNo(), cmd.productId());
-            throw new ContractBizException(ContractErrorCodes.CONTRACT_CONCURRENT_MODIFICATION,
-                    ContractErrorCodes.CONTRACT_CONCURRENT_MODIFICATION_MESSAGE);
-        }
-        return new InitiateResult(contractNo, ContractStatus.NEGOTIATING.name(), 1,
-                cmd.templateNo(), cmd.templateVersionNo(), cmd.productId());
+        // 行为等价重构（WBS-3.7.3）：门槛链与快照落库提取至 ContractInitiationService
+        // （prepare + persist），幂等注解与键原地保留——W5 行为 / 幂等 / 错误码零变更。
+        return contractInitiationService.initiate(cmd);
     }
 
     // ==== W6 提案/反提案（行为 2 规则 4：交替提案 + 版本 +1 + 变更明细）====
@@ -327,9 +246,12 @@ public class ContractCommandService {
         final ContractActionLog logRow = new ContractActionLog(null, contractNo,
                 contract.currentClauseVersion(), action, operatorNo, null, contract.status().name(),
                 ContractStatus.TERMINATED.name(), now);
-        final ContractRepository.TerminateOutcome outcome = repository.terminate(
-                new ContractRepository.TerminateCommand(contract.id(), contractNo, fromStates,
-                        type, reason, operatorNo, now, logRow));
+        // 状态联动挂接（WBS-3.7.3 Q3-A）：合约终止与订单关闭同事务原子提交
+        // （生效前终止两类 → 订单 CLOSED；releaseConsent / forceTerminate 不改订单——Q7-A）
+        final ContractRepository.TerminateOutcome outcome = contractOrderSyncService
+                .terminateAndSync(
+                        new ContractRepository.TerminateCommand(contract.id(), contractNo,
+                                fromStates, type, reason, operatorNo, now, logRow));
         if (outcome == ContractRepository.TerminateOutcome.STATE_CONFLICT) {
             throw stateForbidden(operatorNo, contract, contract.currentClauseVersion(), action);
         }
@@ -388,7 +310,8 @@ public class ContractCommandService {
         final ContractActionLog attestLog = new ContractActionLog(null, contractNo,
                 contract.currentClauseVersion(), ContractAction.ATTEST, operatorNo, null, null,
                 ContractStatus.EFFECTIVE.name(), now);
-        final ContractRepository.SignOutcome outcome = repository.sign(
+        // 状态联动挂接（WBS-3.7.3 Q3-A）：双签生效与订单完成同事务原子提交（首签不动订单）
+        final ContractRepository.SignOutcome outcome = contractOrderSyncService.signAndSync(
                 new ContractRepository.SignCommand(contract.id(), role, operatorNo, did,
                         lockedVersion.contentHash(), dealTextCipher.encrypt(signResult.signatureBase64()),
                         now, signLog, attestLog));
