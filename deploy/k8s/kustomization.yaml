@@ -18,3 +18,5 @@ resources:
   - gateway-service.yaml
   - delivery-deployment.yaml
   - delivery-service.yaml
+  - metering-billing-deployment.yaml
+  - metering-billing-service.yaml

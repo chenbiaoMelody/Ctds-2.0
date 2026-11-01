@@ -1,0 +1,80 @@
+# C-TDS metering-billing Deployment (WBS-3.7.5, spec: docs/designs/WBS-3.7.5-hifi.md §1/§5;
+# template follows delivery-deployment.yaml per ADR-013, WBS-2.5.2 label conventions).
+# IMAGE_PLACEHOLDER is injected by the 2.5.2 deployment toolchain convention (ADR-012).
+# ACTIVATION NOTE: not yet runnable in the demo cluster - prerequisites registered in the
+# delivery note: (1) metering image added to the nightly build / ModuleMap wiring (2.5.x),
+# (2) `ctds_metering` database bootstrap (CREATE DATABASE, same operational line as
+# ctds_delivery/ctds_contract), (3) metering collector account granted SELECT on
+# ctds_contract.{contract, contract_usage_log, contract_usage_counter} and
+# ctds_delivery.{delivery, sandbox_job, sandbox_task} plus read/write on ctds_metering
+# (cross-schema read-only collection, WBS-3.7.5 hifi §2), (4) CTDS_DB credentials injected
+# via secret/env at activation - credentials never enter the repo (charter red line 7).
+# Until then the pod stays ImagePullBackOff if applied: expected.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ctds-metering-billing
+  labels:
+    app.kubernetes.io/part-of: ctds
+    app.kubernetes.io/name: ctds-metering-billing
+    app.kubernetes.io/component: metering
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ctds-metering-billing
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: ctds
+        app.kubernetes.io/name: ctds-metering-billing
+        app.kubernetes.io/component: metering
+    spec:
+      containers:
+        - name: ctds-metering-billing
+          # Image reference is injected by the 2.5.2 toolchain convention (ADR-012).
+          image: IMAGE_PLACEHOLDER
+          securityContext:
+            runAsNonRoot: true
+          ports:
+            - containerPort: 8089
+          readinessProbe:
+            tcpSocket:
+              port: 8089
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 8089
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          env:
+            # mysql profile is required (JdbcTemplate repositories; default profile is
+            # fail-fast non-startable by design, ADR-009/DB-24).
+            - name: SPRING_PROFILES_ACTIVE
+              value: "mysql"
+            # In-cluster relaxation of the host-demo loopback binding (ADR-016 §2.7):
+            # ClusterIP keeps the service non-exposed.
+            - name: SPRING_SERVER_ADDRESS
+              value: "0.0.0.0"
+            # DB credentials are injected via secret/env at activation (2.5.x);
+            # keys only, no real credentials in the repo (charter red line 7).
+            - name: CTDS_DB_URL
+              value: "jdbc:mysql://ctds-mysql:3306/ctds_metering"
+            - name: CTDS_DB_USER
+              value: "ctds"
+            - name: CTDS_DB_PASSWORD
+              value: ""
+            # Cross-schema read-only collection source schemas (WBS-3.7.5 hifi §2):
+            # defaults match the demo environment; override only if schemas are renamed.
+            - name: CTDS_METERING_SOURCE_SCHEMA_DELIVERY
+              value: "ctds_delivery"
+            - name: CTDS_METERING_SOURCE_SCHEMA_CONTRACT
+              value: "ctds_contract"

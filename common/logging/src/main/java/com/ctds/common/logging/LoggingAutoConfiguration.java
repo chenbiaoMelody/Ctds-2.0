@@ -22,13 +22,23 @@ public class LoggingAutoConfiguration {
 
     /**
      * @param serviceName 服务名（spring.application.name，写入审计 JSONL 的 service 字段）
+     *
+     *     <p>WBS-3.7.5 Q1-A（规格 B7-3 字面路径）：sink="metering-db" 时组装 file+jdbc 双写
+     *     （文件存证职能不中断——ADR-022 §2.6-1 出口语义保持）；默认/其他值返回纯文件实现
+     *     （现状路径，其他服务零影响）。
      */
     @Bean(destroyMethod = "shutdown")
     @ConditionalOnProperty(prefix = "ctds.audit", name = "enabled", havingValue = "true", matchIfMissing = true)
     public AuditRecorder auditRecorder(final AuditProperties properties,
             @Value("${spring.application.name:default}") final String serviceName) {
-        return new AsyncFileAuditRecorder(Path.of(properties.getFileDir()), serviceName,
+        final AsyncFileAuditRecorder file = new AsyncFileAuditRecorder(
+                Path.of(properties.getFileDir()), serviceName,
                 properties.getQueueCapacity(), Clock.systemUTC());
+        if ("metering-db".equals(properties.getSink())) {
+            return new CompositeAuditRecorder(file,
+                    new JdbcMeteringAuditRecorder(properties, Clock.systemUTC()));
+        }
+        return file;
     }
 
     /** Web 环境：注册 LogContext 清理过滤器（评审②P1 修复，按请求语义防 MDC 泄漏）。

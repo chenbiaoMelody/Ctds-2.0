@@ -39,4 +39,23 @@ class LoggingAutoConfigurationTest {
         runner.withClassLoader(new FilteredClassLoader(jakarta.servlet.Filter.class))
                 .run(context -> assertThat(context).doesNotHaveBean("logContextCleanupFilter"));
     }
+
+    /** WBS-3.7.5 Q1-A（hifi §5.2）：sink=metering-db → file+jdbc 双写组合（Composite）。 */
+    @Test
+    void sinkMeteringDbComposesFileAndJdbc() {
+        runner.withPropertyValues("ctds.audit.sink=metering-db",
+                        "ctds.audit.jdbc-url=jdbc:mysql://localhost:3306/ctds_metering")
+                .run(context -> {
+                    assertThat(context).hasSingleBean(AuditRecorder.class);
+                    assertThat(context.getBean(AuditRecorder.class))
+                            .isInstanceOf(CompositeAuditRecorder.class);
+                });
+    }
+
+    /** 默认（sink 未配置）：纯文件实现——现状路径，其他服务零影响。 */
+    @Test
+    void defaultSinkKeepsPlainFileRecorder() {
+        runner.run(context -> assertThat(context.getBean(AuditRecorder.class))
+                .isInstanceOf(AsyncFileAuditRecorder.class));
+    }
 }
