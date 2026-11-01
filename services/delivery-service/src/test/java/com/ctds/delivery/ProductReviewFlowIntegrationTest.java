@@ -263,6 +263,57 @@ class ProductReviewFlowIntegrationTest {
         }
     }
 
+    /** T10（修复轮 1 / hifi §1 W-EV1 必填契约 / 评审 P1-1）：缺 score → 400+1011C0005、
+     * 缺 productId → 400+1000C0001（拆箱 NPE 落 500 的缺陷回归锚）。 */
+    @Test
+    void missingRequiredFieldsAreRejectedWithParamError() {
+        insertDelivery(REQUESTER_A, PRODUCT_P1);
+        // 缺 score（score 必填，缺失 = 非法评分）
+        final MvcResult noScore = postEvaluation(REQUESTER_A,
+                "{\"productId\":" + PRODUCT_P1 + ",\"requestId\":\"" + requestIdSuffix() + "\"}");
+        assertThat(noScore.getResponse().getStatus()).isEqualTo(400);
+        assertThat(codeOf(noScore)).isEqualTo("1011C0005");
+        assertThat(messageOf(noScore)).isEqualTo("评分需为 1~5 的整数");
+        // 缺 productId（参数缺失 → 参数通用码）
+        final MvcResult noProduct = postEvaluation(REQUESTER_A,
+                "{\"score\":4,\"requestId\":\"" + requestIdSuffix() + "\"}");
+        assertThat(noProduct.getResponse().getStatus()).isEqualTo(400);
+        assertThat(codeOf(noProduct)).isEqualTo("1000C0001");
+        assertThat(countOf("product_review")).isZero();
+        assertThat(countOf("product_review_action_log")).isZero();
+    }
+
+    /** T11（修复轮 1 / hifi §1 §3 边界契约 / 评审 P1-2）：comment>500、productId 0/负数、
+     * 读面三端点 productId=0 → 400+1000C0001；score=1 下界合法值 → 200 + 统计 1.0。 */
+    @Test
+    void parameterBoundariesAreEnforced() {
+        insertDelivery(REQUESTER_A, PRODUCT_P1);
+        // comment 501 字符（trim 不收敛）→ 1000C0001
+        final MvcResult longComment = postEvaluation(REQUESTER_A,
+                evaluationBody(PRODUCT_P1, 4, "超".repeat(501)));
+        assertThat(longComment.getResponse().getStatus()).isEqualTo(400);
+        assertThat(codeOf(longComment)).isEqualTo("1000C0001");
+        // 写面 productId=0 与负数 → 1000C0001
+        for (final long badProduct : new long[] {0L, -1L}) {
+            final MvcResult bad = postEvaluation(REQUESTER_A, evaluationBody(badProduct, 4, null));
+            assertThat(bad.getResponse().getStatus()).isEqualTo(400);
+            assertThat(codeOf(bad)).isEqualTo("1000C0001");
+        }
+        // 读面三端点 productId=0 → 1000C0001（hifi §1 R-EV1/R-EV2/R-EV3 错误列）
+        for (final MvcResult badRead : new MvcResult[] {getStats(REQUESTER_A, 0L),
+                getList(REQUESTER_A, 0L), getMine(REQUESTER_A, 0L)}) {
+            assertThat(badRead.getResponse().getStatus()).isEqualTo(400);
+            assertThat(codeOf(badRead)).isEqualTo("1000C0001");
+        }
+        // score=1 下界合法值 → 200 + 统计 1.0
+        final MvcResult lowerBound = postEvaluation(REQUESTER_A,
+                evaluationBody(PRODUCT_P1, 1, "下界一星"));
+        assertThat(lowerBound.getResponse().getStatus()).isEqualTo(200);
+        assertThat(dataOf(lowerBound).path("score").asInt()).isEqualTo(1);
+        assertThat(dataOf(getStats(REQUESTER_A, PRODUCT_P1)).path("averageScore").asDouble())
+                .isEqualTo(1.0);
+    }
+
     // ===== 造数与调用支撑 =====
 
     /** 交付行直插（资格数据源；落行即 SUCCESS，沿演示数据预置等效手法）。 */

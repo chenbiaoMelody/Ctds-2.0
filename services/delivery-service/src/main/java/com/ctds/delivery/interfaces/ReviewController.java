@@ -3,8 +3,12 @@ package com.ctds.delivery.interfaces;
 import com.ctds.common.api.ApiResult;
 import com.ctds.common.auth.AuthContext;
 import com.ctds.common.auth.RequirePermission;
+import com.ctds.common.errorcode.BizException;
+import com.ctds.common.errorcode.ErrorCodes;
 import com.ctds.delivery.application.review.ReviewCommandService;
 import com.ctds.delivery.application.review.ReviewQueryService;
+import com.ctds.delivery.domain.review.ReviewBizException;
+import com.ctds.delivery.domain.review.ReviewErrorCodes;
 import com.ctds.delivery.interfaces.dto.ReviewViews.EvaluationItem;
 import com.ctds.delivery.interfaces.dto.ReviewViews.EvaluationList;
 import com.ctds.delivery.interfaces.dto.ReviewViews.EvaluationStats;
@@ -41,6 +45,15 @@ public class ReviewController {
     @PostMapping(produces = MediaType.APPLICATION_JSON_VALUE)
     @RequirePermission("delivery.read")
     public ApiResult<ReviewResult> submit(@RequestBody final EvaluationSubmitRequest request) {
+        // 必填字段前置判空（hifi §1 score 必填；沿 3.7.3 OrderCommandController 判空先例，
+        // 评审 P1-1：缺失落 400 业务码，防拆箱 NPE 落 500 系统错误）
+        if (request.productId() == null) {
+            throw new BizException(ErrorCodes.PARAM_INVALID, "参数格式不合法");
+        }
+        if (request.score() == null) {
+            throw new ReviewBizException(ReviewErrorCodes.REVIEW_SCORE_INVALID,
+                    ReviewErrorCodes.REVIEW_SCORE_INVALID_MESSAGE);
+        }
         return ApiResult.ok(commandService.submit(request.productId(), request.score(),
                 request.comment(), AuthContext.subject()));
     }

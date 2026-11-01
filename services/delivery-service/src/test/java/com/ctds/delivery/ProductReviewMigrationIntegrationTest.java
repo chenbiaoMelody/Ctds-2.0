@@ -81,5 +81,11 @@ class ProductReviewMigrationIntegrationTest {
                         + "WHERE table_schema = DATABASE() AND table_name = 'product_review' "
                         + "AND index_name = 'uk_review_once' ORDER BY seq_in_index", String.class);
         assertThat(ukColumns).containsExactly("product_id", "requester_no");
+        // uk_review_once 必须真唯一（non_unique=0；防误写普通 KEY 断言仍绿——评审 P2-J）
+        final Integer nonUnique = jdbcTemplate.queryForObject(
+                "SELECT MAX(non_unique) FROM information_schema.statistics "
+                        + "WHERE table_schema = DATABASE() AND table_name = 'product_review' "
+                        + "AND index_name = 'uk_review_once'", Integer.class);
+        assertThat(nonUnique).isZero();
     }
 }

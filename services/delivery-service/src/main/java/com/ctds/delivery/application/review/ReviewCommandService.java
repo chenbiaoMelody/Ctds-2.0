@@ -41,33 +41,31 @@ public class ReviewCommandService {
                     ReviewErrorCodes.REVIEW_ELIGIBILITY_DENIED_MESSAGE);
         }
         final String normalizedComment = comment == null ? null : comment.trim();
-        final ProductReview existing =
-                repository.findByProductAndRequester(productId, requesterNo).orElse(null);
-        if (existing == null) {
-            final ProductReview inserted = insertWithConcurrentFallback(productId, requesterNo,
-                    score, normalizedComment);
+        if (repository.findByProductAndRequester(productId, requesterNo).isPresent()) {
+            return updateExisting(productId, requesterNo, score, normalizedComment);
+        }
+        try {
+            final ProductReview inserted = repository.insert(new ProductReview(null, productId,
+                    requesterNo, score, normalizedComment, false, null, null, null, null));
             repository.insertActionLog(actionLog(inserted, ReviewAction.CREATE, requesterNo));
             return ReviewResult.of(inserted, false);
+        } catch (final DuplicateKeyException e) {
+            // 并发兜底（hifi §3 步骤 4）：同事务转更新分支——留痕与返回与常规更新同口径（评审 P2-A）
+            return updateExisting(productId, requesterNo, score, normalizedComment);
         }
-        repository.updateContent(existing.id(), score, normalizedComment);
+    }
+
+    /** 更新本人既有评价（常规更新与并发兜底共用；UPDATE 留痕，updated=true）。 */
+    private ReviewResult updateExisting(final long productId, final String requesterNo,
+            final int score, final String comment) {
+        // FOR UPDATE 当前读：绕过 REPEATABLE READ 快照，兜底重查必见并发已提交行（评审 P2-A）
+        final ProductReview current = repository
+                .findByProductAndRequesterForUpdate(productId, requesterNo).orElseThrow();
+        repository.updateContent(current.id(), score, comment);
         final ProductReview updated =
                 repository.findByProductAndRequester(productId, requesterNo).orElseThrow();
         repository.insertActionLog(actionLog(updated, ReviewAction.UPDATE, requesterNo));
         return ReviewResult.of(updated, true);
-    }
-
-    /** 并发兜底：INSERT 撞 uk_review_once → 同事务转更新分支（Q8-A，不抛错）。 */
-    private ProductReview insertWithConcurrentFallback(final long productId, final String requesterNo,
-            final int score, final String comment) {
-        try {
-            return repository.insert(new ProductReview(null, productId, requesterNo, score,
-                    comment, false, null, null, null, null));
-        } catch (final DuplicateKeyException e) {
-            final long existingId = repository.findByProductAndRequester(productId, requesterNo)
-                    .orElseThrow(() -> e).id();
-            repository.updateContent(existingId, score, comment);
-            return repository.findById(existingId).orElseThrow();
-        }
     }
 
     private ProductReviewActionLog actionLog(final ProductReview review, final ReviewAction action,

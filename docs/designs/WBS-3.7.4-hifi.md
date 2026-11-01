@@ -158,4 +158,7 @@ CREATE TABLE product_review_action_log (
 - **复用声明**：`delivery.read` / `delivery.governance` 权限点；`deliveryRolesHeader()`；`@RequirePermission` + common 鉴权；`SharedMySqlContainer`；el-rate / el-messagebox；JdbcTemplate；ADR-005 统一响应与 1000C0001 通用参数码；门户 error/empty 视觉模式。**零新依赖**；
 - **规格外实现声明**：应为空（本设计全部条目可回溯至 B5/B6 与 Q1~Q8+D1 确认口径）；
 - **勘误预留**：E1 起编号；立卡段已自勘两处（初稿 Q8 曾写"沿 @Idempotent"、初稿 §3.2 曾写"无资格者不渲染提交按钮"——分别与 upsert 最小实现、S2-10 负向演示路径冲突，已在本版更正为 Q8-A 现口径，V0.9 为更正后稿）；
+- **E1（2026-11-01 修复轮 1，评审 P2-B）**：§2 注记"隐藏不更新 updated_at"与同节 DDL `updated_at ... ON UPDATE CURRENT_TIMESTAMP` 矛盾——**以 DDL 为准**（实现逐字随 DDL，无独立过错）：隐藏 UPDATE 时 updated_at 由 MySQL 机制自动变更，该字段不被任何 API 出参与统计消费，隐藏信息仍由 hidden_by/hidden_at + 留痕表承载；
+- **E2（2026-11-01 修复轮 1，评审 P2-K）**：lofi §3.3"确认弹窗（可选原因）→ 留痕（隐藏人/时点/原因）"由本设计 §1 G-EV1 定稿覆盖——**原因输入不做**（N3 最小、confirm 固定文案），V4 留痕表无原因列；lofi V1.0 为方向稿，冲突处以本设计为准（lofi §3.3 已补指向注）；
+- **E3（2026-11-01 修复轮 1，评审备注）**：§1 W-EV1 错误列所列 1011C0007（404 同形）为防御性超集——upsert 路径无可产出场景，实际仅 G-EV1 使用（登记防误读，非契约变更）；同条澄清：W-EV1 请求体缺 productId/score 字段按"必填非法"落 400（productId 缺失 → 1000C0001 / score 缺失 → 1011C0005——评审 P1-1 修复口径，属 §1"score 必填"既有契约的实现澄清）；并发兜底分支（§3 步骤 4）落定实现口径 = 转更新与常规更新同留痕（UPDATE 留痕 + updated=true），重查用 FOR UPDATE 当前读保障并发可见（评审 P2-A）；
 - **演示前提依赖**：S2-8/10/12 依赖 C-7.1 附录 A 预置（A/D 对 P1 有效交付、C 零交付、D 违规评价一条）——交付记录沿 C-4.2 + C-5.1 剧本产出，本卡零直改库。

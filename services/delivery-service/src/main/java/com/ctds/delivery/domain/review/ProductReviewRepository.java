@@ -14,6 +14,9 @@ public interface ProductReviewRepository {
     /** 按一人一评业务键查本人既有评价。 */
     Optional<ProductReview> findByProductAndRequester(long productId, String requesterNo);
 
+    /** 并发兜底用锁定重查（FOR UPDATE 当前读，绕过快照——hifi §3 步骤 4 同事务重查）。 */
+    Optional<ProductReview> findByProductAndRequesterForUpdate(long productId, String requesterNo);
+
     /** 按主键查（运营隐藏目标定位）。 */
     Optional<ProductReview> findById(long id);
 
@@ -23,7 +26,7 @@ public interface ProductReviewRepository {
     /** 更新本人评价内容（仅评分/文字；created_at 不变，updated_at 随行变更）。 */
     void updateContent(long id, int score, String comment);
 
-    /** 运营隐藏置位（hidden/hidden_by/hidden_at；不触 updated_at，隐藏信息由隐藏字段与留痕承载）。 */
+    /** 运营隐藏置位（hidden/hidden_by/hidden_at；updated_at 由 DDL ON UPDATE 机制自动变更、无出参消费——hifi 勘误 E1）。 */
     void markHidden(long id, String hiddenBy);
 
     /** 追加动作留痕行。 */

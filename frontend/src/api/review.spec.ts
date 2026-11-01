@@ -17,7 +17,7 @@ import {
   REVIEW_ERROR_CODES,
   formatReviewMeta,
 } from '../constants/review'
-import { ApiError, setDemoSubject } from './client'
+import { setDemoSubject } from './client'
 import { setActorMode } from '../stores/demoIdentity'
 
 /**
@@ -131,10 +131,10 @@ describe('评价域 API 形态（W-EV1 / R-EV1~3 / G-EV1）', () => {
       .rejects.toMatchObject({ code: '1011C0006', message: REVIEW_ELIGIBILITY_DENIED_TIP })
   })
 
-  it('1011C0005 非法评分经 ApiError 原样透传', async () => {
+  it('1011C0005 非法评分经 ApiError 原样透传（同码同文，不二次包装）', async () => {
     stubFetchCapture({ code: '1011C0005', message: REVIEW_SCORE_INVALID_TIP, data: null })
     await expect(submitEvaluation({ productId: 15, score: 0, requestId: 'req-y' }))
-      .rejects.toBeInstanceOf(ApiError)
+      .rejects.toMatchObject({ code: '1011C0005', message: REVIEW_SCORE_INVALID_TIP })
   })
 })
 

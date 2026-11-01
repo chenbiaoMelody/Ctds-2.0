@@ -160,7 +160,8 @@ beforeEach(() => {
   document.body.innerHTML = ''
   vi.restoreAllMocks()
   for (const fn of [mockedDetail, mockedFavorite, mockedUnfavorite, mockedSubscribe,
-    mockedUnsubscribe, mockedFavorites, mockedSubscriptions]) {
+    mockedUnsubscribe, mockedFavorites, mockedSubscriptions, mockedStats, mockedList,
+    mockedMine, mockedSubmit, mockedHide]) {
     fn.mockReset()
   }
   setDemoSubject('S20260925000001')
