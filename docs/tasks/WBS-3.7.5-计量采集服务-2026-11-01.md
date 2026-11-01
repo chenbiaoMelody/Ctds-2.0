@@ -1,0 +1,101 @@
+# WBS-3.7.5 任务卡：计量采集服务（2026-11-01）
+
+| 项 | 内容 |
+| --- | --- |
+| 来源 | 台账 / 日志续点「下一包立卡候选 = WBS 3.7 域下一包」（`docs/logs/Ctds-项目开发日志-26-11-01-1618.md` §下一步）；编排师 2026-11-01 会话裁定「**WBS 3.7 域下一包立卡**」→ 按 WBS 行序下一包 = **WBS-3.7.5 计量采集服务** → 按流程推进 **WBS-3.7.5 立卡段**；冷启动承接 3.7.4 合并段 + main gate 回填（PR #24 MERGED `a9dae97`；收口批 `ea8977f` + 回填批 `762fc4b` 本地 main ahead 2，随本卡 PR 入库——沿链式先例）。 |
+| 级别与性质 | L1-3 平台功能**实施包 + 非界面类**（WBS 行 317，预算 **1 会话**；章程 2.6.3：非界面类两级设计 = **业务可读行为清单 + 接口契约表 + 边界值与异常行为**，lofi + hifi 同批 **V0.9** 提交、一次确认转 V1.0；**免 HTML 原型**——读面以接口承载演示，剧本 C-7.2 V1.0 演示前提⑤既有裁决）。**新建服务**：`services/metering-billing`（8089 / `ctds_metering` 库，平台第 17 个 Maven 模块）——计量事件采集落库 + 计量模型聚合查询 + 三方勾稽读面；**零前端改动 / 零新 npm / 零 MQ / 零定时任务**；新 Maven 依赖仅网关侧 `spring-boot-starter-jdbc` + `mysql-connector-j`（落库实现替换必需，B7-3 规格字面路径，依赖审批声明见 §二 Q1）。 |
+| 需求锚点核对 | WBS `docs/C-TDS项目总体实施计划与WBS.md` **行 317**（`计量采集服务 \| 调用流水采集（对接网关埋点）、计量模型 \| 3.5.2 \| 1`——依赖 3.5.2 ✅ 已合并，delivery-service 在跑 8087；预算 1 会话）；规格 `docs/specs/C-7.1-7.2-门户与计费.md` **V1.0**：**行为 B7 计量事件消费与不双计**（4 规则：B7-1 事件源唯一且既有〔① 网关放行事件 ADR-022 §2.6 放行 1 次 ≡ 计量事件 1 条 / ② 合约 V3 两表 / ③ 文件交付记录 ADR-023 / ④ 沙箱作业与导出 ADR-024·025〕/ B7-2 模拟器测试台不产生计量 / B7-3 **计量消费侧不改上游——AuditRecorder 为唯一依赖点，3.7.5 落库实现替换不改网关调用点** / B7-4 不另造第三份流水与 V3 两表可勾稽；4 条 AC 含拒绝零计量负向）+ **行为 B8 计量模型与免费档**（4 规则：B8-1 按"合约 × 计量周期"聚合 / B8-2 免费档不产生计费流水但调用事件照常留痕 / B8-3 拒绝零计量结构性保证〔引用节号 = ADR-020 §2.4 / §2.8，DB-51 勘正义务落点〕/ B8-4 归属校验非本方不可读；4 条 AC）+ **§4 非目标 3**（"计量采集服务实现（对接网关埋点、计量模型落库）——归 3.7.5"）+ **§5 依赖表**（common 组件 AuditRecorder = 计量事件唯一依赖点 / ADR 组 005·006·007·009·018·020·021·022·023·024·025 全部只读引用）+ **§6-4**（ADR-022 行 100 次序观察项维持现状，3.7.5 计量口径复核时如有改走变更流程）；ADR `docs/adr/ADR-022-网关交付链契约.md` **§2.6**（放行 1 次 ≡ 计量事件 1 条、拒绝 0 条、事件字段最小必要〔traceId/主体/合约/资源/结果/时点，禁请求体响应体原文令牌密钥〕、**§2.6-3 计量事件模型、流水落库、采集与计费归 3.7.5/3.7.6**、备选 B4 网关侧建计量表不采）+ **行 100**（次序观察项关联 3.7.5 计量口径复核）+ §2.9 演进表行 88；ADR-020 §2.4/§2.8（计数口径唯一权威：放行才 +1、拒绝零计数）+ V3 两表（counter=余额 / log=流水，3.7.x 对账交叉验证）；ADR-023 行 91（`delivery` 记录 = 3.7.5 文件交付事件源；合约 `usage_log` = 策略计数；两者分工不双计）；ADR-024 行 29/113（`sandbox_job` 一行 = 一次数据使用 = 3.7.5 计量事件源）；ADR-025 行 40（沙箱导出复用 deliveries，3.7.5 计量读单一交付事件源不双轨）；ADR-021（模拟器自检零落库）；ADR-018（coreModules 含 metering-billing 核心行覆盖 ≥80%——**新建模块目录尾名映射自动纳入，门禁配置零改动**）；ADR-009（迁移规范）/ ADR-005（统一响应 / 九位错误码 / 分页）/ ADR-007（幂等）/ ADR-016 §2.7（服务仅绑回环）/ ADR-001（技术栈冻结）；剧本 `docs/manuals/C-7.2-计量计费中心-验收剧本.md` **V1.0 S1 计量采集与流水幕七步**（S1-1 放行 N 次 ≡ 计量 N 条 / S1-2 越界被拒计量不变拒绝留痕独立〔负向〕/ S1-3 三方勾稽不双计 / S1-4 沙箱作业与导出各计一次 + 模拟器自检零新增 / S1-5 免费档计费 0 但事件留痕完整 / S1-6 计数表 = N 计量聚合 = N / S1-7 主体 C 查他人计量被拒〔负向〕）+ **演示前提⑤**（计量/账单管理界面归 3.7.7，V1.0 阶段以平台既有界面与**接口**承载演示）+ 维护说明（3.7.5 交付后操作形态核对修订义务）；PRD 行 155（C-7.2"按调用次数/包月/交易额计量，账单生成"，P0）。 |
+| 上游能力边界 | **网关埋点已交付（3.4.8/3.5.2 链）**：`DeliveryMeteringGlobalFilter`（order -140，仅 POLICY_ALLOWED 且转发链完成后记 1 条）→ 动作 `gateway.delivery.metering`（SUCCESS，detail={traceId, subject, contractNo, resource, result=ALLOWED}，targetType=delivery，targetId=合约号）；拒绝留痕 `gateway.delivery.denied`（DENIED）走 `GatewayErrorWriter.recordDenied`；未认证 `auth.verify`——**网关全部 3 个调用点均 `ObjectProvider<AuditRecorder>.getIfAvailable()` 空安全，不依赖实现类（实测亲读）**。**AuditRecorder 现状**：common-logging 单方法接口 `void record(AuditEvent)`（契约：不抛异常不阻塞、null 静默）+ 唯一实现 `AsyncFileAuditRecorder`（守护线程 + 有界队列 → 按天 JSONL `logs/audit-*.jsonl`）+ 装配点唯一（`LoggingAutoConfiguration` 单 @Bean，`ctds.audit.enabled` 条件 matchIfMissing=true，`AuditProperties`=enabled/fileDir/queueCapacity）——**落库实现替换接缝唯一且现成（实测亲读）**。**事件源三表（可直接只读）**：① `ctds_contract.contract_usage_log`（ALLOWED/DENIED outcome，无交付单号列）+ `contract_usage_counter`（余额口径）——V3 迁移，仓储 UsageCounterStore/UsageLogRepository；② `ctds_delivery.delivery`（V1~V3：delivery_no/contract_no/product_id/product_name/delivery_type〔API/FILE/SANDBOX_EXPORT〕/requester_no/provider_no/result〔SUCCESS〕/created_at）；③ `ctds_delivery.sandbox_job`（job_no/sandbox_no/status〔RUNNING/SUCCEEDED/FAILED/TIMEOUT〕/created_at/finished_at；**无合约列——归属经 `sandbox_task.contract_no` JOIN（V2 迁移实测）**）。**合约归属权威**：`ctds_contract.contract`（contract_no UK / `provider_subject_no` / `requester_subject_no` / status / pricing_model / price_amount——V2 迁移实测亲读），读面归属校验实时查该表（单一权威，流水表不冗余双方）。**免费档判定**：contract 快照列 `pricing_model='FREE'`（本卡流水无差别落，计费金额语义归 3.7.6——Q5）。**部署与配置面**：单实例多库（`jdbc:mysql://localhost:3306/ctds_delivery` 模式实测）；口令环境变量注入 `${CTDS_DB_PASSWORD:}` 零入库；服务仅绑 127.0.0.1（ADR-016 §2.7）；k8s 清单 `deploy/k8s/`（deployment+service 成对 + kustomization 登记，现有 7 服务对）；端口 8080~8088 已占（subject/kms/did/space/catalog/contract/gateway/delivery/connector），**8089 空闲**。**权限面**：@RequirePermission 值全景 **48 个**（`域.动作` 命名制，**零 metering.\* 点**——实测），新服务权限映射 = 服务自身 yml `ctds.auth.permissions`（服务级自治，无平台登记面），**新增 metering.read + metering.governance 两点（Q4）**。**错误码面**：1011 段已占 C0001~C0007（订单 4 + 评价 3，Java/docs 双侧一致实测），**C0008 起空位**。**门禁面**：`gates-config.json` coreModules 已含 metering-billing（coverage 目录尾名映射自动落 80% 阈值，ADR-018 明文"扩展时自动纳入"——coverage/checkstyle/jacoco 配置零改动）；mutationTest.modules 显式清单仅 did（本卡不纳入，登记演进）；secretsScan 新源码目录自动入扫。**测试基建**：SharedMySqlContainer 模块级单例拷贝 + 每测试类独立库（8 服务同构）；delivery 测试 support 有 `RecordingAuditRecorder` 测试替身先例；contract 测试 25 类 274 例（docs 历史口径 240/261——**以编码段实测回填为准，本卡不写死**，沿 3.7.3"184 陈旧口径"勘误教训）；gateway 测试 44 例（3.7.4 交付口径）；delivery 测试 227 例（3.7.4 交付口径）；前端 58 文件 749 例（本卡零前端改动，复跑兜意外）。**MQ/事件总线**：全仓 pom/yml/java grep rabbitmq/kafka/rocketmq/amqp/spring-cloud-stream 零命中（实测）——采集路径选型的事实前提。 |
+| 交付物 | ① **新服务脚手架**（`services/metering-billing`：pom〔parent=ctds-platform 2.0.0-SNAPSHOT，relativePath=../../pom.xml，沿 kms 先例〕+ 主类 + application.yml〔8089/127.0.0.1/权限映射〕+ application-mysql.yml〔ctds_metering 数据源 + Flyway〕）+ 根 pom `<modules>` 注册（16→17）；② **迁移 V1**（`metering_flow` 统一计量流水单表〔uk(source_type, source_no) 幂等锚 + idx(contract_no, occurred_at) 聚合查询〕——**无物化聚合表**（Q2）；③ **计量域**（`MeteringFlow` 聚合 / `MeteringSourceType`〔GATEWAY_API/FILE_DELIVERY/SANDBOX_JOB/SANDBOX_EXPORT〕/ `MeteringErrorCodes` **1011C0008+ 定稿** / `MeteringFlowRepository` 接口）；④ **采集器**（交付源：delivery 表 FILE/SANDBOX_EXPORT 且 result=SUCCESS；沙箱源：sandbox_job SUCCEEDED 经 sandbox_task JOIN 得合约归属；**只取 SUCCESS 侧 = 拒绝零计量结构性保证**；跨 schema 只读 SELECT，upsert 幂等）；⑤ **读面 4 端点**（R-M0 触发采集 / R-M1 本方合约流水 / R-M2 本方合约按自然月聚合 / R-M3 四方勾稽——详见 hifi §1；全部经网关 connector-metering 路由对外）；⑥ **common-logging 落库实现**（`JdbcMeteringAuditRecorder`：action=`gateway.delivery.metering` 白名单 → 异步 upsert metering_flow〔detail 契约键 contractNo/subject/resource 按 ADR-022 §2.6-2〕+ `ctds.audit.sink=metering-db` 条件装配〔默认 file 零影响其他服务〕+ **file+jdbc 双写组合**〔文件存证职能不中断，ADR-022 §2.6-1 出口语义保持〕+ `AuditProperties` 扩展）；⑦ **网关装配与路由**（pom +jdbc/mysql 依赖 + sink 配置与 ctds_metering 只写数据源〔**调用点/过滤器/错误码/表结构零改动——B7-3 字面**〕+ `connector-metering` 路由 → 8089 + 路由测试）；⑧ **部署清单**（`deploy/k8s/metering-billing-deployment.yaml` + `-service.yaml` + kustomization 登记 2 行）；⑨ **剧本 C-7.2 V1.1 核对修订**（S1 操作路径：接口承载注记 + 运营触发采集步落位；业务判定一字不改，PO 批准；S2 零改动）；⑩ 复用声明与规格外实现声明 + 台账 / 开发日志 / 体量登记 + 业务可读交付说明。 |
+| 关闭条件 | ① 两级设计获编排师一次确认（**Q1~Q8 + D1**）；② 本地门禁全绿：metering-billing `test`（新增用例全绿 + **核心行覆盖 ≥80% 自动生效**）+ `checkstyle:check` + gateway-service `test`（44 例基线零回归 + 新路由契约）+ contract-service `test`（基线零回归——跨 schema 只读不触达写面核验）+ delivery-service `test`（227 例基线零回归）+ 全仓 `compile`（17 模块）+ `gates-config.json` 零改动（ConfigSha256 与基线逐字一致）+ 前端四步（test/typecheck/lint/build）零回归兜底；③ 规格 B7（4 规则 + 4 AC）+ B8（4 规则 + 4 AC）→ 端点/采集/测试映射齐备；④ **剧本 C-7.2 S1 七步可按 V1.1 操作路径执行通过**（接口承载演示，双向必验）；⑤ 4 视角评审 + 修复循环 ≤3 轮 + 独立复审 PASS；⑥ 剧本 C-7.2 V1.1 修订完成并提示 PO 批准留痕；⑦ 编排师验收通过（验收方式届时裁定——接口走查沿 C-6.x 先例）；⑧ 零越界（**上游零改动：网关调用点/过滤器逻辑、合约/交付/沙箱任何端点、表结构、错误码零触碰**；B9~B12 计费/账单/对账处置/读面扩展零触碰〔归 3.7.6/3.7.7/3.7.8〕；**无 MQ / 无定时任务 / 无前端改动 / 无新 npm**；只读采集不写不改事件源表；`/internal/**` 零触碰；零数据本体与敏感原文〔事件字段沿 ADR-022 §2.6-2 最小必要，禁请求体响应体原文令牌密钥〕；口令零入库；零门禁配置改动）。 |
+| 分支 | `feat/WBS-3.7.5-计量采集服务`（**自本地 main 梢 `762fc4b` 创建** = 3.7.4 main gate 回填批本地梢——沿链式先例，**3.7.4 合并段批 + 回填批随本卡 PR 一并入库**；`origin/main`（`a9dae97`）未动、未建 PR）。 |
+| 设计文件 | `docs/designs/WBS-3.7.5-lofi.md`（**V0.9 待一次确认**）/ `docs/designs/WBS-3.7.5-hifi.md`（**V0.9 待一次确认**）——非界面类，免 HTML 原型。 |
+| 纪律声明 | **计量消费侧不改上游**（规格 B7-3 直译）：网关/合约/交付任何端点、表结构、错误码零改动；`AuditRecorder` 为唯一依赖点，落库实现替换**不改网关调用点**（调用点 3 处零触碰，仅装配与依赖扩展——规格字面路径）；**拒绝零计量为结构性保证**（通道 1 白名单只收 `gateway.delivery.metering`〔SUCCESS〕，通道 2 只取 result=SUCCESS/SUCCEEDED——不靠过滤逻辑兜底）；**不双计**（API 调用计量源唯一 = 网关事件，通道 2 排除 delivery_type=API 行；沙箱导出复用 delivery 单一事件源不与 sandbox_job 双计〔ADR-025〕；文件交付源 = delivery 表、策略计数 = usage_log 分工不混〔ADR-023〕）；**不另造第三份流水**（metering_flow = 事件源消费映射，V3 两表仅勾稽不复制其语义——B7-4）；**免费档事件照常留痕、计费金额语义归 3.7.6**（流水表无金额列——B8-2 + Q5）；**聚合 = 查询承载无物化表**（Q2 最小实现，3.7.6 物化需求届时演进）；**采集 = 手动触发端点**（Q6，无定时任务无调度面）；**幂等 = 源单号唯一键 + upsert**（Q8，采集为系统内部动作，@Idempotent 请求级组件不适用）；**ADR-022 行 100 次序观察项维持现状口径**（"发起人 ≠ 需求方"交付域拒绝发生在计数后 → 交付域被拒的该次计数已发生、但网关计量事件不产生〔转发链未完成〕——勾稽按规格 §6-4 现状口径承载，设计边界注记留痕，如需改走变更流程）；**新 Maven 依赖仅网关侧 jdbc + mysql 驱动**（B7-3 落库实现替换必需，规格字面路径的一部分——非炫技非新框架，ADR-001 技术栈内既有组件）；**权限点新增 2 个**（metering.read/governance，新域零可复用点实测——沿 `域.动作` 命名制）；**口令零入库**（环境变量注入，红线 7）；**零前端改动 / 零新 npm / 零 MQ / 零定时任务 / 零推送**；**剧本只核操作路径与承载说明，业务判定一字不改**；**规格缺口走变更流程**，不在本卡私自补需求；发现冲突或疑似 S0 安全问题 → **立即停止上报**（红线 4）。 |
+
+---
+
+## 一、范围与设计
+
+- **做什么 W1~W8 / 不做什么 N1~N8**：见 `docs/designs/WBS-3.7.5-lofi.md` §1；
+- **结构组成**：lofi §2；**主要流程**：lofi §3；**决策点（待确认）**：lofi §4（**Q1~Q8 + D1**）；**体量**：lofi §5（预估 **2200~2600 行**有效变更；D1 建议不拆分、1 个编码会话）；
+- **编码契约**（端点表 / 表结构与采集查询 / 采集事务与幂等 / 错误码 1011 续段 / common-logging 落库实现与网关改动 / 权限矩阵 / 前置检查 / 测试锚点 / 剧本映射 / 边界）：见 `docs/designs/WBS-3.7.5-hifi.md` §1~§10。
+
+### 立卡前素材盘点（只读，本会话；子智能体代码实测 14 项 + 主会话定点补测 8 项）
+
+| 项 | 结论 |
+| --- | --- |
+| ① WBS 锚点 | 行 317 原文核对（调用流水采集〔对接网关埋点〕、计量模型；依赖 3.5.2 已闭环；预算 1 会话）；下游 3.7.6~3.7.8 计费链与本卡边界：B9~B12 零触碰 |
+| ② 规格锚点 | C-7.1-7.2 V1.0 B7（4 规则 + 4 AC）+ B8（4 规则 + 4 AC）+ §4-3 归口 + §5 依赖表（AuditRecorder 唯一依赖点 / ADR 组只读）+ §6-3 1011 段 + §6-4 行 100 观察项维持现状；B3~B6 已交付、B9 以下归 3.7.6+（本卡零触碰） |
+| ③ 剧本锚点 | C-7.2 V1.0 S1 全七步本卡承载（S1-2/S1-7 双负向 + S1-3/S1-6 勾稽核对）；演示前提⑤ = 接口承载（3.7.7 界面交付前）；剧本维护说明 = 本卡核对修订义务（V1.0→V1.1）；S2 出账幕归 3.7.6 零改动 |
+| ④ ADR 锚点 | ADR-022 §2.6（1 放行 ≡ 1 事件 / 拒绝 0 条 / 字段最小必要 / 落库采集归 3.7.5 / B4 网关建表不采）+ 行 100 观察项；ADR-020 §2.4/§2.8（计数口径权威）+ V3 两表勾稽预登记；ADR-023 行 91（delivery=事件源 / usage_log=策略计数分工）；ADR-024 行 29/113（sandbox_job=计量事件源）；ADR-025 行 40（导出复用 deliveries 不双轨）；ADR-021（模拟器零落库 → 事件源表零新行 → 流水零新增，结构性）；ADR-018（metering-billing 核心 80% 自动纳入）；ADR-009/005/007/016/001；零国密接触（计量无加解密面；事件字段无敏感原文） |
+| ⑤ 代码侧核查（子智能体实测 14 项） | ① AuditRecorder 单方法接口 + AsyncFileAuditRecorder 唯一实现 + LoggingAutoConfiguration 单 @Bean 条件装配（ctds.audit.enabled，matchIfMissing=true）——落库替换接缝唯一；② 网关 3 调用点全 `ObjectProvider` 空安全（metering 过滤器 order -140 仅 POLICY_ALLOWED 且转发链完成后记 / denied 走 GatewayErrorWriter / auth.verify）——调用点零改动可行；③ detail 契约键 = traceId/subject/contractNo/resource/result（ADR-022 §2.6-2）；④ ADR-020 V3 两表在 contract-service（counter=余额 PK=contract_no / log=流水 idx(contract_no,id)，头注预登记 3.7.x 对账交叉验证）；⑤ delivery 表 V1~V4（delivery_type=API/FILE/SANDBOX_EXPORT，result 仅 SUCCESS，含 provider_no）；⑥ sandbox_job 无合约列——归属经 sandbox_task.contract_no JOIN（V2 实测）；⑦ services/ 无 metering-billing，根 pom 16 模块；脚手架最小先例 = kms（parent 2.0.0-SNAPSHOT + relativePath ../../pom.xml + 默认 profile 排除数据源 + 五层包结构）；⑧ gates coreModules 已含 metering-billing（尾名映射自动 80%）；mutationTest 显式清单仅 did；⑨ 1011 段 C0001~C0007 已占（订单 4 + 评价 3，Java/docs 双侧一致），C0008 起空位；⑩ 定价四档字段 = pricing_model（FREE/PER_CALL/MONTHLY/REVENUE_SHARE，contract 快照列同款）；⑪ SharedMySqlContainer 单例 + 每类独立库（8 服务同构）+ RecordingAuditRecorder 测试替身先例；⑫ DB-96/DB-102 均为 contract 测试面 S3 债（与本卡零代码耦合，编排师已裁定不并批）；⑬ 网关 9 路由（含 connector-evaluations），无计量路由，无 MQ/事件总线（全仓零命中）；⑭ @Idempotent（SpEL 键 + 模式 B 结果复用）与 @Locked 现成——本卡采集场景不适用请求级幂等组件（Q8） |
+| ⑥ 主会话定点补测 8 项 | ① 权限点全景 48 个 `域.动作` 制，零 metering.\*；服务级 yml 自治映射（无平台登记面）；② k8s 清单 `deploy/k8s/` deployment+service 成对 + kustomization 登记（7 服务对现状）；③ 启动脚本先例在 build-output 证据区（w355-demo/*.ps1）；④ 口令写法 `${CTDS_DB_PASSWORD:}` 环境变量零入库；⑤ LoggingAutoConfiguration/AuditProperties 亲读（Bean 方法签名、条件键、fileDir/queueCapacity 字段）；⑥ 网关 DeliveryMeteringGlobalFilter.record 亲读（转发链完成后记、detail 键序、targetType=delivery）；⑦ sandbox_task.contract_no 归属链亲读；⑧ contract 表双方字段 = provider_subject_no / requester_subject_no（V2 迁移亲读，归属校验契约依据） |
+| ⑦ 门禁与依赖面 | 前端零改动零新 npm；后端新 Maven 依赖仅网关侧 spring-boot-starter-jdbc + mysql-connector-j（B7-3 落库替换必需，规格字面路径；ADR-001 技术栈内既有组件，**依赖审批声明随 PR 提交**）；metering-billing 自身依赖沿 kms 同款（common-errorcode/common-logging/common-auth + web + jdbc + mysql + testcontainers）；新增迁移 1 件（metering_flow 单表，metering-billing）；新权限点 2 个（metering.read/metering.governance——新域零可复用，实测）；gates-config.json 零改动（coverage 尾名自动纳入；mutationTest 不纳入登记演进）；k8s +2 yaml + kustomization +2 行 |
+| ⑧ 测试与体量面 | 基线：gateway 44 例 / contract 274 例（25 类实测——docs 历史口径 240/261 陈旧，编码段以实测回填）/ delivery 227 例 / 前端 58 文件 749 例（零改动兜底复跑）；metering-billing 新建（基线 = 0，编码段全量新增）；本卡预估后端新增 **metering 25~35 例 + common-logging 3~5 例 + gateway 路由随例**；红相归档 `build-output/w375-red-*` |
+| ⑨ 演示面 | 本地进程：subject 8080 / kms 8081 / did 8082 / space 8083 / catalog 8084 / contract 8085 / gateway 8086 / delivery 8087 / connector 8088 / **metering 8089（新增）** / 前端 5173；演示环境配置义务（交付说明列明）：ctds_metering 建库 + 网关审计写入账号（INSERT on metering_flow）+ metering 采集账号（SELECT ctds_contract/ctds_delivery 部分表 + 读写 ctds_metering）；演示数据沿 C-7.2 附录 A（三模式合约组 + 免费档合约 + N 次放行 + ≥1 越界被拒 + 沙箱作业/导出各一 + 主体 C 负向对照——沿 C-4.2/C-4.3/C-5.1/C-5.2 剧本产出）；S1 各步以接口承载（curl 示例随剧本 V1.1 提供） |
+
+**设计要点摘要（供快速表决）**：
+
+1. **采集双通道（Q1-A）**：通道 1 = 网关事件经 common-logging `JdbcMeteringAuditRecorder` 落库实现替换（action 白名单 → 异步 upsert `metering_flow`，file+jdbc 双写保存证；`ctds.audit.sink=metering-db` 条件装配，默认 file 零影响其他服务；网关调用点零改动——**规格 B7-3 字面路径**）；通道 2 = metering 跨 schema 只读 SELECT 交付/沙箱三源 upsert 同表。零 MQ、零新事件通道、拒绝零计量结构性。
+2. **单表流水 + 查询聚合（Q2-A/Q3-A）**：`metering_flow` 一张表（uk(source_type, source_no) 幂等）；聚合 = 仓储 GROUP BY 合约 × 自然月查询承载（无物化表、零一致性维护）；周期 = 自然月（对齐 B10 出账周期既有裁决 Q6-A）。
+3. **归属校验（B8-4）**：实时查 `ctds_contract.contract` 双方字段（单一权威），非本方 = 404 同形防枚举（1011C0008）；流水表不冗余双方。
+4. **勾稽端点（R-M3）**：四方计数一次返回（delivery 文件腿 / usage_log ALLOWED 策略腿 / counter 余额口径 / metering_flow 计量流水）——S1-3 三方勾稽 + S1-6 计数 vs 聚合两步一个端点承载；ADR-022 行 100 次序边缘（交付域拒绝在计数后）以设计边界注记承载（规格 §6-4 现状口径）。
+5. **权限点（Q4-A）**：新增 `metering.read`（requester/provider/admin）+ `metering.governance`（仅 admin）——metering 新域 48 点全景零可复用（实测），跨域借用语义错位；服务级 yml 自治映射，无平台登记面。
+6. **采集触发（Q6-A）**：运营手动触发端点 R-M0（metering.governance）——确定性演示 + 无定时任务无调度面；剧本 V1.1 操作路径显式含触发步（业务判定不变）。
+7. **幂等（Q8-A）**：uk(source_type, source_no) + upsert 天然幂等（网关事件重放 / 采集重复执行零重计）；@Idempotent 请求级组件不适用系统内部采集。
+8. **剧本与验收（Q7-A）**：C-7.2 转 **V1.1**——S1 操作路径按实测更新（接口承载注记 + 触发采集步 + curl 示例）；业务判定一字不改，PO 批准；S2 零改动。
+
+## 二、决策点与确认留痕（待编排师一次确认；章程 2.6.3）
+
+> 决策点全文与备选业务影响见 `docs/designs/WBS-3.7.5-lofi.md` §4；下表为摘要。
+
+| 编号 | 问题 | 建议口径 |
+| --- | --- | --- |
+| **Q1** | 计量事件采集与落库路径（架构核心） | **A 建议**：双通道——网关事件经 common-logging 落库实现替换（白名单 action → 异步 upsert metering_flow；file+jdbc 双写；条件装配默认 file）；交付/沙箱源表跨 schema 只读 SELECT 采集。**零上游业务改动**（端点/表结构/错误码零触碰，调用点零改动——B7-3 字面）、拒绝零计量结构性、与 V3 两表同源勾稽。B：全 JSONL 文件采集（k8s 分 Pod 文件不可达，架构断裂；轮转断点管理复杂）；C：HTTP 事件推送（新网络通道 + 失败补偿，改动面最大）；D：网关侧建计量表（ADR-022 备选 B4 已明确不采）。**依赖审批声明**：网关侧新增 spring-boot-starter-jdbc + mysql-connector-j（规格字面路径必需，非新框架） |
+| **Q2** | 计量模型聚合形态 | **A 建议**：查询聚合——仓储 GROUP BY（合约 × 自然月）承载 B8-1，无物化表（最小实现、零一致性维护、聚合口径单点）；B：物化 summary 表 + 落行同步维护（多一表与一致性面，V1.0 无独立消费方；3.7.6 若需物化届时演进登记） |
+| **Q3** | 计量周期口径 | **A 建议**：自然月（对齐 B10 出账周期 §7 Q6-A 既有裁决"默认自然月"，聚合与出账同周期闭合账）；B：订单周年月（引入订单依赖与口径分叉，超本卡） |
+| **Q4** | 权限点选型 | **A 建议**：新增 `metering.read`（requester/provider/admin——R-M1/R-M2）+ `metering.governance`（仅 admin——R-M0/R-M3）：metering 为新域，48 点全景零 metering.\*（实测），跨域借 contract.read 等语义错位；沿 `域.动作` 命名制与服务级 yml 自治映射。B：复用 contract.read / delivery.governance（跨域语义错位，读面归属与权限面混淆） |
+| **Q5** | 免费档在计量流水中的承载 | **A 建议**：流水无差别落（免费档调用事件照常留痕——B8-2 字面"保证对账数据源完整性"）；流水表**无计费金额列**（计费金额 = 0 的判定归 3.7.6 计费引擎按 pricing_model 快照执行——域边界清晰）；B：流水排除免费档（违背 B8-2 事件留痕完整）；C：流水标计费金额（越界 3.7.6 计费域） |
+| **Q6** | 通道 2 采集触发方式 | **A 建议**：运营手动触发端点 R-M0（metering.governance，触发增量采集并返回采集计数）——确定性演示、无定时任务、无调度面；S1 操作路径显式含"运营触发采集"步（剧本 V1.1 核对修订，业务判定不变）。B：读面查询前自动增量（读路径写副作用，语义气味）；C：定时任务（引入调度面，超最小实现） |
+| **Q7** | 剧本修订与本卡验收范围 | **A 建议**：C-7.2 转 **V1.1**——S1 各步操作路径按实测更新（接口承载注记 + R-M0 触发步 + curl 示例），S2 零改动；业务判定一字不改，提示 PO 批准；本卡验收 = S1 七步接口走查（沿 C-6.x 接口承载先例）。B：不改剧本（操作形态与交付不一致，违背剧本维护说明的核对修订义务） |
+| **Q8** | 采集幂等与防重 | **A 建议**：uk(source_type, source_no) + upsert 天然幂等——网关事件重放（队列重试/重启排空）与采集重复执行零重计；采集 = 系统内部动作非用户请求，**@Idempotent 请求级组件不适用**（零新增幂等组件接入）。B：@Idempotent/Redis 接入（对系统内部 upsert 属冗余，新增组件面） |
+| **D1** | 体量 / 是否拆分 | **建议不拆分**：预估 **2200~2600 行**有效变更（任务卡 §五分解），**1 个编码会话**（WBS 行 317 = 1 人日）。理由：采集（两通道）+ 计量模型（聚合查询）+ 读面（流水/聚合/勾稽）是同一条 S1 七步走查链，拆分则产生"有流水无读面 / 有读面无采集"中间态；沿 3.5.x / 3.6.x 服务包先例豁免 400 行上限（登记制）。**实测超 400 行按既有先例登记并请编排师按 D1 确认**。 |
+
+> **✅ 确认留痕（待编排师一次确认后回填）**：Q1~Q8 建议口径 + D1 表决结果 → lofi / hifi 同批转 V1.0；任务卡 §二本行 + §四确认段同步；下一关口 = 编码段（新会话冷启动，测试先行，第一动作 = hifi §7 前置检查逐项实测留痕）。
+
+## 三、规格行为 → 本卡承载 → 剧本步骤 映射表（编码段回填实测锚点）
+
+| 规格承载（V1.0） | 本卡落点（通道 / 端点） | 剧本步骤 | 测试锚点（编码段回填） |
+| --- | --- | --- | --- |
+| B7-1（放行 1 次 ≡ 计量事件 1 条；事件源四类） | 通道 1 网关事件白名单落库（1 调用 = 1 行）+ 通道 2 三源采集；R-M1 流水查询 | C-7.2 S1-1 | T1 |
+| B7-2（拒绝零计量；拒绝留痕独立不混算） | 通道 1 白名单只收 gateway.delivery.metering（SUCCESS）；denied 不入流水且 gateway.delivery.denied 留痕照常（双写文件） | C-7.2 S1-2（负向） | T2 |
+| B7-3（同一交付动作三方勾稽不双计） | 通道 2 排除 API 行（源唯一）+ R-M3 四方计数；文件腿 delivery=1/策略腿 usage_log=1/计量流水=1 | C-7.2 S1-3 | T3 |
+| B7-4（沙箱作业与导出各计一次不叠加；模拟器零新增） | sandbox_job(SUCCEEDED) + delivery(SANDBOX_EXPORT) 各 1 条（ADR-025 单一导出源）；模拟器零落库 → 事件源表零新行 → 流水零新增（结构性） | C-7.2 S1-4 | T4 |
+| B8-1（按"合约 × 计量周期"聚合） | R-M2 GROUP BY 合约 × 自然月（Q2-A/Q3-A） | C-7.2 S1-1/S1-6（聚合读数） | T5 |
+| B8-2（免费档计费 0 但事件留痕完整） | 流水无差别落（P0 合约事件在流水可查）；计费金额语义归 3.7.6 | C-7.2 S1-5 | T6 |
+| B8-3（拒绝零计量结构性；计数口径 = ADR-020 §2.4/§2.8） | R-M3：counter.used_count = N vs metering_flow = N（拒绝未触碰任何一侧） | C-7.2 S1-6（负向核对） | T7 |
+| B8-4（非本方合约计量不可读，服务端强制） | R-M1/R-M2 归属校验实时查 contract 双方；非本方 404 同形（1011C0008）业务可读 | C-7.2 S1-7（负向） | T8 |
+| B7-1（事件字段最小必要；禁敏感原文） | metering_flow 列面 = ADR-022 §2.6-2 契约字段投影；零请求体/响应体/原文/令牌列 | （设计边界，剧本观察） | T9（迁移与列面结构锚） |
+| 上游事件源（复用零改动） | 跨 schema 只读 SELECT（delivery/sandbox_job/sandbox_task/contract/usage_log/counter）；零写零改 | C-5.1/C-4.3/C-5.2 剧本既有产出 | T1~T8（前置造数） |
+
+> 权限点（**新增 2 个**，建议口径 Q4）：R-M0/R-M3 = `metering.governance`（仅 admin）；R-M1/R-M2 = `metering.read`（requester/provider/admin + 归属校验服务端硬保证）。**不调用** `/internal/**`、不改任何上游端点；B9~B12 零触碰。
+>
+> **✅ 测试锚点回填（编码段实测后回填本表右列）**：待编码段。
+
+## 四、执行记录
+
+| 项 | 内容 |
+| --- | --- |
+| 立卡段（2026-11-01） | 🟡 **立卡段完成（待一次确认）**：任务卡 + lofi **V0.9** + hifi **V0.9** 落盘（非界面类，免 HTML 原型）；素材盘点 = 只读子智能体代码实测 14 项（AuditRecorder 接缝 / 网关 3 调用点 ObjectProvider / detail 契约键 / V3 两表 / delivery 表四类型 / sandbox 归属链 / 无 metering 模块与 kms 脚手架先例 / gates 尾名自动纳入 / 1011 段 C0008 起空位 / pricing_model 四档 / 测试基建 / DB-96·102 无耦合 / 网关 9 路由零 MQ / 幂等组件形态）+ 主会话定点补测 8 项（权限点全景 48 零 metering 点 / k8s 清单结构 / 启动脚本证据区 / 口令环境变量写法 / LoggingAutoConfiguration·AuditProperties 亲读 / 网关过滤器 record 亲读 / sandbox_task.contract_no 亲读 / contract 双方字段亲读）；分支 `feat/WBS-3.7.5-计量采集服务` 自本地 main `762fc4b` 创建（3.7.4 合并段 + 回填批随本卡 PR 入库——链式先例）；**本段零代码、零依赖、零门禁配置改动，未动 `main`**；台账"进行中"行暂未改（沿 3.7.2/3.7.3/3.7.4 先例，编码段更新）；立卡批已提交（未推送）。 |
+
+## 五、体量登记（立卡时填写）
+
+| 项 | 数值 / 说明 |
+| --- | --- |
+| 实测（立卡段） | 任务卡 **101 行**；`docs/designs/WBS-3.7.5-lofi.md` **97 行**；`docs/designs/WBS-3.7.5-hifi.md` **163 行** → 合计 **361 行**（行数口径 = 文件实际行数实测，2026-11-01 立卡段）；**无代码、无测试、新 Maven 依赖 = 网关侧 jdbc+mysql（编码段引入）** |
+| 预估（编码段） | 有效变更 **2200~2600 行**：metering 脚手架 ≈120 + 迁移 V1 ≈40 + 计量域 ≈120 + 采集与只读仓储 ≈220 + 应用服务 ≈260 + 接口层/DTO/异常 ≈200 + common-logging 落库实现 ≈200 + 网关依赖/配置/路由 ≈60 + k8s 与部署登记 ≈80 + 后端测试 ≈700~900 + 剧本 V1.1 与文档 ≈300~400；**1 个编码会话**；零前端 / 零 npm / 零 MQ / 零定时任务；新增迁移 1 件（单表）；新权限点 2 个 |
+| 超 400 行指引说明 | 本卡为"计量采集"原子集（双通道采集 + 计量模型聚合 + 读面勾稽 + 新服务脚手架一次性）；拆则 S1 七步走查链断裂（新服务脚手架与采集/读面不可分）；请编排师在 **D1** 一并表态 |
+
+---
+
+> **边界复述（红线自查）**：本卡**只做规格 B7 + B8**；**上游零改动**（网关调用点与过滤器逻辑 / 合约 / 交付 / 沙箱任何端点、表结构、错误码零触碰；AuditRecorder 唯一依赖点，落库实现替换不改网关调用点）；**拒绝零计量 = 结构性保证**（白名单 + SUCCESS 侧过滤，非逻辑兜底）；**不双计**（API 源唯一、导出不双轨、文件/策略分工不混）；**计量流水不复制 V3 两表语义**（勾稽不复制——B7-4）；**免费档留痕完整、计费语义归 3.7.6**；**B9~B12 零触碰**；**零 MQ / 零定时任务 / 零前端 / 零新 npm / 零推送**；**事件字段沿 ADR-022 §2.6-2 最小必要，零敏感原文**；**口令零入库**；**只读采集不写不改事件源表**；**零 `/internal/**` 触碰**；**ADR-022 行 100 观察项维持现状口径**（改动走变更流程）；**剧本核对修订业务判定一字不改**；**规格缺口走变更流程**；发现冲突或疑似 S0 安全问题立即停止上报（红线 4）。
