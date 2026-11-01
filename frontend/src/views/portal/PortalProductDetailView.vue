@@ -203,7 +203,7 @@ onMounted(() => {
           <el-descriptions-item label="简介">{{ detail.intro ?? '—' }}</el-descriptions-item>
           <el-descriptions-item label="形态">{{ detail.productType }}</el-descriptions-item>
           <el-descriptions-item label="定价">
-            <span class="pricing-value">{{ formatPortalPricing(detail.pricingModel, detail.priceAmount) }}</span>
+            <span class="pricing-value">{{ formatPortalPricing(labelOf(PRICING_MODEL_LABELS, detail.pricingModel), detail.priceAmount) }}</span>
           </el-descriptions-item>
           <el-descriptions-item label="类目">{{ detail.categoryName ?? '—' }}</el-descriptions-item>
           <el-descriptions-item label="提供方主体编号">{{ detail.providerSubjectNo }}</el-descriptions-item>

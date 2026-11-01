@@ -133,7 +133,8 @@ class ProductOrderFlowIntegrationTest {
 
     @BeforeEach
     void stubPorts() {
-        for (final String subject : List.of(REQ, PROV, OTHER)) {
+        // ADMIN 桩显式化（复审勘误 M4）：t6c 强制终止链 requireAdmitted(ADMIN) 不依赖 Mockito 默认 null 直通
+        for (final String subject : List.of(REQ, PROV, OTHER, ADMIN)) {
             given(subjectAdmissionPort.check(subject)).willReturn(SubjectAdmission.ADMITTED);
         }
         given(catalogProductPort.fetch(PRODUCT_ID)).willReturn(

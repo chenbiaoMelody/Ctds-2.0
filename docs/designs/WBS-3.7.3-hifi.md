@@ -29,7 +29,7 @@
 
 - 分页：`pageNum ≥ 1`、`pageSize 1~100`（沿 platform 分页惯例；缺省 1 / 10）；非法 → **1000C0001**（勘误 E6：分页沿 common 1000C0001，不落 1011 段——与 WBS-3.1.11 / 3.2.6 / 3.3.4 仓内惯例一致）。
 - `status` 仅接受 `IN_PROGRESS` / `COMPLETED` / `CLOSED`；非法 → 1011C0003。
-- `productId` 正整数；非法 → 1011C0003。`contractNo` trim 后 ≤32 字符、`requesterNo`（仅治理读面）trim 后 ≤32 字符——不校验 `CO`+6 位前缀形态（勘误 E6：行为无害，非法值过滤为空集）。
+- `productId` 正整数；非法 → 1011C0003。`contractNo` trim 后 ≤32 字符（超长 → 1011C0003）、不校验 `CO`+6 位前缀形态；`requesterNo`（仅治理读面）仅 trim、不限长——非法值过滤为空集（勘误 E6：行为无害；复审勘误 E8：requesterNo 原表述失实已更正）。
 - 排序：`created_at DESC, id DESC`；`PageResult` 字段沿 common-pagination（`list` / `total` / `pageNum` / `pageSize`）。
 
 ### 1.3 复用端点（零新增 / 零语义改动）
@@ -310,7 +310,8 @@ createdAt: string
   **E3 测试夹具**：§6.1 T 系列以 `ProductOrderFlowIntegrationTest` 8 例承载核心锚（t1~t6/t9/t10）；共享库跨轮残留敏感（B3-2 唯一性对固定主体/产品组合），补 `@BeforeEach` TRUNCATE 清态（序号表保留——编号全局递增不回退）。
   **E4 priceAmount 形态**：§1.4 `priceAmount: string|null`（toPlainString）——前端测试断言须用文本比较（`asText()`），`decimalValue()` 对文本节点返回 0。
   **E5 订购弹窗测试夹具**：模板夹具含两必填槽位——fill 须覆盖全部 required 槽位，否则必填前置拦截（零请求）导致提交链用例假红。
-  **E6 读面校验、错误码与常量口径**（修复轮，评审 P2-1/P2-3/P3-8）：§1.2/T10 原声明"分页非法 → 1011C0003"与实现、仓内惯例三方不符——实现委托 common `PageQuery.of`（越界抛 **1000C0001**），与 WBS-3.1.11 / 3.2.6 / 3.3.4 三份既有 hifi"分页非法沿 common 1000C0001"一致，**1011C0003 限 requestId / status / productId / contractNo**，§1.2 与 T10 行已同步标注，代码零改动（行为即惯例）；`contractNo` 不校验 `CO`+6 位前缀形态、`requesterNo` 限长 ≤32 与实现一致（§1.2 原表述放宽——行为无害，非法值过滤为空集）；§4.6 常量表 `ORDER_DUPLICATED_TIP` 删除（弹窗无本地重复预检——重复订购提示 = 后端 1011C0001 文案原文，该常量零引用本无必要，§4.6 行已同步标注）。
+  **E6 读面校验、错误码与常量口径**（修复轮，评审 P2-1/P2-3/P3-8）：§1.2/T10 原声明"分页非法 → 1011C0003"与实现、仓内惯例三方不符——实现委托 common `PageQuery.of`（越界抛 **1000C0001**），与 WBS-3.1.11 / 3.2.6 / 3.3.4 三份既有 hifi"分页非法沿 common 1000C0001"一致，**1011C0003 限 requestId / status / productId / contractNo**，§1.2 与 T10 行已同步标注，代码零改动（行为即惯例）；`contractNo` 不校验 `CO`+6 位前缀形态；`requesterNo` 仅 trim 不限长（§1.2 原表述更正——行为无害，超长值过滤为空集；原"限长 ≤32 与实现一致"失实，见 E8）；§4.6 常量表 `ORDER_DUPLICATED_TIP` 删除（弹窗无本地重复预检——重复订购提示 = 后端 1011C0001 文案原文，该常量零引用本无必要，§4.6 行已同步标注）。
   **E7 测试承载补齐**（修复轮，评审 P1-2）：编码段 8 例未覆盖 §6.1 T6 负向腿 / T7 / T8 / T11 / T12（任务卡 §三 回填句当时失实——已勘正）；修复轮补集成 8 例（t6b / t6c / t7a / t7b / t8a / t8b / t11 + 迁移结构锚）+ 兜底分译单测 1 例（T11 回查命中腿——单线程集成面不可达，存根直调承载），t1 / t9 / t10 各追加读面与快照比对断言；承载明细见 §6.1 处置回填注。
+  **E8 requesterNo 校验表述复审更正**（复审勘误批，评审 M1/P2）：E6 与 §1.2 原"`requesterNo` 限长 ≤32 与实现一致"失实——治理读面实现仅 trim 不限长（`OrderQueryController.java:71` → `OrderQueryService` 透传 → `JdbcOrderRepository` 精确等值过滤），超长值过滤为空集、行为无害；§1.2 与 E6 两处已同步更正。`contractNo` 腿"≤32"表述属实（超长 → 1011C0003）。
 - **文件清单（预估）**：迁移 V4；后端 order 包（domain / infrastructure / application / interfaces）≈ 12~16 文件；`ContractInitiationService` / `ContractOrderSyncService` / `ContractStatusReader`；网关 yml + 路由测试；前端 3 视图 + 3 spec + `api/order.ts` + `constants/order.ts` + `order.spec.ts` + 路由 / 布局 / 守卫计数更新；C-7.1 剧本；任务卡 / lofi / hifi / 原型 / 台账 / 日志。
 - **体量**：预估 2200~3000 行；超 400 行按 D1 登记豁免。
