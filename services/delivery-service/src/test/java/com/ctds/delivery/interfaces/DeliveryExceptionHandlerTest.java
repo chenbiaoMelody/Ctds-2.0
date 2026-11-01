@@ -4,10 +4,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.ctds.delivery.domain.DeliveryErrorCodes;
 import com.ctds.delivery.domain.SandboxErrorCodes;
+import com.ctds.delivery.domain.review.ReviewErrorCodes;
 import org.junit.jupiter.api.Test;
 
 /** 交付错误码表与出站处理器集合一致性（防止码表↔处理器漂移；WBS-3.5.4 增沙箱码值；
- * WBS-3.5.5 增结果物码值；WBS-3.6.8 增取数失败 1009S0006）。 */
+ * WBS-3.5.5 增结果物码值；WBS-3.6.8 增取数失败 1009S0006；WBS-3.7.4 增评价域 1011C0005~0007）。 */
 class DeliveryExceptionHandlerTest {
 
     @Test
@@ -30,7 +31,10 @@ class DeliveryExceptionHandlerTest {
                 SandboxErrorCodes.SANDBOX_RESULT_NOT_VISIBLE.value(),
                 SandboxErrorCodes.SANDBOX_RESULT_STATE_CONFLICT.value(),
                 SandboxErrorCodes.SANDBOX_RUNTIME_UNAVAILABLE.value(),
-                SandboxErrorCodes.SANDBOX_OPERATION_FAILED.value());
+                SandboxErrorCodes.SANDBOX_OPERATION_FAILED.value(),
+                ReviewErrorCodes.REVIEW_SCORE_INVALID.value(),
+                ReviewErrorCodes.REVIEW_ELIGIBILITY_DENIED.value(),
+                ReviewErrorCodes.REVIEW_NOT_FOUND.value());
     }
 
     @Test
@@ -45,5 +49,8 @@ class DeliveryExceptionHandlerTest {
         assertThat(DeliveryExceptionHandler.statusOf("1009S0004").value()).isEqualTo(503);
         assertThat(DeliveryExceptionHandler.statusOf("1009S0005").value()).isEqualTo(500);
         assertThat(DeliveryExceptionHandler.statusOf("1009S0006").value()).isEqualTo(500);
+        assertThat(DeliveryExceptionHandler.statusOf("1011C0005").value()).isEqualTo(400);
+        assertThat(DeliveryExceptionHandler.statusOf("1011C0006").value()).isEqualTo(403);
+        assertThat(DeliveryExceptionHandler.statusOf("1011C0007").value()).isEqualTo(404);
     }
 }

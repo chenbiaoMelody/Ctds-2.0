@@ -15,12 +15,12 @@ const viewSources = import.meta.glob('./*.vue', {
   import: 'default',
   eager: true,
 }) as Record<string, string>
-const apiSources = import.meta.glob(['../../api/catalog.ts', '../../api/order.ts'], {
+const apiSources = import.meta.glob(['../../api/catalog.ts', '../../api/order.ts', '../../api/review.ts'], {
   query: '?raw',
   import: 'default',
   eager: true,
 }) as Record<string, string>
-const constantsSources = import.meta.glob(['../../constants/catalog.ts', '../../constants/order.ts'], {
+const constantsSources = import.meta.glob(['../../constants/catalog.ts', '../../constants/order.ts', '../../constants/review.ts'], {
   query: '?raw',
   import: 'default',
   eager: true,
@@ -55,7 +55,7 @@ function view(name: string): string {
 }
 
 describe('门户源集守卫（T9）', () => {
-  it('扫描目标非空：五个门户视图 + api 两模块 + constants 两模块均被读入', () => {
+  it('扫描目标非空：五个门户视图 + api 三模块 + constants 三模块均被读入', () => {
     expect(Object.keys(withoutSpecs(viewSources)).sort()).toEqual([
       './PortalHomeView.vue',
       './PortalOrderDetailView.vue',
@@ -63,8 +63,8 @@ describe('门户源集守卫（T9）', () => {
       './PortalOrderListView.vue',
       './PortalProductDetailView.vue',
     ])
-    expect(Object.keys(withoutSpecs(apiSources)).length).toBe(2)
-    expect(Object.keys(withoutSpecs(constantsSources)).length).toBe(2)
+    expect(Object.keys(withoutSpecs(apiSources)).length).toBe(3)
+    expect(Object.keys(withoutSpecs(constantsSources)).length).toBe(3)
   })
 
   it('零 /internal/ 调用、零治理读面调用（GOVERNANCE_VIEW 留痕面不得用于前台浏览）', () => {
@@ -88,6 +88,9 @@ describe('门户源集守卫（T9）', () => {
     expect(hits(withoutComments(apiSources['../../api/catalog.ts'] ?? ''), 'makeDomainJson(catalogRolesHeader)'))
       .toBe(1)
     expect(hits(withoutComments(apiSources['../../api/order.ts'] ?? ''), 'makeDomainJson(contractRolesHeader)'))
+      .toBe(1)
+    // WBS-3.7.4 评价域收口：api/review.ts 经 delivery 域角色头封装（Q4-A 复用 delivery.* 权限点）
+    expect(hits(withoutComments(apiSources['../../api/review.ts'] ?? ''), 'makeDomainJson(deliveryRolesHeader)'))
       .toBe(1)
     // 反向探针
     expect(hits('const r = await fetch(url)', 'fetch(')).toBe(1)
@@ -119,6 +122,17 @@ describe('门户源集守卫（T9）', () => {
     expect(hits(withoutComments(apiSources['../../api/order.ts'] ?? ''), '/api/v1/orders/mine')).toBe(1)
     // 计量/账单端点在订单视图中零出现（B6 静态纪律——无推送/轮询/账单入口）
     expect(hits(withoutComments(view('PortalOrderDetailView.vue')), '/metering')).toBe(0)
+  })
+
+  it('评价域收口：端点仅经 api/review.ts（WBS-3.7.4 开放）；视图/常量零直拼评价 URL', () => {
+    // /evaluations 由 api/review.ts 单点封装；hidden 写动作（G-EV1）同文件收口
+    const viewsAndConstants = Object.values({ ...withoutSpecs(viewSources), ...withoutSpecs(constantsSources) }).join('\n')
+    expect(hits(withoutComments(viewsAndConstants), '/api/v1/evaluations')).toBe(0)
+    expect(hits(withoutComments(apiSources['../../api/review.ts'] ?? ''), '/api/v1/evaluations')).toBeGreaterThan(0)
+    // 评价域零推送/轮询语义（B6：无轮询定时器、无事件订阅入口）
+    expect(hits(withoutComments(uiScanned()), 'setInterval')).toBe(0)
+    expect(hits(withoutComments(uiScanned()), 'EventSource')).toBe(0)
+    expect(hits(withoutComments(uiScanned()), 'WebSocket')).toBe(0)
   })
 
   it('零数据本体 / 敏感原文（注释引述除外）', () => {
@@ -173,6 +187,9 @@ describe('门户源集守卫（T9）', () => {
     expect(view('PortalOrderDetailView.vue')).toContain('ORDER_NOT_FOUND_TIP')
     expect(view('PortalOrderDetailView.vue')).toContain('ORDER_ACTION_LABELS')
     expect(view('PortalOrderDialog.vue')).toContain('formatPortalPricing')
+    // WBS-3.7.4 评价区：详情页评价域常量与 API 均经收口模块引用
+    expect(view('PortalProductDetailView.vue')).toContain('REVIEW_SECTION_TITLE')
+    expect(view('PortalProductDetailView.vue')).toContain('fetchEvaluationStats')
   })
 
   it('api/catalog.ts 类型扩展：detail 加性 priceAmount: string | null（零新函数）', () => {
@@ -207,7 +224,7 @@ describe('定价展示助手（§2.2 / §5）', () => {
     expect(pricingModelTagType('未知档')).toBe('info')
   })
 
-  it('门户文案常量：页头说明逐字锚定', () => {
-    expect(PORTAL_BROWSE_DESC).toBe('浏览平台已上架的数据产品；订购与评价将在后续版本开放。')
+  it('门户文案常量：页头说明逐字锚定（WBS-3.7.4 Q6-A 终值：订购已开放 + 评价开放）', () => {
+    expect(PORTAL_BROWSE_DESC).toBe('浏览平台已上架的数据产品；对已完成有效交付的产品可提交评价。')
   })
 })

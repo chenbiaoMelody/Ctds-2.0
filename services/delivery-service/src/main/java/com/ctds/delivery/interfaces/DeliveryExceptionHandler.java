@@ -7,6 +7,7 @@ import com.ctds.delivery.domain.ContractPassThroughException;
 import com.ctds.delivery.domain.DeliveryBizException;
 import com.ctds.delivery.domain.DeliveryErrorCodes;
 import com.ctds.delivery.domain.SandboxErrorCodes;
+import com.ctds.delivery.domain.review.ReviewErrorCodes;
 import java.util.Set;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
@@ -45,7 +46,10 @@ public class DeliveryExceptionHandler {
             SandboxErrorCodes.SANDBOX_RESULT_NOT_VISIBLE.value(),
             SandboxErrorCodes.SANDBOX_RESULT_STATE_CONFLICT.value(),
             SandboxErrorCodes.SANDBOX_RUNTIME_UNAVAILABLE.value(),
-            SandboxErrorCodes.SANDBOX_OPERATION_FAILED.value());
+            SandboxErrorCodes.SANDBOX_OPERATION_FAILED.value(),
+            ReviewErrorCodes.REVIEW_SCORE_INVALID.value(),
+            ReviewErrorCodes.REVIEW_ELIGIBILITY_DENIED.value(),
+            ReviewErrorCodes.REVIEW_NOT_FOUND.value());
 
     @ExceptionHandler(DeliveryBizException.class)
     public ResponseEntity<ApiResult<Void>> onDeliveryBizException(final DeliveryBizException ex) {
@@ -86,9 +90,9 @@ public class DeliveryExceptionHandler {
 
     static HttpStatus statusOf(final String code) {
         return switch (code) {
-            case "1009C0003", "1009C0009", "1009C0012" -> HttpStatus.FORBIDDEN;
-            case "1009C0005", "1009C0006", "1009C0008", "1009C0014" -> HttpStatus.BAD_REQUEST;
-            case "1009C0007", "1009C0010", "1009C0015" -> HttpStatus.NOT_FOUND;
+            case "1009C0003", "1009C0009", "1009C0012", "1011C0006" -> HttpStatus.FORBIDDEN;
+            case "1009C0005", "1009C0006", "1009C0008", "1009C0014", "1011C0005" -> HttpStatus.BAD_REQUEST;
+            case "1009C0007", "1009C0010", "1009C0015", "1011C0007" -> HttpStatus.NOT_FOUND;
             case "1009C0011", "1009C0016" -> HttpStatus.CONFLICT;
             case "1009C0013" -> HttpStatus.TOO_MANY_REQUESTS;
             case "1009S0002", "1009S0004" -> HttpStatus.SERVICE_UNAVAILABLE;

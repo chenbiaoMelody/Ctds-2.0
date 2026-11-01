@@ -79,7 +79,7 @@
 
 > 权限点复用（**零新增**，建议口径 Q4）：提交/更新/统计/列表/mine = `delivery.read`；隐藏 = `delivery.governance`。**不调用** `/internal/**`、任何订单 / 合约 / 计费 / 账单 / 支付端点；不改 catalog R7 读面。
 >
-> **⬜ 测试锚点回填（编码段实测后回填本行）**：T1~Tn 落点（集成测试类名 + 前端 spec 文件清单 + 红相归档路径）。
+> **✅ 测试锚点回填（编码段实测，2026-11-01）**：后端 = `ProductReviewFlowIntegrationTest`（T1~T8，8 例）+ `ProductReviewMigrationIntegrationTest`（T9，3 例）——delivery-service 新增 11 例全绿（基线 213 例实测回填，编码段前置检查实测：224 = 213 既有 + 11 新增，0 失败 skip 8 与基线一致）；前端 = `api/review.spec.ts`（TF1，9 例）+ `PortalProductDetailView.spec.ts` 扩展评价区 describe（TF2~TF4，8 例）+ `PortalSourceGuard.spec.ts` 扩展（TF5~TF6，锚更新 + 评价收口断言）——前端 58 文件 749 例全绿（基线 730 + 新增 19，零回归）；网关 `GatewayConnectorRoutesIntegrationTest` 扩 8 条路由契约（44 例全绿）；红相归档 `build-output/w374-red-backend.log`（11 例红：迁移 3 断言 + flow 8 BadSqlGrammar）+ `build-output/w374-red-frontend.log`（3 文件红：review/详情页 spec 收集失败 + 守卫 6 断言）。
 
 ## 四、执行记录
 
@@ -87,6 +87,7 @@
 | --- | --- |
 | 立卡段（2026-11-01） | 🟡 **立卡段完成（待一次确认）**：任务卡 + lofi **V0.9** + hifi **V0.9** + 原型 HTML（4 画面）落盘；素材盘点 = 只读子智能体代码实测 11 项（delivery 表资格数据源三字段 / 仓储无资格维度查询 / 权限点全景 49 个无 evaluate 类 / 网关 8 路由无 evaluations 前缀 / vite 15 键 / 门户详情页 302 行零评价占位 / 菜单 10-23 / gates 哈希 955bdbba…2ee2 复核仍准 / 1011 段 C0005 起空位 / catalog R7 零评分字段 / contract 261 例 + SharedMySqlContainer 单例模式）+ 主会话定点补测 3 项（`PORTAL_BROWSE_DESC` 文案锚滞后实证 / delivery V1 迁移字段注释亲读 / `deliveryRolesHeader()` 角色头模式亲读）；分支 `feat/WBS-3.7.4-产品评价系统` 自本地 main `1403751` 创建（3.7.3 收口批 + 回填批随本卡 PR 入库——链式先例）；**本段零代码、零依赖、零门禁配置改动，未动 `main`**；台账"进行中"行暂未改（沿 3.7.2/3.7.3 先例，编码段更新）；立卡批已提交（未推送）。 |
 | 确认段（2026-11-01 11:59） | ✅ **编排师一次确认"全部按建议确认"**：Q1~Q8 全采建议口径 A + D1 不拆分；lofi / hifi 同批转 **V1.0**（方向定稿 / 编码契约即时生效）；任务卡 §二回填确认留痕 + 设计文件行同步；确认批本地提交（未推送、未建 PR）；**本段零代码 / 零配置 / 零门禁改动，未动 `main`**；下一关口 = **编码段（新会话冷启动，测试先行，第一动作 = hifi §7 前置检查 12 项逐项实测留痕）**。 |
+| 编码段（2026-11-01，本会话） | ✅ **编码 + 转绿完成（详见开发日志）**：前置检查 12 项实测（项 10 发现 admin 无 `delivery.read` 偏差 → 按已确认 Q4-A 契约补授一行配置并留痕）；测试先行红相（后端 11 例 + 前端守卫 6 断言 + 2 spec 收集失败，双日志归档 `build-output/w374-red-*`）→ 实现（迁移 V4 两表 + 评价域 9 件〔domain/review 5 + infrastructure 1 + application 3〕+ 端点 5〔ReviewController 4 + ReviewGovernanceController 1〕+ 处理器扩码 3 + 网关路由 1 + vite 键 1 + 前端 api/constants/评价区/文案锚 + 一致性测试扩码）→ 转绿（delivery **224** = 213 既有 + 11 新增全绿 / 前端 **58 文件 749 例**全绿 / gateway 44 例全绿 / contract 261 例零回归 / 全仓 compile + 前端四步 EXIT=0 / delivery checkstyle 0 violations / gates 哈希复核逐字一致）；剧本 C-7.1 转 **V1.3**（S2-8~12 界面路径括注，业务判定一字不改，待 PO 批准）；本段未推送、未建 PR；下一关口 = 4 视角评审。 |
 
 ## 五、体量登记（立卡时填写）
 

@@ -19,6 +19,20 @@ import {
 import { ApiError, setDemoSubject } from '../../api/client'
 import { setActorMode } from '../../stores/demoIdentity'
 import {
+  fetchEvaluationStats,
+  fetchProductEvaluations,
+  fetchMyEvaluation,
+  submitEvaluation,
+  hideEvaluation,
+  type EvaluationItem,
+} from '../../api/review'
+import {
+  REVIEW_ELIGIBILITY_DENIED_TIP,
+  REVIEW_SCORE_INVALID_TIP,
+  REVIEW_HIDE_CONFIRM_TEXT,
+  REVIEW_EMPTY_TIP,
+} from '../../constants/review'
+import {
   PRODUCT_NOT_ACCESSIBLE_TIP,
 } from '../../constants/catalog'
 
@@ -41,6 +55,18 @@ vi.mock('../../api/contract', () => ({
   listTemplates: vi.fn(),
   getTemplate: vi.fn(),
 }))
+vi.mock('../../api/review', () => ({
+  fetchEvaluationStats: vi.fn(),
+  fetchProductEvaluations: vi.fn(),
+  fetchMyEvaluation: vi.fn(),
+  submitEvaluation: vi.fn(),
+  hideEvaluation: vi.fn(),
+}))
+// ElMessageBox.confirm 单点 mock（隐藏确认弹窗）；其余 ElementPlus 导出（含 ElMessage toast）保持真实实现
+vi.mock('element-plus', async (importOriginal) => {
+  const original = await importOriginal<typeof import('element-plus')>()
+  return { ...original, ElMessageBox: { confirm: vi.fn(async () => 'confirm') } }
+})
 
 const mockedDetail = vi.mocked(getProductDetail)
 const mockedFavorite = vi.mocked(favoriteProduct)
@@ -49,6 +75,11 @@ const mockedSubscribe = vi.mocked(subscribeProduct)
 const mockedUnsubscribe = vi.mocked(unsubscribeProduct)
 const mockedFavorites = vi.mocked(listFavorites)
 const mockedSubscriptions = vi.mocked(listSubscriptions)
+const mockedStats = vi.mocked(fetchEvaluationStats)
+const mockedList = vi.mocked(fetchProductEvaluations)
+const mockedMine = vi.mocked(fetchMyEvaluation)
+const mockedSubmit = vi.mocked(submitEvaluation)
+const mockedHide = vi.mocked(hideEvaluation)
 
 function detail(over: Partial<CatalogProductDetail> = {}): CatalogProductDetail {
   return {
@@ -92,6 +123,18 @@ function page<T>(list: T[]) {
   return { list, total: list.length, pageNum: 1, pageSize: 100, totalPages: 1 }
 }
 
+function reviewItem(over: Partial<EvaluationItem> = {}): EvaluationItem {
+  return {
+    reviewId: 1,
+    requesterNo: 'S20260925000008',
+    score: 4,
+    comment: null,
+    createdAt: '2026-11-01T10:00:00',
+    hidden: false,
+    ...over,
+  }
+}
+
 async function mountPage(path = '/portal/products/15') {
   const router = createRouter({
     history: createMemoryHistory(),
@@ -125,6 +168,16 @@ beforeEach(() => {
   mockedDetail.mockResolvedValue(detail())
   mockedFavorites.mockResolvedValue(page([]))
   mockedSubscriptions.mockResolvedValue(page([]))
+  // 评价域默认态：两人已评（4.3 分）+ 本人未评（WBS-3.7.4）
+  mockedStats.mockResolvedValue({ productId: 15, averageScore: 4.3, reviewCount: 2 })
+  mockedList.mockResolvedValue({
+    productId: 15,
+    items: [
+      reviewItem({ reviewId: 2, requesterNo: 'S20260925000009', score: 5, comment: '五星好评' }),
+      reviewItem({ reviewId: 1, requesterNo: 'S20260925000008', score: 4, comment: null }),
+    ],
+  })
+  mockedMine.mockResolvedValue(null)
 })
 
 describe('元数据与定价（T6 / B2-4）', () => {
@@ -312,5 +365,106 @@ describe('收藏 / 订阅动作（T7）', () => {
     expect(wrapper.find('.order-btn').exists()).toBe(false)
     expect(mockedFavorites).not.toHaveBeenCalled()
     expect(mockedSubscriptions).not.toHaveBeenCalled()
+  })
+})
+
+describe('产品评价区（WBS-3.7.4 / 规格 B5；hifi §5.2）', () => {
+  it('统计条与列表渲染：均分 1 位小数 + 评价数；条目只读星级 + 文字 + 评价人·时点', async () => {
+    const { wrapper } = await mountPage()
+    expect(wrapper.find('.review-section').exists()).toBe(true)
+    expect(wrapper.find('.review-stats').text()).toBe('平均评分 4.3 · 共 2 条评价')
+    const items = wrapper.findAll('.review-item')
+    expect(items).toHaveLength(2)
+    expect(items[0].text()).toContain('五星好评')
+    expect(items[0].text()).toContain('评价人 S20260925000009 · 2026-11-01 10:00')
+    expect(items[1].text()).not.toContain('undefined')
+    // 只读星级（展示不可改；Element Plus disabled 态类名 is-disabled）
+    expect(items[0].find('.el-rate').classes()).toContain('is-disabled')
+    // 本人未评价：无「修改」按钮
+    expect(items[0].find('.review-edit-btn').exists()).toBe(false)
+  })
+
+  it('空态：无评价 = 暂无评价（统计 null + 零条目）', async () => {
+    mockedStats.mockResolvedValue({ productId: 15, averageScore: null, reviewCount: 0 })
+    mockedList.mockResolvedValue({ productId: 15, items: [] })
+    const { wrapper } = await mountPage()
+    expect(wrapper.text()).toContain(REVIEW_EMPTY_TIP)
+    expect(wrapper.find('.review-item').exists()).toBe(false)
+  })
+
+  it('提交表单：可选文字 + 提交按钮；本人已评价时预填回显且按钮转「更新评价」', async () => {
+    const { wrapper } = await mountPage()
+    expect(wrapper.find('.review-form').exists()).toBe(true)
+    expect(wrapper.find('.review-submit-btn').text()).toBe('提交评价')
+    mockedMine.mockResolvedValue(
+      reviewItem({ reviewId: 1, requesterNo: 'S20260925000001', score: 4, comment: '初评' }))
+    const { wrapper: again } = await mountPage()
+    expect(again.find('.review-submit-btn').text()).toBe('更新评价')
+    const textarea = again.find('.review-form textarea')
+    expect((textarea.element as HTMLTextAreaElement).value).toBe('初评')
+  })
+
+  it('提交成功：调用 W-EV1（带 requestId）并重拉统计/列表（主动刷新，无轮询）', async () => {
+    mockedSubmit.mockResolvedValue({
+      reviewId: 9, productId: 15, score: 4, comment: '不错',
+      createdAt: '2026-11-01T12:00:00', updated: false,
+    })
+    const { wrapper } = await mountPage()
+    // 交互目标 = 表单内的 rate（列表只读星级同为 .el-rate__item，须限定表单域）
+    await wrapper.find('.review-form .el-rate').findAll('.el-rate__item')[3].trigger('click')
+    await wrapper.find('.review-form textarea').setValue('不错')
+    await wrapper.find('.review-submit-btn').trigger('click')
+    await flushPromises()
+    expect(mockedSubmit).toHaveBeenCalledTimes(1)
+    const command = mockedSubmit.mock.calls[0][0]
+    expect(command.productId).toBe(15)
+    expect(command.score).toBe(4)
+    expect(command.comment).toBe('不错')
+    expect(command.requestId).toBeTruthy()
+    expect(mockedStats).toHaveBeenCalledTimes(2)
+    expect(mockedList).toHaveBeenCalledTimes(2)
+  })
+
+  it('无资格被拒（1011C0006）：区块内业务可读文案展示，负向演示路径（S2-10）', async () => {
+    mockedSubmit.mockRejectedValue(new ApiError('1011C0006', REVIEW_ELIGIBILITY_DENIED_TIP))
+    const { wrapper } = await mountPage()
+    // 无资格者表单照常可见可提交（服务端拒绝后展示理由——防刷评门槛在服务端）
+    await wrapper.find('.review-form .el-rate').findAll('.el-rate__item')[2].trigger('click')
+    await wrapper.find('.review-submit-btn').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.review-error-tip').text()).toBe(REVIEW_ELIGIBILITY_DENIED_TIP)
+  })
+
+  it('未选评分提交：前端拦截不发请求（1011C0005 同义拦截），提示业务可读', async () => {
+    const { wrapper } = await mountPage()
+    await wrapper.find('.review-submit-btn').trigger('click')
+    await flushPromises()
+    expect(mockedSubmit).not.toHaveBeenCalled()
+    expect(wrapper.find('.review-error-tip').text()).toBe(REVIEW_SCORE_INVALID_TIP)
+  })
+
+  it('隐藏按钮仅运营档渲染（普通档零按钮；体验层 + 服务端 delivery.governance 把关）', async () => {
+    const { wrapper } = await mountPage()
+    expect(wrapper.findAll('.review-hide-btn')).toHaveLength(0)
+    setActorMode('operator')
+    const { wrapper: op } = await mountPage()
+    expect(op.findAll('.review-hide-btn')).toHaveLength(2)
+    // 运营档同样拉统计与列表（看统计/列表 ✓）
+    expect(mockedStats).toHaveBeenCalled()
+    expect(mockedList).toHaveBeenCalled()
+  })
+
+  it('运营隐藏：confirm 固定文案 → 调 G-EV1 → 重拉统计/列表（S2-12）', async () => {
+    setActorMode('operator')
+    mockedHide.mockResolvedValue({ reviewId: 2, hidden: true })
+    const { wrapper } = await mountPage()
+    await wrapper.findAll('.review-hide-btn')[0].trigger('click')
+    await flushPromises()
+    const { ElMessageBox } = await import('element-plus')
+    expect(ElMessageBox.confirm).toHaveBeenCalledWith(
+      REVIEW_HIDE_CONFIRM_TEXT, expect.anything(), expect.anything())
+    expect(mockedHide).toHaveBeenCalledWith(2)
+    expect(mockedStats).toHaveBeenCalledTimes(2)
+    expect(mockedList).toHaveBeenCalledTimes(2)
   })
 })

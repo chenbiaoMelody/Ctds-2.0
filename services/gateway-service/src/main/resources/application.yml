@@ -90,6 +90,13 @@ ctds:
         predicates:
           - Path=/api/v1/deliveries/**
         filters: []
+      # 评价域门面（WBS-3.7.4 Q1-A：评价域落 delivery-service 同库子域——与交付同下游 8087；
+      # 不进交付判定链 / 零计量——沿 connector-orders 先例）
+      - id: connector-evaluations
+        uri: ${CTDS_GATEWAY_DELIVERY_BASEURL:http://127.0.0.1:8087}
+        predicates:
+          - Path=/api/v1/evaluations/**
+        filters: []
     delivery:
       # 交付面白名单（routeId 显式列举；默认空 = 无交付面可用，fail-closed，hifi §5-1）
       routes:
