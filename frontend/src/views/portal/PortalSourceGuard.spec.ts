@@ -3,7 +3,6 @@ import {
   formatPortalPricing,
   pricingModelTagType,
   PRODUCT_NOT_ACCESSIBLE_TIP,
-  PORTAL_ORDER_PLACEHOLDER_TIP,
   PORTAL_BROWSE_DESC,
 } from '../../constants/catalog'
 
@@ -113,6 +112,10 @@ describe('门户源集守卫（T9）', () => {
     for (const endpoint of ['/billing', '/bills', '/metering', '/payments', '/invoices']) {
       expect(source).not.toContain(endpoint)
     }
+    // 门户视图与常量零直拼订单 URL（收口断言——api/order.ts 单点封装；
+    // 断言面 = 视图 + 常量，api 模块自身的端点定义不在此面）
+    const viewsAndConstants = Object.values({ ...withoutSpecs(viewSources), ...withoutSpecs(constantsSources) }).join('\n')
+    expect(hits(withoutComments(viewsAndConstants), '/api/v1/orders')).toBe(0)
     expect(hits(withoutComments(apiSources['../../api/order.ts'] ?? ''), '/api/v1/orders/mine')).toBe(1)
     // 计量/账单端点在订单视图中零出现（B6 静态纪律——无推送/轮询/账单入口）
     expect(hits(withoutComments(view('PortalOrderDetailView.vue')), '/metering')).toBe(0)
@@ -204,8 +207,7 @@ describe('定价展示助手（§2.2 / §5）', () => {
     expect(pricingModelTagType('未知档')).toBe('info')
   })
 
-  it('门户文案常量：订购占位与页头说明逐字锚定', () => {
-    expect(PORTAL_ORDER_PLACEHOLDER_TIP).toBe('订购与订单流程将在后续版本开放（WBS-3.7.3）')
+  it('门户文案常量：页头说明逐字锚定', () => {
     expect(PORTAL_BROWSE_DESC).toBe('浏览平台已上架的数据产品；订购与评价将在后续版本开放。')
   })
 })

@@ -11,6 +11,7 @@ import com.ctds.contract.domain.OrderRepository;
 import com.ctds.contract.domain.OrderStatus;
 import com.ctds.contract.domain.PartyRole;
 import com.ctds.contract.infrastructure.ContractStatusReader;
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -36,11 +37,13 @@ public class OrderQueryService {
 
     private final OrderRepository orderRepository;
     private final ContractStatusReader contractStatusReader;
+    private final Clock clock;
 
     public OrderQueryService(final OrderRepository orderRepository,
-            final ContractStatusReader contractStatusReader) {
+            final ContractStatusReader contractStatusReader, final Clock clock) {
         this.orderRepository = orderRepository;
         this.contractStatusReader = contractStatusReader;
+        this.clock = clock;
     }
 
     /** 列表行（R-OR1/R-OR3；myRole 仅 mine 面标注——hifi §1.4）。 */
@@ -95,7 +98,7 @@ public class OrderQueryService {
             // 越权：拒绝留痕（独立写入）+ 同码同文（防枚举）
             orderRepository.insertLog(new OrderActionLog(null, order.orderNo(),
                     OrderAction.DENIED_ACCESS, null, null, "非本方访问订单详情", subjectNo,
-                    LocalDateTime.now()));
+                    LocalDateTime.now(clock)));
             throw notAccessible();
         }
         final List<OrderActionView> actions = orderRepository.findLogs(orderNo).stream()

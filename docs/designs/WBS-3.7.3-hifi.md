@@ -27,9 +27,9 @@
 | R-OR2 | `GET /api/v1/orders/{orderNo}` | `contract.read` | — | `OrderDetail` | B4-1 / B4-3 / B4-4：仅需方 / 供方可读；非本方与不存在**同码同文** 1011C0002（防枚举）+ 拒绝留痕；含订单留痕时间线 |
 | R-OR3 | `GET /api/v1/orders/governance` | `contract.governance` | `pageNum` / `pageSize` / `status?` / `productId?` / `contractNo?` / `requesterNo?` | `PageResult<OrderSummary>` | B4-2：运营方全量检索；界面归 3.7.7（本卡后端验证） |
 
-- 分页：`pageNum ≥ 1`、`pageSize 1~100`（沿 platform 分页惯例；缺省 1 / 10）；非法 → 1011C0003。
+- 分页：`pageNum ≥ 1`、`pageSize 1~100`（沿 platform 分页惯例；缺省 1 / 10）；非法 → **1000C0001**（勘误 E6：分页沿 common 1000C0001，不落 1011 段——与 WBS-3.1.11 / 3.2.6 / 3.3.4 仓内惯例一致）。
 - `status` 仅接受 `IN_PROGRESS` / `COMPLETED` / `CLOSED`；非法 → 1011C0003。
-- `productId` 正整数；`contractNo` 形如 `CO`+6 位（trim 后 ≤32）；非法 → 1011C0003。`requesterNo` 仅治理读面，trim 后 ≤32 字符。
+- `productId` 正整数；非法 → 1011C0003。`contractNo` trim 后 ≤32 字符、`requesterNo`（仅治理读面）trim 后 ≤32 字符——不校验 `CO`+6 位前缀形态（勘误 E6：行为无害，非法值过滤为空集）。
 - 排序：`created_at DESC, id DESC`；`PageResult` 字段沿 common-pagination（`list` / `total` / `pageNum` / `pageSize`）。
 
 ### 1.3 复用端点（零新增 / 零语义改动）
@@ -140,7 +140,7 @@ createdAt: string
 | application | `ContractOrderSyncService`（**新**，`@Transactional`） | 合约 `sign` / `terminate` 与订单状态更新原子提交（见 §3.3） |
 | infrastructure | `JdbcOrderRepository` | JDBC 仓储；取号 / 插入 / 条件更新 / 分页查询 / 留痕插入 |
 | infrastructure | `ContractStatusReader` | 批量读取关联合约状态（只读；`SELECT contract_no,status FROM contract WHERE contract_no IN (...)`） |
-| interfaces | `OrderCommandController` / `OrderQueryController` / `OrderExceptionHandler` | 端点 / 参数校验 / 1011 HTTP 映射 |
+| interfaces | `OrderCommandController` / `OrderQueryController`（1011 HTTP 映射经 `ContractExceptionHandler` 登记制——勘误 E2，不设独立 advice） | 端点 / 参数校验 / 1011 HTTP 映射 |
 | interfaces | DTO | `OrderRequests.Create` / `OrderViews.Result` / `Summary` / `Detail` / `Action` |
 
 ### 3.2 创建流程与事务边界
@@ -183,7 +183,7 @@ createdAt: string
 | 文件 | 内容 |
 | --- | --- |
 | `src/api/order.ts` | `createOrder` / `listMyOrders` / `getOrderDetail`；`makeDomainJson(contractRolesHeader)`；类型 `OrderSummary` / `OrderDetail` / `OrderActionView` / `OrderResult` / `CreateOrderRequest` |
-| `src/constants/order.ts` | `ORDER_STATUS_LABELS`（IN_PROGRESS 进行中 / COMPLETED 已完成（已订购）/ CLOSED 已关闭）/ `ORDER_STATUS_TAG_TYPES` / `ORDER_ACTION_LABELS` / `MY_ROLE_LABELS` / `ORDER_DUPLICATED_TIP` / `ORDER_NOT_FOUND_TIP` |
+| `src/constants/order.ts` | `ORDER_STATUS_LABELS`（IN_PROGRESS 进行中 / COMPLETED 已完成（已订购）/ CLOSED 已关闭）/ `ORDER_STATUS_TAG_TYPES` / `ORDER_ACTION_LABELS` / `MY_ROLE_LABELS` / `ORDER_NOT_FOUND_TIP`（原列 `ORDER_DUPLICATED_TIP` 已删——勘误 E6：弹窗无本地重复预检，重复订购提示 = 后端 1011C0001 文案原文，常量本无必要） |
 | `src/views/portal/PortalOrderDialog.vue` | 订购弹窗（模板下拉 + 条款框架 + 策略 + 必填前置 + requestId + 提交） |
 | `src/views/portal/PortalOrderListView.vue` | 「我的订单」列表（筛选 / 分页 / 空态 / 错误态） |
 | `src/views/portal/PortalOrderDetailView.vue` | 订单详情（快照 / 关联合约 / 时间线 / 返回） |
@@ -263,11 +263,13 @@ createdAt: string
 - T7 读面：需方 / 供方各见本方订单（`myRole`）；分页 / 状态 / 产品过滤；空态。
 - T8 治理检索：按产品 / 需方 / 状态组合检索；非 admin 403。
 - T9 防枚举：第三方 / 不存在同码同文 1011C0002；越权访问产生拒绝留痕；无数据本体。
-- T10 参数校验：requestId 缺失 / 空白 / 超长、非法 status / productId / 分页 → 1011C0003。
-- T11 并发：并行同需方同产品创建 → 恰一份订单；失败事务不残留合约；订单号唯一。
+- T10 参数校验：requestId 缺失 / 空白 / 超长、非法 status / productId / contractNo → 1011C0003；分页越界 → 1000C0001（勘误 E6）。
+- T11 并发：并行同需方同产品创建 → 恰一份订单；失败事务不残留合约；订单号唯一（唯一索引兜底分译：回查命中 → 1011C0001、未命中 → 1011C0004）。
 - T12 迁移：三表 / 生成列唯一索引 / 序号表 / 索引存在；`active_order_key` 终态多 NULL 可多份。
-- T13 合约回归：既有 184 例全绿（发起提取 / 事务编排行为等价）。
+- T13 合约回归：既有用例全绿（发起提取 / 事务编排行为等价；基线实测 244——勘误 E1）。
 - T14 网关：`connector-orders` 路由存在且普通代理行为正确（随网关测试）。
+
+> **处置回填（修复循环第 1 轮，2026-11-01；勘误 E7）**：编码段 8 例（t1~t6/t9/t10）承载 T1~T6/T9/T10；**修复轮补齐** T6 负向腿（t6b 拒签关闭 / t6c 生效后强制终止不动）、T7（t7a 双角色+非本方不出现 / t7b 过滤+分页）、T8（t8a admin 检索+过滤 / t8b 非 admin 403）、T11（t11 订单号占位法钉 C0004 腿+事务回滚；回查命中 C0001 腿单线程集成面不可达 → `OrderCommandServiceFallbackTranslateTest` 存根单测）、T12（`ContractMigrationIntegrationTest.orderTablesExistWithGeneratedUniqueKey` 三表+STORED 生成列+三唯一索引+序号种子）；t1 追加合约行快照逐项比对、t9 追加读面纵深过滤断言、t10 追加读面校验腿。承载计数：`ProductOrderFlowIntegrationTest` 15 例 + 迁移 1 例 + 兜底分译单测 1 例。
 
 ### 6.2 前端（约 45~60 例）
 
@@ -308,5 +310,7 @@ createdAt: string
   **E3 测试夹具**：§6.1 T 系列以 `ProductOrderFlowIntegrationTest` 8 例承载核心锚（t1~t6/t9/t10）；共享库跨轮残留敏感（B3-2 唯一性对固定主体/产品组合），补 `@BeforeEach` TRUNCATE 清态（序号表保留——编号全局递增不回退）。
   **E4 priceAmount 形态**：§1.4 `priceAmount: string|null`（toPlainString）——前端测试断言须用文本比较（`asText()`），`decimalValue()` 对文本节点返回 0。
   **E5 订购弹窗测试夹具**：模板夹具含两必填槽位——fill 须覆盖全部 required 槽位，否则必填前置拦截（零请求）导致提交链用例假红。
+  **E6 读面校验、错误码与常量口径**（修复轮，评审 P2-1/P2-3/P3-8）：§1.2/T10 原声明"分页非法 → 1011C0003"与实现、仓内惯例三方不符——实现委托 common `PageQuery.of`（越界抛 **1000C0001**），与 WBS-3.1.11 / 3.2.6 / 3.3.4 三份既有 hifi"分页非法沿 common 1000C0001"一致，**1011C0003 限 requestId / status / productId / contractNo**，§1.2 与 T10 行已同步标注，代码零改动（行为即惯例）；`contractNo` 不校验 `CO`+6 位前缀形态、`requesterNo` 限长 ≤32 与实现一致（§1.2 原表述放宽——行为无害，非法值过滤为空集）；§4.6 常量表 `ORDER_DUPLICATED_TIP` 删除（弹窗无本地重复预检——重复订购提示 = 后端 1011C0001 文案原文，该常量零引用本无必要，§4.6 行已同步标注）。
+  **E7 测试承载补齐**（修复轮，评审 P1-2）：编码段 8 例未覆盖 §6.1 T6 负向腿 / T7 / T8 / T11 / T12（任务卡 §三 回填句当时失实——已勘正）；修复轮补集成 8 例（t6b / t6c / t7a / t7b / t8a / t8b / t11 + 迁移结构锚）+ 兜底分译单测 1 例（T11 回查命中腿——单线程集成面不可达，存根直调承载），t1 / t9 / t10 各追加读面与快照比对断言；承载明细见 §6.1 处置回填注。
 - **文件清单（预估）**：迁移 V4；后端 order 包（domain / infrastructure / application / interfaces）≈ 12~16 文件；`ContractInitiationService` / `ContractOrderSyncService` / `ContractStatusReader`；网关 yml + 路由测试；前端 3 视图 + 3 spec + `api/order.ts` + `constants/order.ts` + `order.spec.ts` + 路由 / 布局 / 守卫计数更新；C-7.1 剧本；任务卡 / lofi / hifi / 原型 / 台账 / 日志。
 - **体量**：预估 2200~3000 行；超 400 行按 D1 登记豁免。

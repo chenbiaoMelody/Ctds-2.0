@@ -1,9 +1,9 @@
 package com.ctds.contract.infrastructure;
 
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
@@ -33,14 +33,14 @@ public class ContractStatusReader {
             sql.append(i == 0 ? "?" : ", ?");
         }
         sql.append(")");
-        final Map<String, String> statuses = new HashMap<>();
-        jdbc.sql(sql.toString())
+        final Map<String, String> statuses = jdbc.sql(sql.toString())
                 .params(nos)
-                .query((rs, rowNum) -> {
-                    statuses.put(rs.getString("contract_no"), rs.getString("status"));
-                    return statuses;
-                })
-                .single();
+                .query((rs, rowNum) -> Map.entry(rs.getString("contract_no"),
+                        rs.getString("status")))
+                .list()
+                .stream()
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue,
+                        (first, second) -> first));
         return statuses;
     }
 

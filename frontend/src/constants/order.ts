@@ -32,6 +32,3 @@ export const MY_ROLE_LABELS: Record<string, string> = {
 
 /** 订单不存在 / 非本方同形提示（与后端 1011C0002 文案逐字一致——防枚举同形）。 */
 export const ORDER_NOT_FOUND_TIP = '订单不存在或无权查看'
-
-/** 重复订购提示兜底文案（正常情况展示后端 1011C0001 原文；此文案仅本地预检兜底）。 */
-export const ORDER_DUPLICATED_TIP = '该产品已有进行中订单，请勿重复订购'

@@ -68,7 +68,7 @@ import {
 } from '../../api/order'
 import { listTemplates, getTemplate, type ClauseFramework, type ContractTemplateItem } from '../../api/contract'
 import { newIdempotencyKey } from '../../api/client'
-import { formatPortalPricing } from '../../constants/catalog'
+import { formatPortalPricing, PRICING_MODEL_LABELS, labelOf } from '../../constants/catalog'
 
 /**
  * 订购弹窗（WBS-3.7.3 hifi §4.2）：选择启用模板 + 填写必填条款 + 策略（复用 ClauseEditor /
@@ -90,7 +90,9 @@ const emit = defineEmits<{
   (e: 'ordered', orderNo: string): void
 }>()
 
-const pricingText = computed(() => formatPortalPricing(props.pricingModel, props.priceAmount))
+// 定价展示过 labelOf 中文映射后入 formatPortalPricing（与列表/详情两视图同一口径，不显示原值码）
+const pricingText = computed(() =>
+  formatPortalPricing(labelOf(PRICING_MODEL_LABELS, props.pricingModel), props.priceAmount))
 
 /** 弹窗生命周期幂等键（挂载生成一次；失败重提复用——hifi §4.2）。 */
 const requestId = newIdempotencyKey()

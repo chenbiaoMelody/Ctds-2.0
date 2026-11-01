@@ -185,9 +185,6 @@ export const OPERATOR_MODE_TIP = '当前为平台运营方档，提供方页面�
 /** 门户页头说明（Q5-A：无推送 / 消息承诺）。 */
 export const PORTAL_BROWSE_DESC = '浏览平台已上架的数据产品；订购与评价将在后续版本开放。'
 
-/** 订购禁用占位提示（Q3-A；3.7.3 实现前零请求、零订单）。 */
-export const PORTAL_ORDER_PLACEHOLDER_TIP = '订购与订单流程将在后续版本开放（WBS-3.7.3）'
-
 // ==== 必填前置拦截提示（零请求） ====
 
 export const RESOURCE_NAME_REQUIRED_TIP = '请填写资源名称'

@@ -18,8 +18,9 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * 订单读面端点（WBS-3.7.3 hifi §1.2 R-OR1/R-OR2/R-OR3）。权限点复用 contract.read /
- * contract.governance（Q1-A 零新权限点）；查询参数前置校验（非法 status/productId/分页 →
- * 1011C0003——hifi §1.2 注）；详情防枚举同码同文在应用服务单点（hifi §3.4）。
+ * contract.governance（Q1-A 零新权限点）；查询参数前置校验（非法 status/productId/contractNo
+ * → 1011C0003——hifi §1.2 注；分页非法沿 common 1000C0001——hifi §8 勘误 E6）；详情防枚举
+ * 同码同文在应用服务单点（hifi §3.4）。
  */
 @RestController
 @RequestMapping("/api/v1/orders")
