@@ -5,7 +5,11 @@
 # prerequisites (registered in the delivery note): (1) gateway image added to the nightly build /
 # ModuleMap wiring (2.5.x), (2) reachable contract-service for the pre-forward policy check,
 # (3) CTDS_GATEWAY_JWT_SECRET injected via secret/env at activation (key material never enters
-# the repo, charter red line 7). Until then the pod stays ImagePullBackOff if applied: expected.
+# the repo, charter red line 7), (4) metering audit sink live (WBS-3.7.5 file+jdbc double-write):
+# ctds_metering database bootstrapped + gateway audit account (INSERT-only on
+# ctds_metering.metering_flow) provisioned + CTDS_AUDIT_DB_PASSWORD injected via secret/env at
+# activation (review round F3, charter red line 7). Until then the pod stays ImagePullBackOff
+# if applied: expected.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -70,3 +74,15 @@ spec:
             # Policy execution point: contract-domain internal usage-check endpoint.
             - name: CTDS_GATEWAY_CONTRACT_BASEURL
               value: "http://ctds-contract-service:8085"
+            # Metering-plane route target (WBS-3.7.5 connector-metering, normal proxy).
+            - name: CTDS_GATEWAY_METERING_BASEURL
+              value: "http://ctds-metering-billing:8089"
+            # Metering audit DB sink (WBS-3.7.5 file+jdbc double-write, ADR-022 §2.6-1):
+            # audit account INSERT-only on ctds_metering.metering_flow; password injected
+            # via secret/env at activation - never committed (charter red line 7; review F3).
+            - name: CTDS_AUDIT_DB_URL
+              value: "jdbc:mysql://ctds-mysql:3306/ctds_metering"
+            - name: CTDS_AUDIT_DB_USER
+              value: "ctds_audit"
+            - name: CTDS_AUDIT_DB_PASSWORD
+              value: ""

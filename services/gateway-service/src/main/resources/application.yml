@@ -6,6 +6,9 @@ spring:
   # 变动使 Boot 回退到 SERVLET（回退即安全链与网关整体不激活——静默失效即鉴权旁路）。
   main:
     web-application-type: reactive
+  # 网关无库无迁移（ADR-005 §3 第 1 项）：WBS-3.7.5 起类路径含 spring-jdbc（计量事件落库
+  # 出口，Q1-A 通道 1）——落库实现自持数据源（ctds.audit.jdbc-url），且依赖面为纯 spring-jdbc
+  # 不含连接池（E3 勘误），主数据源自动装配无 Bean 可建，零配置面占用。
 
 server:
   port: 8086
@@ -23,8 +26,17 @@ logging:
 
 ctds:
   audit:
-    # 计量事件与拒绝留痕落 logs/audit-*.jsonl（hifi §6）
+    # 计量事件与拒绝留痕落 logs/audit-*.jsonl（hifi §6）；WBS-3.7.5 Q1-A 起网关开
+    # metering-db 双写出口（file+jdbc——文件存证职能不中断，ADR-022 §2.6-1）：白名单动作
+    # gateway.delivery.metering 异步 upsert ctds_metering.metering_flow（B7-3 落库实现替换，
+    # 调用点零改动）；其他服务不配 sink = 纯文件现状路径零影响。
     enabled: true
+    sink: metering-db
+    # 计量落库自持数据源（账号 = 网关审计写入账号，INSERT-only on ctds_metering.metering_flow；
+    # 口令只经环境变量注入，红线 7）
+    jdbc-url: ${CTDS_AUDIT_DB_URL:jdbc:mysql://localhost:3306/ctds_metering}
+    jdbc-username: ${CTDS_AUDIT_DB_USER:ctds_audit}
+    jdbc-password: ${CTDS_AUDIT_DB_PASSWORD:}
   auth:
     gateway:
       # 网关侧鉴权链开关（common-auth 网关侧组件；WBS 3.5.2 启用 = 兑现 DB-03 长期解除条件之一）
@@ -96,6 +108,13 @@ ctds:
         uri: ${CTDS_GATEWAY_DELIVERY_BASEURL:http://127.0.0.1:8087}
         predicates:
           - Path=/api/v1/evaluations/**
+        filters: []
+      # 计量读面门面（WBS-3.7.5 Q1-A：metering-billing 8089；普通代理路由——不带 delivery-face，
+      # 不进交付判定链 / 零交付计量——沿 connector-orders 先例）
+      - id: connector-metering
+        uri: ${CTDS_GATEWAY_METERING_BASEURL:http://127.0.0.1:8089}
+        predicates:
+          - Path=/api/v1/metering/**
         filters: []
     delivery:
       # 交付面白名单（routeId 显式列举；默认空 = 无交付面可用，fail-closed，hifi §5-1）

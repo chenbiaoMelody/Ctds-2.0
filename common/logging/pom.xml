@@ -32,6 +32,15 @@
       <groupId>com.ctds</groupId>
       <artifactId>common-errorcode</artifactId>
     </dependency>
+    <!-- 计量事件落库实现（WBS-3.7.5 Q1-A 通道 1，规格 C-7.1-7.2 B7-3 字面路径）：
+         JdbcMeteringAuditRecorder 自持数据源 upsert metering_flow；仅 sink=metering-db 时装配，
+         默认 file 行为不变（其他服务零影响）。直引 spring-jdbc（非 starter-jdbc）：
+         单后台写线程逐条 upsert 无需连接池，且避免 HikariCP 上类路径触发各服务主数据源
+         自动装配（GatewayAuthWiringTest 上下文失败实证——E3 勘误，hifi §5.3 依赖口径修正） -->
+    <dependency>
+      <groupId>org.springframework</groupId>
+      <artifactId>spring-jdbc</artifactId>
+    </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-test</artifactId>

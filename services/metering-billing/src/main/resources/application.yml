@@ -1,0 +1,31 @@
+spring:
+  application:
+    name: metering-billing
+  # 默认 profile 不装载数据源（沿 kms/delivery 先例）：classpath 有 spring-boot-starter-jdbc 会激活
+  # DataSourceAutoConfiguration 并要求配置数据源；演示与服务一律 mysql profile（application-mysql.yml）。
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+
+server:
+  port: 8089
+  # 演示期安全边界（ADR-016 §2.7）：服务仅绑定回环，不得对外暴露；
+  # k8s 部署经清单环境变量放宽（ClusterIP 不外露）。
+  address: 127.0.0.1
+
+logging:
+  file:
+    name: logs/app.log
+  structured:
+    format:
+      console: logstash
+      file: logstash
+
+ctds:
+  # 计量域角色点（WBS-3.7.5 hifi §6，Q4-A：新权限点 2 个——新域零可复用点，服务级 yml 自治映射）：
+  # 需求方/提供方读本方流水与聚合（归属校验服务端硬保证）；运营方治理面（触发采集 + 四方勾稽读数）。
+  auth:
+    permissions:
+      requester: metering.read
+      provider: metering.read
+      admin: metering.read,metering.governance

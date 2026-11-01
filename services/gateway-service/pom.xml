@@ -57,6 +57,21 @@
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
     </dependency>
+    <!-- 计量事件落库出口（WBS-3.7.5 Q1-A，规格 C-7.1-7.2 B7-3 字面路径）：
+         common-logging JdbcMeteringAuditRecorder 自持数据源 upsert metering_flow；
+         仅 sink=metering-db 时装配（application.yml），网关调用点/过滤器零改动（B7-3）。
+         直引 spring-jdbc（非 hifi §5.3 所写 starter-jdbc——单线程写手无需连接池，
+         避免 HikariCP 上类路径触发主数据源自动装配致网关上下文失败，E3 勘误）；
+         mysql-connector-j = 落库 JDBC 驱动（runtime）。 -->
+    <dependency>
+      <groupId>org.springframework</groupId>
+      <artifactId>spring-jdbc</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.mysql</groupId>
+      <artifactId>mysql-connector-j</artifactId>
+      <scope>runtime</scope>
+    </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-test</artifactId>
