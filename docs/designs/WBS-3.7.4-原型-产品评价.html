@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>WBS-3.7.4 静态线框原型：产品评价系统（4 画面）</title>
+<style>
+  /* 线框原型：仅表达布局与信息结构，不代表最终视觉。数据均为演示虚构。 */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Microsoft YaHei", sans-serif; background: #f0f2f5; color: #303133; padding: 24px; }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  .proto-note { font-size: 12px; color: #909399; margin-bottom: 20px; }
+  .screen { background: #fff; border: 1px solid #dcdfe6; border-radius: 6px; margin-bottom: 28px; overflow: hidden; }
+  .screen-title { background: #409eff; color: #fff; padding: 8px 16px; font-size: 14px; font-weight: bold; }
+  .screen-title small { font-weight: normal; margin-left: 12px; opacity: .85; }
+  .screen-body { padding: 16px; }
+  .crumb { font-size: 12px; color: #909399; margin-bottom: 12px; }
+  .crumb a { color: #409eff; text-decoration: none; }
+  .meta-head { display: flex; align-items: center; gap: 10px; padding-bottom: 10px; border-bottom: 1px solid #ebeef5; margin-bottom: 14px; }
+  .meta-head .name { font-size: 17px; font-weight: bold; }
+  .tag { font-size: 11px; padding: 1px 8px; border-radius: 3px; background: #f0f9eb; color: #67c23a; border: 1px solid #e1f3d8; }
+  .tag.price { background: #fdf6ec; color: #e6a23c; border-color: #faecd8; }
+  .desc { font-size: 12px; color: #909399; margin-bottom: 16px; }
+  .section-label { font-size: 12px; color: #c0c4cc; margin: 14px 0 8px; letter-spacing: 1px; }
+  /* 评价区 */
+  .review-block { border: 1px dashed #b3d8ff; border-radius: 4px; padding: 14px; }
+  .review-title { font-size: 15px; font-weight: bold; margin-bottom: 10px; }
+  .stats-bar { display: flex; align-items: center; gap: 10px; font-size: 13px; margin-bottom: 12px; }
+  .stats-bar .avg { color: #e6a23c; font-weight: bold; font-size: 16px; }
+  .stars { color: #e6a23c; font-size: 14px; letter-spacing: 2px; }
+  .stars.off { color: #dcdfe6; }
+  .review-item { border-top: 1px solid #ebeef5; padding: 10px 0; }
+  .review-item .line1 { display: flex; align-items: center; gap: 10px; }
+  .review-item .who { font-size: 12px; color: #909399; }
+  .review-item .txt { font-size: 13px; margin: 6px 0 0 0; }
+  .review-item .ops { margin-left: auto; font-size: 12px; }
+  .review-item .ops a { color: #409eff; text-decoration: none; margin-left: 10px; }
+  .review-item .ops a.hide { color: #f56c6c; }
+  .review-item.hidden-demo { background: #fef0f0; border-radius: 3px; padding: 8px; margin-top: 8px; font-size: 12px; color: #f56c6c; }
+  .form-box { border-top: 1px dashed #dcdfe6; margin-top: 12px; padding-top: 12px; }
+  .form-box .label { font-size: 13px; font-weight: bold; margin-bottom: 8px; }
+  .rate-input { font-size: 20px; color: #dcdfe6; letter-spacing: 4px; margin-bottom: 8px; cursor: pointer; }
+  .rate-input .on { color: #e6a23c; }
+  .rate-tip { font-size: 11px; color: #c0c4cc; margin-bottom: 8px; }
+  textarea.proto { width: 100%; height: 56px; border: 1px solid #dcdfe6; border-radius: 4px; padding: 8px; font-size: 12px; color: #909399; resize: none; }
+  .btn { display: inline-block; padding: 6px 18px; font-size: 13px; border-radius: 4px; border: 1px solid #dcdfe6; background: #fff; color: #606266; margin-top: 8px; }
+  .btn.primary { background: #409eff; border-color: #409eff; color: #fff; }
+  .btn.danger-ghost { border-color: #f56c6c; color: #f56c6c; }
+  .btn[disabled] { opacity: .5; cursor: not-allowed; }
+  .err-line { background: #fef0f0; color: #f56c6c; border: 1px solid #fde2e2; border-radius: 3px; font-size: 12px; padding: 6px 10px; margin-top: 8px; }
+  .ok-line { background: #f0f9eb; color: #67c23a; border: 1px solid #e1f3d8; border-radius: 3px; font-size: 12px; padding: 6px 10px; margin-top: 8px; }
+  .empty { text-align: center; color: #c0c4cc; font-size: 13px; padding: 22px 0; }
+  /* 弹窗 */
+  .modal-mask { position: relative; background: #fafafa; border: 1px dashed #dcdfe6; border-radius: 4px; padding: 18px; text-align: center; }
+  .modal-box { display: inline-block; background: #fff; border: 1px solid #dcdfe6; border-radius: 6px; box-shadow: 0 4px 14px rgba(0,0,0,.08); min-width: 340px; text-align: left; }
+  .modal-box .m-title { padding: 12px 16px; font-weight: bold; font-size: 14px; border-bottom: 1px solid #ebeef5; }
+  .modal-box .m-body { padding: 16px; font-size: 13px; }
+  .modal-box .m-foot { padding: 10px 16px; text-align: right; border-top: 1px solid #ebeef5; }
+  .anon-note { font-size: 11px; color: #909399; margin-top: 10px; }
+  .legend { font-size: 12px; color: #606266; background: #ecf5ff; border: 1px solid #d9ecff; border-radius: 4px; padding: 8px 12px; margin-bottom: 20px; }
+</style>
+</head>
+<body>
+
+<h1>WBS-3.7.4 产品评价系统 · 静态线框原型（V0.9）</h1>
+<div class="proto-note">4 画面：① 需方（有有效交付）可评/可改 · ② 浏览者只读与暂无评价 · ③ 运营档隐藏（含确认弹窗）· ④ 负向与空态。位置：产品详情页（/portal/products/{productId}）底部新增「产品评价」区块，既有区块零语义改动；菜单零增量（10/23）。</div>
+<div class="legend">业务口径锚：B5-1 资格 = 已完成有效交付的需方（防刷评，服务端硬校验）｜B5-2 一人一评，重复提交 = 更新｜B5-3 详情页只读均分 + 评价数（仅计未隐藏）｜B5-4 运营隐藏留痕不删除｜B6 无推送。</div>
+
+<!-- 画面 1 -->
+<div class="screen">
+  <div class="screen-title">画面 1 · 需方 A（对 P1 已有有效交付）——可提交 / 可修改 <small>剧本 S2-8 提交 · S2-11 更新</small></div>
+  <div class="screen-body">
+    <div class="crumb"><a>数据产品门户</a> / 产品详情 / <b>产品 P1（演示虚构名）</b></div>
+    <div class="meta-head">
+      <span class="name">产品 P1（演示虚构名）</span>
+      <span class="tag">已上架</span>
+      <span class="tag price">按次计价 ¥X/次</span>
+    </div>
+    <div class="desc">产品简介……（既有区块：元数据 / 收藏订阅 / 订购区——零改动，此处省略）</div>
+
+    <div class="review-block">
+      <div class="review-title">产品评价</div>
+      <div class="stats-bar"><span class="avg">4.5</span><span class="stars">★★★★<span class="off">★</span></span><span>共 2 条评价</span></div>
+
+      <div class="review-item">
+        <div class="line1">
+          <span class="stars">★★★★★</span>
+          <span class="who">评价人 91…0002 · 2026-11-01 10:20</span>
+          <span class="ops"><a>修改</a></span>
+        </div>
+        <p class="txt">数据质量很好，接口响应快。（本人既有评价——提交后回显，S2-11 入口）</p>
+      </div>
+      <div class="review-item">
+        <div class="line1">
+          <span class="stars">★★★★<span class="off">★</span></span>
+          <span class="who">评价人 91…000D · 2026-10-31 15:02</span>
+        </div>
+        <p class="txt">字段完整度高。</p>
+      </div>
+
+      <div class="form-box">
+        <div class="label">修改我的评价</div>
+        <div class="rate-input"><span class="on">★</span><span class="on">★</span><span class="on">★</span><span class="on">★</span><span class="on">★</span></div>
+        <div class="rate-tip">点击评分（1~5 星，必选）</div>
+        <textarea class="proto">回显本人既有文字评价，可修改……（可选，≤500 字）</textarea>
+        <span class="btn primary">更新评价</span>
+        <div class="ok-line">提交成功：评价已更新（评价总数不变——一人一评，B5-2 / S2-11）</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 画面 2 -->
+<div class="screen">
+  <div class="screen-title">画面 2 · 浏览者（登录普通档）——只读统计与列表 <small>B5-3 只读展示 · 评价人展示 = 主体编号（沿订单/交付读面同口径）</small></div>
+  <div class="screen-body">
+    <div class="crumb"><a>数据产品门户</a> / 产品详情 / <b>产品 P2（演示虚构名）</b></div>
+    <div class="review-block">
+      <div class="review-title">产品评价</div>
+      <div class="stats-bar"><span class="avg">3.0</span><span class="stars">★★★<span class="off">★★</span></span><span>共 3 条评价</span></div>
+      <div class="review-item">
+        <div class="line1"><span class="stars">★★★★<span class="off">★</span></span><span class="who">评价人 91…000A · 2026-11-01 09:15</span></div>
+        <p class="txt">交付流程顺畅。</p>
+      </div>
+      <div class="review-item">
+        <div class="line1"><span class="stars">★★<span class="off">★★★</span></span><span class="who">评价人 91…000D · 2026-10-30 11:40</span></div>
+        <p class="txt">文档还可以再细一些。</p>
+      </div>
+      <div class="review-item">
+        <div class="line1"><span class="stars">★★★<span class="off">★★</span></span><span class="who">评价人 91…000C · 2026-10-29 16:05</span></div>
+        <p class="txt">（无文字评价——仅星级）</p>
+      </div>
+      <div class="form-box">
+        <div class="label">提交评价</div>
+        <div class="rate-input">★★★★★（未选择）</div>
+        <textarea class="proto">说说你的使用体验（可选，≤500 字）</textarea>
+        <span class="btn primary">提交评价</span>
+        <div class="anon-note">无推送：提交后本区主动刷新一次即为最新权威状态（B6）。</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 画面 3 -->
+<div class="screen">
+  <div class="screen-title">画面 3 · 运营档（admin）——隐藏违规评价 <small>剧本 S2-12 · B5-4 隐藏留痕不删除 · 按钮仅运营档可见</small></div>
+  <div class="screen-body">
+    <div class="crumb"><a>数据产品门户</a> / 产品详情 / <b>产品 P1（演示虚构名）</b>（运营档登录）</div>
+    <div class="review-block">
+      <div class="review-title">产品评价</div>
+      <div class="stats-bar"><span class="avg">3.5</span><span class="stars">★★★<span class="off">★</span><span class="off">★</span></span><span>共 2 条评价（隐藏 1 条后即时重算——隐藏前统计含该条）</span></div>
+      <div class="review-item">
+        <div class="line1">
+          <span class="stars">★<span class="off">★★★★</span></span>
+          <span class="who">评价人 91…000D · 2026-10-31 18:44（违规文字评价——预置）</span>
+          <span class="ops"><a class="hide">隐藏</a></span>
+        </div>
+        <p class="txt">（含违规文字……预置内容）</p>
+      </div>
+      <div class="review-item">
+        <div class="line1"><span class="stars">★★★★<span class="off">★</span></span><span class="who">评价人 91…000A · 2026-11-01 10:20</span><span class="ops"><a class="hide">隐藏</a></span></div>
+        <p class="txt">正常评价同样可被运营隐藏（治理动作不区分内容——留痕为准）。</p>
+      </div>
+
+      <div class="modal-mask" style="margin-top:14px;">
+        <div class="modal-box">
+          <div class="m-title">隐藏评价</div>
+          <div class="m-body">确认隐藏该评价？<br>隐藏后不再对外展示（统计与列表即时排除），操作将留痕，评价数据不物理删除。</div>
+          <div class="m-foot"><span class="btn">取消</span> <span class="btn primary">确认隐藏</span></div>
+        </div>
+      </div>
+      <div class="anon-note">已隐藏再隐藏 = 幂等成功、不重复留痕（Q8-A）；非运营档直调隐藏端点 = 403（服务端 delivery.governance 把关）。</div>
+    </div>
+  </div>
+</div>
+
+<!-- 画面 4 -->
+<div class="screen">
+  <div class="screen-title">画面 4 · 负向与空态 <small>剧本 S2-9 非法评分 · S2-10 无交付资格（防刷评）· 暂无评价</small></div>
+  <div class="screen-body">
+    <div class="crumb">A-1 无交付记录主体（主体 C）提交 —— 服务端拒绝（S2-10，表单照常可见可提交，门槛在服务端）</div>
+    <div class="review-block">
+      <div class="review-title">产品评价</div>
+      <div class="stats-bar"><span class="avg">4.0</span><span class="stars">★★★★<span class="off">★</span></span><span>共 1 条评价</span></div>
+      <div class="review-item">
+        <div class="line1"><span class="stars">★★★★<span class="off">★</span></span><span class="who">评价人 91…000A · 2026-11-01 10:20</span></div>
+        <p class="txt">好用。</p>
+      </div>
+      <div class="form-box">
+        <div class="label">提交评价</div>
+        <div class="rate-input"><span class="on">★</span><span class="on">★</span><span class="on">★</span><span class="off">★</span><span class="off">★</span></div>
+        <textarea class="proto">（主体 C 填写的评价文字……）</textarea>
+        <span class="btn primary">提交评价</span>
+        <div class="err-line">提交被拒：完成对该产品的有效交付后方可评价。（1011C0006——业务可读，不暴露内部实现；防刷评负向）</div>
+      </div>
+    </div>
+
+    <div class="section-label">A-2 非法评分（0 分提交，S2-9）</div>
+    <div class="review-block">
+      <div class="rate-input">☆（未选择 / 0）</div>
+      <span class="btn primary">提交评价</span>
+      <div class="err-line">评分需为 1~5 的整数。（前端拦截文案与服务端 1011C0005 同义——双保险）</div>
+    </div>
+
+    <div class="section-label">A-3 暂无评价空态</div>
+    <div class="review-block">
+      <div class="review-title">产品评价</div>
+      <div class="empty">暂无评价</div>
+      <div class="form-box">
+        <div class="label">提交评价</div>
+        <div class="rate-input">★★★★★（未选择）</div>
+        <textarea class="proto">说说你的使用体验（可选，≤500 字）</textarea>
+        <span class="btn primary">提交评价</span>
+      </div>
+    </div>
+
+    <div class="section-label">A-4 门户首页文案锚终值（Q6-A，随本卡修正）</div>
+    <div class="review-block">
+      <p style="font-size:13px;color:#606266;">浏览平台已上架的数据产品；<b>对已完成有效交付的产品可提交评价。</b></p>
+      <div class="anon-note">原值"订购与评价将在后续版本开放"——订购已由 3.7.3 开放而文案未同步，本卡一并补正（PortalHomeView.spec / PortalSourceGuard.spec 锚同步）。</div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
