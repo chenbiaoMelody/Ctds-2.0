@@ -8,8 +8,8 @@
  */
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
-import { ApiError } from '../../api/client'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { ApiError, getDemoSubject } from '../../api/client'
 import { getActorMode } from '../../stores/demoIdentity'
 import {
   getProductDetail,
@@ -34,6 +34,27 @@ import {
 } from '../../constants/catalog'
 import { guideToLoginIfAuthFailed } from '../../api/authGuide'
 import PortalOrderDialog from './PortalOrderDialog.vue'
+import {
+  fetchEvaluationStats,
+  fetchProductEvaluations,
+  fetchMyEvaluation,
+  submitEvaluation,
+  hideEvaluation,
+  type EvaluationItem,
+  type EvaluationStats,
+} from '../../api/review'
+import {
+  REVIEW_SECTION_TITLE,
+  REVIEW_EMPTY_TIP,
+  REVIEW_SCORE_LABEL,
+  REVIEW_SCORE_INVALID_TIP,
+  REVIEW_HIDE_CONFIRM_TEXT,
+  REVIEW_SUBMIT_LABEL,
+  REVIEW_UPDATE_LABEL,
+  REVIEW_COMMENT_PLACEHOLDER,
+  formatReviewMeta,
+  formatReviewStats,
+} from '../../constants/review'
 
 const route = useRoute()
 const router = useRouter()
@@ -50,6 +71,84 @@ const isProviderMode = computed(() => getActorMode() !== 'operator')
 
 /** 订购弹窗显隐（WBS-3.7.3 开放订购入口——hifi §4.1 仅改订购区，其余零改动）。 */
 const orderDialogVisible = ref(false)
+
+// ===== 产品评价区状态（WBS-3.7.4 hifi §5.2；B6：主动查询刷新，无推送/轮询） =====
+const reviewStats = ref<EvaluationStats | null>(null)
+const reviewList = ref<EvaluationItem[]>([])
+const myReview = ref<EvaluationItem | null>(null)
+const reviewScore = ref(0)
+const reviewComment = ref('')
+const reviewSubmitting = ref(false)
+const reviewErrorTip = ref('')
+const isOperatorMode = computed(() => getActorMode() === 'operator')
+
+/** 评价区数据装载：统计 + 列表 + 本人回显（一屏闭环，Q3-A）。 */
+async function loadReviewData(): Promise<void> {
+  try {
+    const [stats, list, mine] = await Promise.all([
+      fetchEvaluationStats(productId()),
+      fetchProductEvaluations(productId()),
+      fetchMyEvaluation(productId()),
+    ])
+    reviewStats.value = stats
+    reviewList.value = list.items
+    myReview.value = mine
+    reviewScore.value = mine?.score ?? 0
+    reviewComment.value = mine?.comment ?? ''
+  } catch (error) {
+    showError(error)
+  }
+}
+
+/** 提交/更新评价（W-EV1 upsert）：评分必选前端拦截（1011C0005 同义）+ 服务端兜底；
+ * 拒绝文案业务可读（1011C0006 区块内展示——S2-10 负向演示路径）。 */
+async function onSubmitReview(): Promise<void> {
+  if (reviewScore.value < 1 || reviewScore.value > 5) {
+    reviewErrorTip.value = REVIEW_SCORE_INVALID_TIP
+    return
+  }
+  reviewSubmitting.value = true
+  reviewErrorTip.value = ''
+  try {
+    await submitEvaluation({
+      productId: productId(),
+      score: reviewScore.value,
+      comment: reviewComment.value.trim() || undefined,
+      requestId: crypto.randomUUID(),
+    })
+    ElMessage.success(myReview.value ? '评价已更新' : '评价已提交')
+    await loadReviewData()
+  } catch (error) {
+    if (guideToLoginIfAuthFailed(error, router)) return
+    reviewErrorTip.value = error instanceof ApiError ? error.message : '请求失败，请稍后重试'
+  } finally {
+    reviewSubmitting.value = false
+  }
+}
+
+/** 运营隐藏（G-EV1）：确认弹窗固定文案 → 隐藏留痕不删除 → 重拉统计与列表（S2-12）。 */
+async function onHideReview(item: EvaluationItem): Promise<void> {
+  try {
+    await ElMessageBox.confirm(REVIEW_HIDE_CONFIRM_TEXT, '隐藏评价', { type: 'warning' })
+  } catch {
+    return
+  }
+  try {
+    await hideEvaluation(item.reviewId)
+    ElMessage.success('已隐藏')
+    await loadReviewData()
+  } catch (error) {
+    showError(error)
+  }
+}
+
+function isOwnReview(item: EvaluationItem): boolean {
+  return item.requesterNo === getDemoSubject()
+}
+
+function focusReviewForm(): void {
+  document.querySelector('.review-form')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+}
 
 function onSubscribeOrder(): void {
   orderDialogVisible.value = true
@@ -169,9 +268,12 @@ async function onUnsubscribe(): Promise<void> {
 
 onMounted(() => {
   void loadDetail()
-  if (isProviderMode.value && parseProductId() !== null) {
-    void loadFavoriteState()
-    void loadSubscriptionState()
+  if (parseProductId() !== null) {
+    void loadReviewData()
+    if (isProviderMode.value) {
+      void loadFavoriteState()
+      void loadSubscriptionState()
+    }
   }
 })
 </script>
@@ -250,6 +352,67 @@ onMounted(() => {
             @ordered="onOrderCreated"
           />
         </div>
+
+        <!-- 产品评价区（WBS-3.7.4 hifi §5.2；资格门槛在服务端，表单所有档可见可提交） -->
+        <div class="review-section">
+          <div class="review-title">{{ REVIEW_SECTION_TITLE }}</div>
+          <div class="review-stats">
+            <template v-if="reviewStats && reviewStats.averageScore != null">
+              {{ formatReviewStats(reviewStats.averageScore, reviewStats.reviewCount) }}
+            </template>
+            <template v-else>{{ REVIEW_EMPTY_TIP }}</template>
+          </div>
+          <div class="review-list">
+            <div v-for="item in reviewList" :key="item.reviewId" class="review-item">
+              <el-rate :model-value="item.score" disabled class="review-stars" />
+              <span v-if="item.comment" class="review-comment">{{ item.comment }}</span>
+              <span class="review-meta">{{ formatReviewMeta(item.requesterNo, item.createdAt) }}</span>
+              <el-button
+                v-if="isOwnReview(item)"
+                link
+                type="primary"
+                class="review-edit-btn"
+                @click="focusReviewForm"
+              >
+                修改
+              </el-button>
+              <el-button
+                v-if="isOperatorMode"
+                link
+                type="danger"
+                class="review-hide-btn"
+                @click="onHideReview(item)"
+              >
+                隐藏
+              </el-button>
+            </div>
+            <div v-if="!reviewList.length" class="review-empty">{{ REVIEW_EMPTY_TIP }}</div>
+          </div>
+          <div v-if="reviewErrorTip" class="review-error-tip" role="alert">{{ reviewErrorTip }}</div>
+          <div class="review-form">
+            <div class="review-score-row">
+              <span class="review-score-label">{{ REVIEW_SCORE_LABEL }}</span>
+              <el-rate v-model="reviewScore" class="review-rate-input" />
+            </div>
+            <el-input
+              v-model="reviewComment"
+              type="textarea"
+              :rows="3"
+              :maxlength="500"
+              show-word-limit
+              :placeholder="REVIEW_COMMENT_PLACEHOLDER"
+              class="review-comment-input"
+            />
+            <el-button
+              type="primary"
+              class="review-submit-btn"
+              :loading="reviewSubmitting"
+              @click="onSubmitReview"
+            >
+              {{ myReview ? REVIEW_UPDATE_LABEL : REVIEW_SUBMIT_LABEL }}
+            </el-button>
+          </div>
+        </div>
       </template>
     </el-card>
   </div>
@@ -298,5 +461,81 @@ onMounted(() => {
 .order-tip {
   font-size: 13px;
   color: #6b7280;
+}
+
+/* ===== 产品评价区（WBS-3.7.4 hifi §5.2；沿门户既有视觉模式，不新造组件） ===== */
+.review-section {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.review-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.review-stats {
+  font-size: 13px;
+  color: #6b7280;
+  margin-bottom: 12px;
+}
+
+.review-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 0;
+  border-bottom: 1px dashed #f0f0f0;
+}
+
+.review-comment {
+  font-size: 13px;
+  color: #374151;
+}
+
+.review-meta {
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.review-empty {
+  font-size: 13px;
+  color: #9ca3af;
+  padding: 8px 0;
+}
+
+.review-error-tip {
+  margin: 8px 0;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--el-color-danger);
+  background: var(--el-color-danger-light-9);
+  border-radius: 4px;
+}
+
+.review-form {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.review-score-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.review-score-label {
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.review-comment-input {
+  width: 100%;
 }
 </style>

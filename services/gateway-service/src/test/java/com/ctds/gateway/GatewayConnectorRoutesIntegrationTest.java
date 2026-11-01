@@ -23,12 +23,13 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.reactive.server.WebTestClient;
 
 /**
- * 连接器门面网关扩路由契约（WBS-3.6.8 W1，hifi §1-A；WBS-3.7.3 续延 connector-orders）：
- * 七条<b>普通代理</b>路由
- * （subject / did / datasets / data-spaces / contracts / deliveries）装配与转发。
+ * 连接器门面网关扩路由契约（WBS-3.6.8 W1，hifi §1-A；WBS-3.7.3 续延 connector-orders；
+ * WBS-3.7.4 续延 connector-evaluations）：
+ * 八条<b>普通代理</b>路由
+ * （subject / did / datasets / data-spaces / contracts / deliveries / evaluations）装配与转发。
  *
  * <ul>
- *   <li><b>T1-①</b>：七条路由装配（id 唯一、单 {@code Path=} 谓词、filters 为空）；</li>
+ *   <li><b>T1-①</b>：八条路由装配（id 唯一、单 {@code Path=} 谓词、filters 为空）；</li>
  *   <li><b>T1-②</b>：新路由转发到配置路径模板的实例路径（白名单外不进交付判定链——
  *       无合约头放行、判定器零调用、计量零触发）；</li>
  *   <li><b>T1-③</b>：既有探针路由（交付白名单）不回归——判定链语义零改动。</li>
@@ -46,8 +47,9 @@ class GatewayConnectorRoutesIntegrationTest {
     private static final StubServer UPSTREAM = new StubServer();
     private static final StubServer JUDGE = new StubServer();
 
-    /** 门面路由清单（hifi §1-A 前置检查③实测回填；WBS-3.7.3 续延 connector-orders——七条，
-     * 各一 id 一 Path；orders 与 contract 同下游 8085，CTDS_GATEWAY_CONTRACT_BASEURL 已注册）。 */
+    /** 门面路由清单（hifi §1-A 前置检查③实测回填；WBS-3.7.3 续延 connector-orders；
+     * WBS-3.7.4 续延 connector-evaluations——八条，各一 id 一 Path；
+     * orders/evaluations 与 contract/delivery 同下游，CTDS_GATEWAY_*_BASEURL 已注册）。 */
     private static final List<String[]> NEW_ROUTES = List.of(
             new String[] {"connector-identity-subject", "/api/v1/subject/**"},
             new String[] {"connector-identity-did", "/api/v1/did/**"},
@@ -55,7 +57,8 @@ class GatewayConnectorRoutesIntegrationTest {
             new String[] {"connector-resource-spaces", "/api/v1/data-spaces/**"},
             new String[] {"connector-contract", "/api/v1/contracts/**"},
             new String[] {"connector-orders", "/api/v1/orders/**"},
-            new String[] {"connector-delivery", "/api/v1/deliveries/**"});
+            new String[] {"connector-delivery", "/api/v1/deliveries/**"},
+            new String[] {"connector-evaluations", "/api/v1/evaluations/**"});
 
     private static final String REQUESTER = "S-req-368";
 

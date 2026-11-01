@@ -62,6 +62,12 @@ export default defineConfig({
         target: 'http://localhost:8087',
         changeOrigin: true,
       },
+      // WBS-3.7.4 评价域（8087，Q1-A 同库子域）：界面走查经 5173 访问评价端点（开发期转发，
+      // 不改服务契约与门禁配置；nginx 容器配置零改动——沿交付域同款先例）。键位于通用 '/api' 前。
+      '/api/v1/evaluations': {
+        target: 'http://localhost:8087',
+        changeOrigin: true,
+      },
       '/api/v1/sandboxes': {
         target: 'http://localhost:8087',
         changeOrigin: true,
