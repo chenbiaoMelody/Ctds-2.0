@@ -116,6 +116,13 @@ ctds:
         predicates:
           - Path=/api/v1/metering/**
         filters: []
+      # 计费读面与出账门面（WBS-3.7.6 Q1-A：同 metering-billing 8089；普通代理路由——不带
+      # delivery-face，不进交付判定链 / 零交付计量——沿 connector-metering 先例）
+      - id: connector-billing
+        uri: ${CTDS_GATEWAY_BILLING_BASEURL:http://127.0.0.1:8089}
+        predicates:
+          - Path=/api/v1/billing/**
+        filters: []
     delivery:
       # 交付面白名单（routeId 显式列举；默认空 = 无交付面可用，fail-closed，hifi §5-1）
       routes:

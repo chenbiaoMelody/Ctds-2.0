@@ -22,10 +22,16 @@ logging:
       file: logstash
 
 ctds:
-  # 计量域角色点（WBS-3.7.5 hifi §6，Q4-A：新权限点 2 个——新域零可复用点，服务级 yml 自治映射）：
-  # 需求方/提供方读本方流水与聚合（归属校验服务端硬保证）；运营方治理面（触发采集 + 四方勾稽读数）。
+  # 计量 + 计费域角色点（WBS-3.7.5 hifi §6 Q4-A 计量 2 点；WBS-3.7.6 hifi §8 Q8-A 计费 2 点，50→52）：
+  # 需求方/提供方读本方流水、账单与对账结论（归属校验服务端硬保证）；运营方治理面
+  # （触发采集 + 四方勾稽读数 + 手动出账 + 对账 + 确认 + 更正 + 全量账单检索）。
   auth:
     permissions:
-      requester: metering.read
-      provider: metering.read
-      admin: metering.read,metering.governance
+      requester: metering.read,billing.read
+      provider: metering.read,billing.read
+      admin: metering.read,metering.governance,billing.read,billing.governance
+  # 计费自动出账（WBS-3.7.6 hifi §4）：默认每月 1 日 00:10 出上月账；enabled/cron 可配。
+  billing:
+    auto:
+      enabled: ${CTDS_BILLING_AUTO_ENABLED:true}
+      cron: ${CTDS_BILLING_AUTO_CRON:0 10 0 1 * ?}
