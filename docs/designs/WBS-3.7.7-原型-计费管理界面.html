@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>WBS-3.7.7 计费管理界面 线框原型 V0.9</title>
+<style>
+  :root {
+    --ink: #1f2733;
+    --muted: #6b7684;
+    --line: #d9dee5;
+    --soft: #f4f6f9;
+    --brand: #2f6bff;
+    --ok: #1f9d55;
+    --warn: #b7791f;
+    --bad: #c53030;
+    --side: #1f2a44;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px;
+    font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
+    color: var(--ink); background: #eef1f5;
+  }
+  h1 { font-size: 20px; margin: 0 0 6px; }
+  h2 { font-size: 15px; margin: 0 0 4px; }
+  h3 { font-size: 13px; margin: 0 0 8px; color: var(--muted); font-weight: 600; }
+  .intro { color: var(--muted); font-size: 12px; line-height: 1.7; margin-bottom: 18px; }
+  .legend { font-size: 12px; color: var(--muted); margin-bottom: 18px; }
+  .legend b { color: var(--ink); }
+  .screen {
+    background: #fff; border: 1px solid var(--line); border-radius: 8px;
+    margin-bottom: 22px; overflow: hidden; box-shadow: 0 1px 2px rgba(20,30,50,.06);
+  }
+  .screen-head {
+    display: flex; align-items: baseline; gap: 10px; padding: 10px 14px;
+    border-bottom: 1px solid var(--line); background: var(--soft);
+  }
+  .screen-head .tag {
+    font-size: 11px; color: #fff; background: var(--brand);
+    border-radius: 10px; padding: 2px 8px; flex: none;
+  }
+  .screen-head .note { font-size: 12px; color: var(--muted); }
+  .app { display: flex; min-height: 340px; }
+  .side { width: 168px; flex: none; background: var(--side); color: #c9d3e6; font-size: 12px; padding: 12px 0; }
+  .side .brand { padding: 0 14px 12px; color: #fff; font-size: 13px; font-weight: 600; border-bottom: 1px solid #33405f; margin-bottom: 8px; }
+  .side .item { padding: 7px 14px; }
+  .side .item.on { background: #2b3b5c; color: #fff; border-left: 3px solid var(--brand); }
+  .main { flex: 1; min-width: 0; padding: 14px 16px; }
+  .topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .topbar .title { font-size: 15px; font-weight: 600; }
+  .topbar .who { font-size: 12px; color: var(--muted); }
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 12px; flex-wrap: wrap; }
+  .tabs .tab { font-size: 12px; padding: 7px 12px; border: 1px solid var(--line); border-bottom: none; border-radius: 4px 4px 0 0; color: var(--muted); background: #fafbfc; }
+  .tabs .tab.on { color: var(--brand); background: #fff; font-weight: 600; border-bottom: 1px solid #fff; margin-bottom: -1px; }
+  .bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+  .field { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); }
+  .inp {
+    height: 26px; min-width: 104px; border: 1px solid var(--line); border-radius: 3px;
+    padding: 0 8px; font-size: 12px; color: var(--ink); background: #fff; display: inline-flex; align-items: center;
+  }
+  .inp.wide { min-width: 150px; }
+  .inp.placeholder { color: #a7b0bb; }
+  .btn {
+    height: 26px; padding: 0 12px; border-radius: 3px; font-size: 12px; border: 1px solid var(--line);
+    background: #fff; color: var(--ink); display: inline-flex; align-items: center;
+  }
+  .btn.primary { background: var(--brand); border-color: var(--brand); color: #fff; }
+  .btn.ghost { color: var(--muted); }
+  .btn.disabled { background: #f2f4f7; color: #a7b0bb; border-color: var(--line); }
+  .btn.sm { height: 22px; padding: 0 8px; font-size: 11px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { border-bottom: 1px solid var(--line); padding: 7px 8px; text-align: left; vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; background: #fafbfc; white-space: nowrap; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .empty { padding: 26px; text-align: center; color: var(--muted); font-size: 12px; }
+  .pager { display: flex; justify-content: flex-end; align-items: center; gap: 6px; margin-top: 10px; font-size: 12px; color: var(--muted); }
+  .tag { display: inline-block; font-size: 11px; border-radius: 10px; padding: 1px 8px; border: 1px solid; white-space: nowrap; }
+  .tag.info { color: #2b6cb0; border-color: #b6d4f5; background: #eaf3ff; }
+  .tag.ok { color: var(--ok); border-color: #b7e0c6; background: #eaf7ef; }
+  .tag.bad { color: var(--bad); border-color: #f0c2c2; background: #fdeeee; }
+  .tag.warn { color: var(--warn); border-color: #ecd7ae; background: #fdf6e8; }
+  .tag.plain { color: var(--muted); border-color: var(--line); background: #fafbfc; }
+  .alert { font-size: 12px; border-radius: 4px; padding: 8px 10px; margin-bottom: 10px; line-height: 1.6; }
+  .alert.err { color: #8a2020; background: #fdeeee; border: 1px solid #f0c2c2; }
+  .alert.ok { color: #1b5e35; background: #eaf7ef; border: 1px solid #b7e0c6; }
+  .alert.info { color: #2b4a72; background: #eaf3ff; border: 1px solid #b6d4f5; }
+  .grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px 18px; font-size: 12px; }
+  .kv { display: flex; gap: 8px; border-bottom: 1px dashed #e8ecf1; padding-bottom: 6px; }
+  .kv .k { color: var(--muted); min-width: 84px; flex: none; }
+  .kv .v { color: var(--ink); word-break: break-all; }
+  .sect { border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; margin-bottom: 12px; }
+  .sect-title { font-size: 12px; font-weight: 600; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
+  .modal-wrap { background: rgba(24,32,46,.42); padding: 26px 18px; }
+  .modal { background: #fff; border-radius: 6px; max-width: 560px; margin: 0 auto; box-shadow: 0 6px 24px rgba(20,30,50,.22); }
+  .modal-head { padding: 11px 14px; border-bottom: 1px solid var(--line); font-size: 13px; font-weight: 600; }
+  .modal-body { padding: 14px; }
+  .modal-foot { padding: 10px 14px; border-top: 1px solid var(--line); display: flex; justify-content: flex-end; gap: 8px; }
+  .form-row { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 12px; font-size: 12px; }
+  .form-row .label { width: 96px; flex: none; color: var(--muted); padding-top: 5px; text-align: right; }
+  .form-row .ctrl { flex: 1; }
+  .hint { font-size: 11px; color: var(--muted); margin-top: 4px; line-height: 1.6; }
+  .cards { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 10px; }
+  .card { border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; background: #fcfdff; }
+  .card .name { font-size: 12px; font-weight: 600; margin-bottom: 6px; }
+  .card .desc { font-size: 11px; color: var(--muted); line-height: 1.7; }
+  .footnote { font-size: 11px; color: var(--muted); padding: 8px 14px; border-top: 1px dashed var(--line); background: #fbfcfe; line-height: 1.7; }
+  .pill-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+</style>
+</head>
+<body>
+
+<h1>WBS-3.7.7 计费管理界面 · 静态线框原型 V0.9</h1>
+<div class="intro">
+  用途：立卡段方向确认（低保真 → 高保真契约的视觉对照）。全部画面为静态线框，<b>不含真实数据与交互逻辑</b>；画面编号与
+  <code>docs/designs/WBS-3.7.7-hifi.md</code> §3 界面说明书逐条对应。红色 = 负向 / 冻结态，绿色 = 通过 / 只读确认。
+</div>
+<div class="legend">
+  画面清单：<b>P1</b> 账单管理（运营）· <b>P2</b> 手动出账弹窗 · <b>P3</b> 运营账单详情 · <b>P4/P5</b> 确认 / 更正弹窗 ·
+  <b>P6</b> 对账工作台（通过）· <b>P6b</b> 对账工作台（差异 + 冻结）· <b>P7</b> 计量流水 · <b>P8</b> 订单检索 ·
+  <b>P9</b> 费率视图 · <b>P10</b> 门户「我的账单」· <b>P11</b> 门户账单详情
+</div>
+
+<!-- ============ P1 ============ -->
+<div class="screen">
+  <div class="screen-head"><span class="tag">P1</span><h2>账单管理（运营 · 计费管理 Tab1）</h2><span class="note">数据源 B-R3；分页服务端；金额字符串直显</span></div>
+  <div class="app">
+    <div class="side">
+      <div class="brand">城市可信数据空间</div>
+      <div class="item">工作台</div>
+      <div class="item">数据目录</div>
+      <div class="item">合约工作台</div>
+      <div class="item">交付管理</div>
+      <div class="item">连接器管理</div>
+      <div class="item on">计费管理</div>
+      <div class="item">存证审计</div>
+      <div class="item">数据产品门户</div>
+      <div class="item">我的账单</div>
+    </div>
+    <div class="main">
+      <div class="topbar"><div class="title">计费管理</div><div class="who">当前身份：运营方（admin）</div></div>
+      <div class="tabs">
+        <div class="tab on">账单管理</div><div class="tab">对账工作台</div><div class="tab">计量流水</div>
+        <div class="tab">订单检索</div><div class="tab">费率视图</div>
+      </div>
+      <div class="bar">
+        <div class="field">合约号 <span class="inp placeholder">CO000001</span></div>
+        <div class="field">账期 <span class="inp placeholder">2026-10</span></div>
+        <div class="field">产品 ID <span class="inp placeholder">1001</span></div>
+        <div class="field">需方 <span class="inp placeholder">主体号</span></div>
+        <div class="field">供方 <span class="inp placeholder">主体号</span></div>
+        <div class="field">状态 <span class="inp">全部 ▾</span></div>
+        <div class="field">类型 <span class="inp">全部 ▾</span></div>
+        <span class="btn primary">查询</span><span class="btn">重置</span>
+        <span style="flex:1"></span>
+        <span class="btn primary">手动出账</span>
+      </div>
+      <table>
+        <thead><tr>
+          <th>账单号</th><th>类型</th><th>合约号</th><th>需方</th><th>供方</th><th>产品</th><th>账期</th><th>定价档</th>
+          <th style="text-align:right">金额(元)</th><th>状态</th><th>生成时点</th>
+        </tr></thead>
+        <tbody>
+          <tr><td>BL000002</td><td><span class="tag plain">普通账单</span></td><td>CO000011</td><td>S10001</td><td>S10002</td><td>企业信用评分数据</td><td>2026-10</td><td>按次</td><td class="num">9.00</td><td><span class="tag info">已开具</span></td><td>2026-11-01 00:10</td></tr>
+          <tr><td>BL000003</td><td><span class="tag plain">普通账单</span></td><td>CO000012</td><td>S10001</td><td>S10002</td><td>区域人口热力月度包</td><td>2026-10</td><td>包月</td><td class="num">100.00</td><td><span class="tag ok">已确认</span></td><td>2026-11-01 00:10</td></tr>
+          <tr><td>BL000004</td><td><span class="tag plain">普通账单</span></td><td>CO000013</td><td>S10001</td><td>S10002</td><td>商圈客流分析</td><td>2026-10</td><td>交易额分成</td><td class="num">500.00</td><td><span class="tag bad">已冻结</span></td><td>2026-11-02 10:22</td></tr>
+          <tr><td>BL000005</td><td><span class="tag warn">更正单</span></td><td>CO000011</td><td>S10001</td><td>S10002</td><td>企业信用评分数据</td><td>2026-10</td><td>按次</td><td class="num">-3.00</td><td><span class="tag info">已开具</span></td><td>2026-11-02 10:40</td></tr>
+        </tbody>
+      </table>
+      <div class="pager">共 4 条　 <span class="btn sm">‹</span> <span class="btn sm">1</span> <span class="btn sm">›</span>　10 条/页 ▾</div>
+    </div>
+  </div>
+  <div class="footnote">空态文案：<b>暂无账单，可调整过滤条件或发起手动出账</b>；失败态：<b>el-alert 原样展示服务端 message + 重试</b>（不翻译、不改写）。</div>
+</div>
+
+<!-- ============ P2 ============ -->
+<div class="screen">
+  <div class="screen-head"><span class="tag">P2</span><h2>手动出账弹窗</h2><span class="note">B-W1；三档字段差异 + 服务端文案原样展示；成功跳新账单详情</span></div>
+  <div class="modal-wrap">
+    <div class="modal">
+      <div class="modal-head">手动出账</div>
+      <div class="modal-body">
+        <div class="alert info">出账按<b>合约定价快照</b>计算：按次 = 事件数 × 次单价；包月 = 整月周期费；交易额分成 = 约定交易额 × 费率；<b>免费档不出账单</b>。</div>
+        <div class="form-row"><div class="label">合约号 *</div><div class="ctrl"><span class="inp wide placeholder">CO000011</span><div class="hint">形如 CO + 6 位数字</div></div></div>
+        <div class="form-row"><div class="label">账期</div><div class="ctrl"><span class="inp wide">2026-10</span><div class="hint">默认上一自然月；留空由服务端按默认账期处理</div></div></div>
+        <div class="form-row"><div class="label">约定交易额</div><div class="ctrl"><span class="inp wide placeholder">10000.00</span><div class="hint">仅<b>交易额分成</b>档必填；按次 / 包月 / 免费档请留空（缺基数将被服务端拒绝）</div></div></div>
+        <div class="alert err">该合约该周期账单已存在，请勿重复出账（1011C0010）<br>合约不满足出账条件（1011C0015）· 交易额分成须提供有效约定交易额（1011C0013）</div>
+      </div>
+      <div class="modal-foot"><span class="btn">取消</span><span class="btn primary disabled">提交中…</span></div>
+    </div>
+  </div>
+  <div class="footnote">按钮 in-flight 禁用仅为防误触，<b>不做假幂等</b>（计费端点无幂等键）；前端不预判档位（出账前无"按合约查快照"端点）。</div>
+</div>
+
+<!-- ============ P3 ============ -->
+<div class="screen">
+  <div class="screen-head"><span class="tag">P3</span><h2>运营账单详情（/billing/bills/:billNo）</h2><span class="note">B-R2（admin 放行）· B-W2 确认 · B-W3 更正 · 五分区</span></div>
+  <div class="app">
+    <div class="side">
+      <div class="brand">城市可信数据空间</div>
+      <div class="item">工作台</div><div class="item">数据目录</div><div class="item">合约工作台</div>
+      <div class="item">交付管理</div><div class="item">连接器管理</div><div class="item on">计费管理</div><div class="item">存证审计</div>
+    </div>
+    <div class="main">
+      <div class="topbar">
+        <div class="title">账单 BL000004　<span class="tag plain">普通账单</span>　<span class="tag bad">已冻结</span></div>
+        <div><span class="btn">返回列表</span> <span class="btn">刷新</span> <span class="btn disabled">确认</span> <span class="btn disabled">更正</span></div>
+      </div>
+      <div class="alert err">账单已冻结，需对账澄清后重新对账通过方可解冻；冻结期间确认与更正均被拒绝。</div>
+
+      <div class="sect">
+        <div class="sect-title">账单快照（生成后不可篡改）</div>
+        <div class="grid">
+          <div class="kv"><span class="k">合约号</span><span class="v">CO000013</span></div>
+          <div class="kv"><span class="k">账期</span><span class="v">2026-10</span></div>
+          <div class="kv"><span class="k">需方</span><span class="v">S10001</span></div>
+          <div class="kv"><span class="k">供方</span><span class="v">S10002</span></div>
+          <div class="kv"><span class="k">产品</span><span class="v">商圈客流分析（ID 1003）</span></div>
+          <div class="kv"><span class="k">定价档</span><span class="v">交易额分成</span></div>
+          <div class="kv"><span class="k">约定交易额</span><span class="v">10000.00</span></div>
+          <div class="kv"><span class="k">分成费率</span><span class="v">5.00 %</span></div>
+          <div class="kv"><span class="k">账单金额</span><span class="v"><b>500.00 元</b></span></div>
+          <div class="kv"><span class="k">生成时点</span><span class="v">2026-11-02 10:22</span></div>
+          <div class="kv"><span class="k">生成人</span><span class="v">S10999</span></div>
+          <div class="kv"><span class="k">更正原单</span><span class="v">—</span></div>
+        </div>
+      </div>
+
+      <div class="sect">
+        <div class="sect-title">计费明细（逐条可溯计量流水）<span class="tag plain">明细合计 500.00　账单金额 500.00</span></div>
+        <table>
+          <thead><tr><th>行号</th><th>类型</th><th>说明</th><th>计量流水号</th><th>源类型</th><th>源单号</th><th>事件时点</th><th style="text-align:right">数量</th><th style="text-align:right">单价</th><th style="text-align:right">金额</th></tr></thead>
+          <tbody>
+            <tr><td>1</td><td>调整</td><td>交易额分成：约定交易额 × 费率</td><td>—</td><td>—</td><td>—</td><td>—</td><td class="num">—</td><td class="num">5.00 %</td><td class="num">500.00</td></tr>
+          </tbody>
+        </table>
+        <div class="hint">合计为前端算术对照，仅用于人工核对；<b>任何不一致以服务端账单金额为准</b>（不拦截动作、不修改数值）。</div>
+      </div>
+
+      <div class="sect">
+        <div class="sect-title">动作留痕</div>
+        <table>
+          <thead><tr><th>动作</th><th>状态变化</th><th>原因 / 说明</th><th>操作人</th><th>时点</th></tr></thead>
+          <tbody>
+            <tr><td>创建</td><td>— → 已开具</td><td>手动出账</td><td>S10999</td><td>2026-11-02 10:22</td></tr>
+            <tr><td>冻结</td><td>已开具 → 已冻结</td><td>对账差异：账单合计与计量流水不一致</td><td>S10999</td><td>2026-11-02 10:31</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="sect">
+        <div class="sect-title">更正单（双向可溯）</div>
+        <div class="empty" style="padding:14px">暂无更正单</div>
+      </div>
+    </div>
+  </div>
+  <div class="footnote">P3 不提供任何"修改金额 / 修改明细"入口（结构性只读）；<code>reason</code> 等自由文本一律纯文本转义（零 <code>v-html</code>）。</div>
+</div>
+
+<!-- ============ P4 / P5 ============ -->
+<div class="screen">
+  <div class="screen-head"><span class="tag">P4 / P5</span><h2>确认弹窗 / 更正单弹窗</h2><span class="note">B-W2 / B-W3；更正 = 另出更正单，原单逐字不变</span></div>
+  <div class="modal-wrap" style="display:flex;gap:18px;flex-wrap:wrap;">
+    <div class="modal" style="flex:0 0 320px;margin:0">
+      <div class="modal-head">确认账单 BL000002 ？</div>
+      <div class="modal-body">
+        <div class="hint">确认后账单状态将变为「已确认」，该动作会留下操作记录，且不会修改账单金额与明细。</div>
+      </div>
+      <div class="modal-foot"><span class="btn">取消</span><span class="btn primary">确认</span></div>
+    </div>
+    <div class="modal" style="flex:1 1 380px;margin:0">
+      <div class="modal-head">对账单 BL000002 出更正单</div>
+      <div class="modal-body">
+        <div class="alert info">更正<b>不是修改原单</b>：系统另出一张更正单，原单金额与明细保持不变，双方可双向追溯。</div>
+        <div class="form-row"><div class="label">更正金额 *</div><div class="ctrl"><span class="inp wide">-3.00</span><div class="hint">负 = 红字冲正；正 = 补差；最多两位小数</div></div></div>
+        <div class="form-row"><div class="label">更正原因 *</div><div class="ctrl"><span class="inp wide" style="height:56px;align-items:flex-start;padding-top:6px">红字冲正：计量口径修正</span><div class="hint">0/200 字；纯文本，界面按文本原样显示</div></div></div>
+      </div>
+      <div class="modal-foot"><span class="btn">取消</span><span class="btn primary">提交更正</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ P6 ============ -->
+<div class="screen">
+  <div class="screen-head"><span class="tag">P6</span><h2>对账工作台（通过）· 计费管理 Tab2</h2><span class="note">B-W4 执行 · 四方数值 + 金额复算 · B-R4 记录</span></div>
+  <div class="app">
+    <div class="side">
+      <div class="brand">城市可信数据空间</div>
+      <div class="item on">计费管理</div><div class="item">数据产品门户</div>
+    </div>
+    <div class="main">
+      <div class="topbar"><div class="title">计费管理</div><div class="who">当前身份：运营方（admin）</div></div>
+      <div class="tabs"><div class="tab">账单管理</div><div class="tab on">对账工作台</div><div class="tab">计量流水</div><div class="tab">订单检索</div><div class="tab">费率视图</div></div>
+      <div class="bar">
+        <div class="field">合约号 * <span class="inp placeholder">CO000011</span></div>
+        <div class="field">账期 * <span class="inp">2026-10</span></div>
+        <span class="btn primary">执行对账</span>
+        <span style="flex:1"></span>
+        <span class="btn">查看该期账单</span>
+      </div>
+      <div class="alert ok">结论：<b>通过</b>（PASS）　执行人 S10999　执行时点 2026-11-02 11:05　差异项 0</div>
+      <div class="sect">
+        <div class="sect-title">四方数值与金额复算</div>
+        <div class="grid">
+          <div class="kv"><span class="k">合约计数（余额口径）</span><span class="v">3</span></div>
+          <div class="kv"><span class="k">执行流水放行数（全量）</span><span class="v">3</span></div>
+          <div class="kv"><span class="k">执行流水放行数（本期）</span><span class="v">3</span></div>
+          <div class="kv"><span class="k">计量流水数（全量）</span><span class="v">3</span></div>
+          <div class="kv"><span class="k">计量流水数（本期）</span><span class="v">3</span></div>
+          <div class="kv"><span class="k">按次账单数量</span><span class="v">3</span></div>
+          <div class="kv"><span class="k">账单合计金额</span><span class="v">9.00</span></div>
+          <div class="kv"><span class="k">按快照复算金额</span><span class="v">9.00</span></div>
+        </div>
+      </div>
+      <div class="sect">
+        <div class="sect-title">差异明细</div>
+        <div class="empty" style="padding:14px">无差异</div>
+      </div>
+      <div class="sect">
+        <div class="sect-title">对账记录（B-R4）</div>
+        <table>
+          <thead><tr><th>执行时点</th><th>结论</th><th>差异项</th><th>执行人</th></tr></thead>
+          <tbody>
+            <tr><td>2026-11-02 11:05</td><td><span class="tag ok">通过</span></td><td>0</td><td>S10999</td></tr>
+            <tr><td>2026-11-01 09:40</td><td><span class="tag ok">通过</span></td><td>0</td><td>S10999</td></tr>
+          </tbody>
+        </table>
+        <div class="pager">共 2 条　10 条/页 ▾</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ P6b ============ -->
+<div class="screen">
+  <div class="screen-head"><span class="tag">P6b</span><h2>对账工作台（差异 + 冻结 · fail-closed）</h2><span class="note">B11-2 账实不符必被报 · B11-3 冻结后确认被拒</span></div>
+  <div class="app">
+    <div class="side"><div class="brand">城市可信数据空间</div><div class="item on">计费管理</div></div>
+    <div class="main">
+      <div class="topbar"><div class="title">计费管理 · 对账工作台</div><div class="who">当前身份：运营方（admin）</div></div>
+      <div class="bar">
+        <div class="field">合约号 * <span class="inp">CO000011</span></div>
+        <div class="field">账期 * <span class="inp">2026-10</span></div>
+        <span class="btn primary">执行对账</span>
+      </div>
+      <div class="alert err">结论：<b>差异</b>（DIFFERENCE）　差异项 2　<b>该合约该账期账单已冻结</b>，确认前需澄清差异并重新对账通过。</div>
+      <div class="sect">
+        <div class="sect-title">差异明细（逐腿可定位）</div>
+        <table>
+          <thead><tr><th>类型</th><th>腿</th><th>期望值</th><th>实际值</th><th>说明</th></tr></thead>
+          <tbody>
+            <tr><td>本期放行流水与本期计量流水不一致<br><span class="tag plain">USAGE_LOG_VS_METERING_PERIOD</span></td><td>PERIOD</td><td>3</td><td>2</td><td>本期放行流水与本期计量流水不一致</td></tr>
+            <tr><td>按次账单数量与本期计量流水数不一致<br><span class="tag plain">BILL_QUANTITY_VS_METERING</span></td><td>BILL_QUANTITY</td><td>2</td><td>3</td><td>按次账单数量与本期计量流水数不一致</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="sect">
+        <div class="sect-title">差异期动作验证</div>
+        <div class="bar" style="margin:0">
+          <span class="btn disabled">确认账单</span>
+          <span class="hint" style="margin:0">点击（或直接调用）将被拒绝：<b>账单已冻结，当前操作不可执行（1011C0011）</b>；系统不自动修数。</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="footnote">差异澄清口径 = 对账剧本附录 A（改一条流水事件时点移出本期，改值不删行，须还原）；<b>界面不提供任何"改流水 / 改账单"入口</b>。</div>
+</div>
+
+<!-- ============ P7 ============ -->
+<div class="screen">
+  <div class="screen-head"><span class="tag">P7</span><h2>计量流水（运营全量 · Tab3）</h2><span class="note">R-M4 新增只读端点（metering.governance）；逐条九字段</span></div>
+  <div class="app">
+    <div class="side"><div class="brand">城市可信数据空间</div><div class="item on">计费管理</div></div>
+    <div class="main">
+      <div class="topbar"><div class="title">计费管理</div><div class="who">当前身份：运营方（admin）</div></div>
+      <div class="tabs"><div class="tab">账单管理</div><div class="tab">对账工作台</div><div class="tab on">计量流水</div><div class="tab">订单检索</div><div class="tab">费率视图</div></div>
+      <div class="bar">
+        <div class="field">合约号 <span class="inp placeholder">CO000011</span></div>
+        <div class="field">主体号 <span class="inp placeholder">S10001</span></div>
+        <div class="field">源类型 <span class="inp">全部 ▾</span></div>
+        <div class="field">事件时点 <span class="inp wide placeholder">2026-10-01 ~ 2026-10-31</span></div>
+        <span class="btn primary">查询</span><span class="btn">重置</span>
+      </div>
+      <div class="alert info">本页为运营方<b>全量逐条</b>流水口径（规格 B12-2）；需方 / 供方的本方逐条流水在其本方读面查看。</div>
+      <table>
+        <thead><tr><th>流水号</th><th>合约号</th><th>主体号</th><th>源类型</th><th>源单号</th><th>动作</th><th>资源</th><th>事件时点</th><th>入库时点</th></tr></thead>
+        <tbody>
+          <tr><td>101</td><td>CO000011</td><td>S10001</td><td>网关 API 调用</td><td>DL000021</td><td>gateway.delivery.metering</td><td>/api/v1/deliveries/DL000021</td><td>2026-10-18 14:02</td><td>2026-10-18 14:02</td></tr>
+          <tr><td>102</td><td>CO000011</td><td>S10001</td><td>文件交付</td><td>DL000024</td><td>delivery.file</td><td>bos://deliveries/DL000024</td><td>2026-10-19 09:31</td><td>2026-10-19 09:31</td></tr>
+          <tr><td>103</td><td>CO000011</td><td>S10001</td><td>沙箱作业</td><td>SB000007</td><td>sandbox.job</td><td>sandbox://SB000007</td><td>2026-10-20 16:44</td><td>2026-10-20 16:44</td></tr>
+        </tbody>
+      </table>
+      <div class="pager">共 3 条　 <span class="btn sm">‹</span> <span class="btn sm">1</span> <span class="btn sm">›</span>　10 条/页 ▾</div>
+    </div>
+  </div>
+  <div class="footnote">空态：<b>暂无计量流水</b>；参数非法（含 <code>from &gt; to</code>）：<b>1000C0001 原样文案</b>；3.7.5 本方读面（R-M1/R-M2）语义零改动。</div>
+</div>
+
+<!-- ============ P8 ============ -->
+<div class="screen">
+  <div class="screen-head"><span class="tag">P8</span><h2>订单检索（运营 · Tab4）</h2><span class="note">R-OR3 既有端点（contract.governance）；零后端改动；无详情跳转</span></div>
+  <div class="app">
+    <div class="side"><div class="brand">城市可信数据空间</div><div class="item on">计费管理</div></div>
+    <div class="main">
+      <div class="topbar"><div class="title">计费管理 · 订单检索</div><div class="who">当前身份：运营方（admin）</div></div>
+      <div class="bar">
+        <div class="field">状态 <span class="inp">全部 ▾</span></div>
+        <div class="field">产品 ID <span class="inp placeholder">1001</span></div>
+        <div class="field">合约号 <span class="inp placeholder">CO000011</span></div>
+        <div class="field">需方 <span class="inp placeholder">主体号</span></div>
+        <span class="btn primary">查询</span><span class="btn">重置</span>
+      </div>
+      <div class="alert info">运营检索为<b>全量口径</b>（C-7.1 B4-2）；订单详情仅当事方（需方 / 供方）可读。</div>
+      <table>
+        <thead><tr><th>订单号</th><th>产品</th><th>需方</th><th>定价档</th><th style="text-align:right">金额(元)</th><th>状态</th><th>合约号</th><th>下单时点</th></tr></thead>
+        <tbody>
+          <tr><td>OR000021</td><td>企业信用评分数据</td><td>S10001</td><td>按次</td><td class="num">3.00</td><td><span class="tag ok">已完成</span></td><td>CO000011</td><td>2026-10-17 15:20</td></tr>
+          <tr><td>OR000022</td><td>区域人口热力月度包</td><td>S10001</td><td>包月</td><td class="num">100.00</td><td><span class="tag info">生效中</span></td><td>CO000012</td><td>2026-10-20 10:02</td></tr>
+        </tbody>
+      </table>
+      <div class="pager">共 2 条　10 条/页 ▾</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ P9 ============ -->
+<div class="screen">
+  <div class="screen-head"><span class="tag">P9</span><h2>费率视图（只读 · Tab5）</h2><span class="note">WBS 行 319 第三词映射（Q2）；写面仍在目录「产品上架」页</span></div>
+  <div class="app">
+    <div class="side"><div class="brand">城市可信数据空间</div><div class="item on">计费管理</div></div>
+    <div class="main">
+      <div class="topbar"><div class="title">计费管理 · 费率视图</div><div class="who">当前身份：运营方（admin）</div></div>
+      <div class="tabs"><div class="tab">账单管理</div><div class="tab">对账工作台</div><div class="tab">计量流水</div><div class="tab">订单检索</div><div class="tab on">费率视图</div></div>
+      <div class="cards">
+        <div class="card"><div class="name">免费</div><div class="desc">不产生计费流水与账单；计量留痕照常。<br>计费：—</div></div>
+        <div class="card"><div class="name">按次</div><div class="desc">本期计量事件数 × 次单价。<br>明细逐笔可溯至流水。</div></div>
+        <div class="card"><div class="name">包月</div><div class="desc">整月周期费，与调用次数无关；不按天折算。</div></div>
+        <div class="card"><div class="name">交易额分成</div><div class="desc">约定交易额 × 分成费率（定价百分比 0~100）。<br>基数由出账参数登记。</div></div>
+      </div>
+      <div class="sect" style="margin-top:12px">
+        <div class="sect-title">快照与生效口径</div>
+        <div class="hint" style="margin:0;font-size:12px">
+          定价来源 = 目录域产品定价（四档），下单时快照进合约与订单；账单只认下单时快照，<b>改价不追溯已出账单</b>，新账期按新快照出账。
+          费率变更入口在目录域「产品上架」页（含权限校验与变更留痕），本页只读。
+        </div>
+        <div class="bar" style="margin:12px 0 0"><span class="btn primary">前往产品上架页变更定价</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="footnote">本 Tab 零输入框、零提交按钮（只读结构性保证，测试锚 T10）；不新增第二费率写面。</div>
+</div>
+
+<!-- ============ P10 ============ -->
+<div class="screen">
+  <div class="screen-head"><span class="tag">P10</span><h2>门户「我的账单」（/portal/bills）</h2><span class="note">B-R1 · 登录可见 · 仅本方 · 我的角色标注</span></div>
+  <div class="app">
+    <div class="side">
+      <div class="brand">城市可信数据空间</div>
+      <div class="item">工作台</div><div class="item on">数据产品门户</div>
+      <div class="item">我的订单</div><div class="item on">我的账单</div>
+    </div>
+    <div class="main">
+      <div class="topbar"><div class="title">我的账单</div><div class="who">当前身份：需方（S10001）</div></div>
+      <div class="bar">
+        <div class="field">合约号 <span class="inp placeholder">CO000011</span></div>
+        <div class="field">账期 <span class="inp placeholder">2026-10</span></div>
+        <div class="field">产品 ID <span class="inp placeholder">1001</span></div>
+        <span class="btn primary">查询</span><span class="btn">重置</span>
+      </div>
+      <div class="alert info">仅显示与本主体相关的账单（我是需方或供方）；查询他人账单将被拒绝。</div>
+      <table>
+        <thead><tr><th>账单号</th><th>类型</th><th>产品</th><th>账期</th><th>我的角色</th><th style="text-align:right">金额(元)</th><th>状态</th><th>生成时点</th></tr></thead>
+        <tbody>
+          <tr><td>BL000002</td><td><span class="tag plain">普通账单</span></td><td>企业信用评分数据</td><td>2026-10</td><td>需方</td><td class="num">9.00</td><td><span class="tag info">已开具</span></td><td>2026-11-01 00:10</td></tr>
+          <tr><td>BL000003</td><td><span class="tag plain">普通账单</span></td><td>区域人口热力月度包</td><td>2026-10</td><td>需方</td><td class="num">100.00</td><td><span class="tag ok">已确认</span></td><td>2026-11-01 00:10</td></tr>
+        </tbody>
+      </table>
+      <div class="pager">共 2 条　10 条/页 ▾</div>
+    </div>
+  </div>
+  <div class="footnote">非本方或不存在 → 详情页整页空态 <b>账单不存在或不可读</b>（1011C0009 同码同文，防枚举）。</div>
+</div>
+
+<!-- ============ P11 ============ -->
+<div class="screen">
+  <div class="screen-head"><span class="tag">P11</span><h2>门户账单详情（/portal/bills/:billNo）</h2><span class="note">B-R2 本方 · 零写动作 · 明细合计对照 · 对账结论只读</span></div>
+  <div class="app">
+    <div class="side"><div class="brand">城市可信数据空间</div><div class="item on">我的账单</div></div>
+    <div class="main">
+      <div class="topbar"><div class="title">账单 BL000002　<span class="tag plain">普通账单</span>　<span class="tag info">已开具</span></div><div><span class="btn">返回列表</span></div></div>
+      <div class="sect">
+        <div class="sect-title">账单快照</div>
+        <div class="grid">
+          <div class="kv"><span class="k">合约号</span><span class="v">CO000011</span></div>
+          <div class="kv"><span class="k">账期</span><span class="v">2026-10</span></div>
+          <div class="kv"><span class="k">需方</span><span class="v">S10001</span></div>
+          <div class="kv"><span class="k">供方</span><span class="v">S10002</span></div>
+          <div class="kv"><span class="k">产品</span><span class="v">企业信用评分数据（ID 1001）</span></div>
+          <div class="kv"><span class="k">定价档</span><span class="v">按次</span></div>
+          <div class="kv"><span class="k">数量</span><span class="v">3</span></div>
+          <div class="kv"><span class="k">单价</span><span class="v">3.00</span></div>
+          <div class="kv"><span class="k">账单金额</span><span class="v"><b>9.00 元</b></span></div>
+          <div class="kv"><span class="k">生成时点</span><span class="v">2026-11-01 00:10</span></div>
+        </div>
+      </div>
+      <div class="sect">
+        <div class="sect-title">计费明细<span class="tag plain">明细合计 9.00 = 账单金额 9.00</span></div>
+        <table>
+          <thead><tr><th>行号</th><th>类型</th><th>说明</th><th>计量流水号</th><th>源类型</th><th>事件时点</th><th style="text-align:right">数量</th><th style="text-align:right">单价</th><th style="text-align:right">金额</th></tr></thead>
+          <tbody>
+            <tr><td>1</td><td>按次</td><td>计量事件计费</td><td>101</td><td>网关 API 调用</td><td>2026-10-18 14:02</td><td class="num">1</td><td class="num">3.00</td><td class="num">3.00</td></tr>
+            <tr><td>2</td><td>按次</td><td>计量事件计费</td><td>102</td><td>文件交付</td><td>2026-10-19 09:31</td><td class="num">1</td><td class="num">3.00</td><td class="num">3.00</td></tr>
+            <tr><td>3</td><td>按次</td><td>计量事件计费</td><td>103</td><td>沙箱作业</td><td>2026-10-20 16:44</td><td class="num">1</td><td class="num">3.00</td><td class="num">3.00</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="sect">
+        <div class="sect-title">本方合约对账结论（只读）</div>
+        <table>
+          <thead><tr><th>执行时点</th><th>结论</th><th>差异项</th></tr></thead>
+          <tbody><tr><td>2026-11-02 11:05</td><td><span class="tag ok">通过</span></td><td>0</td></tr></tbody>
+        </table>
+      </div>
+      <div class="sect">
+        <div class="sect-title">更正单</div>
+        <div class="empty" style="padding:14px">暂无更正单</div>
+      </div>
+    </div>
+  </div>
+  <div class="footnote">页面零确认 / 零更正 / 零出账按钮（测试锚 T12 结构性断言）；不出现 <code>admin</code> 字面量、不直拼计费端点。</div>
+</div>
+
+<div class="legend" style="margin-top:6px">
+  共通口径：① 金额一律字符串直显、右对齐；② 状态 / 类型 / 结论用标签；③ 所有写动作成功后重新拉取（不做乐观更新）；
+  ④ 所有错误文案原样展示服务端 message（不翻译、不含 traceId / 堆栈）；⑤ 分页服务端（pageNum / pageSize = 10/20/50）。
+</div>
+
+</body>
+</html>
