@@ -303,6 +303,7 @@ NORMAL(任意非 FROZEN) --correction--> 新 CORRECTION 单（ISSUED），原单
 - **复用声明**：common-pagination `PageQuery/PageResult`（分页）；common-errorcode `ApiResult/ErrorCode`；common-auth `@RequirePermission` + 服务级角色映射；ADR-009 Flyway 迁移；ADR-016 §2.7 回环绑定；ADR-007 唯一键幂等语义（本卡"重复被拒"不用 `@Idempotent` 结果复用）；delivery-service `@EnableScheduling + @Scheduled` 先例；3.7.3 `active_order_key` 生成列唯一键与 `*_action_log` / `*_no_seq` 模式；3.7.5 跨 schema 只读 reader、`SharedMySqlContainer` 测试基建、网关路由测试模式；k8s 零改动。**零新外部 Maven 依赖**（+common-pagination 为平台内部模块）；`@Scheduled` 为 Spring Boot 内置。
 - **规格外实现声明**：应为空（全部条目可回溯至 B9~B12 与 Q1~Q9+D1 确认口径）；Q3-A 的"出账参数登记约定交易额"作为 B9-3 的落地解释需编排师/PO 批准留痕。
 - **勘误预留**：E1 起编号；立卡阶段自勘一处——hifi 草案曾拟"账单数量腿"直接对 counter 周期值，因 counter 无周期列已更正为"全量余额腿 + 本期流水腿"（Q6-A）。
+- **E2（编码段，2026-11-02）**：§7 "登记位置 = BillingErrorCodes + BillingExceptionHandler" 的实现形态改为**复用服务级既有 `MeteringExceptionHandler` 统一映射**（同一服务内计量 / 计费两域共用一份 `@RestControllerAdvice`；若各建一份同 `@Order` 的 advice，Spring 解析顺序不确定，会导致既有 1011C0008 → 404 语义漂移）。该处理器在 §7 七码基础上扩展 1011 段精确 HTTP 语义（404 / 409），并补 `HttpMessageNotReadableException` / `MissingServletRequestParameterException` → 1000C0001；**错误码值、HTTP 语义与文案与 §7 逐字一致**，仅承载类名不同。
 - **ADR-022 行 100 观察项**：对账会把"计数已发生但网关计量事件未产生"的边缘暴露为差异并冻结（fail-closed 正确行为）；演示不构造；如需改判定次序走变更流程（关联 3.7.5 计量口径复核）。
 - **DB-51**：B11 对账口径引用钉死 ADR-020 §2.4/§2.8；随本卡收口关闭 DB-51（文档勘正留痕）。
 - **演示环境义务（交付说明承载）**：`ctds_metering` 已有 V1；V2 由 Flyway 自动应用；采集账号已有本库全权 + contract/usage 表 SELECT（3.7.5 授权面），**无新增建库/授权义务**；Time zone 与 3.7.5 同 server 口径。

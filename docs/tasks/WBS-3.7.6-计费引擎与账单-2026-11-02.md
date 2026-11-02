@@ -88,6 +88,25 @@
 | B8-2（免费档不产生计费流水） | FREE 不出账单（手动 1011C0015 / 自动跳过）；计量流水照常 | C-7.2 S1-5 注记 | TB12 |
 | B9~B12 错误语义 1011 预留 | `BillingErrorCodes` 1011C0009~C0015 | （全幕错误文案观察） | TB13 |
 
+**编码段实测回填（2026-11-02，mvn 实测 42 例 + 网关 46 例）**：TB1~TB14 全部锚点落地，用例合并承载（一个用例覆盖同族多断言），落点如下——
+
+| 锚 | 实测落点（类.方法） | 断言要点 |
+| --- | --- | --- |
+| TB1 / TB4 | `BillingOutbillIntegrationTest.perCallBillTracesEachEvent` / `existingBillUnaffectedByPricingChange` | 金额 9.00 = 3 × 3.00、明细 3 行逐笔 `meteringFlowId`、明细求和独立复算 = 账单金额；改价后旧单逐字不变、新周期按新价 |
+| TB2 | `BillingOutbillIntegrationTest.monthlyBillIgnoresCallCount` | 两期调用次数 1 vs 5、金额均 100.00、`quantity` 为空、单行 `PERIOD_FEE` |
+| TB3 | `BillingOutbillIntegrationTest.revenueShareBillUsesAgreedAmountAndRate` | 10000 × 5% = 500.00、`baseAmount` / `shareRate` 快照可读；缺基数 / 基数 0 → 400 1011C0013 |
+| TB5 | `BillingOutbillIntegrationTest.duplicateOutbillRejectedIncludingConcurrent` | 重复 409 1011C0010；并发两请求恰一 201 一 409、账单仅一行 |
+| TB6 | `BillingAutoReconcileIntegrationTest.autoOutbillScansAndSkips` / `schedulerRespectsDisabledFlag` | scanned 3 / billed 2 / skippedNoBase 1；重复运行 billed 0 / duplicate 2；`enabled=false` 调度零出账 |
+| TB7 | `BillingOutbillIntegrationTest.correctionKeepsOriginalImmutable` | 更正单 `CORRECTION` + `correctionOfBillNo` + 独立编号 + 负金额；原单金额明细逐字不变、`correctionBillNos` 双向可溯；更正单不可再更正 1011C0012；金额 0 / 原因空 400 |
+| TB8 | `BillingAutoReconcileIntegrationTest.reconcilePassesAfterNormalOutbill` | 四方数值 2/2/2 全量一致、`billQuantity` 2、金额 6.00 = 复算 6.00、结论 PASS、记录落库、参与方可读 |
+| TB9 | `BillingAutoReconcileIntegrationTest.reconcileDifferenceFreezesAndRestores` | 改一条流水时点移出本期 → DIFFERENCE（含 `BILL_QUANTITY_VS_METERING`）、账单 FROZEN、confirm/更正 409 1011C0011；还原 → PASS → 解冻 → confirm 200 |
+| TB10 | `BillingAutoReconcileIntegrationTest.reconcileNeverMutatesBusinessData` | 差异前后账单金额 / 明细条数 / 计量行数零变化；动作留痕含 CREATE + FREEZE |
+| TB11 | `BillingReadIntegrationTest`（4 例） | 本方 mine 隔离与 `myRole`；非本方与不存在 404 同码同文 1011C0009；治理全量 + 状态/合约过滤、非运营 403；分页与过滤参数 400 |
+| TB12 | `BillingOutbillIntegrationTest.freeContractProducesNoBill` | FREE 出账 409 1011C0015、零账单、计量流水照常留痕 |
+| TB13 | `BillingOutbillIntegrationTest.unbillableContractsAndInvalidParams` + `BillingMigrationStructureIntegrationTest`（3 例） | 未生效 / 已终止 / 无计量 409；合约不存在 404 1011C0014；周期非法 / 未来周期 / 合约号非法 400；五表存在、`uk_bill_no` / `uk_active_normal_key` 与生成列 STORED、更正单可多份、取号行就绪 |
+| TB14 | `BillingOutbillIntegrationTest.confirmStateMachineAndActionLog` | ISSUED → CONFIRMED、重复确认 1011C0012、动作留痕 CREATE + CONFIRM |
+| TG1 | `GatewayConnectorRoutesIntegrationTest`（10 条路由清单 + `connectorBillingRouteForwardsInstancePath`） | `/api/v1/billing/**` 路由装配（单 Path 谓词、无路由级过滤器）、实例路径转发、不进交付判定链 / 零计量；46 例零回归 |
+
 > 权限点（**新增 2 个**，建议口径 Q8）：B-R1/B-R2/B-R4 = `billing.read`（requester/provider/admin + 归属硬校验）；B-R3/B-W1~B-W4 = `billing.governance`（仅 admin）。**不调用** `/internal/**`、不改任何上游端点；3.7.7/3.7.8 零触碰。
 
 ## 四、执行记录
@@ -96,6 +115,7 @@
 | --- | --- |
 | 立卡段（2026-11-02） | 🟡 **立卡段完成（待一次确认）**：任务卡 + lofi **V0.9** + hifi **V0.9** 落盘（非界面类，免 HTML 原型）；素材盘点 = 只读子智能体代码实测（metering 服务现状 / 合约与订单表 / 定价快照 / 错误码 / 权限 / 调度 / 分页 / 门禁 / 部署 / 网关 / 测试基线 / 两剧本 / ADR）+ 主会话文档核对（规格 B9~B12、两剧本、ADR-020/022/007、WBS 行 318）；**新发现 = B9-3 约定交易额全仓无数据源（规格缺口，Q3 上报）**；分支 `feat/WBS-3.7.6-计费引擎与账单` 自本地 main `22078d8` 创建（3.7.5 收口 + 回填批随本卡 PR 入库——链式先例）；**本段零代码、零依赖、零门禁配置改动，未动 `main`**；台账"进行中"行暂未改（沿 3.7.2/3.7.3/3.7.4/3.7.5 先例，编码段更新）；立卡批本批提交（未推送）。 |
 | 确认段（2026-11-02） | ✅ **一次确认完成（编排师会话"全部按建议"）**：Q1~Q9 全采建议 A + D1 不拆分（留痕 = §二 确认段引述行）；lofi **V1.0 方向定稿** / hifi **V1.0 编码契约即时生效**；**Q3-A 规格缺口解释已获批准**（约定交易额 = 出账参数登记，自动出账该档跳过并告警，诚实边界登记）；零代码改动，确认批本地提交（未推送）。 |
+| 编码段（2026-11-02） | 🟢 **编码交付完成（待 4 视角评审）**：迁移 V2 五表 + 计费域（4 枚举 / 7 错误码 / 8 端口 / 5 记录）+ 计费引擎三模式 + 出账双轨（手动 B-W1 + 自然月 `@Scheduled`）+ 对账（计数腿 + 金额复算腿，fail-closed）+ 读面/确认/更正 8 端点 + 网关 1 路由；**metering-billing 42 例全绿（既有 20 零回归 + 新增 22）**、行覆盖 **91.61%**（≥80% 核心档）、checkstyle 0 违规；网关 **46 例**（45 + 1 路由）；合约 **261 例**零回归；全仓 20 模块 compile SUCCESS；前端 58 文件 749 例 + typecheck + lint + build 全绿（零改动兜底）；剧本 C-7.2 **V1.2** + 账单核对 **V1.1** 修订完成（业务判定一字未改，待 PO 批准）；**上游零改动 / 零新外部依赖 / 零前端 / 零门禁配置改动**。 |
 
 ## 五、体量登记（立卡时填写）
 
@@ -104,6 +124,28 @@
 | 实测（立卡段） | 任务卡 **107 行**；`docs/designs/WBS-3.7.6-lofi.md` **112 行**；`docs/designs/WBS-3.7.6-hifi.md` **309 行** → 合计 **528 行**（行数口径 = 文件实际行数实测，2026-11-02 立卡段）；**无代码、无测试、无新 Maven 依赖**（common-pagination 为平台内部模块，编码段引入） |
 | 预估（编码段） | 有效变更 **2600~3000 行**：迁移 V2 五表 ≈120 + 计费域 ≈180 + 引擎 ≈250 + 出账/自动/对账/读面服务 ≈450 + 仓储/只读 reader ≈350 + 接口/DTO/异常 ≈350 + 配置/调度 ≈60 + 网关路由与测试 ≈40 + 后端测试 ≈800~1000 + 剧本 V1.2/V1.1 与文档 ≈350~450；**1 个编码会话**；零前端 / 零 npm / 零 MQ / 零新外部依赖；新增迁移 1 件（五表）；新权限点 2 个；新错误码 7 个 |
 | 超 400 行指引说明 | 本卡为"计费引擎 + 账单 + 对账"原子集（三模式计费 + 出账双轨 + 不可变更正 + 对账 fail-closed + 读面一次性）；拆则 S2 与对账两幕走查链断裂（对账依赖已出账账单与冻结动作）；请编排师在 **D1** 一并表态 |
+| 实测（编码段，2026-11-02） | **58 文件 / 3821 行插入 / 36 行删除**（git diff --cached --stat 实测，有效变更 ≈3785）：迁移 V2 五表 172 + 主源 Java 31 文件 ≈2050（domain 20 / application 11 / infrastructure 7 / interfaces 3 + 配置与主类 3）+ 测试 5 文件 ≈800 + 网关 2 文件 ≈20 + 剧本与任务卡 ≈750；**业务代码仅本服务内新增，上游（合约 / 目录 / 订单 / 计量）零改动**；零前端 / 零 npm / 零新外部依赖（+common-pagination 平台内部模块）；新增迁移 1 件（五表）/ 权限点 2 个 / 错误码 7 个。超预估带 2600~3000 约 26%（主因 = 测试断言密度与剧本操作路径表比骨架详实），**D1 已批准不拆分（登记制）**。 |
+
+## 六、提交前自检单（章程附录 B1，编码段填写）
+
+1. **两级设计门禁已过**：lofi **V1.0** 方向定稿 + hifi **V1.0** 编码契约（编排师 2026-11-02"全部按建议"一次确认，留痕 §二）；实现与设计逐条一致——五表列面 / 唯一键 / 生成列与 §2 逐字一致，8 端点与 §1 一致（权限点、错误码、响应字段记录），三模式计算与 §3.2 一致，出账事务与幂等（唯一键 → 409）与 §3.3 一致，自动出账扫描与跳过规则与 §4 一致，对账六类判定 + 冻结/解冻与 §5 一致，状态机与更正与 §6 一致，错误码 7 个与 §7 一致，权限矩阵与 §8 一致，网关 1 路由与 §9 一致。**唯一实现形态偏差 = E2**（错误映射复用服务级既有处理器，错误码 / HTTP 语义 / 文案逐字不变，理由与影响见 hifi §13 E2）。
+2. **映射表**：§三 已回填（规格 B9/B10/B11/B12 + B8-2 + 1011 预留 → 端点/引擎 → 剧本步骤 → TB1~TB14/TG1 实测类与方法，含每例断言要点）。
+3. **复用声明（含检索过程）**：`common-pagination` `PageQuery/PageResult`（沿 contract `OrderQueryController` 先例，本服务首次引入）；`common-errorcode` `ApiResult` / `ErrorCode` / `BizException`；`common-auth` `@RequirePermission` + `AuthContext` + 服务级角色映射；Spring Boot 内置 `@Scheduled` + `@EnableScheduling`（沿 delivery `SandboxLifecycleService` 先例）；`Clock` bean（沿 `DeliveryBeanConfig` 先例）；跨 schema 只读直读（沿 `JdbcContractOwnershipReader` 3.7.5 先例，`ctds.metering.source-schema.contract` 配置化）；`SharedMySqlContainer` 测试基建（模块内第 6 副本，未新增容器）；单行原子取号（沿 `contract_no_seq` 先例）；生成列唯一键（沿 3.7.3 `active_order_key` 先例）。**规格外实现声明 = 空**（上游零改动 git 实证；无 3.7.7 界面 / 3.7.8 联调夹带）。
+4. **本地全部检查命令与结果**：
+   - `mvn -B -ntp -pl services/metering-billing test` → **42 例 0 失败 0 跳过**（既有 20 零回归 + 新增 22）；
+   - `mvn -B -ntp -pl services/metering-billing org.jacoco:jacoco-maven-plugin:0.8.12:prepare-agent test org.jacoco:jacoco-maven-plugin:0.8.12:report checkstyle:check` → **行覆盖 91.61%**（missed 83 / covered 906 / total 989，≥80% 核心档）+ **checkstyle 0 违规** + BUILD SUCCESS；
+   - `mvn -B -ntp -pl services/gateway-service test` → **46 例 0 失败**（45 基线 + 1 路由契约零回归）；
+   - `mvn -B -ntp -pl services/contract-service test` → **261 例 0 失败**（跨 schema 只读不触达写面）；
+   - `mvn -B -ntp -DskipTests compile` → **20 模块 BUILD SUCCESS**；
+   - 前端兜底（零改动）：`npm run test` **58 文件 749 例全绿** + `typecheck` + `lint` + `build` 全 EXIT=0；
+   - 门禁配置零改动：`scripts/gates/gates-config.json` SHA256 = `955bdbba…2ee2`（与基线逐字一致）。
+   - 证据（gitignored）：`build-output/w376-red-backend.log`（红相首跑）/ `w376-metering-test.log` / `w376-verify-backend.log` / `w376-gateway-test.log` / `w376-contract-test.log` / `w376-compile-all.log` / `w376-frontend-test.log`。
+5. **高风险点自查**：并发——同合约同周期由生成列唯一键兜底，并发用例（CyclicBarrier 双请求）实测恰一 201 一 409；事务——出账（账单 + 明细 + 留痕）与对账（状态流转 + 留痕 + 记录）各自单事务，自动出账逐合约独立事务（`@Transactional` 跨 bean 代理）；加解密——不涉（账单 / 对账零敏感原文，无密钥入库）；性能——对账 / 出账均为单合约小查询集（本期计量按 `idx_flow_contract` 前缀 + `ORDER BY occurred_at`），万级压测归 4.2.1；**不可变结构性保证**——仓储无金额 / 明细更新 SQL（仅有状态流转 UPDATE），TB10 实测零修数。
+6. **验收剧本更新建议（业务语言）**：两剧本均需随本卡修订（**已修订，待 PO 批准**）——C-7.2 转 **V1.2**（S2 操作路径改为接口承载 + 自动出账说明步更新 + 免费档"无账单"补验）、账单核对转 **V1.1**（操作路径接口化 + 差异构造改为"改一条流水的事件时点移出本期，改值不删行"）；**各步业务判定与预期结果一字未改**。
+7. **业务可读交付说明**：
+   - **完成了什么**：给"计量计费中心"补上了计费能力——按次（次数 × 单价，逐笔可查）、包月（整月固定费，与调用次数无关）、交易额分成（约定交易额 × 费率）三种账单自动算钱；运营可手动出账，系统也会每月 1 日自动为上月出账（重复出账会被拒绝）；账单生成后金额不可改，需要调整时另出"更正单"（红字冲正或补差），原单原样保留；运营可确认账单；出账后可执行"对账"，系统把合约计数、放行流水、计量流水、账单四方和金额复算逐项比对，**有任何不一致就报差异并把相关账单冻结**（冻结期间不能确认），澄清并还原后重新对账通过才解冻；需方 / 供方各查各的账单与对账结论，查别人的一律拒绝且提示同一句话（防猜测）；新增 2 个权限点（查账单 / 运营账单操作）。
+   - **如何演示**：按《C-7.2 计量计费中心》S2 幕（V1.2 操作路径表逐条 curl）与《C-7.2 账单核对》S1 / S2 幕执行；服务直连 `http://127.0.0.1:8089`（身份头），正式链路经网关 `http://127.0.0.1:8086/api/v1/billing/**`（JWT）。
+   - **注意事项**：① 交易额分成的"约定交易额"本次作为**出账参数**填入（合同 / 订单里没有这一栏，属已批准的诚实边界，真实支付金额对接归 C-7.3）；② 自动出账对该档跳过并告警，需运营手动补出；③ 免费档不出账单（符合规格"不产生计费流水"）；④ 演示差异构造仅限对账剧本附录 A 的显式动作，改值不删行、必须还原；⑤ 演示库执行 V2 迁移前请确认备份（Flyway 启动即应用）。
 
 ---
 
