@@ -2,10 +2,14 @@ package com.ctds.metering.application;
 
 import com.ctds.common.errorcode.BizException;
 import com.ctds.common.errorcode.ErrorCodes;
+import com.ctds.common.pagination.PageQuery;
+import com.ctds.common.pagination.PageResult;
 import com.ctds.metering.domain.ContractOwnership;
 import com.ctds.metering.domain.ContractOwnershipReader;
+import com.ctds.metering.domain.FlowSearchCriteria;
 import com.ctds.metering.domain.MeteringFlow;
 import com.ctds.metering.domain.MeteringFlowRepository;
+import com.ctds.metering.domain.MeteringFlowRow;
 import com.ctds.metering.domain.MeteringReconcileReader;
 import com.ctds.metering.domain.PeriodFlowSummary;
 import com.ctds.metering.domain.ReconcileCounts;
@@ -56,6 +60,16 @@ public class MeteringQueryService {
         return new ReconcileSnapshot(contractNo, counts.deliveryFileCount(),
                 counts.usageLogAllowedCount(), counts.usageCounterUsedCount(),
                 flowRepository.countByContract(contractNo), summarize(contractNo));
+    }
+
+    /**
+     * R-M4 运营全量计量流水（WBS-3.7.7 B12-2 归口）：全平台逐条读面，
+     * 与 R-M1 本方读面并存互不影响（归属硬校验语义零改动）。
+     */
+    public PageResult<MeteringFlowRow> governanceFlows(final FlowSearchCriteria criteria,
+            final PageQuery page) {
+        final List<MeteringFlowRow> items = flowRepository.findGovernance(criteria, page);
+        return PageResult.of(items, flowRepository.countGovernance(criteria), page);
     }
 
     private List<PeriodSummary> summarize(final String contractNo) {

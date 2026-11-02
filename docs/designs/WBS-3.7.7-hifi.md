@@ -272,3 +272,9 @@
   4. **明细合计为前端算术展示**：仅用于人工核对，任何不一致以服务端账单为准，不触发拦截或写动作。
   5. **`PortalSourceGuard.spec.ts` 静态断言口径变更**：属本卡**预期内的测试基线变更**（3.7.3 / 3.7.4 开放订单 / 评价时同型处理），须在交付说明中明示，不得静默放宽（`/payments`、`/invoices` 仍全域禁用）。
   6. **分页上限**：R-M4 沿 `PageQuery` 上限 100；超出由 `common-pagination` 既有口径处理（不新增错误码）。
+
+- **编码段勘误（E1…，实现与本文差异的登记；断言/业务判定零改动）**：
+  1. **E1（§2.3 常量表两项改为复用）**：`PRICING_MODEL_LABELS`（四档中文）与 `MY_ROLE_LABELS`（需方 / 供方）**不在 `constants/billing.ts` 重复定义**，分别复用 `constants/catalog.ts` / `constants/order.ts` 既有单一源（同一枚举不二写，避免重复定义被一致性评审打回；两份常量值与后端枚举逐字一致）。`constants/billing.ts` 保留其余全部常量（状态 / 类型 / 四档口径说明 / 结论 / 七类差异 / 留痕动作 / 源类型 / 提示文案）。
+  2. **E2（§3 P11 补「对账结论」只读区）**：§3 P11 原文未列该区，但 §8 剧本映射行「账单核对 S1-3 需方读对账结论 → 门户账单详情 → 对账结论区（只读列表）」为已确认契约——实现按 §8 落地：门户详情底部「对账结论」区调 `listReconciliations(contractNo)`（B-R4，`billing.read` + 服务端归属校验），结论 / 差异明细只读；该区读取失败仅本区提示，不影响账单主体（不伪造结论）。
+  3. **E3（§9 T15 落点拆分）**：billing 视图 + `constants/billing.ts` + `api/billing.ts` 的静态纪律锚**新建** `frontend/src/views/billing/BillingSourceGuard.spec.ts`；`PortalSourceGuard.spec.ts` 只做门户侧三处断言口径更新（`/billing`、`/bills`、`/metering` → 仅经 `api/billing.ts` 单点封装；`/payments`、`/invoices` 仍全域禁用）。断言内容与 T15 要求逐条一致，仅分文件承载（避免"门户守卫"文件扫描计费域造成的职责混淆）。
+  4. **E4（§9 T8 时间区间断言分层）**：`datetimerange` 控件在 jsdom 下不可靠驱动，`from`/`to` 查询串断言下沉到 `api/billing.spec.ts`（`listGovernanceMeteringFlows` 精确 URL 断言，含 `+` / `%3A` 编码），视图层仅断言控件存在；过滤语义覆盖强度不变（服务端侧由 T16② 时间区间集成用例锚定）。

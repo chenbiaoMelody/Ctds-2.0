@@ -95,3 +95,24 @@ export function listMyOrders(query: {
 export function getOrderDetail(orderNo: string): Promise<OrderDetail> {
   return orderJson(`/api/v1/orders/${encodeURIComponent(orderNo)}`)
 }
+
+/**
+ * R-OR3 运营全量订单检索（WBS-3.7.7 Tab4；C-7.1 B4-2 / S2-7 归口）：
+ * 权限点 `contract.governance`，四过滤 + 分页；订单端点收口在本文件
+ * （`PortalSourceGuard.spec.ts` 静态断言要求），视图零直拼 URL。
+ */
+export function listGovernanceOrders(query: {
+  pageNum: number
+  pageSize: number
+  status?: string
+  productId?: number
+  contractNo?: string
+  requesterNo?: string
+}): Promise<PageData<OrderSummary>> {
+  const extra: Record<string, string> = {}
+  if (query.status) extra.status = query.status
+  if (query.productId != null) extra.productId = String(query.productId)
+  if (query.contractNo) extra.contractNo = query.contractNo
+  if (query.requesterNo) extra.requesterNo = query.requesterNo
+  return orderJson(`/api/v1/orders/governance${pageQuery(query.pageNum, query.pageSize, extra)}`)
+}

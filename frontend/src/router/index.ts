@@ -193,6 +193,33 @@ const routes = [
         component: () => import('../views/portal/PortalOrderDetailView.vue'),
         meta: { title: '订单详情' },
       },
+      // WBS-3.7.7 计费域：运营「计费管理」（24，billing.governance）+ 账单详情深链（不占菜单，
+      // 声明在列表之后，深链匹配不吞噬列表页）+ 门户「我的账单」（25，登录可见、无权限点，
+      // 服务端 billing.read + 归属硬校验）+ 门户账单详情深链（不占菜单）。
+      {
+        path: 'billing',
+        name: 'billing',
+        component: () => import('../views/billing/BillingManageView.vue'),
+        meta: { title: '计费管理', menu: true, menuOrder: 24, icon: 'Money', permission: 'billing.governance' },
+      },
+      {
+        path: 'billing/bills/:billNo',
+        name: 'billing-detail',
+        component: () => import('../views/billing/BillDetailView.vue'),
+        meta: { title: '账单详情', permission: 'billing.governance' },
+      },
+      {
+        path: 'portal/bills',
+        name: 'portal-bills',
+        component: () => import('../views/portal/PortalBillListView.vue'),
+        meta: { title: '我的账单', menu: true, menuOrder: 25, icon: 'Tickets' },
+      },
+      {
+        path: 'portal/bills/:billNo',
+        name: 'portal-bill-detail',
+        component: () => import('../views/portal/PortalBillDetailView.vue'),
+        meta: { title: '账单详情' },
+      },
       {
         path: 'admin-only',
         name: 'admin-only',

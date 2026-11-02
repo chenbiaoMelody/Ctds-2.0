@@ -92,13 +92,36 @@
 
 > 界面权限面：`/billing/**` = `billing.governance`（admin 档）；`/portal/bills/**` = 登录可见（服务端 `billing.read` + 归属硬校验）。**不调用** `/internal/**`、不改任何上游端点；3.7.8 联调零触碰。
 
+### 编码段实测锚点回填（T1~T16 → 实测文件与例数）
+
+| 锚 | 实测落点（文件） | 例数 | 关键断言（实测） |
+| --- | --- | --- | --- |
+| T1 | `frontend/src/views/billing/BillingManageView.spec.ts`（T1 块） | 8 | 列表十列渲染 / 状态与合约过滤 / 重置回第 1 页 / 空态文案 / 失败态 + 重试 / 详情深链 / 未知状态原样 |
+| T2 | 同上（T2 块） | 7 | 请求体（合约 + 默认上一自然月 + 分成基数）/ 空合约零请求 / 409·400·409 文案原样且弹窗不关 / 说明卡四档 |
+| T3 | `frontend/src/views/billing/BillDetailView.spec.ts`（T3 块） | 10 | 快照按档显隐（按次 vs 分成）/ 明细逐行 / 合计相等·不等两态 / 留痕 / 更正链双向 / 1011C0009 空态 / 错误重试 / 生成人 |
+| T4 | 同上（T4 块） | 4 | ISSUED 可确认 → CONFIRMED 刷新 / FROZEN 禁用 + 提示 / CONFIRMED 禁用 / 409 原样 + 自动刷新 |
+| T5 | 同上（T5 块） | 6 | 空金额·空原因零请求 / 负金额字符串 / 成功跳更正单 / 409 原样 / 语义提示 / 200 字上限与计数 |
+| T6 | `frontend/src/views/billing/components/ReconcilePanel.spec.ts`（T6 块） | 11 | 执行对账参数 / PASS 八方数值 / 无差异空态 / DIFFERENCE 七类逐条 + 冻结提示 / 未知类型原样 / 空值零请求 / C0009·C0014 原样 / 查看该期账单事件 |
+| T7 | 同上（T7 块） | 3 | 记录四列渲染 / 分页参数 / 点击记录回填结论卡 |
+| T8 | `BillingManageView.spec.ts`（T8 块）+ `api/billing.spec.ts`（URL 断言） | 5 | 九列渲染 / 合约·主体·源类型过滤 / 时间控件在位（from·to 查询串由 api 层精确断言）/ 空态 / 1000C0001 原样 |
+| T9 | `BillingManageView.spec.ts`（T9 块） | 4 | R-OR3 三过滤参数 / 行内零详情链接 / 说明条 / 1011C0003 原样 |
+| T10 | `BillingManageView.spec.ts`（T10 块） | 3 | 四档卡片 + 快照来源 / 目录指路 href / 只读结构（零 input·button·textarea） |
+| T11 | `frontend/src/views/portal/PortalBillListView.spec.ts` | 9 | 列表与我的角色中文 / 过滤·重置·分页 / 空态 / 失败文案原样 / 详情深链 |
+| T12 | `frontend/src/views/portal/PortalBillDetailView.spec.ts` | 8 | 快照 + 明细 + 合计对照 / 零写动作按钮 / 更正链 / 对账结论区（E2）/ 1011C0009 空态 / 返回列表 |
+| T13 | `BillDetailView.spec.ts`（T13 块） | 2 | 留痕原因与明细说明注入 HTML → 纯文本渲染、DOM 零 img/script、`window.__xss` 未定义 |
+| T14 | `frontend/src/router/router.spec.ts`（计费域路由块 + 守卫三例）、`layouts/MainLayout.spec.ts` | 7 | 四路由结构（23/24 + 两深链）/ 普通档 `/billing` → denied / admin 放行 / `/portal/bills` 登录可见 / 菜单 11·25 |
+| T15 | `frontend/src/views/billing/BillingSourceGuard.spec.ts`（8 例）+ `views/portal/PortalSourceGuard.spec.ts`（2 例口径更新） | 10 | 端点单点封装 / `makeDomainJson(billingRolesHeader)` / 零 fetch / 零 v-html / 零 traceId / 常量零角色名与 URL / 门户视图零计费写函数 |
+| T16 | `services/metering-billing/src/test/java/com/ctds/metering/interfaces/MeteringGovernanceIntegrationTest.java` | 7 | 分页 + occurred_at 倒序 / 第二页 / 主体·源类型过滤 / 时间闭区间 / 非运营 403×2 / 四类非法参数 400 `1000C0001` / R-M1 非当事方 404 零回归 |
+| 合计 | 前端新增 **109 例**（58→65 文件、749→858 例）；后端新增 **7 例**（48→55） | 116 | 反向锚全覆盖（T4/T6/T9/T12/T13/T15/T16③⑤） |
+
 ## 四、执行记录
 
 | 项 | 内容 |
 | --- | --- |
 | 立卡段（2026-11-02） | 🟡 **立卡段完成（待一次确认）**：任务卡 + lofi **V0.9** + hifi **V0.9** + 静态原型（11 画面）落盘；素材盘点 = 两轮只读子智能体代码实测（前端结构 / 路由 / 身份 / API 层 / 测试基线 / 计费八端点 / 计量读面 / 订单治理读面 / 定价写面 / vite 转发 / 静态纪律断言）+ 主会话文档核对（规格 B4-2 / B9~B12 + 落地注记、三剧本、WBS 行 319~320、DB-103 五项）；**新发现三项** = ① 运营账单 / 对账读面可复用 B-R2 / B-R4（admin 放行，无需新增详情端点）② 运营订单检索端点已存在（Tab4 零后端改动）③ `vite` 缺 billing / metering 转发键（不补则走查误落 8080）；分支 `feat/WBS-3.7.7-计费管理界面` 自本地 main `8603098` 创建（ahead 3 随本卡 PR 入库——链式先例）；**本段零代码、零依赖、零门禁配置改动，未动 `main`**；台账"进行中"行暂未改（沿 3.3.6~3.7.6 先例，编码段更新）；立卡批本批提交（未推送）。 |
 | 确认段（2026-11-02） | ✅ **一次确认完成（编排师会话回复「确认」= 全部按建议）**：Q1~Q8 全采建议 A + D1 不拆分（留痕 = §二 确认段引述行）；lofi **V1.0 方向定稿** / hifi **V1.0 编码契约即时生效**；零代码改动，确认批本地提交（未推送）。 |
-| 编码段 | ⏳ 未开始 |
+| 编码段（2026-11-02） | ✅ **编码段完成（测试先行 → 实现 → 全量验证绿灯；提交未推送）**：① **前置检查十二项逐项实测**（分支/工作树 clean、`git log -1` = 确认批 `075f7e9`、本地 main ahead 3；前端基线 **58 文件 749 例** + typecheck/lint/build 全绿；metering-billing 基线 **48 例** + checkstyle 0 违规；3.7.6 八端点直连 8089 实测 **8/8 预期形态**〔B-R3/B-R1 200 空页、B-R2/B-W2/B-W3 404 `1011C0009`、B-R4/B-W4/B-W1 404 `1011C0014`〕+ R-OR3 实测 200/403；`metering_flow` 九列 + `idx_flow_contract` 实读；`PortalSourceGuard.spec.ts` 三处断言原文留证；vite 键序 16 键、新键置于兜底 `/api` 前；`gates-config.json` SHA256 `955bdbba…2ee2` 与基线逐字一致、零改动；`common-pagination` 在位；容器三件就绪 + 8089/8085 就绪）。**注**：前置直连实测前发现既有 jar 早于 3.7.6 合并（billing 端点 404），已重建 jar 后复测（`build-output/w377-precheck/`）。② **红相归档**：前端 6 个新 spec 加载失败 + 2 个守卫 spec 5 断言红（`build-output/w377-red/w377-red-frontend.log`）；后端 T16 7/7 红（404，`w377-red-backend.log`）。③ **实现**：前端 9 视图与组件 + `api/billing.ts`（9 函数）+ `api/order.ts` 追加 `listGovernanceOrders` + `constants/billing.ts` + `billingRolesHeader()` + 4 路由 + vite 2 转发键；后端 R-M4（`MeteringFlowRow` / `FlowSearchCriteria` / 仓储两方法 / `governanceFlows` / 控制器一方法 + 参数守卫）。④ **绿灯**：前端 **65 文件 858 例全绿**（+7 文件 / +109 例，基线零回归）+ typecheck 0 + lint 0 + build OK；后端 **55 例 0 失败 0 跳过**（48 基线 + 7 新增）+ checkstyle 0 违规；metering-billing 行覆盖 **94.88%**（missed 55 / covered 1020 / total 1075，≥80%）；全仓 **20/20 模块 compile SUCCESS**；R-M4 直连实测 200/403/400×2。⑤ 三剧本修订（C-7.2 计量计费中心 **V1.3** / 账单核对 **V1.2** / C-7.1 **V1.4**）+ hifi §12 勘误 E1~E4 + 本卡回填 + 开发日志。 |
+| 评审段 | ⏳ 未开始（新会话冷启动：4 视角评审循环 1） |
 | 评审段 | ⏳ 未开始 |
 | 修复批段 | ⏳ 未开始 |
 | 验收段 | ⏳ 未开始 |
@@ -109,17 +132,18 @@
 | --- | --- |
 | 实测（立卡段） | 任务卡 **103 行**；`docs/designs/WBS-3.7.7-lofi.md` **91 行**；`docs/designs/WBS-3.7.7-hifi.md` **223 行**；`docs/designs/WBS-3.7.7-原型-计费管理界面.html` **520 行** → 合计 **937 行**（行数口径 = `Measure-Object -Line` 实测，2026-11-02 23:20 立卡段）；**无代码、无测试、无新依赖** |
 | 预估（编码段） | 有效变更 **2400~3200 行**：视图与组件 ≈1200~1600 + API / 常量 / 身份 / 路由 / 转发 ≈350~450 + 后端（R-M4 + 查询 + DTO + 测试）≈250~350 + 前端测试 ≈700~900 + 剧本与文档 ≈300~400；**1 个编码会话**；零新依赖 / 零迁移 / 零新权限点 / 零新错误码 |
+| 实测（编码段，2026-11-02） | **有效变更 ≈4250 行**：新增 21 文件 **3896 行**（前端 14 文件 3284 行〔视图与组件 1517 + 测试 1608 + API 233 + 常量 134〕+ 后端 3 文件 227 行〔`MeteringFlowRow` 17 / `FlowSearchCriteria` 13 / 集成测试 197〕）；修改 11 文件 **+354/−21**（前端 9 文件 +191/+179 含测试更新、后端 4 文件 +184）。**超立卡预估 2400~3200 约 33%**——主因 = 测试体量 1805 行（预估 700~900，实际用例 116 例覆盖 T1~T16 双向锚 + 视图模板较长）。**零新依赖 / 零迁移 / 零新权限点 / 零新错误码 / 零容器 / 零门禁配置改动**（`gates-config.json` SHA256 与基线一致）。超 400 行按 D1 确认"界面包先例登记豁免"执行。 |
 | 超 400 行指引说明 | 本卡为"计费管理界面"原子集（运营五 Tab + 两详情 + 门户两页 + 1 只读端点 + 三剧本修订）；拆则出账 → 确认 → 对账 → 冻结 → 更正 → 门户查账走查链断裂；请编排师在 **D1** 一并表态 |
 
 ## 六、提交前自检单（章程附录 B1，编码段填写）
 
-1. ⏳ 两级设计门禁（待编码段回填）
-2. ⏳ 映射表回填（§三）
-3. ⏳ 复用声明与规格外实现声明
-4. ⏳ 本地全部检查命令与结果
-5. ⏳ 高风险点自查（并发 / 事务 / 加解密 / 性能 / XSS）
-6. ⏳ 验收剧本更新建议
-7. ⏳ 业务可读交付说明
+1. ✅ **两级设计门禁已过**：lofi **V1.0**（方向定稿）/ hifi **V1.0**（编码契约，2026-11-02 一次确认 Q1~Q8-A + D1）；实现与 hifi §1~§9 逐条一致，**4 处实现差异已按 §12 勘误 E1~E4 登记**（常量复用 / P11 对账结论区 / T15 落点拆分 / T8 断言分层），业务判定与断言零削弱。
+2. ✅ **映射表回填**：§三"编码段实测锚点回填"表（T1~T16 → 文件 + 例数 + 关键断言，合计 116 例）。
+3. ✅ **复用声明**：`api/client.ts` `makeDomainJson` / `pageQuery`（分页串唯一副本）；`constants/catalog.ts` `PRICING_MODEL_LABELS` / `labelOf`；`constants/order.ts` `MY_ROLE_LABELS` / 订单状态标签；`views/billing/components/` 分件先例（connector 域）；`common-pagination` `PageQuery/PageResult`；`common-auth` `@RequirePermission`；`common-errorcode` `BizException/ErrorCodes`；3.7.6 八端点与视图字段零重写；3.7.5 `MeteringSourceType` / `metering_flow` 列面。**检索过程**：先查 `common/` 分页与鉴权（命中即复用）→ 再查前端 `api/client.ts` 工厂与 `constants/*` 单一源（命中即复用）→ 未命中项才新建（`api/billing.ts` 等 9 件）。**规格外实现声明：空**（R-M4 = 3.7.6 验收段 E4 归口；Tab4 = C-7.1 Q8-A / S2-7 归口；Tab5 = WBS 行 319 第三词术语映射 Q2-A；P11 对账结论区 = hifi §8 映射行）。
+4. ✅ **本地全部检查（命令与结果）**：`frontend: npm run test` → **65 文件 858 例全绿**；`npm run typecheck` → 0 错；`npm run lint` → 0 告警；`npm run build` → 成功；`services/metering-billing: mvn test` → **55 例 0 失败 0 跳过**；`mvn org.jacoco:…:report` → 行覆盖 **94.88%**；根 `mvn checkstyle:check -pl services/metering-billing` → **0 违规**；根 `mvn compile` → **20/20 SUCCESS**；`gates-config.json` SHA256 = `955bdbba…2ee2`（与基线一致，零改动）。
+5. ✅ **高风险点自查**：并发 = R-M4 纯只读分页（`ORDER BY occurred_at DESC, id DESC` 稳定），无写并发面；事务 = 本卡无写路径（确认 / 更正沿用 3.7.6 `@Transactional`）；加解密 = 零接触；性能 = R-M4 走 `idx_flow_contract(contract_no, occurred_at)` 前缀，全表分页在演示量级可接受（性能基准归 3.7.8 / 4.2.2，沿 3.7.5 划界）；**XSS = 全部模板插值、billing 视图零 `v-html`，T13 注入用例锚定（DOM 零 img/script、脚本未执行）**；越权 = `/billing` 路由 `billing.governance`（普通档守卫拦截用例）+ 服务端 403 实测；`myRole` 由服务端判定（前端不猜）。
+6. ✅ **验收剧本更新建议**：C-7.2 计量计费中心 → **V1.3**（界面入口行 + 文末《界面承载对照 V1.3》16 行）；C-7.2 账单核对 → **V1.2**（界面入口 + 对照 6 行 + 附录 A 零改动）；C-7.1 门户 → **V1.4**（S2-7 运营检索界面落地）。**业务判定与预期结果三份均一字未改**，待 PO 批准留痕。
+7. ✅ **业务可读交付说明**：见开发日志"业务可读总结"（做了什么 / 如何演示 / 注意事项）。
 
 ---
 

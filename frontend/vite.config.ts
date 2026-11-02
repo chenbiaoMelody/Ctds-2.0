@@ -68,6 +68,16 @@ export default defineConfig({
         target: 'http://localhost:8087',
         changeOrigin: true,
       },
+      // WBS-3.7.7 计费 / 计量域（8089）：界面走查经 5173 访问计费八端点与计量读面（开发期转发，
+      // 不改服务契约与门禁配置）。两键须位于下方通用 '/api'（→8080）之前，否则请求误落主体服务。
+      '/api/v1/billing': {
+        target: 'http://localhost:8089',
+        changeOrigin: true,
+      },
+      '/api/v1/metering': {
+        target: 'http://localhost:8089',
+        changeOrigin: true,
+      },
       '/api/v1/sandboxes': {
         target: 'http://localhost:8087',
         changeOrigin: true,

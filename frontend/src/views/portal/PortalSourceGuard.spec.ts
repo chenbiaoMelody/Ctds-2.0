@@ -15,12 +15,12 @@ const viewSources = import.meta.glob('./*.vue', {
   import: 'default',
   eager: true,
 }) as Record<string, string>
-const apiSources = import.meta.glob(['../../api/catalog.ts', '../../api/order.ts', '../../api/review.ts'], {
+const apiSources = import.meta.glob(['../../api/catalog.ts', '../../api/order.ts', '../../api/review.ts', '../../api/billing.ts'], {
   query: '?raw',
   import: 'default',
   eager: true,
 }) as Record<string, string>
-const constantsSources = import.meta.glob(['../../constants/catalog.ts', '../../constants/order.ts', '../../constants/review.ts'], {
+const constantsSources = import.meta.glob(['../../constants/catalog.ts', '../../constants/order.ts', '../../constants/review.ts', '../../constants/billing.ts'], {
   query: '?raw',
   import: 'default',
   eager: true,
@@ -55,16 +55,18 @@ function view(name: string): string {
 }
 
 describe('门户源集守卫（T9）', () => {
-  it('扫描目标非空：五个门户视图 + api 三模块 + constants 三模块均被读入', () => {
+  it('扫描目标非空：七个门户视图 + api 四模块 + constants 四模块均被读入', () => {
     expect(Object.keys(withoutSpecs(viewSources)).sort()).toEqual([
+      './PortalBillDetailView.vue',
+      './PortalBillListView.vue',
       './PortalHomeView.vue',
       './PortalOrderDetailView.vue',
       './PortalOrderDialog.vue',
       './PortalOrderListView.vue',
       './PortalProductDetailView.vue',
     ])
-    expect(Object.keys(withoutSpecs(apiSources)).length).toBe(3)
-    expect(Object.keys(withoutSpecs(constantsSources)).length).toBe(3)
+    expect(Object.keys(withoutSpecs(apiSources)).length).toBe(4)
+    expect(Object.keys(withoutSpecs(constantsSources)).length).toBe(4)
   })
 
   it('零 /internal/ 调用、零治理读面调用（GOVERNANCE_VIEW 留痕面不得用于前台浏览）', () => {
@@ -74,7 +76,8 @@ describe('门户源集守卫（T9）', () => {
     expect(hits(uiScanned(), '/internal/')).toBe(0)
     const portalViews = [view('PortalHomeView.vue'), view('PortalProductDetailView.vue'),
       view('PortalOrderDialog.vue'), view('PortalOrderListView.vue'),
-      view('PortalOrderDetailView.vue')].join('\n')
+      view('PortalOrderDetailView.vue'), view('PortalBillListView.vue'),
+      view('PortalBillDetailView.vue')].join('\n')
     expect(hits(portalViews, 'getProductGovernance')).toBe(0)
     expect(hits(portalViews, 'getDatasetGovernance')).toBe(0)
     expect(hits(portalViews, '/governance')).toBe(0)
@@ -108,20 +111,31 @@ describe('门户源集守卫（T9）', () => {
       !allowed.has(path) && source.includes('admin')).length).toBe(1)
   })
 
-  it('订单域收口：端点仅经 api/order.ts（WBS-3.7.3 开放）；计费/账单/支付仍禁用', () => {
+  it('订单域收口：端点仅经 api/order.ts（WBS-3.7.3 开放）；计费端点仅经 api/billing.ts（WBS-3.7.7 开放）；支付/发票仍全域禁用', () => {
     // 3.7.3 开放订购：/orders 由 api/order.ts 单点封装（门户视图不直拼订单 URL）；
-    // 计费 / 账单 / 支付 / 发票仍属后续卡（3.7.5+ / C-7.3），全域禁用
+    // 3.7.7 开放计费：/billing、/bills、/metering 由 api/billing.ts 单点封装
+    // （hifi §9 T15 / §12 E0-5 口径变更已批准）；支付 / 发票仍属后续卡（C-7.3），全域禁用
     const source = withoutComments(uiScanned())
-    for (const endpoint of ['/billing', '/bills', '/metering', '/payments', '/invoices']) {
+    for (const endpoint of ['/payments', '/invoices']) {
       expect(source).not.toContain(endpoint)
     }
-    // 门户视图与常量零直拼订单 URL（收口断言——api/order.ts 单点封装；
-    // 断言面 = 视图 + 常量，api 模块自身的端点定义不在此面）
+    // 门户视图与常量零直拼计费 URL（收口断言——api/billing.ts 单点封装）
     const viewsAndConstants = Object.values({ ...withoutSpecs(viewSources), ...withoutSpecs(constantsSources) }).join('\n')
-    expect(hits(withoutComments(viewsAndConstants), '/api/v1/orders')).toBe(0)
+    for (const endpoint of ['/api/v1/billing', '/api/v1/metering', '/api/v1/orders']) {
+      expect(hits(withoutComments(viewsAndConstants), endpoint)).toBe(0)
+    }
+    const billingApi = withoutComments(apiSources['../../api/billing.ts'] ?? '')
+    expect(hits(billingApi, '/api/v1/billing')).toBeGreaterThan(0)
+    expect(hits(billingApi, '/api/v1/metering')).toBe(1)
     expect(hits(withoutComments(apiSources['../../api/order.ts'] ?? ''), '/api/v1/orders/mine')).toBe(1)
     // 计量/账单端点在订单视图中零出现（B6 静态纪律——无推送/轮询/账单入口）
     expect(hits(withoutComments(view('PortalOrderDetailView.vue')), '/metering')).toBe(0)
+    // 门户账单视图只经 api/billing.ts 取数（零治理端点、零写动作函数）
+    const portalBills = view('PortalBillListView.vue') + view('PortalBillDetailView.vue')
+    expect(hits(portalBills, 'listMyBills')).toBeGreaterThan(0)
+    expect(hits(portalBills, 'outbillBill')).toBe(0)
+    expect(hits(portalBills, 'confirmBill')).toBe(0)
+    expect(hits(portalBills, 'createCorrection')).toBe(0)
   })
 
   it('评价域收口：端点仅经 api/review.ts（WBS-3.7.4 开放）；视图/常量零直拼评价 URL', () => {
