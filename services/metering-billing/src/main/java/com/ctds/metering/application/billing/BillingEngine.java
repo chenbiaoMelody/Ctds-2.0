@@ -102,12 +102,18 @@ public class BillingEngine {
         return price;
     }
 
-    /** 分成档约定交易额（出账参数）：必填、> 0、小数位 ≤ 2（Q3-A / hifi §3.2）。 */
+    /**
+     * 分成档约定交易额（出账参数）：必填、> 0、小数位 ≤ 2（Q3-A / hifi §3.2）；
+     * 超出 DECIMAL(12,2) 可表示范围 → 1000C0001（与金额溢出同口径，不落库报 500）。
+     */
     private BigDecimal requireBase(final BigDecimal agreedTransactionAmount) {
         if (agreedTransactionAmount == null || agreedTransactionAmount.compareTo(BigDecimal.ZERO) <= 0
                 || agreedTransactionAmount.scale() > SCALE) {
             throw new BizException(BillingErrorCodes.BILL_SHARE_BASE_INVALID,
                     BillingErrorCodes.BILL_SHARE_BASE_INVALID_MESSAGE);
+        }
+        if (agreedTransactionAmount.compareTo(MAX_AMOUNT) > 0) {
+            throw new BizException(ErrorCodes.PARAM_INVALID, "参数格式不合法");
         }
         return agreedTransactionAmount;
     }

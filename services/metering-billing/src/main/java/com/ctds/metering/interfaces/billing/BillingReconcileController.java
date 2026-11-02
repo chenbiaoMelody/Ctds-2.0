@@ -25,6 +25,9 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/billing")
 public class BillingReconcileController {
 
+    /** 运营角色标识（服务级 yml 角色映射口径，沿合约 / 连接器域先例）。 */
+    private static final String ADMIN_ROLE = "admin";
+
     private final BillingReconcileService reconcileService;
     private final BillingQueryService queryService;
 
@@ -54,7 +57,7 @@ public class BillingReconcileController {
         final String normalizedPeriod = (period == null || period.isBlank()) ? null
                 : BillingPeriods.text(BillingPeriods.parse(period.trim()));
         return ApiResult.ok(queryService.reconciliations(contractNo, normalizedPeriod,
-                AuthContext.subject(), AuthContext.roles().contains("admin"),
+                AuthContext.subject(), AuthContext.roles().contains(ADMIN_ROLE),
                 PageQuery.of(pageNum, pageSize, null)));
     }
 }

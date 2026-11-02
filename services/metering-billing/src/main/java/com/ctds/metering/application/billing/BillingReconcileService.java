@@ -212,7 +212,7 @@ public class BillingReconcileService {
             if (bill.status() == BillStatus.FROZEN) {
                 continue;
             }
-            if (billRepository.markFrozen(bill.billNo(), bill.status()) > 0) {
+            if (billRepository.markFrozen(bill.billNo()) > 0) {
                 actionLogRepository.insert(new BillActionLog(bill.billNo(), BillingAction.FREEZE,
                         bill.status(), BillStatus.FROZEN, "对账差异冻结（fail-closed）", operator, now));
             }

@@ -69,6 +69,7 @@ public class BillingAutoService {
         int failed = 0;
         for (final ContractPricingSnapshot contract : contracts) {
             if (contract.pricingModel() == BillingPricingModel.FREE) {
+                // 防御分支：扫描 SQL（findBillable）已前置排除 FREE，正常不可达（hifi §13 E3-5）
                 continue;
             }
             if (contract.pricingModel() == BillingPricingModel.REVENUE_SHARE) {

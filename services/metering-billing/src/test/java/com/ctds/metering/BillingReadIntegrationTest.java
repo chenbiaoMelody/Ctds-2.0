@@ -5,6 +5,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 import com.ctds.metering.support.BillingSourceSchemas;
+import com.ctds.metering.support.FixedClockTestConfiguration;
 import com.ctds.metering.support.SharedMySqlContainer;
 import com.ctds.metering.support.SourceSchemas;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -17,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
@@ -35,6 +37,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
         properties = {"ctds.audit.enabled=false", "ctds.billing.auto.enabled=false"})
 @AutoConfigureMockMvc
 @ActiveProfiles("mysql")
+@Import(FixedClockTestConfiguration.class)
 @Testcontainers(disabledWithoutDocker = true)
 class BillingReadIntegrationTest {
 
@@ -136,6 +139,19 @@ class BillingReadIntegrationTest {
         final JsonNode filtered = body(getJson(REQUESTER, "requester",
                 BILLS + "/mine?productId=202")).path("data").path("list");
         assertThat(filtered).as("按产品过滤后本方零数据").isEmpty();
+
+        // 过滤正例（B12-1）：命中而非恒空 / 恒全
+        final JsonNode byContract = body(getJson(REQUESTER, "requester",
+                BILLS + "/mine?contractNo=CO930001")).path("data").path("list");
+        assertThat(byContract).as("按合约过滤命中本方账单").hasSize(1);
+        assertThat(byContract.get(0).path("contractNo").asText()).isEqualTo("CO930001");
+        final JsonNode byPeriod = body(getJson(REQUESTER, "requester",
+                BILLS + "/mine?period=" + PERIOD)).path("data").path("list");
+        assertThat(byPeriod).as("按周期过滤命中本方账单").hasSize(1);
+        assertThat(byPeriod.get(0).path("period").asText()).isEqualTo(PERIOD);
+        final JsonNode byOtherPeriod = body(getJson(REQUESTER, "requester",
+                BILLS + "/mine?period=2026-09")).path("data").path("list");
+        assertThat(byOtherPeriod).as("非本期周期不命中").isEmpty();
     }
 
     /** 详情防枚举：非本方与不存在同码同文 404；运营可读全部；参与方可读。 */
@@ -168,8 +184,9 @@ class BillingReadIntegrationTest {
         seedContract("CO930005", 205L, OTHER, PROVIDER, "MONTHLY", new BigDecimal("22.00"));
         final String billNo = outbill("CO930004");
         outbill("CO930005");
-        mockMvc.perform(post(BILLS + "/" + billNo + "/confirm")
-                .header("X-Ctds-Subject", ADMIN).header("X-Ctds-Roles", "admin"));
+        assertThat(mockMvc.perform(post(BILLS + "/" + billNo + "/confirm")
+                .header("X-Ctds-Subject", ADMIN).header("X-Ctds-Roles", "admin"))
+                .andReturn().getResponse().getStatus()).as("确认动作生效").isEqualTo(200);
 
         final MvcResult all = getJson(ADMIN, "admin", BILLS + "/governance?pageSize=10");
         assertThat(all.getResponse().getStatus()).isEqualTo(200);
@@ -203,6 +220,12 @@ class BillingReadIntegrationTest {
                 .getResponse().getStatus()).as("状态非法 400").isEqualTo(400);
         assertThat(getJson(REQUESTER, "requester", BILLS + "/mine?period=2026-13")
                 .getResponse().getStatus()).as("周期非法 400").isEqualTo(400);
+        assertThat(getJson(REQUESTER, "requester", BILLS + "/mine?contractNo=bad")
+                .getResponse().getStatus()).as("合约号形态非法 400").isEqualTo(400);
+        assertThat(getJson(ADMIN, "admin", BILLS + "/governance?contractNo=bad")
+                .getResponse().getStatus()).as("治理面合约号形态非法 400").isEqualTo(400);
+        assertThat(getJson(REQUESTER, "requester", BILLS + "/bad")
+                .getResponse().getStatus()).as("账单号形态非法 400（非 404）").isEqualTo(400);
     }
 
     /** 对账结论读面：非参与方 404；合约不存在 404（1011C0014）。 */

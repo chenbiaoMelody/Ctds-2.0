@@ -40,11 +40,12 @@ public class JdbcBillRepository implements BillRepository {
     private static final String SELECT_CORRECTIONS_SQL = "SELECT " + COLUMNS + " FROM billing_bill "
             + "WHERE correction_of_bill_no = ? ORDER BY created_at, id";
     private static final String SELECT_BY_CONTRACT_PERIOD_SQL = "SELECT " + COLUMNS
-            + " FROM billing_bill WHERE contract_no = ? AND `period` = ? ORDER BY id";
+            + " FROM billing_bill WHERE contract_no = ? AND `period` = ? ORDER BY id FOR UPDATE";
     private static final String CONFIRM_SQL = "UPDATE billing_bill SET status = 'CONFIRMED' "
             + "WHERE bill_no = ? AND status = 'ISSUED'";
-    private static final String FREEZE_SQL = "UPDATE billing_bill SET status = 'FROZEN', "
-            + "status_before_freeze = ? WHERE bill_no = ? AND status <> 'FROZEN'";
+    /** 冻结前状态取行内真值（顺序不可颠倒：先存原状态，再置 FROZEN）。 */
+    private static final String FREEZE_SQL = "UPDATE billing_bill SET status_before_freeze = status, "
+            + "status = 'FROZEN' WHERE bill_no = ? AND status <> 'FROZEN'";
     private static final String RESTORE_SQL = "UPDATE billing_bill SET status = ?, "
             + "status_before_freeze = NULL WHERE bill_no = ? AND status = 'FROZEN'";
 
@@ -78,11 +79,6 @@ public class JdbcBillRepository implements BillRepository {
     @Override
     public List<Bill> findCorrectionsOf(final String originalBillNo) {
         return jdbcTemplate.query(SELECT_CORRECTIONS_SQL, this::mapBill, originalBillNo);
-    }
-
-    @Override
-    public List<Bill> findNormalBills(final String contractNo, final String period) {
-        return jdbcTemplate.query(SELECT_NORMAL_SQL, this::mapBill, contractNo, period);
     }
 
     @Override
@@ -139,8 +135,8 @@ public class JdbcBillRepository implements BillRepository {
     }
 
     @Override
-    public int markFrozen(final String billNo, final BillStatus previousStatus) {
-        return jdbcTemplate.update(FREEZE_SQL, previousStatus.name(), billNo);
+    public int markFrozen(final String billNo) {
+        return jdbcTemplate.update(FREEZE_SQL, billNo);
     }
 
     @Override

@@ -5,6 +5,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 import com.ctds.metering.support.BillingSourceSchemas;
+import com.ctds.metering.support.FixedClockTestConfiguration;
 import com.ctds.metering.support.SharedMySqlContainer;
 import com.ctds.metering.support.SourceSchemas;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -18,12 +19,14 @@ import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
@@ -42,6 +45,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
         properties = {"ctds.audit.enabled=false", "ctds.billing.auto.enabled=false"})
 @AutoConfigureMockMvc
 @ActiveProfiles("mysql")
+@Import(FixedClockTestConfiguration.class)
 @Testcontainers(disabledWithoutDocker = true)
 class BillingOutbillIntegrationTest {
 
@@ -145,12 +149,18 @@ class BillingOutbillIntegrationTest {
         assertThat(bill.path("status").asText()).isEqualTo("ISSUED");
         assertThat(bill.path("details")).hasSize(3);
         BigDecimal recomputed = BigDecimal.ZERO;
+        final List<Long> detailFlowIds = new ArrayList<>();
         for (final JsonNode line : bill.path("details")) {
             assertThat(line.path("meteringFlowId").isNull()).as("按次明细可溯至计量流水").isFalse();
             assertThat(line.path("lineType").asText()).isEqualTo("PER_CALL_EVENT");
+            detailFlowIds.add(line.path("meteringFlowId").asLong());
             recomputed = recomputed.add(new BigDecimal(line.path("amount").asText()));
         }
         assertThat(recomputed).as("按明细独立复算 = 账单金额").isEqualByComparingTo("9.00");
+        final List<Long> periodFlowIds = jdbcTemplate.queryForList(
+                "SELECT id FROM metering_flow WHERE contract_no = 'CO900001'", Long.class);
+        assertThat(detailFlowIds).as("明细逐笔 id 集合 == 本期计量流水 id 集合（防填同一条）")
+                .containsExactlyInAnyOrderElementsOf(periodFlowIds);
     }
 
     /** TB2：包月 = 整月周期费，与调用次数无关（两期次数 1 vs 5，金额相同）。 */
@@ -193,6 +203,13 @@ class BillingOutbillIntegrationTest {
         final ApiResponse zeroBase = postJson(ADMIN, "admin", BILLS,
                 "{\"contractNo\":\"CO900003\",\"period\":\"2026-09\",\"agreedTransactionAmount\":0}");
         assertThat(zeroBase.body().path("code").asText()).isEqualTo("1011C0013");
+
+        // 基数超出 DECIMAL(12,2) 上限 → 400 1000C0001（原为落库溢出 500）
+        final ApiResponse hugeBase = postJson(ADMIN, "admin", BILLS,
+                "{\"contractNo\":\"CO900003\",\"period\":\"2026-08\","
+                        + "\"agreedTransactionAmount\":10000000000}");
+        assertThat(hugeBase.status()).as("约定交易额超出精度上限 400").isEqualTo(400);
+        assertThat(hugeBase.body().path("code").asText()).isEqualTo("1000C0001");
     }
 
     /** TB4：定价快照变更不影响已出账单；新周期按新价出账（变更只向后生效）。 */
@@ -229,7 +246,7 @@ class BillingOutbillIntegrationTest {
         final ExecutorService pool = Executors.newFixedThreadPool(2);
         final CyclicBarrier barrier = new CyclicBarrier(2);
         final Callable<Integer> task = () -> {
-            barrier.await();
+            barrier.await(10, TimeUnit.SECONDS);
             return postJson(ADMIN, "admin", BILLS,
                     "{\"contractNo\":\"CO900006\",\"period\":\"" + PERIOD + "\"}").status();
         };
@@ -237,8 +254,9 @@ class BillingOutbillIntegrationTest {
         try {
             final Future<Integer> first = pool.submit(task);
             final Future<Integer> second = pool.submit(task);
-            statuses.add(first.get());
-            statuses.add(second.get());
+            // 超时兜底：DDL 锁等待等场景必须失败而非挂死
+            statuses.add(first.get(30, TimeUnit.SECONDS));
+            statuses.add(second.get(30, TimeUnit.SECONDS));
         } finally {
             pool.shutdown();
         }
@@ -297,6 +315,53 @@ class BillingOutbillIntegrationTest {
                 "{\"amount\":0,\"reason\":\"零金额\"}").status()).as("更正金额 0 → 400").isEqualTo(400);
         assertThat(postJson(ADMIN, "admin", BILLS + "/" + originalNo + "/corrections",
                 "{\"amount\":1.00,\"reason\":\" \"}").status()).as("原因空 → 400").isEqualTo(400);
+
+        // 留痕原因按"前缀 + 原单号 + 输入"拼装后校验列宽（VARCHAR(512)＝前缀 17＋账单号 8）
+        final ApiResponse atLimit = postJson(ADMIN, "admin",
+                BILLS + "/" + originalNo + "/corrections",
+                "{\"amount\":1.00,\"reason\":\"" + "x".repeat(495) + "\"}");
+        assertThat(atLimit.status()).as("原因拼装后恰满 512 → 201").isEqualTo(201);
+        final ApiResponse overflow = postJson(ADMIN, "admin",
+                BILLS + "/" + originalNo + "/corrections",
+                "{\"amount\":1.00,\"reason\":\"" + "x".repeat(496) + "\"}");
+        assertThat(overflow.status()).as("原因拼装后溢出列宽 → 400（不再 500）").isEqualTo(400);
+        assertThat(overflow.body().path("code").asText()).isEqualTo("1000C0001");
+    }
+
+    /** TB7/B10-2：账单号严格递增、取号行同步自增（不回绕复用）。 */
+    @Test
+    void billNumbersStrictlyIncrease() throws Exception {
+        seedContract("CO900020", "MONTHLY", new BigDecimal("10.00"), "2026-01-01 00:00:00", null);
+        final long before = nextNo();
+
+        final String first = outbill("CO900020", PERIOD).path("billNo").asText();
+        final String second = outbill("CO900020", "2026-09").path("billNo").asText();
+
+        assertThat(first).as("账单号形态 BL+6 位").matches("BL\\d{6}");
+        assertThat(Long.parseLong(second.substring(2))).as("后取号严格大于前号")
+                .isGreaterThan(Long.parseLong(first.substring(2)));
+        assertThat(nextNo()).as("取号行随两次出账各加 1").isEqualTo(before + 2);
+    }
+
+    /** 服务级异常映射回归（P2-7）：请求体不可读 / 必填 query 缺失 → 400 1000C0001；计量读面同码零漂移。 */
+    @Test
+    void malformedRequestMapsToParamInvalid() throws Exception {
+        final ApiResponse unreadable = postJson(ADMIN, "admin", BILLS, "{not-a-json");
+        assertThat(unreadable.status()).as("请求体不可读 400").isEqualTo(400);
+        assertThat(unreadable.body().path("code").asText()).isEqualTo("1000C0001");
+        assertThat(unreadable.body().path("message").asText()).isEqualTo("参数格式不合法");
+
+        final ApiResponse missingParam = postJson(ADMIN, "admin",
+                "/api/v1/billing/contracts/CO900001/reconciliations", "");
+        assertThat(missingParam.status()).as("必填 query 缺失 400").isEqualTo(400);
+        assertThat(missingParam.body().path("code").asText()).isEqualTo("1000C0001");
+
+        // 计量侧共用同一服务级 advice：验证其"参数非法 → 400"类型默认映射未漂移
+        // （计量 4 端点无请求体与必填 query，无法触发上面两组异常分支，属端点结构使然）
+        final ApiResponse metering = getJson(REQUESTER, "requester",
+                "/api/v1/metering/contracts/not-a-contract/flows");
+        assertThat(metering.status()).as("计量侧合约号非法 400（沿 3.7.5 口径）").isEqualTo(400);
+        assertThat(metering.body().path("code").asText()).isEqualTo("1000C0001");
     }
 
     /** TB14：确认状态机 ISSUED → CONFIRMED；重复确认 1011C0012；动作留痕齐全。 */
@@ -351,6 +416,12 @@ class BillingOutbillIntegrationTest {
                 .as("未来周期 400").isEqualTo(400);
         assertThat(postJson(ADMIN, "admin", BILLS, "{\"contractNo\":\"bad\"}").status())
                 .as("合约号格式非法 400").isEqualTo(400);
+    }
+
+    private long nextNo() {
+        final Long nextNo = jdbcTemplate.queryForObject(
+                "SELECT next_no FROM billing_bill_no_seq WHERE id = 1", Long.class);
+        return nextNo == null ? 0L : nextNo;
     }
 
     private int countBills(final String contractNo) {

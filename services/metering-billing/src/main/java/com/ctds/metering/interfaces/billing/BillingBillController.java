@@ -16,6 +16,7 @@ import com.ctds.metering.domain.billing.BillSearchCriteria;
 import com.ctds.metering.domain.billing.BillStatus;
 import com.ctds.metering.domain.billing.BillType;
 import java.math.BigDecimal;
+import java.util.regex.Pattern;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -35,6 +36,11 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/v1/billing")
 public class BillingBillController {
+
+    /** 运营角色标识（服务级 yml 角色映射口径，沿合约 / 连接器域先例）。 */
+    private static final String ADMIN_ROLE = "admin";
+    /** 合约号形态（CO+6 位，沿计量读面同口径）。 */
+    private static final Pattern CONTRACT_NO = Pattern.compile("^[A-Z]{2}\\d{6}$");
 
     private final BillingOutbillService outbillService;
     private final BillingQueryService queryService;
@@ -64,8 +70,8 @@ public class BillingBillController {
             @RequestParam(required = false) final Long productId,
             @RequestParam(required = false) final Integer pageNum,
             @RequestParam(required = false) final Integer pageSize) {
-        final BillSearchCriteria criteria = new BillSearchCriteria(trim(contractNo), period(period),
-                positive(productId), null, null, null, null);
+        final BillSearchCriteria criteria = new BillSearchCriteria(contractNo(contractNo),
+                period(period), positive(productId), null, null, null, null);
         return ApiResult.ok(queryService.mine(AuthContext.subject(), criteria,
                 PageQuery.of(pageNum, pageSize, null)));
     }
@@ -90,9 +96,9 @@ public class BillingBillController {
             @RequestParam(required = false) final String billType,
             @RequestParam(required = false) final Integer pageNum,
             @RequestParam(required = false) final Integer pageSize) {
-        final BillSearchCriteria criteria = new BillSearchCriteria(trim(contractNo), period(period),
-                positive(productId), trim(requesterNo), trim(providerNo), status(status),
-                billType(billType));
+        final BillSearchCriteria criteria = new BillSearchCriteria(contractNo(contractNo),
+                period(period), positive(productId), trim(requesterNo), trim(providerNo),
+                status(status), billType(billType));
         return ApiResult.ok(queryService.governance(criteria, PageQuery.of(pageNum, pageSize, null)));
     }
 
@@ -116,7 +122,7 @@ public class BillingBillController {
 
     /** 当前角色是否运营（admin 角色 → billing.governance 权限点，服务级 yml 映射）。 */
     private static boolean isAdmin() {
-        return AuthContext.roles().contains("admin");
+        return AuthContext.roles().contains(ADMIN_ROLE);
     }
 
     private static String trim(final String value) {
@@ -124,6 +130,15 @@ public class BillingBillController {
             return null;
         }
         return value.trim();
+    }
+
+    /** contractNo 过滤：格式非法 → 1000C0001（hifi §1 注，与计量读面同口径）。 */
+    private static String contractNo(final String value) {
+        final String trimmed = trim(value);
+        if (trimmed != null && !CONTRACT_NO.matcher(trimmed).matches()) {
+            throw paramInvalid();
+        }
+        return trimmed;
     }
 
     private static Long positive(final Long value) {

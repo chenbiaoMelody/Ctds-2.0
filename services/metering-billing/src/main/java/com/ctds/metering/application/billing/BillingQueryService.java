@@ -44,7 +44,13 @@ import org.springframework.transaction.annotation.Transactional;
 public class BillingQueryService {
 
     private static final Logger log = LoggerFactory.getLogger(BillingQueryService.class);
+    /** 动作留痕 reason 列宽（VARCHAR(512)）：出站原因按**拼装后总长**校验，非仅用户输入长度。 */
     private static final int MAX_REASON_LENGTH = 512;
+    /** 更正单留痕原因前缀形态（"更正单（原单 {billNo}）："）。 */
+    private static final String CORRECTION_REASON_PREFIX = "更正单（原单 ";
+    private static final String CORRECTION_REASON_SUFFIX = "）：";
+    /** 账单号形态（BL+6 位，取号器口径；hifi §1 格式非法 → 1000C0001）。 */
+    private static final Pattern BILL_NO = Pattern.compile("^BL\\d{6}$");
     /** 合约号形态（CO+6 位，沿计量读面同口径）。 */
     private static final Pattern CONTRACT_NO = Pattern.compile("^[A-Z]{2}\\d{6}$");
     private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -132,7 +138,7 @@ public class BillingQueryService {
                     BillingErrorCodes.BILL_STATUS_CONFLICT_MESSAGE);
         }
         assertCorrectionAmount(amount);
-        final String normalizedReason = normalizeReason(reason);
+        final String actionReason = correctionReason(originalBillNo, reason);
         final LocalDateTime now = LocalDateTime.now(clock);
         final String billNo = billNoGenerator.nextBillNo();
         final Bill correction = new Bill(0L, billNo, BillType.CORRECTION, original.contractNo(),
@@ -141,8 +147,7 @@ public class BillingQueryService {
                 null, null, amount, BillStatus.ISSUED, null, originalBillNo, operator, now);
         billRepository.insert(correction);
         actionLogRepository.insert(new BillActionLog(billNo, BillingAction.CREATE, null,
-                BillStatus.ISSUED, "更正单（原单 " + originalBillNo + "）：" + normalizedReason,
-                operator, now));
+                BillStatus.ISSUED, actionReason, operator, now));
         return toDetailView(correction);
     }
 
@@ -174,7 +179,7 @@ public class BillingQueryService {
     }
 
     private Bill loadBill(final String billNo) {
-        if (billNo == null || billNo.isBlank() || billNo.length() > 32) {
+        if (billNo == null || !BILL_NO.matcher(billNo).matches()) {
             throw new BizException(ErrorCodes.PARAM_INVALID, "参数格式不合法");
         }
         return billRepository.findByBillNo(billNo).orElseThrow(BillingQueryService::notVisible);
@@ -257,11 +262,20 @@ public class BillingQueryService {
         }
     }
 
-    private static String normalizeReason(final String reason) {
-        if (reason == null || reason.isBlank() || reason.trim().length() > MAX_REASON_LENGTH) {
+    /**
+     * 更正留痕原因：按"前缀 + 原单号 + 用户输入"的**拼装后总长**校验列宽（VARCHAR(512)），
+     * 超限 → 1000C0001（不外泄内部细节；不落库、不截断）。
+     */
+    private static String correctionReason(final String originalBillNo, final String reason) {
+        if (reason == null || reason.isBlank()) {
             throw new BizException(ErrorCodes.PARAM_INVALID, "参数格式不合法");
         }
-        return reason.trim();
+        final String assembled = CORRECTION_REASON_PREFIX + originalBillNo + CORRECTION_REASON_SUFFIX
+                + reason.trim();
+        if (assembled.length() > MAX_REASON_LENGTH) {
+            throw new BizException(ErrorCodes.PARAM_INVALID, "参数格式不合法");
+        }
+        return assembled;
     }
 
     private static String text(final BigDecimal value) {

@@ -71,6 +71,8 @@ public class MeteringExceptionHandler {
     /** 对外文案以常量兜底（同码同文；不向调用方暴露异常内部拼装细节）。 */
     private static String messageOf(final String code, final BizException ex) {
         return switch (code) {
+            // 1000C0001 全部出口同文（分页组件等内部提示不出站）
+            case "1000C0001" -> PARAM_MESSAGE;
             case "1011C0008" -> MeteringErrorCodes.METERING_NOT_VISIBLE_MESSAGE;
             case "1011C0009" -> BillingErrorCodes.BILL_NOT_VISIBLE_MESSAGE;
             case "1011C0010" -> BillingErrorCodes.BILL_DUPLICATED_MESSAGE;

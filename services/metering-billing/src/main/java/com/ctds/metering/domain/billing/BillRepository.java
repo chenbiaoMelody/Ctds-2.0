@@ -21,10 +21,11 @@ public interface BillRepository {
     /** 指定原单的全部更正单（读面双向可溯）。 */
     List<Bill> findCorrectionsOf(String originalBillNo);
 
-    /** 该合约该周期的普通账单（对账前置）。 */
-    List<Bill> findNormalBills(String contractNo, String period);
-
-    /** 该合约该周期的全部账单（含更正单；对账差异冻结 / 通过解冻对象）。 */
+    /**
+     * 该合约该周期的全部账单（含更正单；对账差异冻结 / 通过解冻对象）。
+     * <p>须在对账事务内调用：读取即加行锁（FOR UPDATE），同合约同周期的冻结 / 解冻串行化，
+     * 避免"最新对账记录为差异但账单未冻结"的 fail-open 窗口（hifi §13 E3）。</p>
+     */
     List<Bill> findByContractAndPeriod(String contractNo, String period);
 
     /** 本方读面（subject 为合约需方或供方）。 */
@@ -40,8 +41,8 @@ public interface BillRepository {
     /** 确认：仅 ISSUED → CONFIRMED（返回受影响行数）。 */
     int markConfirmed(String billNo);
 
-    /** 冻结：非 FROZEN → FROZEN 并保存原状态。 */
-    int markFrozen(String billNo, BillStatus previousStatus);
+    /** 冻结：非 FROZEN → FROZEN，原状态由行内真值写入（不传应用侧旧值）。 */
+    int markFrozen(String billNo);
 
     /** 解冻：FROZEN → 原状态（清空 status_before_freeze）。 */
     int markRestored(String billNo, BillStatus restoredStatus);
