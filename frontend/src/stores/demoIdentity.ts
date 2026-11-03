@@ -94,3 +94,13 @@ export function deliveryRolesHeader(): string {
 export function connectorRolesHeader(): string {
   return pageRolesHeader('admin', 'applicant')
 }
+
+/**
+ * 计费域页面级角色头（WBS-3.7.7 Q5-A）：普通档 `requester,provider` 双头 / 运营档 `admin`
+ * （同时具备 `billing.governance` + `metering.governance`；Tab4 订单检索另需 `contract.governance`，
+ * 由合约域角色头既有映射承载）。`myRole` 由服务端按合约参与方判定，前端不用角色头猜。
+ * 硬约束（T2）：**普通档不得携带 `admin`**（门户视图与 `constants/billing.ts` 零 `admin` 字面量）。
+ */
+export function billingRolesHeader(): string {
+  return pageRolesHeader('admin', 'requester,provider')
+}

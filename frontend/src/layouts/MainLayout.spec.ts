@@ -66,11 +66,11 @@ describe('权限菜单显隐（H4）', () => {
     localStorage.clear()
   })
 
-  it('普通用户：菜单渲染 10 项，不含权限保护菜单（WBS-3.7.3 新增"我的订单"登录可见）', () => {
+  it('普通用户：菜单渲染 11 项，不含权限保护菜单（WBS-3.7.7 新增"我的账单"登录可见）', () => {
     setDemoRole('user')
     const wrapper = mountLayout()
     const items = wrapper.findAll('.el-menu-item')
-    expect(items.length).toBe(10)
+    expect(items.length).toBe(11)
     expect(wrapper.text()).not.toContain('仅管理员可见')
     expect(wrapper.text()).not.toContain('主体审核')
     expect(wrapper.text()).not.toContain('DID 管理')
@@ -79,14 +79,18 @@ describe('权限菜单显隐（H4）', () => {
     expect(wrapper.text()).not.toContain('连接器治理')
     expect(wrapper.text()).toContain('数据产品门户')
     expect(wrapper.text()).toContain('我的订单')
+    expect(wrapper.text()).toContain('我的账单')
+    expect(wrapper.text()).not.toContain('计费管理')
   })
 
-  it('admin 角色：菜单渲染 23 项，含"仅管理员可见"、"主体审核"、"DID 管理"、四域菜单与连接器两菜单（WBS-3.7.3 新增"我的订单"）', () => {
+  it('admin 角色：菜单渲染 25 项，含"仅管理员可见"、"主体审核"、"DID 管理"、四域菜单与新计费两菜单（WBS-3.7.7 新增"计费管理""我的账单"）', () => {
     setDemoRole('admin')
     const wrapper = mountLayout()
     const items = wrapper.findAll('.el-menu-item')
-    expect(items.length).toBe(23)
+    expect(items.length).toBe(25)
     expect(wrapper.text()).toContain('我的订单')
+    expect(wrapper.text()).toContain('计费管理')
+    expect(wrapper.text()).toContain('我的账单')
     expect(wrapper.text()).toContain('仅管理员可见')
     expect(wrapper.text()).toContain('主体审核')
     expect(wrapper.text()).toContain('DID 管理')

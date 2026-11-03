@@ -26,6 +26,11 @@ import '../views/connector/ConnectorGovernanceView.vue'
 // WBS-3.7.2：门户前台两视图为懒加载路由，同款静态预热
 import '../views/portal/PortalHomeView.vue'
 import '../views/portal/PortalProductDetailView.vue'
+// WBS-3.7.7：计费管理页与两处账单详情同为懒加载路由，同款静态预热
+import '../views/billing/BillingManageView.vue'
+import '../views/billing/BillDetailView.vue'
+import '../views/portal/PortalBillListView.vue'
+import '../views/portal/PortalBillDetailView.vue'
 
 /**
  * WBS-2.4.9 H3/H4 测试：
@@ -63,7 +68,7 @@ describe('路由表结构（H3）', () => {
     const permissionRouteNames = ['admin-only', 'review-queue', 'did-management', 'space-list', 'platform-policy',
       'catalog-datasets', 'catalog-products', 'catalog-governance',
       'contract-templates', 'contract-workbench', 'contract-governance',
-      'delivery-governance', 'connector-governance']
+      'delivery-governance', 'connector-governance', 'billing']
     const normalRoutes = children.filter(
       (r) => r.meta?.menu === true && !permissionRouteNames.includes(String(r.name)),
     )
@@ -93,9 +98,9 @@ describe('路由表结构（H3）', () => {
   })
 
   it('DID 管理路由（WBS-3.1.11）：menuOrder=8、icon=Key、did.admin 权限；演示页不占菜单', () => {
-    // 菜单末尾追加（lofi Q1/Q8：不重排既有菜单）；WBS-3.7.3 追加 menuOrder 23 后全站最大值为 23
+    // 菜单末尾追加（lofi Q1/Q8：不重排既有菜单）；WBS-3.7.7 追加 menuOrder 24/25 后全站最大值为 25
     const menuOrders = children.filter((r) => r.meta?.menu === true).map((r) => r.meta?.menuOrder ?? 0)
-    expect(Math.max(...menuOrders)).toBe(23)
+    expect(Math.max(...menuOrders)).toBe(25)
     const didRoute = children.find((r) => r.name === 'did-management')
     expect(didRoute?.path).toBe('did')
     expect(didRoute?.meta?.title).toBe('DID 管理')
@@ -165,10 +170,46 @@ describe('路由表结构（H3）', () => {
     // menuOrder=7 为入驻进度查询占位；WBS-3.1.11（8）与 WBS-3.2.6（9/10）追加后全站最大值为 10；
     // WBS-3.3.6（11/12/13）追加后全站最大值为 13；WBS-3.4.7（14/15/16）追加后全站最大值为 16；
     // WBS-3.5.6（17/18/19）追加后全站最大值为 19；WBS-3.6.7（20/21）追加后全站最大值为 21；
-    // WBS-3.7.2（22）追加后全站最大值为 22；WBS-3.7.3（23）追加后全站最大值为 23
+    // WBS-3.7.2（22）追加后全站最大值为 22；WBS-3.7.3（23）追加后全站最大值为 23；
+    // WBS-3.7.7（24/25）追加后全站最大值为 25
     const menuOrders = children.filter((r) => r.meta?.menu === true).map((r) => r.meta?.menuOrder ?? 0)
     expect(menuOrders).toContain(7)
-    expect(Math.max(...menuOrders)).toBe(23)
+    expect(Math.max(...menuOrders)).toBe(25)
+  })
+
+  it('计费域路由（WBS-3.7.7 §4）：/billing 菜单 24 + billing.governance；/portal/bills 菜单 25 登录可见；两深链不占菜单且声明在列表后', () => {
+    const manageRoute = children.find((r) => r.name === 'billing')
+    expect(manageRoute?.path).toBe('billing')
+    expect(manageRoute?.meta?.title).toBe('计费管理')
+    expect(manageRoute?.meta?.menu).toBe(true)
+    expect(manageRoute?.meta?.menuOrder).toBe(24)
+    expect(manageRoute?.meta?.icon).toBe('Money')
+    expect(manageRoute?.meta?.permission).toBe('billing.governance')
+
+    const detailRoute = children.find((r) => r.name === 'billing-detail')
+    expect(detailRoute?.path).toBe('billing/bills/:billNo')
+    expect(detailRoute?.meta?.title).toBe('账单详情')
+    expect(detailRoute?.meta?.menu).toBeUndefined()
+    expect(detailRoute?.meta?.permission).toBe('billing.governance')
+
+    const portalListRoute = children.find((r) => r.name === 'portal-bills')
+    expect(portalListRoute?.path).toBe('portal/bills')
+    expect(portalListRoute?.meta?.title).toBe('我的账单')
+    expect(portalListRoute?.meta?.menu).toBe(true)
+    expect(portalListRoute?.meta?.menuOrder).toBe(25)
+    expect(portalListRoute?.meta?.icon).toBe('Tickets')
+    expect(portalListRoute?.meta?.permission).toBeUndefined()
+
+    const portalDetailRoute = children.find((r) => r.name === 'portal-bill-detail')
+    expect(portalDetailRoute?.path).toBe('portal/bills/:billNo')
+    expect(portalDetailRoute?.meta?.title).toBe('账单详情')
+    expect(portalDetailRoute?.meta?.menu).toBeUndefined()
+    expect(portalDetailRoute?.meta?.permission).toBeUndefined()
+
+    // 声明顺序：深链必须在列表之后（深链匹配不吞噬列表页）
+    const paths = children.map((r) => r.path)
+    expect(paths.indexOf('billing')).toBeLessThan(paths.indexOf('billing/bills/:billNo'))
+    expect(paths.indexOf('portal/bills')).toBeLessThan(paths.indexOf('portal/bills/:billNo'))
   })
 
   it('空间管理界面路由（WBS-3.2.6 §3）：菜单 9/10、权限点 space.member / platform.policy，"我的邀请"不占菜单且在 :id 之前', () => {
@@ -355,6 +396,28 @@ describe('守卫 beforeEach 实际行为（H4）', () => {
     setDemoRole('user')
     await router.push('/sandboxes/SB000004')
     expect(router.currentRoute.value.name).toBe('sandbox-detail')
+  })
+
+  it('普通用户直连 /billing：守卫拦截重定向工作台带 denied（WBS-3.7.7 T14）', async () => {
+    const { default: router } = await import('../router/index')
+    setDemoRole('user')
+    await router.push('/billing')
+    expect(router.currentRoute.value.name).toBe('dashboard')
+    expect(router.currentRoute.value.query.denied).toBe('1')
+  })
+
+  it('admin 角色直连 /billing：放行（billing.governance）', async () => {
+    const { default: router } = await import('../router/index')
+    setDemoRole('admin')
+    await router.push('/billing')
+    expect(router.currentRoute.value.name).toBe('billing')
+  })
+
+  it('普通用户直连 /portal/bills：登录可见放行（无权限点——服务端 billing.read + 归属校验）', async () => {
+    const { default: router } = await import('../router/index')
+    setDemoRole('user')
+    await router.push('/portal/bills')
+    expect(router.currentRoute.value.name).toBe('portal-bills')
   })
 
   it('普通用户直连空间域四条路由：守卫逐条拦截重定向工作台带 denied（WBS-3.2.6 T28）', async () => {
