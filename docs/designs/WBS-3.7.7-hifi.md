@@ -69,6 +69,7 @@
 | `BILLING_HINTS` | 文案常量：出账四档提示 / 分成基数必填提示 / 冻结不可确认 / 更正负正语义 / 改价不追溯 / 明细合计对照免责（"以服务端账单为准"） |
 
 - `constants/billing.ts` **不得出现 `admin` 字面量**、不得出现端点 URL（`PortalSourceGuard.spec.ts` 扫描面约束）。
+- **常量表补登（见 §12 E6）**：`DETAIL_LINE_TYPE_LABELS`（明细行类型）/ `RECONCILE_FIGURE_LABELS`（八方数值标签）/ `AUTO_OUTBILL_HINT`（自动出账说明）及空态·拦截类文案；`BILLING_HINTS` 按用途拆为单常量。
 
 ### 2.4 视图与子组件
 
@@ -82,7 +83,7 @@
 | 更正弹窗 | `views/billing/components/CorrectionDialog.vue` | 金额（可负）+ 原因 |
 | 确认弹窗 | `views/billing/components/ConfirmDialog.vue` | 二次确认 + 冻结态前置说明 |
 | 对账面板 | `views/billing/components/ReconcilePanel.vue` | 执行对账 + 结论卡 + 四方数值 + 差异明细 + 记录列表 |
-| 明细表 | `views/billing/components/BillDetailSections.vue` | 快照 + 明细 + 合计 + 留痕 + 更正链（运营/门户共用，props 控制写动作显隐） |
+| 明细表 | `views/billing/components/BillDetailSections.vue` | 快照 + 明细 + 合计 + 留痕 + 更正链（运营/门户共用，只读分区；写动作区边界见 §12 E7） |
 
 ## 3. 界面说明书（画面 × 元素 × 数据源 × 交互 × 态 × 权限）
 
@@ -128,7 +129,7 @@
 - 工具栏：合约号、主体号（`requesterNo`）、源类型（全部 / 四值）、时间范围（`datetimerange` → `from`/`to`，ISO `yyyy-MM-dd HH:mm:ss`）、查询 / 重置。
 - 表格：流水号（`id`）｜合约号｜主体号｜源类型（中文）｜源单号｜动作｜资源｜事件时点｜入库时点。
 - 分页 + 空态 `暂无计量流水`；失败态展示服务端文案。
-- 说明条：`本页为运营方全量逐条流水口径（规格 B12-2）；需方/供方逐条流水请在其本方读面查看。`
+- 说明条：`本页为运营方全量逐条流水口径（规格 B12-2）；需方/供方逐条流水请在其本方读面查看。`（**已由 §12 E5 勘误**：本卡未交付本方流水页面，实际文案为"需方／供方仅可读本方流水，不在此页"）
 
 **P8 订单检索（Tab4）**
 - 工具栏：状态（三态 + 全部）、产品 ID、合约号、需方主体号、查询 / 重置。
@@ -278,3 +279,13 @@
   2. **E2（§3 P11 补「对账结论」只读区）**：§3 P11 原文未列该区，但 §8 剧本映射行「账单核对 S1-3 需方读对账结论 → 门户账单详情 → 对账结论区（只读列表）」为已确认契约——实现按 §8 落地：门户详情底部「对账结论」区调 `listReconciliations(contractNo)`（B-R4，`billing.read` + 服务端归属校验），结论 / 差异明细只读；该区读取失败仅本区提示，不影响账单主体（不伪造结论）。
   3. **E3（§9 T15 落点拆分）**：billing 视图 + `constants/billing.ts` + `api/billing.ts` 的静态纪律锚**新建** `frontend/src/views/billing/BillingSourceGuard.spec.ts`；`PortalSourceGuard.spec.ts` 只做门户侧三处断言口径更新（`/billing`、`/bills`、`/metering` → 仅经 `api/billing.ts` 单点封装；`/payments`、`/invoices` 仍全域禁用）。断言内容与 T15 要求逐条一致，仅分文件承载（避免"门户守卫"文件扫描计费域造成的职责混淆）。
   4. **E4（§9 T8 时间区间断言分层）**：`datetimerange` 控件在 jsdom 下不可靠驱动，`from`/`to` 查询串断言下沉到 `api/billing.spec.ts`（`listGovernanceMeteringFlows` 精确 URL 断言，含 `+` / `%3A` 编码），视图层仅断言控件存在；过滤语义覆盖强度不变（服务端侧由 T16② 时间区间集成用例锚定）。
+
+- **评审修复段勘误（E5…，2026-11-03 4 视角评审循环 1 修复批登记；断言与业务判定零改动）**：
+  5. **E5（§3 P7 计量流水说明条改口径）**：原文「需方/供方逐条流水请在其本方读面查看」指向**本卡未交付的页面**（全仓仅运营 Tab3 有流水视图；需方/供方仅有 R-M1 端点）——改为「需方／供方仅可读本方流水，不在此页」，只陈述权限事实，不指向不存在的界面。规格 B12-1 本方读面由 3.7.5 R-M1 端点承载，界面承载不在本卡范围。
+  6. **E6（§2.3 常量表补登）**：新增 `DETAIL_LINE_TYPE_LABELS`（明细行类型）/ `RECONCILE_FIGURE_LABELS`（八方数值标签）/ `AUTO_OUTBILL_HINT`（兑现 E0-3 界面说明）及空态·拦截类文案常量；`BILLING_HINTS` 按用途拆为多个单常量（同一文案单一源，语义等价）。
+  7. **E7（§2.4 写动作区边界）**：`BillDetailSections` 只承载只读分区（props = `detail` / `basePath`），确认与更正入口位于 `BillDetailView` 头区；门户侧零写动作由视图结构保证（与 §3 P3「头区操作区」一致）。
+  8. **E8（§3 P4 与 §6 口径冲突取后者）**：确认失败（409 `1011C0011` / `1011C0012`）文案原样展示并**自动刷新详情**，弹窗关闭（§6「原样展示 + 自动刷新」为准）。
+  9. **E9（枚举列显示口径）**：类型 / 状态列显示中文，未知值原样回退；不再中英并列（原值可由接口响应追溯，界面不增加噪声）。
+  10. **E10（「生成人」来源）**：账单行无独立生成人列，取 `actions` 中 `CREATE` 留痕的 `operatorSubjectNo`；无留痕显示 `—`。
+  11. **E11（T15 扫描面扩展）**：门户账单两页纳入渲染安全锚（零 `v-html` / `innerHTML` / `dangerouslyUseHTMLString`）；`api/` 全模块（除 `api/billing.ts`）旁路扫描零计费端点；门户视图与常量零裸计费 URL（`/billing`、`/metering` 起头）。
+  12. **补充（非勘误，评审修复已落地）**：§3 P1 分页档位 **10 / 20 / 50 已实现**（Tab1/Tab2 记录区/Tab3/Tab4 + 门户列表，切换档位回第 1 页）；E0-3 自动出账说明已在费率视图与出账弹窗常显。此两项由评审发现，按设计原文补齐，**不登记为差异**。

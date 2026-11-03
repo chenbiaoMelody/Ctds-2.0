@@ -35,7 +35,7 @@
       <el-card class="conclusion-card" shadow="never">
         <div class="conclusion-head">
           <el-tag class="conclusion-tag" :type="CONCLUSION_TAG[current.conclusion] ?? 'info'">
-            {{ CONCLUSION_LABELS[current.conclusion] ?? current.conclusion }}
+            {{ labelOf(CONCLUSION_LABELS, current.conclusion) }}
           </el-tag>
           <span class="record-operator">执行人：{{ current.createdBy ?? '—' }}</span>
           <span class="record-time">执行时点：{{ current.createdAt }}</span>
@@ -53,7 +53,7 @@
         <el-table :data="current.differences" class="differences-table" size="small">
           <el-table-column label="类型" width="230">
             <template #default="scope">
-              {{ DIFFERENCE_TYPE_LABELS[scope.row.type] ?? scope.row.type }}
+              {{ labelOf(DIFFERENCE_TYPE_LABELS, scope.row.type) }}
             </template>
           </el-table-column>
           <el-table-column label="腿" width="200">
@@ -84,7 +84,7 @@
         <el-table-column label="结论" width="100">
           <template #default="scope">
             <el-tag :type="CONCLUSION_TAG[scope.row.conclusion] ?? 'info'">
-              {{ CONCLUSION_LABELS[scope.row.conclusion] ?? scope.row.conclusion }}
+              {{ labelOf(CONCLUSION_LABELS, scope.row.conclusion) }}
             </el-tag>
           </template>
         </el-table-column>
@@ -101,11 +101,13 @@
       <el-pagination
         v-if="recordTotal > recordPageSize"
         class="record-pagination"
-        layout="total, prev, pager, next"
+        layout="total, sizes, prev, pager, next"
         :total="recordTotal"
         :page-size="recordPageSize"
+        :page-sizes="PAGE_SIZES"
         :current-page="recordPageNum"
         @current-change="onRecordPageChange"
+        @size-change="onRecordSizeChange"
       />
     </section>
   </div>
@@ -118,6 +120,7 @@ import {
   runReconciliation,
   type Reconciliation,
 } from '../../../api/billing'
+import { labelOf } from '../../../constants/catalog'
 import {
   CONCLUSION_LABELS,
   CONCLUSION_TAG,
@@ -156,7 +159,9 @@ const current = ref<Reconciliation | null>(null)
 const records = ref<Reconciliation[]>([])
 const recordTotal = ref(0)
 const recordPageNum = ref(1)
-const recordPageSize = 10
+const recordPageSize = ref(10)
+/** 分页档位（hifi §3 P1 口径：10 / 20 / 50）。 */
+const PAGE_SIZES = [10, 20, 50]
 
 function figureOf(key: string): string | number {
   const value = (current.value as unknown as Record<string, unknown> | null)?.[key]
@@ -191,7 +196,7 @@ async function loadRecords(): Promise<void> {
   try {
     const page = await listReconciliations(contractNo.value.trim(), {
       pageNum: recordPageNum.value,
-      pageSize: recordPageSize,
+      pageSize: recordPageSize.value,
       period: period.value ?? undefined,
     })
     records.value = page.list
@@ -211,6 +216,12 @@ function onRecordClick(row: Reconciliation): void {
 
 function onRecordPageChange(page: number): void {
   recordPageNum.value = page
+  void loadRecords()
+}
+
+function onRecordSizeChange(size: number): void {
+  recordPageSize.value = size
+  recordPageNum.value = 1
   void loadRecords()
 }
 

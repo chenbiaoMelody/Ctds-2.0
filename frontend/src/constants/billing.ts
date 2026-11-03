@@ -98,6 +98,9 @@ export const CORRECTION_AMOUNT_HINT = '负 = 红字冲正；正 = 补差；最�
 export const PRICE_NO_RETRO_HINT =
   '定价来源 = 目录域产品定价（四档），下单时快照进合约与订单；账单只认快照，改价不追溯已出账单。'
 
+/** 自动出账口径说明（E0-3：cron 走配置文件，界面只说明、不提供运行时改配置）。 */
+export const AUTO_OUTBILL_HINT = '每月 1 日 00:10 自动出上月账（后台配置，界面不提供改配置入口）。'
+
 /** 明细合计对照免责句（P3 / B9-4：不拦截、不改值）。 */
 export const DETAIL_SUM_DISCLAIMER = '账单金额以服务端为准'
 
@@ -110,9 +113,12 @@ export const CORRECTION_DIALOG_TEXT = '更正不是修改原单：系统会另�
 /** 差异对账冻结提示（P6 / B11-3）。 */
 export const RECONCILE_DIFFERENCE_HINT = '该合约该账期账单已冻结，确认前需澄清差异并重新对账通过。'
 
-/** 计量流水页说明条（P7 / B12-2）。 */
+/**
+ * 计量流水页说明条（P7 / B12-2；§12 E5 勘误：原文指向「本方读面」但本卡未交付该页面）。
+ * 只陈述权限事实，不指向不存在的界面。
+ */
 export const METERING_PAGE_DESC =
-  '本页为运营方全量逐条流水口径（规格 B12-2）；需方/供方逐条流水请在其本方读面查看。'
+  '本页为运营方全量逐条流水口径（规格 B12-2）；需方／供方仅可读本方流水，不在此页。'
 
 /** 订单检索页说明条（P8 / B4-2）。 */
 export const ORDER_PAGE_DESC = '运营检索为全量口径（C-7.1 B4-2）；订单详情仅当事方可读。'

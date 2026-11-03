@@ -33,8 +33,8 @@
               :value="value"
             />
           </el-select>
-          <el-button type="primary" class="bill-search-btn" :loading="billLoading" @click="searchBills">查询</el-button>
-          <el-button class="bill-reset-btn" @click="resetBills">重置</el-button>
+          <el-button type="primary" class="bill-search-btn" :loading="billLoading" @click="searchBills">{{ SEARCH_LABEL }}</el-button>
+          <el-button class="bill-reset-btn" @click="resetBills">{{ RESET_LABEL }}</el-button>
           <el-button type="primary" class="outbill-btn" @click="outbillVisible = true">手动出账</el-button>
         </div>
 
@@ -47,7 +47,7 @@
           show-icon
         >
           <template #default>
-            <el-button link type="primary" class="retry-btn" @click="loadBills">重试</el-button>
+            <el-button link type="primary" class="retry-btn" @click="loadBills">{{ RETRY_LABEL }}</el-button>
           </template>
         </el-alert>
 
@@ -90,11 +90,13 @@
         <el-pagination
           v-if="billTotal > billPageSize"
           class="bill-pagination"
-          layout="total, prev, pager, next"
+          layout="total, sizes, prev, pager, next"
           :total="billTotal"
           :page-size="billPageSize"
+          :page-sizes="PAGE_SIZES"
           :current-page="billPageNum"
           @current-change="onBillPageChange"
+          @size-change="onBillSizeChange"
         />
       </el-tab-pane>
 
@@ -123,8 +125,8 @@
             end-placeholder="结束时间"
             style="width: 340px"
           />
-          <el-button type="primary" class="metering-search-btn" :loading="flowLoading" @click="searchFlows">查询</el-button>
-          <el-button class="metering-reset-btn" @click="resetFlows">重置</el-button>
+          <el-button type="primary" class="metering-search-btn" :loading="flowLoading" @click="searchFlows">{{ SEARCH_LABEL }}</el-button>
+          <el-button class="metering-reset-btn" @click="resetFlows">{{ RESET_LABEL }}</el-button>
         </div>
 
         <el-alert class="metering-desc" :title="METERING_PAGE_DESC" type="info" :closable="false" />
@@ -159,11 +161,13 @@
         <el-pagination
           v-if="flowTotal > flowPageSize"
           class="metering-pagination"
-          layout="total, prev, pager, next"
+          layout="total, sizes, prev, pager, next"
           :total="flowTotal"
           :page-size="flowPageSize"
+          :page-sizes="PAGE_SIZES"
           :current-page="flowPageNum"
           @current-change="onFlowPageChange"
+          @size-change="onFlowSizeChange"
         />
       </el-tab-pane>
 
@@ -180,8 +184,8 @@
           <el-input v-model="orderFilters.productId" class="order-product" placeholder="产品 ID" clearable style="width: 110px" />
           <el-input v-model="orderFilters.contractNo" class="order-contract" placeholder="合约号" clearable style="width: 150px" />
           <el-input v-model="orderFilters.requesterNo" class="order-requester" placeholder="需方主体号" clearable style="width: 170px" />
-          <el-button type="primary" class="order-search-btn" :loading="orderLoading" @click="searchOrders">查询</el-button>
-          <el-button class="order-reset-btn" @click="resetOrders">重置</el-button>
+          <el-button type="primary" class="order-search-btn" :loading="orderLoading" @click="searchOrders">{{ SEARCH_LABEL }}</el-button>
+          <el-button class="order-reset-btn" @click="resetOrders">{{ RESET_LABEL }}</el-button>
         </div>
 
         <el-alert class="order-desc" :title="ORDER_PAGE_DESC" type="info" :closable="false" />
@@ -221,11 +225,13 @@
         <el-pagination
           v-if="orderTotal > orderPageSize"
           class="order-pagination"
-          layout="total, prev, pager, next"
+          layout="total, sizes, prev, pager, next"
           :total="orderTotal"
           :page-size="orderPageSize"
+          :page-sizes="PAGE_SIZES"
           :current-page="orderPageNum"
           @current-change="onOrderPageChange"
+          @size-change="onOrderSizeChange"
         />
       </el-tab-pane>
 
@@ -237,6 +243,7 @@
               <div class="rate-rule">{{ item.rule }}</div>
             </el-card>
           </div>
+          <el-alert class="auto-outbill-hint" :title="AUTO_OUTBILL_HINT" type="info" :closable="false" />
           <el-alert class="rate-source" :title="PRICE_NO_RETRO_HINT" type="info" :closable="false" />
           <RouterLink class="rate-catalog-link" to="/catalog/products">前往产品上架页变更定价</RouterLink>
         </div>
@@ -263,6 +270,7 @@ import { listGovernanceOrders, type OrderSummary } from '../../api/order'
 import { guideToLoginIfAuthFailed } from '../../api/authGuide'
 import { labelOf, PRICING_MODEL_LABELS } from '../../constants/catalog'
 import {
+  AUTO_OUTBILL_HINT,
   BILL_EMPTY_TEXT,
   BILL_STATUS_LABELS,
   BILL_STATUS_TAG,
@@ -273,6 +281,9 @@ import {
   ORDER_PAGE_DESC,
   PRICE_NO_RETRO_HINT,
   PRICING_MODEL_RULES,
+  RESET_LABEL,
+  RETRY_LABEL,
+  SEARCH_LABEL,
   SOURCE_TYPE_LABELS,
   outbillSuccessTip,
 } from '../../constants/billing'
@@ -289,6 +300,9 @@ import { ORDER_STATUS_LABELS, ORDER_STATUS_TAG_TYPES } from '../../constants/ord
 const router = useRouter()
 const activeTab = ref('bills')
 
+/** 分页档位（hifi §3 P1：10 / 20 / 50，服务端分页）。 */
+const PAGE_SIZES = [10, 20, 50]
+
 const PRICING_MODEL_OPTIONS = Object.entries(PRICING_MODEL_LABELS).map(([value, label]) => ({
   value,
   label,
@@ -299,7 +313,7 @@ const PRICING_MODEL_OPTIONS = Object.entries(PRICING_MODEL_LABELS).map(([value, 
 const bills = ref<BillSummary[]>([])
 const billTotal = ref(0)
 const billPageNum = ref(1)
-const billPageSize = 10
+const billPageSize = ref(10)
 const billLoading = ref(false)
 const billError = ref('')
 const billFilters = reactive({
@@ -317,7 +331,7 @@ const outbillVisible = ref(false)
 const flows = ref<MeteringFlowRow[]>([])
 const flowTotal = ref(0)
 const flowPageNum = ref(1)
-const flowPageSize = 10
+const flowPageSize = ref(10)
 const flowLoading = ref(false)
 const flowError = ref('')
 const flowLoaded = ref(false)
@@ -332,7 +346,7 @@ const flowFilters = reactive({
 const orders = ref<OrderSummary[]>([])
 const orderTotal = ref(0)
 const orderPageNum = ref(1)
-const orderPageSize = 10
+const orderPageSize = ref(10)
 const orderLoading = ref(false)
 const orderError = ref('')
 const orderLoaded = ref(false)
@@ -361,7 +375,7 @@ async function loadBills(): Promise<void> {
   try {
     const page = await listGovernanceBills({
       pageNum: billPageNum.value,
-      pageSize: billPageSize,
+      pageSize: billPageSize.value,
       contractNo: billFilters.contractNo.trim() || undefined,
       period: billFilters.period ?? undefined,
       productId: numberOrUndefined(billFilters.productId),
@@ -402,10 +416,17 @@ function onBillPageChange(page: number): void {
   void loadBills()
 }
 
+/** 分页档位变更（10/20/50）：回第 1 页重新拉取（hifi §3 P1）。 */
+function onBillSizeChange(size: number): void {
+  billPageSize.value = size
+  billPageNum.value = 1
+  void loadBills()
+}
+
 function onOutbillSuccess(billNo: string): void {
   outbillVisible.value = false
   ElMessage.success(outbillSuccessTip(billNo))
-  void router.push(`/billing/bills/${billNo}`)
+  void router.push(`/billing/bills/${encodeURIComponent(billNo)}`)
 }
 
 // ===== Tab3 载入 =====
@@ -415,7 +436,7 @@ async function loadFlows(): Promise<void> {
   try {
     const page = await listGovernanceMeteringFlows({
       pageNum: flowPageNum.value,
-      pageSize: flowPageSize,
+      pageSize: flowPageSize.value,
       contractNo: flowFilters.contractNo.trim() || undefined,
       requesterNo: flowFilters.requesterNo.trim() || undefined,
       sourceType: flowFilters.sourceType || undefined,
@@ -452,6 +473,12 @@ function onFlowPageChange(page: number): void {
   void loadFlows()
 }
 
+function onFlowSizeChange(size: number): void {
+  flowPageSize.value = size
+  flowPageNum.value = 1
+  void loadFlows()
+}
+
 // ===== Tab4 载入 =====
 async function loadOrders(): Promise<void> {
   orderLoading.value = true
@@ -459,7 +486,7 @@ async function loadOrders(): Promise<void> {
   try {
     const page = await listGovernanceOrders({
       pageNum: orderPageNum.value,
-      pageSize: orderPageSize,
+      pageSize: orderPageSize.value,
       status: orderFilters.status || undefined,
       productId: numberOrUndefined(orderFilters.productId),
       contractNo: orderFilters.contractNo.trim() || undefined,
@@ -492,6 +519,12 @@ function resetOrders(): void {
 
 function onOrderPageChange(page: number): void {
   orderPageNum.value = page
+  void loadOrders()
+}
+
+function onOrderSizeChange(size: number): void {
+  orderPageSize.value = size
+  orderPageNum.value = 1
   void loadOrders()
 }
 

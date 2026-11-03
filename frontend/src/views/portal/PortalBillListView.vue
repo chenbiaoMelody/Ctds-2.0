@@ -14,8 +14,8 @@
         style="width: 140px"
       />
       <el-input v-model="filters.productId" class="filter-product" placeholder="产品 ID" clearable style="width: 120px" />
-      <el-button type="primary" class="bill-search-btn" :loading="loading" @click="search">查询</el-button>
-      <el-button class="bill-reset-btn" @click="reset">重置</el-button>
+      <el-button type="primary" class="bill-search-btn" :loading="loading" @click="search">{{ SEARCH_LABEL }}</el-button>
+      <el-button class="bill-reset-btn" @click="reset">{{ RESET_LABEL }}</el-button>
     </div>
 
     <el-alert v-if="errorTip" class="list-error" :title="errorTip" type="error" :closable="false" show-icon />
@@ -23,7 +23,7 @@
     <el-table v-loading="loading" :data="bills" class="bill-table" size="small">
       <el-table-column label="账单号" width="120">
         <template #default="scope">
-          <RouterLink class="bill-link" :to="`/portal/bills/${scope.row.billNo}`">
+          <RouterLink class="bill-link" :to="`/portal/bills/${encodeURIComponent(scope.row.billNo)}`">
             {{ scope.row.billNo }}
           </RouterLink>
         </template>
@@ -55,11 +55,13 @@
     <el-pagination
       v-if="total > pageSize"
       class="list-pagination"
-      layout="total, prev, pager, next"
+      layout="total, sizes, prev, pager, next"
       :total="total"
       :page-size="pageSize"
+      :page-sizes="PAGE_SIZES"
       :current-page="pageNum"
       @current-change="onPageChange"
+      @size-change="onSizeChange"
     />
   </div>
 </template>
@@ -76,6 +78,8 @@ import {
   BILL_TYPE_LABELS,
   PORTAL_BILL_EMPTY_TEXT,
   PORTAL_BILL_PAGE_DESC,
+  RESET_LABEL,
+  SEARCH_LABEL,
 } from '../../constants/billing'
 import { MY_ROLE_LABELS } from '../../constants/order'
 
@@ -89,7 +93,9 @@ const router = useRouter()
 const bills = ref<BillSummary[]>([])
 const total = ref(0)
 const pageNum = ref(1)
-const pageSize = 10
+const pageSize = ref(10)
+/** 分页档位（hifi §3 P1 口径，与运营侧一致：10 / 20 / 50）。 */
+const PAGE_SIZES = [10, 20, 50]
 const loading = ref(false)
 const errorTip = ref('')
 const filters = reactive({
@@ -111,7 +117,7 @@ async function loadBills(): Promise<void> {
   try {
     const page = await listMyBills({
       pageNum: pageNum.value,
-      pageSize,
+      pageSize: pageSize.value,
       contractNo: filters.contractNo.trim() || undefined,
       period: filters.period ?? undefined,
       productId: numberOrUndefined(filters.productId),
@@ -142,6 +148,13 @@ function reset(): void {
 
 function onPageChange(page: number): void {
   pageNum.value = page
+  void loadBills()
+}
+
+/** 分页档位变更：回第 1 页重新拉取。 */
+function onSizeChange(size: number): void {
+  pageSize.value = size
+  pageNum.value = 1
   void loadBills()
 }
 

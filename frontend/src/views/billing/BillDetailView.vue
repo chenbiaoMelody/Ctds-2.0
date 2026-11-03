@@ -2,7 +2,7 @@
   <div class="bill-detail-page">
     <div v-if="notFound" class="not-found">
       <el-empty :description="BILL_NOT_FOUND_TIP" />
-      <RouterLink class="back-btn" to="/billing">返回账单列表</RouterLink>
+      <RouterLink class="back-btn" to="/billing">{{ BACK_TO_LIST_LABEL }}</RouterLink>
     </div>
 
     <template v-else>
@@ -25,7 +25,7 @@
           </el-button>
           <el-button class="correct-btn" :disabled="!canCorrect" @click="correctionVisible = true">更正</el-button>
           <el-button class="refresh-btn" :loading="loading" @click="loadDetail">刷新</el-button>
-          <RouterLink class="back-btn" to="/billing">返回列表</RouterLink>
+          <RouterLink class="back-btn" to="/billing">{{ BACK_TO_LIST_LABEL }}</RouterLink>
         </span>
       </div>
 
@@ -47,7 +47,7 @@
         show-icon
       >
         <template #default>
-          <el-button link type="primary" class="retry-btn" @click="loadDetail">重试</el-button>
+          <el-button link type="primary" class="retry-btn" @click="loadDetail">{{ RETRY_LABEL }}</el-button>
         </template>
       </el-alert>
 
@@ -75,11 +75,13 @@ import { getBillDetail, type BillDetail } from '../../api/billing'
 import { guideToLoginIfAuthFailed } from '../../api/authGuide'
 import { labelOf } from '../../constants/catalog'
 import {
+  BACK_TO_LIST_LABEL,
   BILL_NOT_FOUND_TIP,
   BILL_STATUS_LABELS,
   BILL_STATUS_TAG,
   BILL_TYPE_LABELS,
   FROZEN_CONFIRM_HINT,
+  RETRY_LABEL,
 } from '../../constants/billing'
 
 /**
@@ -130,7 +132,7 @@ function onConfirmed(): void {
 function onCorrected(bill: BillDetail): void {
   correctionVisible.value = false
   ElMessage.success(`更正单已生成：${bill.billNo}`)
-  void router.push(`/billing/bills/${bill.billNo}`)
+  void router.push(`/billing/bills/${encodeURIComponent(bill.billNo)}`)
 }
 
 onMounted(() => {

@@ -117,6 +117,16 @@ describe('T11 门户我的账单（hifi §3 P10）', () => {
     expect(mockedBills).toHaveBeenLastCalledWith(expect.objectContaining({ pageNum: 2 }))
   })
 
+  it('分页档位 10/20/50：切换为 20 后回第 1 页重新请求', async () => {
+    mockedBills.mockResolvedValue({ list: [bill()], total: 25, pageNum: 1, pageSize: 10, totalPages: 3 })
+    const { wrapper } = await mountList()
+    const pagination = wrapper.findComponent({ name: 'ElPagination' })
+    expect(pagination.props('pageSizes')).toEqual([10, 20, 50])
+    pagination.vm.$emit('size-change', 20)
+    await flushPromises()
+    expect(mockedBills).toHaveBeenLastCalledWith(expect.objectContaining({ pageNum: 1, pageSize: 20 }))
+  })
+
   it('空态「暂无账单」', async () => {
     mockedBills.mockResolvedValue(page([]))
     const { wrapper } = await mountList()

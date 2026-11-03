@@ -33,6 +33,10 @@ import org.springframework.web.bind.annotation.RestController;
  * R-M0 触发采集（运营）/ R-M1 本方流水 / R-M2 本方聚合 / R-M3 四方勾稽读数（运营）。
  * WBS-3.7.7 加性只读端点 R-M4 运营全量逐条流水（B12-2 归口；与 R-M1 归属硬校验并存互不影响）。
  * 身份取 AuthContext（网关注入/演示期身份头）；本方读面可见性判定在服务端（B8-4）。
+ *
+ * <p>注：本类入参四件套（{@code CONTRACT_NO} / {@code trim} / {@code contractNo} /
+ * {@code paramInvalid}）与计费域 {@code BillingBillController} 同型，属已登记的横切收敛项
+ * （债务登记簿 DB-103 ③），本卡不夹带重构；收敛时两域同步替换。
  */
 @RestController
 @RequestMapping("/api/v1/metering")

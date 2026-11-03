@@ -207,6 +207,16 @@ describe('T1 账单管理（hifi §3 P1）', () => {
     const { wrapper } = await mountView()
     expect(wrapper.text()).toContain('SETTLED')
   })
+
+  it('分页档位 10/20/50：切换为 50 后回第 1 页重新请求（§3 P1）', async () => {
+    mockedBills.mockResolvedValue({ list: [bill()], total: 25, pageNum: 1, pageSize: 10, totalPages: 3 })
+    const { wrapper } = await mountView()
+    const pagination = wrapper.findComponent({ name: 'ElPagination' })
+    expect(pagination.props('pageSizes')).toEqual([10, 20, 50])
+    pagination.vm.$emit('size-change', 50)
+    await flushPromises()
+    expect(mockedBills).toHaveBeenLastCalledWith(expect.objectContaining({ pageNum: 1, pageSize: 50 }))
+  })
 })
 
 describe('T2 手动出账（hifi §3 P2）', () => {
@@ -417,6 +427,12 @@ describe('T10 费率视图（hifi §3 P9）', () => {
     expect(text).toContain('定价来源 = 目录域产品定价')
     expect(text).toContain('改价不追溯已出账单')
     expect(wrapper.findAll('.rate-card')).toHaveLength(4)
+  })
+
+  it('自动出账说明常显（E0-3：界面只说明、不提供改配置入口）', async () => {
+    const { wrapper } = await mountView()
+    await openTab(wrapper, '费率视图')
+    expect(wrapper.find('.auto-outbill-hint').text()).toContain('每月 1 日 00:10 自动出上月账')
   })
 
   it('「前往产品上架页」指向 /catalog/products（仅指路，不内嵌编辑）', async () => {

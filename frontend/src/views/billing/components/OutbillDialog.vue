@@ -16,6 +16,7 @@
       show-icon
     />
     <el-alert class="outbill-rule" :title="OUTBILL_RULE_HINT" type="info" :closable="false" />
+    <el-alert class="outbill-auto-hint" :title="AUTO_OUTBILL_HINT" type="info" :closable="false" />
     <el-form label-width="110px">
       <el-form-item label="合约号">
         <el-input v-model="contractNo" class="outbill-contract" placeholder="CO000001" />
@@ -45,6 +46,7 @@
 import { ref } from 'vue'
 import { outbillBill } from '../../../api/billing'
 import {
+  AUTO_OUTBILL_HINT,
   CONTRACT_REQUIRED_TIP,
   OUTBILL_RULE_HINT,
   SHARE_BASE_HINT,

@@ -141,6 +141,30 @@ class MeteringGovernanceIntegrationTest {
         assertThat(second.path("list").get(0).path("sourceNo").asText()).isEqualTo("gov2-evt-1");
     }
 
+    /** T16① 边界：空结果仍 200（total=0、list 空、totalPages=0），不误判为 404。 */
+    @Test
+    void governanceFlowsEmptyResult() throws Exception {
+        final JsonNode data = getJson(ADMIN, "admin", "?contractNo=CO400009&pageNum=1&pageSize=10").path("data");
+        assertThat(data.path("total").asLong()).isZero();
+        assertThat(data.path("list")).isEmpty();
+        assertThat(data.path("totalPages").asInt()).isZero();
+    }
+
+    /** T16④ 分页边界：pageSize &gt; 100 与 pageNum &gt; 10000 一律 400 1000C0001；越页返回空列表。 */
+    @Test
+    void governancePaginationLimits() throws Exception {
+        seedFlow("CO400010", REQUESTER, "GATEWAY_API", "gov10-evt-1", "2026-10-01 09:00:00");
+
+        for (final String query : new String[] {"?pageSize=101", "?pageNum=10001"}) {
+            final JsonNode body = getJson(ADMIN, "admin", query, status().isBadRequest());
+            assertThat(body.path("code").asText()).as(query).isEqualTo("1000C0001");
+        }
+
+        final JsonNode beyond = getJson(ADMIN, "admin", "?contractNo=CO400010&pageNum=999&pageSize=10").path("data");
+        assertThat(beyond.path("total").asLong()).as("越页时 total 仍为真实总数").isEqualTo(1L);
+        assertThat(beyond.path("list")).isEmpty();
+    }
+
     /** T16② 主体 / 源类型过滤。 */
     @Test
     void filtersByRequesterAndSourceType() throws Exception {

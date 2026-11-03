@@ -75,7 +75,8 @@ function detail(over: Partial<BillDetail> = {}): BillDetail {
         fromStatus: null,
         toStatus: 'ISSUED',
         reason: '手动出账',
-        operatorSubjectNo: 'S20260925000001',
+        // 与 providerNo 区分，确保断言能识别「取错字段」（复审 P3）
+        operatorSubjectNo: 'S20260925000003',
         createdAt: '2026-11-01T00:10:00',
       },
     ],
@@ -185,7 +186,7 @@ describe('T3 账单详情五分区（hifi §3 P3）', () => {
     const text = wrapper.find('.action-log-table').text()
     expect(text).toContain('创建')
     expect(text).toContain('已开具')
-    expect(text).toContain('S20260925000001')
+    expect(text).toContain('S20260925000003')
   })
 
   it('更正链：原单可见更正单链接，更正单可见返回原单', async () => {
@@ -215,10 +216,12 @@ describe('T3 账单详情五分区（hifi §3 P3）', () => {
 
   it('生成人取创建留痕操作人（无留痕时显示占位）', async () => {
     const { wrapper } = await mountDetail()
-    expect(wrapper.find('.snapshot').text()).toContain('生成人')
+    // 有 CREATE 留痕：必须显示该留痕的操作人主体号，而非仅显示标签
+    expect(wrapper.find('.snapshot').text()).toMatch(/生成人\s*S20260925000003/)
     mockedDetail.mockResolvedValue(detail({ actions: [] }))
     const second = await mountDetail()
-    expect(second.wrapper.find('.snapshot').text()).toContain('生成人')
+    // 无留痕：显示占位，不得回退到其他字段
+    expect(second.wrapper.find('.snapshot').text()).toMatch(/生成人\s*—/)
   })
 })
 
