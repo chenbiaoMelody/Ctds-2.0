@@ -9,6 +9,8 @@ import com.ctds.metering.support.SourceSchemas;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,6 +23,7 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultMatcher;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
@@ -220,6 +223,58 @@ class MeteringGovernanceIntegrationTest {
             final JsonNode body = getJson(ADMIN, "admin", query, status().isBadRequest());
             assertThat(body.path("code").asText()).as(query).isEqualTo("1000C0001");
         }
+    }
+
+    /**
+     * T10（DB-104）长度守卫：33 位 → 400 1000C0001；边界内 6 / 32 位仍 200；
+     * 5 位 → 400（主体号最短 6 位口径）。
+     */
+    @Test
+    void requesterNoLengthGuard() throws Exception {
+        seedFlow("CO400020", REQUESTER, "GATEWAY_API", "gov20-evt-1", "2026-10-01 09:00:00");
+
+        final JsonNode tooLong = getJsonByParams(ADMIN, "admin",
+                Map.of("requesterNo", "S" + "x".repeat(32)), status().isBadRequest());
+        assertThat(tooLong.path("code").asText()).as("33 位越上限").isEqualTo("1000C0001");
+
+        final JsonNode tooShort = getJsonByParams(ADMIN, "admin",
+                Map.of("requesterNo", "S-req"), status().isBadRequest());
+        assertThat(tooShort.path("code").asText()).as("5 位越下限").isEqualTo("1000C0001");
+
+        final JsonNode min = getJsonByParams(ADMIN, "admin",
+                Map.of("requesterNo", "S-req9"), status().isOk());
+        assertThat(min.path("code").asText()).as("6 位边界内允许").isEqualTo("0");
+        assertThat(min.path("data").path("total").asLong()).as("合法但无匹配 → 空结果").isZero();
+
+        final JsonNode max = getJsonByParams(ADMIN, "admin",
+                Map.of("requesterNo", "S" + "y".repeat(31)), status().isOk());
+        assertThat(max.path("code").asText()).as("32 位边界内允许").isEqualTo("0");
+    }
+
+    /** T10（DB-104）字符集守卫：含空格 / 中文 / 分号 / 百分号 → 400 1000C0001；合法字符集仍可读。 */
+    @Test
+    void requesterNoCharsetGuard() throws Exception {
+        seedFlow("CO400021", REQUESTER, "GATEWAY_API", "gov21-evt-1", "2026-10-01 09:00:00");
+
+        for (final String illegal : new String[] {"S-req;gov", "S-req gov", "S-req%gov", "主体编号-01"}) {
+            final JsonNode body = getJsonByParams(ADMIN, "admin",
+                    Map.of("requesterNo", illegal), status().isBadRequest());
+            assertThat(body.path("code").asText()).as("非法字符[%s]", illegal).isEqualTo("1000C0001");
+        }
+
+        final JsonNode legal = getJsonByParams(ADMIN, "admin",
+                Map.of("requesterNo", "S.req-gov_1"), status().isOk());
+        assertThat(legal.path("code").asText()).as("点 / 连字符 / 下划线为合法字符集").isEqualTo("0");
+        assertThat(legal.path("data").path("total").asLong()).as("合法形态无匹配 → 空结果").isZero();
+    }
+
+    private JsonNode getJsonByParams(final String subject, final String roles,
+            final Map<String, String> params, final ResultMatcher expectedStatus) throws Exception {
+        final MockHttpServletRequestBuilder builder = get(PATH)
+                .header("X-Ctds-Subject", subject).header("X-Ctds-Roles", roles);
+        new LinkedHashMap<>(params).forEach(builder::param);
+        final MvcResult result = mockMvc.perform(builder).andExpect(expectedStatus).andReturn();
+        return MAPPER.readTree(result.getResponse().getContentAsString(StandardCharsets.UTF_8));
     }
 
     /** T16⑤ 零回归：3.7.5 既有 R-M1 非当事方仍 404 1011C0008（两套读面并存互不影响）。 */

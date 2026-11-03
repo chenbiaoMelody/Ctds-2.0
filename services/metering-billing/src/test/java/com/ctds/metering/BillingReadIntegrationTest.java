@@ -140,6 +140,11 @@ class BillingReadIntegrationTest {
                 BILLS + "/mine?productId=202")).path("data").path("list");
         assertThat(filtered).as("按产品过滤后本方零数据").isEmpty();
 
+        final JsonNode byProduct = body(getJson(REQUESTER, "requester",
+                BILLS + "/mine?productId=201")).path("data").path("list");
+        assertThat(byProduct).as("按本方产品过滤命中（正例，非恒空）").hasSize(1);
+        assertThat(byProduct.get(0).path("contractNo").asText()).isEqualTo("CO930001");
+
         // 过滤正例（B12-1）：命中而非恒空 / 恒全
         final JsonNode byContract = body(getJson(REQUESTER, "requester",
                 BILLS + "/mine?contractNo=CO930001")).path("data").path("list");
@@ -201,6 +206,22 @@ class BillingReadIntegrationTest {
                 BILLS + "/governance?contractNo=CO930005")).path("data").path("list");
         assertThat(byContract).hasSize(1);
         assertThat(byContract.get(0).path("contractNo").asText()).isEqualTo("CO930005");
+
+        final JsonNode byPeriod = body(getJson(ADMIN, "admin",
+                BILLS + "/governance?period=" + PERIOD)).path("data").path("list");
+        assertThat(byPeriod).as("治理面按周期过滤命中本期两单").hasSize(2);
+        assertThat(byPeriod.findValuesAsText("period")).containsOnly(PERIOD);
+        final JsonNode byOtherPeriod = body(getJson(ADMIN, "admin",
+                BILLS + "/governance?period=2026-09")).path("data").path("list");
+        assertThat(byOtherPeriod).as("治理面按周期过滤不命中他期").isEmpty();
+
+        final JsonNode byProduct = body(getJson(ADMIN, "admin",
+                BILLS + "/governance?productId=204")).path("data").path("list");
+        assertThat(byProduct).as("治理面按产品过滤命中（正例）").hasSize(1);
+        assertThat(byProduct.get(0).path("contractNo").asText()).isEqualTo("CO930004");
+        final JsonNode byOtherProduct = body(getJson(ADMIN, "admin",
+                BILLS + "/governance?productId=999")).path("data").path("list");
+        assertThat(byOtherProduct).as("治理面按产品过滤不命中").isEmpty();
 
         assertThat(getJson(REQUESTER, "requester", BILLS + "/governance").getResponse().getStatus())
                 .as("非运营访问治理面 403").isEqualTo(403);

@@ -44,6 +44,8 @@ public class MeteringController {
 
     /** 合约号形态（CO+6 位，沿本方读面与计费域同口径）。 */
     private static final Pattern CONTRACT_NO = Pattern.compile("^[A-Z]{2}\\d{6}$");
+    /** 计量主体号形态（DB-104：长度 6~32 + 字符集，收紧非法输入；空值仍视为未传）。 */
+    private static final Pattern REQUESTER_NO = Pattern.compile("^[A-Za-z0-9_.-]{6,32}$");
     /** 时间区间入参格式（R-M4 hifi §1：yyyy-MM-dd HH:mm:ss，前端 datetime 控件同型）。 */
     private static final DateTimeFormatter TIME_FORMAT =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
@@ -101,7 +103,7 @@ public class MeteringController {
             @RequestParam(required = false) final Integer pageNum,
             @RequestParam(required = false) final Integer pageSize) {
         final FlowSearchCriteria criteria = new FlowSearchCriteria(
-                contractNo(contractNo), trim(requesterNo), sourceType(sourceType),
+                contractNo(contractNo), requesterNo(requesterNo), sourceType(sourceType),
                 time(from), time(to));
         if (criteria.from() != null && criteria.to() != null
                 && criteria.from().isAfter(criteria.to())) {
@@ -122,6 +124,15 @@ public class MeteringController {
     private static String contractNo(final String value) {
         final String trimmed = trim(value);
         if (trimmed != null && !CONTRACT_NO.matcher(trimmed).matches()) {
+            throw paramInvalid();
+        }
+        return trimmed;
+    }
+
+    /** 主体号过滤（DB-104）：长度 6~32 且字符集合法，否则 → 1000C0001；空值不过滤。 */
+    private static String requesterNo(final String value) {
+        final String trimmed = trim(value);
+        if (trimmed != null && !REQUESTER_NO.matcher(trimmed).matches()) {
             throw paramInvalid();
         }
         return trimmed;

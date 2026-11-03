@@ -94,7 +94,7 @@
 | E6 | 含空格 / 中文 / `;` / `%` | 400 `1000C0001` |
 | E7 | 合法形态但无匹配（如 `S99999999999999`） | 200 + 空列表 + `total = 0` |
 | E8 | 其余六参数既有守卫 | 零回归（`contractNo` / `sourceType` / `from`·`to` / `from > to` / `pageSize > 100` / `pageNum > 10000`） |
-| E9 | 对账：该合约该期无账单 | 沿既有口径（编码段实测登记；预期 404 `1011C0014` 或空态之一，**以实测为准并回填本行**） |
+| E9 | 对账：该合约该期无账单 | **实测 = 404 `1011C0009`**（账单不可见码，同码同文；非 `1011C0014` 合约不存在码）；断言见 `BillingReconciliationAssertionIntegrationTest.reconcileWithoutBillIsNotVisible` |
 | E10 | 冻结态确认 | 409 `1011C0011` |
 | E11 | 差异未澄清再次对账 | 仍 `DIFFERENCE`，差异项不叠加重复（幂等口径，编码段实测登记） |
 | E12 | 基准越页（1 万条中 `pageNum=999`） | 200 + 空列表 + `total` 真实（10000 口径） |
@@ -132,16 +132,16 @@
 
 ## 6. 实施前置检查（编码段第一动作，八项逐项实测留痕）
 
-| # | 检查 | 判定 |
+| # | 检查 | 实测结果（2026-11-03 编码段） |
 | --- | --- | --- |
-| 1 | 分支 `feat/WBS-3.7.8-门户计费测试与集成` 状态、本地 main 梢、工作区 clean | 实测填 |
-| 2 | 基线复跑：metering-billing 例数与结果 / 前端 863 四步（test·typecheck·lint·build）/ 各域模块零回归 | 实测填 |
-| 3 | 覆盖复测（metering-billing，jacoco） | 实测填 |
-| 4 | **R-M4 守卫现状实测**：33 位 `requesterNo` / 含 `;` → 当前返回码（预期 200） | 实测填（T10 红相前提） |
-| 5 | 对账七类差异"实现存在 ↔ 测试引用"逐类对照（确认 `EXTRA_IN_BILL` 缺口） | 实测填 |
-| 6 | 基准可行性：`metering_flow` 列面 / `idx_flow_contract` 索引 / 万级插入耗时 / 容器资源 | 实测填 |
-| 7 | `gates-config.json` SHA256 | 与 `955bdbba…2ee2` 比对 |
-| 8 | 环境：容器三件（mysql / minio / redis）+ 8089 监听 + 起停脚本 `w378-*` 基线 | 实测填 |
+| 1 | 分支 `feat/WBS-3.7.8-门户计费测试与集成` 状态、本地 main 梢、工作区 clean | ✅ 分支在、梢 `edd3aae`（确认批 + 日志批）、工作区 clean；本地 main `d932b32`（领先 `origin/main` `2ae103c` 3 笔纯文档） |
+| 2 | 基线复跑：metering-billing 例数与结果 / 前端 863 四步（test·typecheck·lint·build）/ 各域模块零回归 | ✅ 后端 **57 例 / 0 失败 / 0 跳过**（`build-output/w378-baseline-backend.log`）；前端 **65 文件 863 例全绿** + typecheck / lint / build 全过（`w378-baseline-frontend.log`）；他域零改动，全仓 20 模块 compile 绿相复跑 SUCCESS |
+| 3 | 覆盖复测（metering-billing，jacoco） | ✅ 基线 **95.67%**（covered 5965 / total 6235）；绿相 **95.83%**（5991 / 6252，新代码计入）——均 ≥80% |
+| 4 | **R-M4 守卫现状实测**：33 位 `requesterNo` / 含 `;` → 当前返回码（预期 200） | ✅ **实测 200**（T10 两例首跑 `expected 400 but was 200`，`build-output/w378-red-guard.log`）——守卫缺失事实确认 |
+| 5 | 对账七类差异"实现存在 ↔ 测试引用"逐类对照（确认 `EXTRA_IN_BILL` 缺口） | ✅ 六类各 1~2 处引用（`BillingAutoReconcileIntegrationTest`），**`EXTRA_IN_BILL` = 0 处**（缺口确认） |
+| 6 | 基准可行性：`metering_flow` 列面 / `idx_flow_contract` 索引 / 万级插入耗时 / 容器资源 | ✅ 九列最小投影 + `idx_flow_contract (contract_no, occurred_at)` 实读；万级造数实测 **146.7s**（20 批 × 500，容器自动提交逐批 fsync 口径）；Docker 三容器就绪 |
+| 7 | `gates-config.json` SHA256 | ✅ `955bdbba…2ee2` 与基线逐字一致（零改动自证） |
+| 8 | 环境：容器三件（mysql / minio / redis）+ 8089 监听 + 起停脚本 `w378-*` 基线 | ⚠️ 三容器 Up；**8089 / 8086 / 5173 未监听**（演示链未启动）→ 探针三链（W5）需先起服务，本段未执行，见 §9 E3 |
 
 > 任一项与本文不符 → 登记 E 编号并在编码前回填本文（沿 3.6.8 / 3.7.5 先例）。
 
@@ -178,4 +178,7 @@
 
 | 编号 | 差异 | 理由 | 状态 |
 | --- | --- | --- | --- |
-| （待编码段填写 E1~En） | — | — | — |
+| **E1** | 基准场景① R-M1 **无分页参数**——§1-C 原文写"`pageSize=20` 第 1 页"，与实际端点形状不符；实测按"单合约全量 500 条"计时 | R-M1 端点（3.7.5 交付）不接受分页入参，本卡零改动面不得加参数；"逐条读面"的真实负载即单合约全量，硬套 pageSize 会变成另一个端点（R-M4）而与场景③重复 | ✅ 已按端点真实形状实施（`MeteringFlowBenchmarkIntegrationTest.ownFlowsScenario`） |
+| **E2** | 对账专项差异构造为"用例内直接改测试库账单数量 / 金额（同步复算一致）"与"插入他合约流水 id 到账单明细"，用于**隔离单腿** | 既有 TB9 用例的构造会同时命中多腿（数量 + 缺失），无法证明"逐类可定位、无假绿"；隔离构造只在测试容器库内执行，不改生产代码、不改既有用例 | ✅ 已实施（`BillingReconciliationAssertionIntegrationTest` 七类各 1 例，每例断言 `differences` 恰 1 项） |
+| **E3** | **探针三链（W5 / 链 A7·B14·C8）本段未执行** | 编码段开工时 8089 / 8086 / 5173 均未监听，且链 A/B 需网关、交付、沙箱全链真实事件（九服务 + 演示数据构造）；按会话停机纪律不在末段启动全链 | ⏳ **顺延**：列为续点第 0 项，执行前先 `w375-accept-start.ps1` 起链并重建 metering-billing jar（教训：旧 jar 会让端点整片 404） |
+| **E4** | §3 E9"无账单"口径实测 = **404 `1011C0009`**（非 `1011C0014`） | 实现走 `BillingReconcileService.notVisible()`（账单不可见码），与"合约不存在"分支（`1011C0014`）不同；同码同文防枚举口径不变 | ✅ 已回填并加断言（`reconcileWithoutBillIsNotVisible`） |
