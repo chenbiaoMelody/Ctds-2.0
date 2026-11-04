@@ -153,7 +153,7 @@ class BillingOutbillIntegrationTest {
         final List<Long> detailFlowIds = new ArrayList<>();
         final List<Integer> lineNos = new ArrayList<>();
         for (final JsonNode line : bill.path("details")) {
-            assertThat(line.path("meteringFlowId").isNull()).as("按次明细可溯至计量流水").isFalse();
+            assertThat(line.hasNonNull("meteringFlowId")).as("按次明细可溯至计量流水（字段存在且有值）").isTrue();
             assertThat(line.path("lineType").asText()).isEqualTo("PER_CALL_EVENT");
             assertThat(line.path("unitPrice").asText()).as("明细单价 = 快照单价").isEqualTo("3.00");
             detailFlowIds.add(line.path("meteringFlowId").asLong());
@@ -183,13 +183,16 @@ class BillingOutbillIntegrationTest {
         assertThat(october.path("unitPrice").asText()).as("包月单价快照").isEqualTo("100.00");
         assertThat(september.path("amount").asText()).isEqualTo("100.00");
         assertThat(september.path("unitPrice").asText()).as("包月单价快照与次数无关").isEqualTo("100.00");
-        assertThat(september.path("quantity").isNull()).as("包月无计费数量").isTrue();
+        assertThat(september.has("quantity")).as("包月账单显式返回 quantity 字段").isTrue();
+        assertThat(september.get("quantity").isNull()).as("包月无计费数量（显式 null，非字段缺失）").isTrue();
         assertThat(september.path("details")).hasSize(1);
         assertThat(september.path("details").get(0).path("lineType").asText()).isEqualTo("PERIOD_FEE");
         assertThat(september.path("details").get(0).path("lineNo").asInt()).as("单行明细行号 = 1")
                 .isEqualTo(1);
-        assertThat(september.path("details").get(0).path("meteringFlowId").isNull())
-                .as("包月明细不挂计量流水（非逐笔）").isTrue();
+        assertThat(september.path("details").get(0).has("meteringFlowId"))
+                .as("包月明细显式返回 meteringFlowId 字段").isTrue();
+        assertThat(september.path("details").get(0).get("meteringFlowId").isNull())
+                .as("包月明细不挂计量流水（显式 null，非逐笔）").isTrue();
     }
 
     /** TB3：交易额分成 = 出账参数约定交易额 × 合约快照费率；基数与费率落账单快照。 */
@@ -205,7 +208,8 @@ class BillingOutbillIntegrationTest {
         assertThat(bill.path("amount").asText()).isEqualTo("500.00");
         assertThat(bill.path("baseAmount").asText()).isEqualTo("10000.00");
         assertThat(bill.path("shareRate").asText()).isEqualTo("5.00");
-        assertThat(bill.path("quantity").isNull()).as("分成无计费数量").isTrue();
+        assertThat(bill.has("quantity")).as("分成账单显式返回 quantity 字段").isTrue();
+        assertThat(bill.get("quantity").isNull()).as("分成无计费数量（显式 null，非字段缺失）").isTrue();
         assertThat(bill.path("details")).as("分成单行明细").hasSize(1);
         assertThat(bill.path("details").get(0).path("lineType").asText()).isEqualTo("REVENUE_SHARE_BASE");
         assertThat(bill.path("details").get(0).path("lineNo").asInt()).isEqualTo(1);

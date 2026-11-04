@@ -268,6 +268,28 @@ class MeteringGovernanceIntegrationTest {
         assertThat(legal.path("data").path("total").asLong()).as("合法形态无匹配 → 空结果").isZero();
     }
 
+    /**
+     * T10（DB-104）E2 边界：`requesterNo=` 空串与纯空格 → trim 后为空 → **视为未传**（200 且结果与无参一致），
+     * 不是"过滤成 0 条"。若后续把 trim/isBlank 改成 isEmpty 或删掉 trim，本用例转红。
+     */
+    @Test
+    void requesterNoBlankMeansNoFilter() throws Exception {
+        seedFlow("CO400022", REQUESTER, "GATEWAY_API", "gov22-evt-1", "2026-10-01 09:00:00");
+        seedFlow("CO400022", REQUESTER, "GATEWAY_API", "gov22-evt-2", "2026-10-01 10:00:00");
+
+        final JsonNode baseline = getJsonByParams(ADMIN, "admin", Map.of(), status().isOk());
+        final long baselineTotal = baseline.path("data").path("total").asLong();
+        assertThat(baselineTotal).as("无过滤基线非空（否则'不过滤'不可判）").isPositive();
+
+        for (final String blank : new String[] {"", "   "}) {
+            final JsonNode body = getJsonByParams(ADMIN, "admin",
+                    Map.of("requesterNo", blank), status().isOk());
+            assertThat(body.path("code").asText()).as("空串/纯空格视为未传[%s]", blank).isEqualTo("0");
+            assertThat(body.path("data").path("total").asLong())
+                    .as("不过滤：结果与无参基线逐值一致[%s]", blank).isEqualTo(baselineTotal);
+        }
+    }
+
     private JsonNode getJsonByParams(final String subject, final String roles,
             final Map<String, String> params, final ResultMatcher expectedStatus) throws Exception {
         final MockHttpServletRequestBuilder builder = get(PATH)

@@ -177,7 +177,8 @@ class MeteringFlowBenchmarkIntegrationTest {
             }
         }
         assertThat(size).as("场景[%s] 返回条目数", label).isEqualTo(expectedSize);
-        return finish(label, samples, size, size);
+        // total = -1：R-M1 / R-M2 无分页语义，本场景不采集"分页总数"（避免把条目数误记成 total）
+        return finish(label, samples, -1, size);
     }
 
     private ScenarioResult finish(final String label, final List<Long> samples, final long total,
@@ -262,9 +263,11 @@ class MeteringFlowBenchmarkIntegrationTest {
                 .put("seedMillis", seedMillis);
         root.put("roundsPerScenario", ROUNDS);
         root.put("warmupRounds", WARMUP_ROUNDS);
+        final boolean allWithinBudget = results.values().stream()
+                .allMatch(r -> r.p95Ms() <= P95_BUDGET_MS);
         root.putObject("threshold")
                 .put("metric", "P95").put("unit", "ms").put("budget", P95_BUDGET_MS)
-                .put("verdict", "PASS");
+                .put("verdict", allWithinBudget ? "PASS" : "FAIL");
         root.putObject("boundary")
                 .put("channel", "MockMvc 进程内全链（无网关与网络层）")
                 .put("load", "串行 50 轮，无并发加压——门户 ≥1000 并发与网关 ≥2000 TPS 归 WBS-4.2.2/4.2.3")

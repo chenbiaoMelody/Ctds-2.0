@@ -352,6 +352,7 @@ class BillingReconciliationAssertionIntegrationTest {
         final JsonNode second = reconcile("CO940011", PERIOD).path("data");
 
         assertThat(second.path("conclusion").asText()).isEqualTo("DIFFERENCE");
+        assertThat(first.path("differences")).as("首次对账差异非空（否则幂等结论空洞）").isNotEmpty();
         assertThat(second.path("differences")).hasSameSizeAs(first.path("differences"));
         final List<String> types = new ArrayList<>();
         second.path("differences").forEach(item -> types.add(item.path("type").asText()));
@@ -419,7 +420,7 @@ class BillingReconciliationAssertionIntegrationTest {
     private void seedUsage(final String contractNo, final int allowedCount) {
         seedCounter(contractNo, allowedCount);
         for (int i = 0; i < allowedCount; i++) {
-            seedUsageLog(contractNo, i + 1, "2026-10-0" + (i + 1) + " 09:00:00");
+            seedUsageLog(contractNo, i + 1, String.format("2026-10-%02d 09:00:00", i + 1));
         }
     }
 
