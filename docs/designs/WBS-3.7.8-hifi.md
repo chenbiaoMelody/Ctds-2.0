@@ -16,7 +16,7 @@
 | 新增守卫 | `requesterNo`：`trim()` 后为空 → 视为未传（不过滤）；非空时长度 **6~32**、字符集 **`^[A-Za-z0-9_.-]+$`**，不满足 → `1000C0001`（通用参数错误，文案沿既有 `ParamInvalid`） |
 | 既有守卫 | `contractNo` 正则 `^[A-Z]{2}\d{6}$` / `sourceType` 枚举 / `from`·`to` 格式 / `from > to` / 分页上下限（`PageQuery` 1~10000 / 1~100）——**零改动** |
 | 语义边界 | 仅收紧"非法输入直接 400"，不改变"合法输入 → 过滤结果"与"空 → 不过滤"；不新增错误码、不改响应形状 |
-| 落点 | `services/metering-billing/src/main/java/com/ctds/metering/interfaces/MeteringController.java`（`governanceFlows` 守卫段，现有 `:114-158` 内追加 requesterNo 分支；具体行号编码段实测回填） |
+| 落点 | `services/metering-billing/src/main/java/com/ctds/metering/interfaces/MeteringController.java`（`governanceFlows` 端点体 `:95-114` + 参数校验助手段 `:116-169`；`REQUESTER_NO` 常量 `:48`、`requesterNo()` 分支 `:132-139`——实测行号回填） |
 
 ### 1-B 对账断言映射（B11 硬约束 → 七类差异 → 断言）
 
@@ -60,6 +60,8 @@
 | **C 读面权限与防枚举** | 8：R-M4 运营 200 / 普通档 403 / 主体 C 直连 404 同码同文（若端点按权限先拒则 403，判定以"不可读"为准，编码段实测登记口径）/ 非法 `contractNo` 400 / 非法 `sourceType` 400 / 时间格式 400 / `from > to` 400 / `requesterNo` 超长 400 `1000C0001`（DB-104 兑现） | B12-1 / B12-3 + DB-104 |
 
 > 探针一律回环直连 `http://127.0.0.1:8089` + 身份头（沿剧本操作路径表口径，ADR-016 §2.7 信任边界）；网关 8086 代理腿可验则补验 1 组（JWT 可得时），不可得则如实登记"未验"。
+>
+> **W5 实测口径登记（2026-11-04 探针段）**：① 链 C 判定点 3 实测 = **403 `1000C0005`**（`metering.governance` 权限点先拒，未进入归属判定；按本行"判定以不可读为准"口径通过，与普通档 403 同形；防枚举的正向证据由 A7 `1011C0008` 与 B9 `1011C0009` 同码同文承载）；② 网关 8086 代理腿**已补验 1 组**（HS256 演示 JWT 自签，`GET /api/v1/metering/contracts/CO000031/flows` → 200 + 3 条流水，证据行 A0）；③ 链 A 判定点 A4 的沙箱作业 / 导出单条锚取既有真实事件源（CO000026：`SANDBOX_JOB` 8 条、`SANDBOX_EXPORT` 4 条，各 `sourceNo` 唯一不叠加）；④ 链 A 判定点 A2 的"拒绝留痕独立"取证载体 = 交付域 `GET /api/v1/deliveries/{contractNo}/action-logs` 的 DENIED 行（剧本 S1-2 列网关审计文件 `logs/audit-*.jsonl` 的 `gateway.delivery.denied` 行；两载体同源留痕、本探针取平台读面，登记为等价载体）；⑤ 链 A 判定点 A5 只覆盖 S1-5 的"免费档零账单"半段（`1011C0015` + 账单零新增），其"调用事件留痕可查"半段由 A1 同一读面（P0 无计量则无流水）与状态机语义承载，未单列判定点。
 
 ---
 
@@ -162,7 +164,7 @@
 1. 资金语义红线：不新增任何资金动作；账单金额与明细不可改（本卡只加断言，不加写面）；
 2. 不改上游：3.7.5 / 3.7.6 / 3.7.7 端点、表、错误码、权限点零改动（W1 仅收紧参数校验，复用 `1000C0001`）；
 3. 零门禁配置改动（红线 3）；变异范围不扩；覆盖只测量不开门禁；
-4. 演示库零触碰：基准与差异构造全部在**测试容器库**内完成；演示库差异构造仍由剧本附录 A 人工执行；
+4. 演示库写面边界：基准与七类差异构造全部在**测试容器库**内完成；**探针链（W5）需真实业务事件**，按 C-7.2 剧本前置数据口径经平台 API 在演示库构造并逐项登记（任务卡 §四⑦，DB-64 累计口径）；**唯一直改库动作 = 剧本附录 A 差异构造**（`LIMIT 1` + `ROW_COUNT()=1` 断言 + 原值还原复验）；非演示库一律禁止；
 5. 零新依赖 / 镜像 / 迁移 / 权限点 / 错误码；
 6. 剧本业务判定一字不改；
 7. 规格缺口（如 E9 无账单口径不明）→ 实测登记为主，若构成规格歧义则停止并上报，不在本卡私自定口径。
@@ -174,11 +176,14 @@
 **证据**（`build-output/` 不入库，路径写入日志与任务卡）：
 `w378-red-{reconcile,guard}.log` / `w378-probe-chain{A,B,C}.log` / `w378-bench-<ts>.json` / 覆盖复测 `jacoco.csv` 摘要 / 前端与全仓复跑日志。
 
+> **证据可读性说明（W5 探针段）**：`build-output/` 受 `.gitignore` 约束，**按 .gitignore 检索的工具可能列不出这些文件**（不等于缺失）。实读清单（2026-11-04 实测 `Get-ChildItem build-output -Filter 'w378*'`）：`w378-baseline-backend.log` / `w378-baseline-frontend.log` / `w378-red-guard.log` / `w378-red-reconcile.log` / `w378-green-backend.log` / `w378-green-checkstyle.log` / `w378-green-compile-all.log` / `w378-green-guard.log` / `w378-green-reconcile.log` / `w378-bench-run.log` / `w378-probe-package.log` / `w378-probe-startchain.log` / `w378-probe-chain{A,B,C}.log`（+ `chainB.log.prev` 为上一轮重放态留痕）；基准 JSON 在 `services/metering-billing/target/benchmark/`。
+
 **实现差异登记表（编码段回填）**
 
 | 编号 | 差异 | 理由 | 状态 |
 | --- | --- | --- | --- |
 | **E1** | 基准场景① R-M1 **无分页参数**——§1-C 原文写"`pageSize=20` 第 1 页"，与实际端点形状不符；实测按"单合约全量 500 条"计时 | R-M1 端点（3.7.5 交付）不接受分页入参，本卡零改动面不得加参数；"逐条读面"的真实负载即单合约全量，硬套 pageSize 会变成另一个端点（R-M4）而与场景③重复 | ✅ 已按端点真实形状实施（`MeteringFlowBenchmarkIntegrationTest.ownFlowsScenario`） |
 | **E2** | 对账专项差异构造为"用例内直接改测试库账单数量 / 金额（同步复算一致）"与"插入他合约流水 id 到账单明细"，用于**隔离单腿** | 既有 TB9 用例的构造会同时命中多腿（数量 + 缺失），无法证明"逐类可定位、无假绿"；隔离构造只在测试容器库内执行，不改生产代码、不改既有用例 | ✅ 已实施（`BillingReconciliationAssertionIntegrationTest` 七类各 1 例，每例断言 `differences` 恰 1 项） |
-| **E3** | **探针三链（W5 / 链 A7·B14·C8）本段未执行** | 编码段开工时 8089 / 8086 / 5173 均未监听，且链 A/B 需网关、交付、沙箱全链真实事件（九服务 + 演示数据构造）；按会话停机纪律不在末段启动全链 | ⏳ **顺延**：列为续点第 0 项，执行前先 `w375-accept-start.ps1` 起链并重建 metering-billing jar（教训：旧 jar 会让端点整片 404） |
+| **E3** | **探针三链（W5 / 链 A7·B14·C8）本段未执行**（编码段顺延） | 编码段开工时 8089 / 8086 / 5173 均未监听，且链 A/B 需网关、交付、沙箱全链真实事件（九服务 + 演示数据构造）；按会话停机纪律不在末段启动全链 | ✅ **已执行（2026-11-04 探针段）**：重建 metering-billing jar（`-pl services/metering-billing -am -DskipTests package`）后起九服务链；**链 A 7/7、链 B 14/14、链 C 8/8 全 PASS**（零 FAIL），证据 `build-output/w378-probe-chain{A,B,C}.log`；网关 8086 代理腿补验 A0（200）；演示库构造与差异动作按 `C-7.2-账单核对` 附录 A 显式执行并**已还原**（构造与还原逐次留痕，原值回归后对账复验 PASS） |
+| **E5** | 链 B 探针脚本**首跑态 / 重放态语义不同**：首跑实测 `201`（出账两腿）+ `confirm 200`（严格）；重放态因同合约同账期唯一键读既有账单、且账单已 `CONFIRMED`，`confirm` 返回 409（幂等拒绝） | 账单唯一键与状态机是既有业务语义（B10-1 / B10-2），探针不得为"好看"放宽断言；若为每次重放新建合约会造成无界演示数据 | ✅ **已按"干净首跑 + 严格断言"实施**：最终证据取自新合约 `CO000038` / `CO000039` 的首跑（`BL000012` 按次 201、`BL000013` 分成 201、更正单 `BL000014` 201、`confirm 200 → CONFIRMED`）；脚本每次运行把上一轮日志存 `w378-probe-chainB.log.prev`，重放态自动降级为读取既有账单（`created=false` 如实打印，不冒充 201）；差异构造/还原均加 `LIMIT 1` + `ROW_COUNT()=1` 断言 |
 | **E4** | §3 E9"无账单"口径实测 = **404 `1011C0009`**（非 `1011C0014`） | 实现走 `BillingReconcileService.notVisible()`（账单不可见码），与"合约不存在"分支（`1011C0014`）不同；同码同文防枚举口径不变 | ✅ 已回填并加断言（`reconcileWithoutBillIsNotVisible`） |
