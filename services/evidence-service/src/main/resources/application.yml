@@ -1,0 +1,38 @@
+spring:
+  application:
+    name: evidence-service
+  # 默认 profile 不装载数据源（沿 kms/metering-billing 先例）：classpath 有 spring-boot-starter-jdbc
+  # 会激活 DataSourceAutoConfiguration 并要求配置数据源；演示与服务一律 mysql profile
+  # （application-mysql.yml），默认 profile 仅作配置级安全默认。
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+
+server:
+  port: 8090
+  # 演示期安全边界（ADR-016 §2.7）：服务仅绑定回环，不得对外暴露；
+  # k8s 部署经清单环境变量放宽（ClusterIP 不外露）。
+  address: 127.0.0.1
+
+logging:
+  file:
+    name: logs/app.log
+  structured:
+    format:
+      console: logstash
+      file: logstash
+
+ctds:
+  # RBAC（WBS-3.8.2 hifi §1.2 Q6-A 权限最小面，实测基线 53 → 本卡 +2 = 55）：
+  # 治理档持对外面全部读/核验/重试；业务系统服务身份只持内部写面（3.8.3 埋点使用）。
+  # 不新增 evidence.read（参与方读面归 3.8.4 评估）。
+  auth:
+    permissions:
+      admin: evidence.governance
+      evidence-internal: evidence.internal.write
+  # 存证网关（Q1-A）：provider 固定 local = 本地不可变哈希链账本；未知值启动 fail-fast。
+  # enabled=false 仅用于演示期构造"链不可达"（需重启，无运行期开关/后门）。
+  evidence:
+    chain:
+      provider: ${CTDS_EVIDENCE_CHAIN_PROVIDER:local}
+      enabled: ${CTDS_EVIDENCE_CHAIN_ENABLED:true}

@@ -44,6 +44,8 @@
     <module>services/connector-service</module>
     <!-- 计量采集服务（WBS 3.7.5；计量事件采集落库 + 计量模型聚合查询 + 三方勾稽读面，规格 C-7.1-7.2 B7/B8） -->
     <module>services/metering-billing</module>
+    <!-- 存证服务（WBS 3.8.2；存证写入 / 核验 / 重试 + EvidenceGateway 抽象，规格 C-8.1-8.2 B1~B4） -->
+    <module>services/evidence-service</module>
   </modules>
 
   <properties>

@@ -41,7 +41,7 @@
 | --- | --- | --- | --- |
 | GET | `/api/v1/evidence/records` | 分页清单：`stageType` / `businessNo` / `status` / `from` / `to` / `pageNum`（≤10000）/ `pageSize`（≤100） | 400 `1012C0002`（无任何过滤条件 / 时间窗 >90 天 / 分页越界） |
 | GET | `/api/v1/evidence/records/{evidenceNo}` | 详情 + 状态流转与核验留痕（按时间正序） | 404 `1012C0001` |
-| POST | `/api/v1/evidence/records/{evidenceNo}/verify` | 核验三态；**200** 返回结论（不一致与未上链都不是 HTTP 错误） | 404 `1012C0001` |
+| POST | `/api/v1/evidence/records/{evidenceNo}/verify` | 核验三态；**200** 返回结论（不一致与未上链都不是 HTTP 错误） | 404 `1012C0001`；503 `1012S0001`（已上链但链不可达，见 §10 E2） |
 | POST | `/api/v1/evidence/records/{evidenceNo}/retry` | 重试上链 | 409 `1012C0003`（已上链）；503 `1012S0001`（仍不可达，记录保持 FAILED） |
 | GET | `/api/v1/evidence/overview` | 计数：`onChainCount` / `pendingCount` / `failedCount` / `lastFailedAt` | — |
 
@@ -117,7 +117,7 @@ CREATE TABLE evidence_chain_block (
 ```
 
 - 取号（Q4-A）：`INSERT INTO evidence_no_seq(seq_date,next_val) VALUES(?,1) ON DUPLICATE KEY UPDATE next_val = LAST_INSERT_ID(next_val + 1)` → `SELECT LAST_INSERT_ID()`；首日插入时 `LAST_INSERT_ID()` 需按既有取号实现同款处理（编码段以 subject / contract 取号类为模板，hifi §7-3 实测）。
-- **不可改删的结构性保证**：仓储端口（`EvidenceRepository`）只暴露 `insert` / `updateStatus` / `findByNo` / `findByIdempotentKey` / `page` / `countByStatus`；**无 update 内容、无 delete 方法**；`evidence_chain_block` 只有 insert 与按 txId 查询。
+- **不可改删的结构性保证**：仓储端口（`EvidenceRepository`）只暴露 `insert` / `updateStatus` / `findByNo` / `findByIdempotentKey` / `page`（返回含 total 的切片）/ `countByStatus`，另加三个**只读 / 追加型**辅助方法 `appendAction` / `lastFailedAt` / `findActions`（编码段勘误 E1：留痕追加、概览最近失败时点、详情时间线所需；只增不减，**无 update 内容、无删除方法**）；`evidence_chain_block` 只有 insert 与按 txId / 载荷摘要查询。
 - 列注释与迁移头沿 ADR-009 与既有 V1 迁移模板（charset / collation / 注释风格一致）。
 
 ## 3. 摘要规范化与上链载荷（封闭，可复算）
@@ -167,6 +167,7 @@ payloadDigest = contentDigest 原值
 
 - 事务边界：① 记录 insert（独立事务提交，保证"链失败也有记录"）；② 账本 insert（独立事务，`uk_chain_payload` 保证重放幂等）；③ 状态更新 + 留痕（同一事务）；三段分离 = 规格 B2-1 解耦与 fail-visible 的结构性承载；
 - 崩溃窗口：②成功 / ③未执行 → 记录停在 `PENDING`，重试走 ②（唯一键命中 → 取回既有回执）→ ③，不产生第二份账本；
+- **状态写入失败口径（P2-3 修复批定稿）**：`try` 只包 `gateway.submit`；② 成功后 ③ 写入失败**不回写 `FAILED`**（不伪造链结果），记录保持原状态并按 500 `1012S0002` 上抛；恢复路径 = 手动重试命中 `uk_chain_payload` 取回原回执后再推进 ③；
 - 幂等：`uk_evidence_idem` 兜底并发（`DuplicateKeyException` → 回查返回既有记录，`duplicate=true`）；
 - 重试与核验均不修改记录内容列（SQL 层只有 `status/chain_tx_id/chain_block_no/retry_count/last_error_summary/updated_at` 可更新）。
 
@@ -188,8 +189,8 @@ payloadDigest = contentDigest 原值
 
 ```java
 public interface EvidenceGateway {
-    ChainReceipt submit(ChainPayload payload);          // 失败抛 EvidenceChainUnavailableException
-    Optional<ChainEntry> findByTxId(String chainTxId);  // 取不到 = 空，不抛
+    ChainReceipt submit(ChainPayload payload);          // 不可达抛 EvidenceChainUnavailableException
+    Optional<ChainEntry> findByTxId(String chainTxId);  // 不可达抛链异常（→503）；查无此块 = 空
 }
 ```
 
@@ -269,6 +270,14 @@ public interface EvidenceGateway {
 3. 自建链公信力边界不变（ADR-004 §4-1，V1.5 增强）；
 4. 本卡不实现 B5~B8（3.8.4），overview 仅为最小只读计数承载。
 
-**勘误（编码段回填区）**：暂无。
+**勘误（编码段回填区，2026-11-05）**：
+
+| 编号 | 设计原文 | 实现落点与理由 |
+| --- | --- | --- |
+| E1 | §2 仓储端口"只暴露 insert / updateStatus / findByNo / findByIdempotentKey / page / countByStatus" | 补 `appendAction`（留痕追加）/ `lastFailedAt`（overview 最近失败时点）/ `findActions`（详情时间线）三个只读或追加方法，`page` 返回 `EvidencePage(list,total)`。**不新增任何改内容或删除方法**；T9 以源码断言承载（端口无 delete/remove/purge、状态 UPDATE 只碰六列、账本实现无 UPDATE / DELETE、接口层无 PUT/PATCH/DELETE） |
+| E2 | §6"`enabled=false` 时 submit 一律抛不可达" | 实现同时让 `findByTxId` 抛不可达。**核验口径（P1-1 / P2-4 修复批定稿）**：仅当记录本地状态为 `ON_CHAIN` 时才查链——查链失败 → 503 `1012S0001`（`EvidenceExceptionHandler` 统一映射），且**不留 `VERIFIED` 留痕、记录保持不变**；本地非 `ON_CHAIN`（`PENDING` / `FAILED`）直接 `NOT_ON_CHAIN`，不查链（链关闭不影响该结论，与 `verifyFailedRecordReportsNotOnChain` 一致） |
+| E3 | §2 取号样例 `INSERT ... VALUES(?,1)` + Last insert id | `seq_date` 为 `CHAR(8)`（yyyyMMdd），实现按**字符串**绑定业务日；若绑定 `java.sql.Date` 会被 MySQL 隐式转为 `yyyy-MM-dd`（10 字符）触发 "Data too long"（编码段实测） |
+| E4 | §4 事务边界①"记录 insert（独立事务）" | 实现为 **record insert + CREATED 留痕同一事务**（`EvidenceRegistrationWriter`），保证留痕无空窗；账本写入（②）与状态 + 流转留痕（③）仍为独立事务 |
+| E5 | §1.1 `actorSubjectNo` 6~32 位 | 治理动作（核验 / 重试）的操作人同样走该形态校验后落 `evidence_record_action_log.actor_subject_no`（列长 32），非法身份 → 1012C0002 |
 
 **设计-实现一致性承诺**：实现与已确认本文件不一致 = 打回项（章程 2.6）。
