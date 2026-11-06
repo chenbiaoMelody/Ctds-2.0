@@ -42,10 +42,10 @@ public class SpaceEvidencePublisher {
                 operator, occurredAt);
     }
 
-    /** 空间策略覆盖生效（Q4：以覆盖成功承载，同值幂等 / 红线拒绝不调用）。 */
-    public void policyEffective(final long spaceId, final long actionLogId, final String subjectNo,
-            final String operator, final LocalDateTime occurredAt) {
-        publish("SPACE" + spaceId + ":POLICY-AL" + actionLogId, OP_POLICY_INHERITED, subjectNo,
+    /** 空间策略覆盖生效（Q4：以覆盖成功承载，同值幂等 / 红线拒绝不调用；主体 = 操作人）。 */
+    public void policyEffective(final long spaceId, final long actionLogId, final String operator,
+            final LocalDateTime occurredAt) {
+        publish("SPACE" + spaceId + ":POLICY-AL" + actionLogId, OP_POLICY_INHERITED, operator,
                 operator, occurredAt);
     }
 

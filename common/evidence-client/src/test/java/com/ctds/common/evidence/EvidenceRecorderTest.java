@@ -118,6 +118,17 @@ class EvidenceRecorderTest {
         assertThat(server.count()).isEqualTo(1);
     }
 
+    /** T4-补：存证服务不可达（连接被拒）→ 不抛出、0 请求（fail-open，规格 B2-1）。 */
+    @Test
+    void swallowsUnreachableService() {
+        properties.setBaseUrl("http://127.0.0.1:1");
+        properties.setConnectTimeout(Duration.ofMillis(300));
+        properties.setReadTimeout(Duration.ofMillis(300));
+
+        assertThatCode(() -> recorder().record(event())).doesNotThrowAnyException();
+        assertThat(server.count()).isZero();
+    }
+
     /** T5：base-url 空白 → 0 请求、不抛出。 */
     @Test
     void skipsWhenBaseUrlBlank() {

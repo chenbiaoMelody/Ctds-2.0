@@ -234,9 +234,10 @@ class ContractEvidenceIntegrationTest {
     void evidenceUnavailableKeepsSignAndUsageSuccessful() throws Exception {
         STUB.respond(500, "{\"code\":\"1012S0001\",\"message\":\"unavailable\"}");
         final String contractNo = toEffective("不可达", quotaStrategy(1));
+        STUB.resetEvidence();
 
         assertThat(policyExecutionService.check(contractNo, use()).allowed()).isTrue();
-        assertThat(STUB.requests()).isPositive();
+        assertThat(STUB.requests()).as("放行恰一次埋点尝试（不漏采、不重复）").isEqualTo(1);
     }
 
     // ==== helper ====

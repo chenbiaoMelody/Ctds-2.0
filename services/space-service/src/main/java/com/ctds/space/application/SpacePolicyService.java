@@ -161,8 +161,7 @@ public class SpacePolicyService {
                     PolicyStatus.ACTIVE, null, null), overrideLog);
         }
         // WBS-3.8.3 E2：覆盖生效后发布授权环节存证（Q4 以覆盖成功承载；同值 / 红线分支不经过此处）
-        evidencePublisher.policyEffective(spaceId, actionLogId, subject, subject,
-                overrideLog.createdAt());
+        evidencePublisher.policyEffective(spaceId, actionLogId, subject, overrideLog.createdAt());
         return effectiveRow(spaceId, platformEntry);
     }
 

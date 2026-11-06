@@ -49,7 +49,7 @@ class SpaceEvidenceIntegrationTest {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final String BASE = "/api/v1/data-spaces";
-    private static final String DID = "did:ctds:abc123def456";
+    private static final String DID_PREFIX = "did:ctds:";
     private static final EvidenceStub STUB;
 
     static {
@@ -100,8 +100,9 @@ class SpaceEvidenceIntegrationTest {
         assertThat(event.path("operationType").asText()).isEqualTo("SPACE_MEMBER_ADMITTED");
         assertThat(event.path("businessNo").asText())
                 .isEqualTo("SPACE" + id + ":ADMISSION" + admissionId);
-        assertThat(event.path("subjectDid").asText()).isEqualTo(DID);
+        assertThat(event.path("subjectDid").asText()).isEqualTo(DID_PREFIX + "invitee-e1");
         assertThat(event.path("actorSubjectNo").asText()).isEqualTo("invitee-e1");
+        assertThat(STUB.didSubjects()).as("DID 取自被准入成员").containsExactly("invitee-e1");
         assertThat(event.path("occurredAt").asText()).isNotBlank();
     }
 
@@ -139,7 +140,8 @@ class SpaceEvidenceIntegrationTest {
                 .allMatch(no -> no.startsWith("SPACE" + id + ":POLICY-AL"))
                 .doesNotHaveDuplicates();
         assertThat(events).extracting(event -> event.path("subjectDid").asText())
-                .containsOnly(DID);
+                .containsOnly(DID_PREFIX + "owner-e3");
+        assertThat(STUB.didSubjects()).as("DID 取自覆盖提交人").containsOnly("owner-e3");
     }
 
     // ==== T12 红线放宽拒绝 / 同值幂等 → 0 事件（Q10）====
@@ -309,6 +311,10 @@ class SpaceEvidenceIntegrationTest {
             return didSubjects.size();
         }
 
+        List<String> didSubjects() {
+            return List.copyOf(didSubjects);
+        }
+
         List<JsonNode> events() {
             return evidenceBodies.stream().map(body -> {
                 try {
@@ -331,7 +337,7 @@ class SpaceEvidenceIntegrationTest {
                     path.length() - "/current".length());
             didSubjects.add(subjectNo);
             final String didJson = "ACTIVE".equals(didStatus)
-                    ? "\"" + DID + "\"" : "null";
+                    ? "\"" + DID_PREFIX + subjectNo + "\"" : "null";
             write(exchange, 200, "{\"code\":\"0\",\"message\":\"success\",\"data\":"
                     + "{\"subjectNo\":\"" + subjectNo + "\",\"did\":" + didJson
                     + ",\"status\":\"" + didStatus + "\"}}");

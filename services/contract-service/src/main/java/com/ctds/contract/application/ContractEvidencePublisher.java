@@ -9,6 +9,7 @@ import com.ctds.contract.domain.TemplateType;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.util.Locale;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -79,16 +80,16 @@ public class ContractEvidencePublisher {
             final LocalDateTime occurredAt) {
         final Optional<String> did = contractQueryService.requesterDid(contractNo);
         if (did.isEmpty()) {
-            log.warn("使用存证跳过（需方 DID 缺失）: businessNo=USG{}", usageLogId);
+            log.warn("使用存证跳过（需方 DID 缺失）: businessNo={}", businessNo(usageLogId));
             return;
         }
         evidenceRecorder.record(new EvidenceEvent(STAGE_USAGE, businessNo(usageLogId),
                 OP_USAGE_ALLOWED, did.get(), toInstant(occurredAt), requesterNo));
     }
 
-    /** 放行留痕单号（12 位零填充，如 USG000000001024）。 */
+    /** 放行留痕单号（12 位零填充，如 USG000000001024；Locale.ROOT 保证恒 ASCII 数字）。 */
     static String businessNo(final long usageLogId) {
-        return "USG" + String.format("%012d", usageLogId);
+        return "USG" + String.format(Locale.ROOT, "%012d", usageLogId);
     }
 
     private boolean isPublicDataAuthorization(final String templateNo) {

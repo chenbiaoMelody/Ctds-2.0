@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -55,7 +56,9 @@ public class DidInternalClient {
         final HttpResponse<String> response;
         try {
             final HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(baseUrl + "/api/v1/did/internal/subjects/" + subjectNo + "/current"))
+                    .uri(URI.create(baseUrl + "/api/v1/did/internal/subjects/"
+                            + URLEncoder.encode(subjectNo, StandardCharsets.UTF_8).replace("+", "%20")
+                            + "/current"))
                     .timeout(READ_TIMEOUT)
                     .header("X-Ctds-Subject", INTERNAL_SUBJECT)
                     .header("X-Ctds-Roles", INTERNAL_ROLES)
