@@ -247,6 +247,11 @@ public interface EvidenceGateway {
 | T14 | 边界：`businessNo` 5/6/64/65 位、非法字符；`occurredAt` 未来 +6 分钟拒绝；`pageSize=101` 拒绝；无过滤条件拒绝 | B1-1 / B6-2 口径 |
 | T15 | 崩溃窗口重放：账本已写、状态未更 → 重试命中 `uk_chain_payload` 返回原回执，不产生第二块 | B2-2 / B2-3 |
 | T16 | 卸载/禁用适配器后 `submit` 抛不可达且被映射为 `FAILED`（不吞异常、不 5xx 到业务方） | B4-1 |
+| T17 | 幂等唯一键兜底：预检漏过 + `insert` 冲突 → 回查原记录；1 行 / 1 块 / 2 条留痕 / `duplicate=true` + 同编号同 txId | B2-2 |
+| T18 | 核验遇链不可达：本地 `ON_CHAIN` + 链关闭 → 503 `1012S0001` + 常量文案 + 记录不变 + 无 `VERIFIED` 留痕 | B3-1 / B4-1 / §10 E2 |
+| T19 | 状态写入失败：链成功 + ③ 失败 → 500 `1012S0002` + 记录保持原状态 + 无 `CHAIN_FAILED` 留痕 + 账本 1 块 | B2-1 / §4 |
+
+> T17~T19 为 2026-11-05 评审循环 1 修复批补入的实现锚点（对应 `EvidenceIdempotencyRaceIntegrationTest` / `EvidenceVerifyChainUnavailableIntegrationTest` / `EvidenceStateWriteFailureIntegrationTest`）；T1~T16 编号与口径不变。
 
 - 单元（适配器 / 摘要 / 取号 / 状态机）+ 集成（Testcontainers MySQL，每类独立库）；集成测试禁用真链，全部走本地适配器；
 - 行覆盖自设目标 ≥80%（门禁整体 70%，`coreModules` 不含 evidence，配置零改动）。
@@ -275,7 +280,7 @@ public interface EvidenceGateway {
 | 编号 | 设计原文 | 实现落点与理由 |
 | --- | --- | --- |
 | E1 | §2 仓储端口"只暴露 insert / updateStatus / findByNo / findByIdempotentKey / page / countByStatus" | 补 `appendAction`（留痕追加）/ `lastFailedAt`（overview 最近失败时点）/ `findActions`（详情时间线）三个只读或追加方法，`page` 返回 `EvidencePage(list,total)`。**不新增任何改内容或删除方法**；T9 以源码断言承载（端口无 delete/remove/purge、状态 UPDATE 只碰六列、账本实现无 UPDATE / DELETE、接口层无 PUT/PATCH/DELETE） |
-| E2 | §6"`enabled=false` 时 submit 一律抛不可达" | 实现同时让 `findByTxId` 抛不可达。**核验口径（P1-1 / P2-4 修复批定稿）**：仅当记录本地状态为 `ON_CHAIN` 时才查链——查链失败 → 503 `1012S0001`（`EvidenceExceptionHandler` 统一映射），且**不留 `VERIFIED` 留痕、记录保持不变**；本地非 `ON_CHAIN`（`PENDING` / `FAILED`）直接 `NOT_ON_CHAIN`，不查链（链关闭不影响该结论，与 `verifyFailedRecordReportsNotOnChain` 一致） |
+| E2 | §6"`enabled=false` 时 submit 一律抛不可达" | 实现同时让 `findByTxId` 抛不可达。**核验口径（P1-1 / P2-4 修复批定稿）**：仅当记录本地状态为 `ON_CHAIN` 时才查链——查链失败 → 503 `1012S0001`（`EvidenceExceptionHandler` 统一映射），且**不留 `VERIFIED` 留痕、记录保持不变**；本地非 `ON_CHAIN`（`PENDING` / `FAILED`）直接 `NOT_ON_CHAIN`，不查链（链关闭不影响该结论，与 `verifyFailedRecordReportsNotOnChain` 一致）；**账本可达但查无此块**（`findByTxId` 返回空，即账本缺块）→ `MISMATCH`（`actualDigest` 为空），不判 503（循环 2 复审 P3-1 澄清） |
 | E3 | §2 取号样例 `INSERT ... VALUES(?,1)` + Last insert id | `seq_date` 为 `CHAR(8)`（yyyyMMdd），实现按**字符串**绑定业务日；若绑定 `java.sql.Date` 会被 MySQL 隐式转为 `yyyy-MM-dd`（10 字符）触发 "Data too long"（编码段实测） |
 | E4 | §4 事务边界①"记录 insert（独立事务）" | 实现为 **record insert + CREATED 留痕同一事务**（`EvidenceRegistrationWriter`），保证留痕无空窗；账本写入（②）与状态 + 流转留痕（③）仍为独立事务 |
 | E5 | §1.1 `actorSubjectNo` 6~32 位 | 治理动作（核验 / 重试）的操作人同样走该形态校验后落 `evidence_record_action_log.actor_subject_no`（列长 32），非法身份 → 1012C0002 |
