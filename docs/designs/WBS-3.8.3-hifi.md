@@ -127,7 +127,7 @@ ctds:
 | `infrastructure/DidInternalClient.java`（新增） | `GET ${ctds.space.did.base-url}/api/v1/did/internal/subjects/{subjectNo}/current`；头 `space-service` / `space-internal`；`status == ACTIVE` 才返回 DID，其余 `Optional.empty()`；未配置 / 不可达 → 空 + WARN |
 | `application/SpaceAdmissionService.java` | `activate` 成功后调 `publisher.memberAdmitted(...)`（入参含 `space.id()`、`admission.id()`、`admission.subjectNo()`、`operator`、`now`） |
 | `application/SpacePolicyService.java` | `submitOverride` 成功后取 `actionLogId` 调 `publisher.policyEffective(...)`；红线拒绝 / 同值分支不调用 |
-| `domain/SpaceRepository.java` / `infrastructure/SpaceJdbcRepository.java` | `insertLog` 返回 `long`（`GeneratedKeyHolder`）；`insertSpaceOverride` 返回 `(entryId, logId)`；`updateSpaceOverrideValue` 返回 `long logId`。**不改表结构**，既有调用忽略返回值即可编译 |
+| `domain/SpaceRepository.java` / `infrastructure/SpaceJdbcRepository.java` | **新增**两个返回留痕 id 的方法：`long insertSpaceOverrideWithLogId(SpacePolicy, SpaceActionLog)` / `long updateSpaceOverrideValueWithLogId(long, long, String, SpaceActionLog)`（内部复用既有写入逻辑与 `GeneratedKeyHolder`）；既有 `insertSpaceOverride` / `updateSpaceOverrideValue` 保留并委托（返回 entryId / void），**既有测试契约零破坏**；私有 `insertLogWithinTransaction` 改为返回 `long`（既有调用作为语句忽略返回值即可编译）。**不改表结构** |
 | `application.yml` | `ctds.space.did.base-url: ${CTDS_SPACE_DID_BASEURL:}`；`ctds.evidence.client.*` |
 | `pom.xml` | 增 `common-evidence-client` |
 
@@ -138,7 +138,7 @@ ctds:
 | `application/ContractEvidencePublisher.java`（新增） | `contractEffective(Contract, ContractAttestation, operatorNo)`：先发 `CONTRACT/CONTRACT_EFFECTIVE`；若 `contract.templateNo()` 对应模板类型 = `PUBLIC_DATA_AUTHORIZATION`，再发 `AUTHORIZATION/DATA_AUTH_CONTRACT_EFFECTIVE`（Q5）；`usageAllowed(contractNo, requesterNo, usageLogId, at)`：查需方 DID → 发 `USAGE/USAGE_ALLOWED` |
 | `application/ContractCommandService.java` | `sign`：`signAndSync` 返回 `EFFECTED` 后取 `repository.findAttestation(contract.id())`，调 `publisher.contractEffective(...)`；`FIRST_SIGNED` / 异常不调用 |
 | `application/PolicyExecutionService.java` | 两个 allow 分支：`long usageLogId = logRepository.insertAllowed(...)` 后调 `publisher.usageAllowed(...)`；拒绝分支不调用 |
-| `domain/UsageLogRepository.java` / `infrastructure/JdbcUsageLogRepository.java` | `insertAllowed` 返回 `long`（`GeneratedKeyHolder`）；`insertDenied` 保持 `void` |
+| `domain/UsageLogRepository.java` / `infrastructure/JdbcUsageLogRepository.java` | `insertAllowed` 返回 `long`（`GeneratedKeyHolder`）；`insertDenied` 保持 `void`；既有调用作为语句不受影响，测试替身补返回值（预计 ≤2 处） |
 | `application/ContractQueryService.java`（或新增只读查询） | 新增 `Optional<String> requesterDid(String contractNo)`：`contract_attestation.requester_did` 只读；DTO / 出站契约不变 |
 | `application/ContractEvidencePublisher.java` | 模板类型经 `ContractTemplateRepository.findByNo(templateNo).map(ContractTemplate::type)` 判定；不新增表列 |
 | `application.yml` / `pom.xml` | `ctds.evidence.client.*`；增 `common-evidence-client` |
