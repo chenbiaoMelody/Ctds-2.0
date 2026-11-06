@@ -80,11 +80,14 @@ public class ContractInternalClient implements ContractPort {
                 throw unavailable();
             }
         }
+        // WBS-3.8.3 §3.4：requesterDid 为新增字段，缺失容忍为 null（向后兼容）
+        final String requesterDid = data.path("requesterDid").isNull() ? null
+                : data.path("requesterDid").asText(null);
         return new ContractSummary(summaryContractNo, productId,
                 requireSummaryText(data, "productName", contractNo),
                 requireSummaryText(data, "applicantNo", contractNo),
                 requireSummaryText(data, "providerNo", contractNo),
-                requireSummaryText(data, "status", contractNo), effectiveAt);
+                requireSummaryText(data, "status", contractNo), effectiveAt, requesterDid);
     }
 
     private static String requireSummaryText(final JsonNode data, final String field,

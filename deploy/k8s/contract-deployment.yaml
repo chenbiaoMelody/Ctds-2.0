@@ -68,6 +68,10 @@ spec:
             # Subject-service base URL for admission checks (WBS-3.4.2 hifi §9).
             - name: CTDS_CONTRACT_SUBJECT_BASEURL
               value: "http://ctds-subject-service:8080"
+            # Evidence write face for full-chain attestation (WBS-3.8.3 hifi §6);
+            # empty = no attestation + WARN (deployment must inject explicitly, Q8-A).
+            - name: CTDS_EVIDENCE_BASEURL
+              value: "http://ctds-evidence-service:8090"
             # Catalog/did base URLs for product facts and DID resolve/sign/verify
             # (WBS-3.4.3 hifi §9; ports per each service yml: catalog 8084, did 8082).
             # ACTIVATION NOTE (WBS-3.4.3, demo-phase prerequisites registered in the

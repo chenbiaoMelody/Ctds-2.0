@@ -44,14 +44,16 @@ public class PolicyExecutionService {
     private final ContractQueryService contractQueryService;
     private final UsageCounterStore counterStore;
     private final UsageLogRepository logRepository;
+    private final ContractEvidencePublisher evidencePublisher;
     private final Clock clock;
 
     public PolicyExecutionService(final ContractQueryService contractQueryService,
             final UsageCounterStore counterStore, final UsageLogRepository logRepository,
-            final Clock clock) {
+            final ContractEvidencePublisher evidencePublisher, final Clock clock) {
         this.contractQueryService = contractQueryService;
         this.counterStore = counterStore;
         this.logRepository = logRepository;
+        this.evidencePublisher = evidencePublisher;
         this.clock = clock;
     }
 
@@ -88,7 +90,9 @@ public class PolicyExecutionService {
         final UsageControlPolicy strategy = snapshot.strategy();
         // 步 3 空策略 / 显式无限制（放行不计数——无配额可计，usedCount 上限口径 = 无上限）
         if (strategy == null || strategy.noRestrictionDeclared()) {
-            logRepository.insertAllowed(allow(contractNo, request, now, 0));
+            final long usageLogId = logRepository.insertAllowed(allow(contractNo, request, now, 0));
+            // WBS-3.8.3 E6：放行留痕后发布使用环节存证（外层事务提交后发送；拒绝分支不经过此处）
+            evidencePublisher.usageAllowed(contractNo, request.requesterNo(), usageLogId, now);
             return UsageVerdict.allowed(0, now);
         }
         // 步 4~7 四要素全查（拒绝零计数副作用——拒绝腿不触碰计数表）
@@ -122,7 +126,9 @@ public class PolicyExecutionService {
             usedCount = used;
         }
         // 步 10 放行记录（与计数递增同事务提交）
-        logRepository.insertAllowed(allow(contractNo, request, now, usedCount));
+        final long usageLogId = logRepository.insertAllowed(allow(contractNo, request, now, usedCount));
+        // WBS-3.8.3 E6：放行留痕后发布使用环节存证（外层事务提交后发送）
+        evidencePublisher.usageAllowed(contractNo, request.requesterNo(), usageLogId, now);
         return UsageVerdict.allowed(usedCount, now);
     }
 

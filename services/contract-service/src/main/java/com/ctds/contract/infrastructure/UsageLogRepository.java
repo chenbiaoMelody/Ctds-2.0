@@ -20,8 +20,10 @@ public interface UsageLogRepository {
 
     /**
      * 放行记录写入（REQUIRED——参与判定入口外层事务，与计数递增同事务提交）。
+     *
+     * @return 新留痕行主键（WBS-3.8.3 Q3：存证单据号 {@code USG{12 位}} 的锚点）
      */
-    void insertAllowed(UsageLogEntry entry);
+    long insertAllowed(UsageLogEntry entry);
 
     /**
      * R12 摘要计数：指定合约按结果（ALLOWED / DENIED）统计行数。

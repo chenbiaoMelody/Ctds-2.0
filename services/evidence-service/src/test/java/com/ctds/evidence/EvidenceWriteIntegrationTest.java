@@ -10,6 +10,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -86,6 +87,53 @@ class EvidenceWriteIntegrationTest {
                 .andExpect(expected)
                 .andReturn();
         return MAPPER.readTree(result.getResponse().getContentAsString(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * T24 / DB-113 P3-4：六类操作类型各 1 例正向 200 + 六要素可读（环节强绑定值域封闭，
+     * 规格 B1-1 / B1-2）。本用例只补测试、零主源改动（Q10-A）。
+     */
+    @Test
+    void allSixOperationTypesAcceptedWithSixReadableElements() throws Exception {
+        final Map<String, String> cases = new LinkedHashMap<>();
+        cases.put("SPACE_MEMBER_ADMITTED", "AUTHORIZATION");
+        cases.put("SPACE_POLICY_INHERITED", "AUTHORIZATION");
+        cases.put("DATA_AUTH_CONTRACT_EFFECTIVE", "AUTHORIZATION");
+        cases.put("CONTRACT_EFFECTIVE", "CONTRACT");
+        cases.put("DELIVERY_CREATED", "DELIVERY");
+        cases.put("USAGE_ALLOWED", "USAGE");
+
+        int index = 0;
+        for (final Map.Entry<String, String> entry : cases.entrySet()) {
+            index++;
+            final String businessNo = "W383-T24-" + index;
+            final MvcResult result = mockMvc.perform(post(INTERNAL_PATH)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(body(entry.getValue(), businessNo, entry.getKey(), DID,
+                                    OCCURRED_AT))
+                            .header("X-Ctds-Subject", INTERNAL_SUBJECT)
+                            .header("X-Ctds-Roles", INTERNAL_ROLES))
+                    .andExpect(status().isOk())
+                    .andReturn();
+            final JsonNode data = MAPPER.readTree(
+                    result.getResponse().getContentAsString(StandardCharsets.UTF_8)).path("data");
+            assertThat(data.path("stageType").asText()).isEqualTo(entry.getValue());
+            assertThat(data.path("operationType").asText()).isEqualTo(entry.getKey());
+            assertThat(data.path("businessNo").asText()).isEqualTo(businessNo);
+            assertThat(data.path("evidenceNo").asText()).startsWith("EV");
+            assertThat(data.path("status").asText()).isEqualTo("ON_CHAIN");
+            assertThat(data.path("occurredAt").asText()).isNotBlank();
+            // 六要素可读：操作人落创建留痕、主体 DID 只存摘要（不存原值）
+            final Map<String, Object> record = jdbc.queryForMap(
+                    "SELECT r.subject_did_digest, l.actor_subject_no FROM evidence_record r "
+                            + "JOIN evidence_record_action_log l ON l.evidence_no = r.evidence_no "
+                            + "AND l.action = 'CREATED' WHERE r.business_no = ?", businessNo);
+            assertThat(record.get("actor_subject_no")).isEqualTo("S20260922000001");
+            assertThat(record.get("subject_did_digest").toString()).hasSize(64)
+                    .doesNotContain("did:ctds");
+        }
+        assertThat(jdbc.queryForObject("SELECT COUNT(1) FROM evidence_record", Long.class))
+                .isEqualTo(6L);
     }
 
     /** T4 / B1-1：创建即同步上链，记录与账本各一行、交易标识与块号回填。 */

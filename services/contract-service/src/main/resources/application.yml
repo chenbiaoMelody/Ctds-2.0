@@ -41,6 +41,15 @@ ctds:
       # WBS-3.5.3 文件交付准入专用（ADR-016 §6 第 8 消费方 = delivery-service）：
       # 同一内部只读权限点，仅追加服务身份；业务角色仍不持有。
       delivery-internal: contract.internal.read
+  # 全链路存证埋点（WBS-3.8.3 hifi §1.5 / §6 Q8-A）：默认开启；base-url 空白 = 跳过 + WARN，
+  # 由部署清单显式注入 CTDS_EVIDENCE_BASEURL（测试默认不打网络）
+  evidence:
+    client:
+      enabled: true
+      base-url: ${CTDS_EVIDENCE_BASEURL:}
+      roles: evidence-internal
+      connect-timeout: 2s
+      read-timeout: 3s
   # 合约服务参数（WBS-3.4.2 hifi §9 + WBS-3.4.3 hifi §9）
   contract:
     # 主体服务衔接（资格判定只读通道，subject yml 已加 contract-internal 1 行授权）：

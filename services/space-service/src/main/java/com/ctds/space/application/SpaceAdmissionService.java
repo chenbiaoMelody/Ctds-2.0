@@ -41,15 +41,17 @@ public class SpaceAdmissionService {
     private final SpaceAccessGuard guard;
     private final SubjectAdmissionGate admissionGate;
     private final SpaceGovernanceVisitLogger visitLogger;
+    private final SpaceEvidencePublisher evidencePublisher;
     private final Clock clock;
 
     public SpaceAdmissionService(final SpaceRepository repository, final SpaceAccessGuard guard,
             final SubjectAdmissionGate admissionGate, final SpaceGovernanceVisitLogger visitLogger,
-            final Clock clock) {
+            final SpaceEvidencePublisher evidencePublisher, final Clock clock) {
         this.repository = repository;
         this.guard = guard;
         this.admissionGate = admissionGate;
         this.visitLogger = visitLogger;
+        this.evidencePublisher = evidencePublisher;
         this.clock = clock;
     }
 
@@ -276,6 +278,9 @@ public class SpaceAdmissionService {
         repository.activateMembership(member, admission.id(), space.id(), admission.status(),
                 admissionLog(space.id(), admission.id(), action, operator, admission.status().name(),
                         AdmissionStatus.APPROVED.name(), ActionResult.SUCCESS, reason));
+        // WBS-3.8.3 E1：成员生效后发布授权环节存证（事务已提交，等价 afterCommit；失败不影响业务）
+        evidencePublisher.memberAdmitted(space.id(), admission.id(), admission.subjectNo(), operator,
+                now);
         return loadAdmission(admission.id());
     }
 

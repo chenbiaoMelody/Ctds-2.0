@@ -13,6 +13,9 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public final class StubDependencyServer {
 
+    /** 合约内部摘要需方 DID（WBS-3.8.3 新增字段桩值）。 */
+    public static final String REQUESTER_DID = "did:ctds:requester01";
+
     private final HttpServer server;
     private final AtomicInteger summaryCount = new AtomicInteger();
     private final AtomicInteger checkCount = new AtomicInteger();
@@ -73,7 +76,9 @@ public final class StubDependencyServer {
         summaryBody = "{\"code\":\"0\",\"message\":\"ok\",\"data\":{\"contractNo\":\"" + contractNo
                 + "\",\"productId\":" + productId + ",\"productName\":\"" + productName
                 + "\",\"applicantNo\":\"" + applicantNo + "\",\"providerNo\":\"" + providerNo
-                + "\",\"status\":\"" + status + "\",\"effectiveAt\":\"2026-10-01T00:00:00\"}}";
+                + "\",\"status\":\"" + status + "\",\"effectiveAt\":\"2026-10-01T00:00:00\""
+                // WBS-3.8.3 §3.4：合约内部摘要新增字段（交付环节存证取主体标识；缺失容忍为 null）
+                + ",\"requesterDid\":\"" + REQUESTER_DID + "\"}}";
     }
 
     public void respondSummaryError(final String code, final String message, final int status) {

@@ -615,6 +615,18 @@ public class SpaceJdbcRepository implements SpaceRepository {
     @Override
     @Transactional
     public long insertSpaceOverride(final SpacePolicy entry, final SpaceActionLog log) {
+        return insertSpaceOverrideInternal(entry, log).entryId();
+    }
+
+    @Override
+    @Transactional
+    public long insertSpaceOverrideWithLogId(final SpacePolicy entry, final SpaceActionLog log) {
+        return insertSpaceOverrideInternal(entry, log).logId();
+    }
+
+    /** 首覆盖单一实现（entryId = 覆盖行主键；logId = POLICY_OVERRIDE 留痕行主键）。 */
+    private OverrideWriteResult insertSpaceOverrideInternal(final SpacePolicy entry,
+            final SpaceActionLog log) {
         final KeyHolder keyHolder = new GeneratedKeyHolder();
         try {
             jdbc.sql("INSERT INTO space_policy (scope, space_id, platform_entry_id, entry_key, entry_value, "
@@ -631,14 +643,27 @@ public class SpaceJdbcRepository implements SpaceRepository {
             throw new SpaceBizException(SpaceErrorCodes.POLICY_ENTRY_INVALID,
                     SpaceErrorCodes.POLICY_ENTRY_INVALID_MESSAGE);
         }
-        insertLogWithinTransaction(entry.spaceId(), log);
-        return keyHolder.getKey().longValue();
+        final long logId = insertLogWithinTransaction(entry.spaceId(), log);
+        return new OverrideWriteResult(keyHolder.getKey().longValue(), logId);
     }
 
     @Override
     @Transactional
     public void updateSpaceOverrideValue(final long entryId, final long spaceId, final String toValue,
             final SpaceActionLog log) {
+        updateSpaceOverrideValueInternal(entryId, spaceId, toValue, log);
+    }
+
+    @Override
+    @Transactional
+    public long updateSpaceOverrideValueWithLogId(final long entryId, final long spaceId,
+            final String toValue, final SpaceActionLog log) {
+        return updateSpaceOverrideValueInternal(entryId, spaceId, toValue, log);
+    }
+
+    /** 再覆盖单一实现（返回 POLICY_OVERRIDE 留痕行主键）。 */
+    private long updateSpaceOverrideValueInternal(final long entryId, final long spaceId,
+            final String toValue, final SpaceActionLog log) {
         final int updatedRows = jdbc.sql("UPDATE space_policy SET entry_value = ?, updated_at = ? "
                         + "WHERE id = ? AND space_id = ? AND scope = ? AND status = ?")
                 .params(toValue, timestamp(log.createdAt()), entryId, spaceId,
@@ -649,7 +674,11 @@ public class SpaceJdbcRepository implements SpaceRepository {
             throw new SpaceBizException(SpaceErrorCodes.SPACE_STATUS_GATE,
                     SpaceErrorCodes.SPACE_STATUS_GATE_MESSAGE);
         }
-        insertLogWithinTransaction(spaceId, withFromTo(log, log.fromValue(), toValue));
+        return insertLogWithinTransaction(spaceId, withFromTo(log, log.fromValue(), toValue));
+    }
+
+    /** 覆盖写结果（entryId = 覆盖行主键；logId = 留痕行主键，WBS-3.8.3 Q2 存证单据号锚点）。 */
+    private record OverrideWriteResult(long entryId, long logId) {
     }
 
     /** 平台面留痕（space_id=NULL 仅限平台级策略动作——V1 列注释口径；operator=登录主体编号）。 */
@@ -666,15 +695,17 @@ public class SpaceJdbcRepository implements SpaceRepository {
      * 等少数场景（WBS-3.2.5 平台面留痕）及 DB-29 治理查看的运营方空间检索列表行
      * （GOVERNANCE_VIEW，space_id/target_id 均空）与平台策略条目面行（target_type=POLICY）。
      */
-    private void insertLogWithinTransaction(final Long spaceId, final SpaceActionLog log) {
+    private long insertLogWithinTransaction(final Long spaceId, final SpaceActionLog log) {
         final Long targetId = log.targetId() != null ? log.targetId()
                 : (log.targetType() == TargetType.SPACE ? spaceId : null);
+        final KeyHolder keyHolder = new GeneratedKeyHolder();
         jdbc.sql("INSERT INTO space_action_log (space_id, target_type, target_id, action, operator, "
                         + "from_value, to_value, result, reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
                 .params(spaceId, log.targetType().name(), targetId, log.action(), log.operator(),
                         log.fromValue(), log.toValue(), log.result().name(), log.reason(),
                         timestamp(log.createdAt()))
-                .update();
+                .update(keyHolder);
+        return keyHolder.getKey().longValue();
     }
 
     private SpaceActionLog mapActionLog(final ResultSet rs) throws SQLException {

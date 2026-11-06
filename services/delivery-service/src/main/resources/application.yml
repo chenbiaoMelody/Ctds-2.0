@@ -31,6 +31,15 @@ ctds:
       requester: delivery.request,delivery.read,delivery.package.download,sandbox.request,sandbox.read,sandbox.use
       provider: delivery.read,sandbox.read
       admin: delivery.read,delivery.governance,sandbox.governance,sandbox.review
+  # 全链路存证埋点（WBS-3.8.3 hifi §1.5 / §6 Q8-A）：默认开启；base-url 空白 = 跳过 + WARN，
+  # 由部署清单显式注入 CTDS_EVIDENCE_BASEURL（测试默认不打网络）
+  evidence:
+    client:
+      enabled: true
+      base-url: ${CTDS_EVIDENCE_BASEURL:}
+      roles: evidence-internal
+      connect-timeout: 2s
+      read-timeout: 3s
   # 交付服务参数（hifi §1/§4/§5）
   delivery:
     contract:

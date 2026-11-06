@@ -54,13 +54,15 @@ class PolicyExecutionServiceTest {
     private UsageCounterStore counterStore;
     @Mock
     private UsageLogRepository logRepository;
+    @Mock
+    private ContractEvidencePublisher evidencePublisher;
 
     private PolicyExecutionService service;
 
     @BeforeEach
     void setUp() {
         service = new PolicyExecutionService(contractQueryService, counterStore, logRepository,
-                FIXED);
+                evidencePublisher, FIXED);
     }
 
     // ==== 步 1 合约定位（C0012 防枚举同形——零副作用）====
@@ -218,7 +220,7 @@ class PolicyExecutionServiceTest {
                 .isEqualTo(C0020);
         assertThat(capturedDenial().violations()).isEqualTo("TERM_EXPIRED");
         final PolicyExecutionService offsetService = new PolicyExecutionService(
-                contractQueryService, counterStore, logRepository,
+                contractQueryService, counterStore, logRepository, evidencePublisher,
                 Clock.fixed(OFFSET_INSTANT, ZoneId.of("Asia/Shanghai")));
         final UsageVerdict verdict = offsetService.check(CONTRACT_NO, useRequest(null, null));
         assertThat(verdict.allowed()).isTrue();
