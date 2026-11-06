@@ -20,3 +20,5 @@ resources:
   - delivery-service.yaml
   - metering-billing-deployment.yaml
   - metering-billing-service.yaml
+  - evidence-deployment.yaml
+  - evidence-service.yaml

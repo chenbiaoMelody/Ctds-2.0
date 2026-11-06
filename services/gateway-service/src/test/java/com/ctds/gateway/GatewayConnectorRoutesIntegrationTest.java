@@ -25,10 +25,10 @@ import org.springframework.test.web.reactive.server.WebTestClient;
 /**
  * 连接器门面网关扩路由契约（WBS-3.6.8 W1，hifi §1-A；WBS-3.7.3 续延 connector-orders；
  * WBS-3.7.4 续延 connector-evaluations；WBS-3.7.5 续延 connector-metering；
- * WBS-3.7.6 续延 connector-billing）：
- * 十条<b>普通代理</b>路由
+ * WBS-3.7.6 续延 connector-billing；WBS-3.8.2 续延 connector-evidence）：
+ * 十一条<b>普通代理</b>路由
  * （subject / did / datasets / data-spaces / contracts / orders / deliveries / evaluations /
- * metering / billing）装配与转发。
+ * metering / billing / evidence）装配与转发。
  *
  * <ul>
  *   <li><b>T1-①</b>：九条路由装配（id 唯一、单 {@code Path=} 谓词、filters 为空）；</li>
@@ -64,7 +64,8 @@ class GatewayConnectorRoutesIntegrationTest {
             new String[] {"connector-delivery", "/api/v1/deliveries/**"},
             new String[] {"connector-evaluations", "/api/v1/evaluations/**"},
             new String[] {"connector-metering", "/api/v1/metering/**"},
-            new String[] {"connector-billing", "/api/v1/billing/**"});
+            new String[] {"connector-billing", "/api/v1/billing/**"},
+            new String[] {"connector-evidence", "/api/v1/evidence/**"});
 
     private static final String REQUESTER = "S-req-368";
 
@@ -80,6 +81,7 @@ class GatewayConnectorRoutesIntegrationTest {
         registry.add("CTDS_GATEWAY_DELIVERY_BASEURL", () -> UPSTREAM.baseUrl());
         registry.add("CTDS_GATEWAY_METERING_BASEURL", () -> UPSTREAM.baseUrl());
         registry.add("CTDS_GATEWAY_BILLING_BASEURL", () -> UPSTREAM.baseUrl());
+        registry.add("CTDS_EVIDENCE_BASEURL", () -> UPSTREAM.baseUrl());
         registry.add("ctds.gateway.policy.base-url", () -> JUDGE.baseUrl());
     }
 
@@ -188,6 +190,21 @@ class GatewayConnectorRoutesIntegrationTest {
         assertThat(JUDGE.requestCount()).as("计费门面不触发交付判定链").isEqualTo(0);
         assertThat(recorder.eventsOf(GatewayAuditActions.DELIVERY_METERING))
                 .as("计费门面普通代理零交付计量事件").isEmpty();
+    }
+
+    /** WBS-3.8.2：存证治理读面经 connector-evidence 普通代理转发（不进交付判定链 / 零计量）。 */
+    @Test
+    void connectorEvidenceRouteForwardsInstancePath() {
+        final String path = "/api/v1/evidence/records/EV20261105000001";
+        client.get().uri(path)
+                .header(HttpHeaders.AUTHORIZATION,
+                        "Bearer " + TestTokens.valid(REQUESTER, List.of("admin")))
+                .exchange().expectStatus().isOk();
+
+        assertThat(UPSTREAM.lastPath()).as("存证读面经网关转发（路径实例）").isEqualTo(path);
+        assertThat(JUDGE.requestCount()).as("存证门面不触发交付判定链").isEqualTo(0);
+        assertThat(recorder.eventsOf(GatewayAuditActions.DELIVERY_METERING))
+                .as("存证门面普通代理零交付计量事件").isEmpty();
     }
 
     @Test

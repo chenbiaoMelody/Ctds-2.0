@@ -77,6 +77,10 @@ spec:
             # Metering-plane route target (WBS-3.7.5 connector-metering, normal proxy).
             - name: CTDS_GATEWAY_METERING_BASEURL
               value: "http://ctds-metering-billing:8089"
+            # Evidence governance route target (WBS-3.8.2 connector-evidence, normal proxy;
+            # hifi §8 uses the CTDS_EVIDENCE_BASEURL key, not the CTDS_GATEWAY_* prefix).
+            - name: CTDS_EVIDENCE_BASEURL
+              value: "http://ctds-evidence-service:8090"
             # Metering audit DB sink (WBS-3.7.5 file+jdbc double-write, ADR-022 §2.6-1):
             # audit account INSERT-only on ctds_metering.metering_flow; password injected
             # via secret/env at activation - never committed (charter red line 7; review F3).
