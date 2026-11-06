@@ -54,7 +54,7 @@
   "verifiedBy": "S20260922000001", "verifiedAt": "2026-11-05T13:35:00.000Z" }
 ```
 
-`conclusion` 值域：`PASS` / `MISMATCH` / `NOT_ON_CHAIN`；`NOT_ON_CHAIN` 时 `actualDigest=null` 且 `status` 为 `PENDING` 或 `FAILED`。
+`conclusion` 值域：`PASS` / `MISMATCH` / `NOT_ON_CHAIN`；`NOT_ON_CHAIN` 时 `actualDigest=null` 且 `status` 为 `PENDING` 或 `FAILED`；`MISMATCH` 且"账本可达但查无此块"时 `actualDigest=null`（口径见 §10 E2），其余 `MISMATCH` 携带账本摘要。
 
 ## 2. 数据模型（Flyway V1，`ctds_evidence`）
 
@@ -227,7 +227,7 @@ public interface EvidenceGateway {
 - 部署清单：`deploy/k8s/evidence-deployment.yaml` + `evidence-service.yaml` + `kustomization.yaml` 两行；
 - 数据库初始化：`ctds_evidence` 建库与最小授权（写：evidence 三表 + 取号表；读：同库），口令由人侧注入（红线 7）。
 
-## 9. 测试锚点（T1~T16，映射规格 AC 与剧本步骤）
+## 9. 测试锚点（T1~T19，映射规格 AC 与剧本步骤）
 
 | 编号 | 断言要点 | 映射 |
 | --- | --- | --- |
@@ -280,9 +280,10 @@ public interface EvidenceGateway {
 | 编号 | 设计原文 | 实现落点与理由 |
 | --- | --- | --- |
 | E1 | §2 仓储端口"只暴露 insert / updateStatus / findByNo / findByIdempotentKey / page / countByStatus" | 补 `appendAction`（留痕追加）/ `lastFailedAt`（overview 最近失败时点）/ `findActions`（详情时间线）三个只读或追加方法，`page` 返回 `EvidencePage(list,total)`。**不新增任何改内容或删除方法**；T9 以源码断言承载（端口无 delete/remove/purge、状态 UPDATE 只碰六列、账本实现无 UPDATE / DELETE、接口层无 PUT/PATCH/DELETE） |
-| E2 | §6"`enabled=false` 时 submit 一律抛不可达" | 实现同时让 `findByTxId` 抛不可达。**核验口径（P1-1 / P2-4 修复批定稿）**：仅当记录本地状态为 `ON_CHAIN` 时才查链——查链失败 → 503 `1012S0001`（`EvidenceExceptionHandler` 统一映射），且**不留 `VERIFIED` 留痕、记录保持不变**；本地非 `ON_CHAIN`（`PENDING` / `FAILED`）直接 `NOT_ON_CHAIN`，不查链（链关闭不影响该结论，与 `verifyFailedRecordReportsNotOnChain` 一致）；**账本可达但查无此块**（`findByTxId` 返回空，即账本缺块）→ `MISMATCH`（`actualDigest` 为空），不判 503（循环 2 复审 P3-1 澄清） |
+| E2 | §6"`enabled=false` 时 submit 一律抛不可达" | 实现同时让 `findByTxId` 抛不可达。**核验口径（P1-1 / P2-4 修复批定稿）**：仅当记录本地状态为 `ON_CHAIN` 时才查链——查链失败 → 503 `1012S0001`（`EvidenceExceptionHandler` 统一映射），且**不留 `VERIFIED` 留痕、记录保持不变**；本地非 `ON_CHAIN`（`PENDING` / `FAILED`）直接 `NOT_ON_CHAIN`，不查链（链关闭不影响该结论，与 `verifyFailedRecordReportsNotOnChain` 一致）；**账本可达但查无此块**（`findByTxId` 返回空，即账本缺块）→ `MISMATCH`（`actualDigest` 为空），不判 503（循环 2 复审 R2-1 澄清） |
 | E3 | §2 取号样例 `INSERT ... VALUES(?,1)` + Last insert id | `seq_date` 为 `CHAR(8)`（yyyyMMdd），实现按**字符串**绑定业务日；若绑定 `java.sql.Date` 会被 MySQL 隐式转为 `yyyy-MM-dd`（10 字符）触发 "Data too long"（编码段实测） |
 | E4 | §4 事务边界①"记录 insert（独立事务）" | 实现为 **record insert + CREATED 留痕同一事务**（`EvidenceRegistrationWriter`），保证留痕无空窗；账本写入（②）与状态 + 流转留痕（③）仍为独立事务 |
 | E5 | §1.1 `actorSubjectNo` 6~32 位 | 治理动作（核验 / 重试）的操作人同样走该形态校验后落 `evidence_record_action_log.actor_subject_no`（列长 32），非法身份 → 1012C0002 |
+| E6 | §1.1"内部写面（服务身份，不经统一网关）" | 网关 `connector-evidence` 的 `Path=/api/v1/evidence/**` 在路径上**字面覆盖** `/api/v1/evidence/internal/records`（网关仅支持单 `Path=` 正向谓词，无法加负向谓词，与 3.5.2 合约域 `/api/v1/contracts/internal/usage-checks` 同款）。**功能级隔离** = 权限点 `evidence.internal.write`（仅服务身份 `evidence-internal` 持有）+ `common-auth` 外部身份头剥离；内部端点不提供任何治理档能力。平台级"网关内部路径统一收口"登记为债务（循环 1 P3-2 处置：设计口径回填 + 台账入簿） |
 
 **设计-实现一致性承诺**：实现与已确认本文件不一致 = 打回项（章程 2.6）。
