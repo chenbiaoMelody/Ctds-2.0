@@ -31,6 +31,10 @@ ctds:
       requester: delivery.request,delivery.read,delivery.package.download,sandbox.request,sandbox.read,sandbox.use
       provider: delivery.read,sandbox.read
       admin: delivery.read,delivery.governance,sandbox.governance,sandbox.review
+      # 存证审计回读（WBS-3.8.4 hifi §3 / §5.5）：新增权限点 delivery.internal.read（delivery 首个
+      # 内部端点），仅 evidence-internal 服务身份持有（业务角色不持有——防交付状态枚举，
+      # 沿 contract.internal.read 消费方专用口径）
+      evidence-internal: delivery.internal.read
   # 全链路存证埋点（WBS-3.8.3 hifi §1.5 / §6 Q8-A）：默认开启；base-url 空白 = 跳过 + WARN，
   # 由部署清单显式注入 CTDS_EVIDENCE_BASEURL（测试默认不打网络）
   evidence:

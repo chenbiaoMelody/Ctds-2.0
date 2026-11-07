@@ -81,6 +81,12 @@ public interface ContractRepository {
     /** R13 合约统一留痕只读分页（WBS-3.4.7 hifi §5；稳定序 created_at DESC, id DESC）。 */
     PageResult<ContractActionLog> pageActionLogs(String contractNo, PageQuery page);
 
+    /** 按合约编号取存证要素行（WBS-3.8.4 audit-trail 锚点；只读）。 */
+    Optional<ContractAttestation> findAttestationByContractNo(String contractNo);
+
+    /** 合约统一留痕只读清单（WBS-3.8.4 audit-trail；id 正序 = 时间正序，不分页）。 */
+    List<ContractActionLog> listActionLogs(String contractNo);
+
     // ==== 事务命令与结局载体 ====
 
     /** W7 命令（canonicalCipher/contentHash 由应用服务按锁定值预计算——确定性，双方计算一致）。 */

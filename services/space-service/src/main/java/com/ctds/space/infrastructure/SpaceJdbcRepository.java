@@ -433,6 +433,24 @@ public class SpaceJdbcRepository implements SpaceRepository {
     }
 
     @Override
+    public Optional<SpaceActionLog> findActionLogById(final long actionLogId) {
+        return jdbc.sql("SELECT " + ACTION_LOG_COLUMNS + " FROM space_action_log WHERE id = ?")
+                .param(actionLogId)
+                .query((rs, rowNum) -> mapActionLog(rs))
+                .optional();
+    }
+
+    @Override
+    public List<SpaceActionLog> listActionLogsByTarget(final TargetType targetType,
+            final long targetId) {
+        return jdbc.sql("SELECT " + ACTION_LOG_COLUMNS + " FROM space_action_log "
+                        + "WHERE target_type = ? AND target_id = ? ORDER BY id ASC")
+                .params(targetType.name(), targetId)
+                .query((rs, rowNum) -> mapActionLog(rs))
+                .list();
+    }
+
+    @Override
     @Transactional
     public void terminateMembership(final long memberId, final long spaceId, final MemberRole fromRole,
             final MemberStatus terminalStatus, final SpaceActionLog log) {

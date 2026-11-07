@@ -2,7 +2,9 @@ package com.ctds.contract.infrastructure;
 
 import com.ctds.common.pagination.PageQuery;
 import com.ctds.common.pagination.PageResult;
+import com.ctds.contract.domain.policy.UsageLogAuditRow;
 import com.ctds.contract.domain.policy.UsageLogEntry;
+import java.util.Optional;
 
 /**
  * 执行记录仓储端口（WBS-3.4.5 hifi §1 / §7-2）：放行记录与拒绝留痕写入 + R12 查询。
@@ -36,4 +38,9 @@ public interface UsageLogRepository {
      * @param page 分页参数（沿合约域既有分页口径）
      */
     PageResult<UsageLogEntry> pageByContract(String contractNo, PageQuery page);
+
+    /**
+     * 按主键取审计回读行（WBS-3.8.4 audit-trail 使用放行锚点；只读，USG 单据号锚点）。
+     */
+    Optional<UsageLogAuditRow> findAuditRowById(long usageLogId);
 }

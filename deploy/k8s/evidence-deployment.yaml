@@ -75,3 +75,12 @@ spec:
               value: "local"
             - name: CTDS_EVIDENCE_CHAIN_ENABLED
               value: "true"
+            # Cross-domain audit-trail base URLs (WBS-3.8.4 hifi §6 ruling: config completion,
+            # not a structural change; the only k8s diff of this card). In-cluster Service DNS
+            # per 3.8.3 BASEURL conventions; evidence is the sole caller (audit read surface).
+            - name: CTDS_EVIDENCE_SPACE_BASEURL
+              value: "http://ctds-space-service:8083"
+            - name: CTDS_EVIDENCE_CONTRACT_BASEURL
+              value: "http://ctds-contract-service:8085"
+            - name: CTDS_EVIDENCE_DELIVERY_BASEURL
+              value: "http://ctds-delivery-service:8087"

@@ -4,6 +4,7 @@ import com.ctds.common.api.ApiResult;
 import com.ctds.common.errorcode.BizException;
 import com.ctds.common.errorcode.ErrorCodes;
 import com.ctds.common.errorcode.ErrorType;
+import com.ctds.evidence.application.EvidenceAuditLimits;
 import com.ctds.evidence.domain.EvidenceChainUnavailableException;
 import com.ctds.evidence.domain.EvidenceErrorCodes;
 import org.slf4j.Logger;
@@ -19,10 +20,11 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 /**
- * 存证域出站映射（hifi §5）：1012 五码按精确 HTTP 状态出站（404 同码同文防枚举 / 400 参数 /
- * 409 状态冲突 / 503 链不可达 / 500 取号落库失败）；1000C0005 / 1000C0002 沿 common-auth
- * 精确 HTTP 语义（403 / 401）；请求体不可读与参数类型不匹配沿全局口径 → 1000C0001。
- * 对外文案一律常量（不暴露异常内部拼装细节）。
+ * 存证域出站映射（hifi §5）：1012 六码按精确 HTTP 状态出站（404 同码同文防枚举 / 400 参数 /
+ * 409 状态冲突 / 503 链不可达 / 500 取号落库失败与报告完整性校验未通过）；1000C0005 / 1000C0002
+ * 沿 common-auth 精确 HTTP 语义（403 / 401）；请求体不可读与参数类型不匹配沿全局口径 → 1000C0001。
+ * 对外文案一律常量（不暴露异常内部拼装细节）；1000C0003（审计读面族"记录不存在"）走
+ * ErrorType.C 默认 400 + 原文案透传（Q4-A 同码同文防枚举）。
  */
 @Order(Ordered.HIGHEST_PRECEDENCE)
 @RestControllerAdvice
@@ -40,7 +42,7 @@ public class EvidenceExceptionHandler {
             case "1012C0002" -> HttpStatus.BAD_REQUEST;
             case "1012C0003" -> HttpStatus.CONFLICT;
             case "1012S0001" -> HttpStatus.SERVICE_UNAVAILABLE;
-            case "1012S0002" -> HttpStatus.INTERNAL_SERVER_ERROR;
+            case "1012S0002", "1012S0003" -> HttpStatus.INTERNAL_SERVER_ERROR;
             case "1000C0005" -> HttpStatus.FORBIDDEN;
             case "1000C0002" -> HttpStatus.UNAUTHORIZED;
             default -> null;
@@ -88,10 +90,13 @@ public class EvidenceExceptionHandler {
         return switch (code) {
             case "1000C0001" -> PARAM_MESSAGE;
             case "1012C0001" -> EvidenceErrorCodes.RECORD_NOT_FOUND_MESSAGE;
-            case "1012C0002" -> EvidenceErrorCodes.PARAM_INVALID_MESSAGE;
+            // 1012C0002 沿 3.8.2 统一通用文案；唯一例外 = 报告清单超限（3.8.4 hifi E4 专用文案逐字出站）
+            case "1012C0002" -> EvidenceAuditLimits.OVER_LIMIT_MESSAGE.equals(ex.getMessage())
+                    ? ex.getMessage() : EvidenceErrorCodes.PARAM_INVALID_MESSAGE;
             case "1012C0003" -> EvidenceErrorCodes.STATE_CONFLICT_MESSAGE;
             case "1012S0001" -> EvidenceErrorCodes.CHAIN_UNAVAILABLE_MESSAGE;
             case "1012S0002" -> EvidenceErrorCodes.STORAGE_FAILED_MESSAGE;
+            case "1012S0003" -> EvidenceErrorCodes.REPORT_INTEGRITY_FAILED_MESSAGE;
             default -> ex.getMessage();
         };
     }

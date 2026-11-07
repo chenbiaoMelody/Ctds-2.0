@@ -47,6 +47,12 @@ public interface SpaceRepository {
      */
     PageResult<SpaceActionLog> searchActionLogs(long spaceId, PageQuery page);
 
+    /** 按技术主键取留痕行（WBS-3.8.4 audit-trail 锚点；只读）。 */
+    Optional<SpaceActionLog> findActionLogById(long actionLogId);
+
+    /** 按目标取留痕行列表（WBS-3.8.4 audit-trail 准入锚点；只读，id 正序）。 */
+    List<SpaceActionLog> listActionLogsByTarget(TargetType targetType, long targetId);
+
     // ==== 命令（实现须 @Transactional）====
 
     /**

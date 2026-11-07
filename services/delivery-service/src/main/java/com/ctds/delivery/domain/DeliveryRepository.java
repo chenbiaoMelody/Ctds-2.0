@@ -39,4 +39,7 @@ public interface DeliveryRepository {
     List<DeliveryActionLog> pageActionLogs(String contractNo, PageQuery page);
 
     long countActionLogs(String contractNo);
+
+    /** 交付动作留痕只读清单（WBS-3.8.4 audit-trail 锚点；id 正序 = 时间正序）。 */
+    List<DeliveryActionLog> listActionLogsByDeliveryNo(String deliveryNo);
 }

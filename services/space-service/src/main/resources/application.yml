@@ -35,6 +35,9 @@ ctds:
       # 仅服务间内部只读权限 space.internal.read（业务角色不持有——防空间状态/成员关系枚举；
       # 沿 subject 侧 did-internal/space-internal 先例）
       catalog-internal: space.internal.read
+      # 存证审计回读（WBS-3.8.4 hifi §3 / Q1-A）：evidence-service 服务身份专用角色，
+      # 仅审计留痕回读 space.internal.read（业务角色不持有；沿 catalog-internal 先例）
+      evidence-internal: space.internal.read
   # 全链路存证埋点（WBS-3.8.3 hifi §1.5 / §6 Q8-A）：默认开启；base-url 空白 = 跳过 + WARN，
   # 由部署清单显式注入 CTDS_EVIDENCE_BASEURL（测试默认不打网络）
   evidence:
