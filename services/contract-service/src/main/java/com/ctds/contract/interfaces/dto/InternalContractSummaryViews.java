@@ -11,7 +11,11 @@ public final class InternalContractSummaryViews {
     private InternalContractSummaryViews() {
     }
 
+    /**
+     * 内部摘要（WBS-3.8.3 §3.4：新增 {@code requesterDid} 供交付环节存证取主体标识；
+     * 只增字段、不改既有字段名与语义，缺失时为 null——向后兼容）。
+     */
     public record Summary(String contractNo, long productId, String productName, String applicantNo,
-            String providerNo, String status, LocalDateTime effectiveAt) {
+            String providerNo, String status, LocalDateTime effectiveAt, String requesterDid) {
     }
 }

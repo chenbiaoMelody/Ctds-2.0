@@ -7,6 +7,7 @@ import com.ctds.contract.domain.ClauseValues;
 import com.ctds.contract.domain.Contract;
 import com.ctds.contract.domain.ContractAction;
 import com.ctds.contract.domain.ContractActionLog;
+import com.ctds.contract.domain.ContractAttestation;
 import com.ctds.contract.domain.ContractBizException;
 import com.ctds.contract.domain.ContractClauseVersion;
 import com.ctds.contract.domain.ContractErrorCodes;
@@ -23,6 +24,7 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.List;
+import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -215,6 +217,20 @@ public class ContractQueryService {
     /** QC1 快照（策略为解密值对象；status 为状态机现态名）。 */
     public record ContractStrategySnapshot(String contractNo, String status,
             LocalDateTime effectiveAt, UsageControlPolicy strategy) {
+    }
+
+    /**
+     * 需方 DID 只读查询（WBS-3.8.3 §3.2：使用环节存证取主体标识，取本域 contract_attestation）。
+     * 合约不存在 / 无存证行 / DID 为空 → 空（调用方跳过该条存证，不伪造）。
+     */
+    public Optional<String> requesterDid(final String contractNo) {
+        final Contract contract = repository.findByNo(contractNo).orElse(null);
+        if (contract == null) {
+            return Optional.empty();
+        }
+        return repository.findAttestation(contract.id())
+                .map(ContractAttestation::requesterDid)
+                .filter(did -> did != null && !did.isBlank());
     }
 
     // ==== 详情视图载体（应用层装配——解密后的可读全文；出站字段集由 interfaces 锚定）====

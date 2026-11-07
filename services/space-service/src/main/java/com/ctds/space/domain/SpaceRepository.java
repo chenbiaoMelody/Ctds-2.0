@@ -198,4 +198,18 @@ public interface SpaceRepository {
      * 并发归档门槛）+ POLICY_OVERRIDE 留痕同事务（from/to 由参数回填——移交④口径）。
      */
     void updateSpaceOverrideValue(long entryId, long spaceId, String toValue, SpaceActionLog log);
+
+    /**
+     * 首覆盖落库 + 返回 POLICY_OVERRIDE 留痕行主键（WBS-3.8.3 Q2：存证单据号
+     * {@code SPACE{spaceId}:POLICY-AL{留痕id}} 的反查锚点）；其余语义与
+     * {@link #insertSpaceOverride} 完全一致（同一实现，仅返回不同）。
+     */
+    long insertSpaceOverrideWithLogId(SpacePolicy entry, SpaceActionLog log);
+
+    /**
+     * 再覆盖值更新 + 返回 POLICY_OVERRIDE 留痕行主键；其余语义与
+     * {@link #updateSpaceOverrideValue} 完全一致（同一实现，仅返回不同）。
+     */
+    long updateSpaceOverrideValueWithLogId(long entryId, long spaceId, String toValue,
+            SpaceActionLog log);
 }

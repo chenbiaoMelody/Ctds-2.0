@@ -73,13 +73,15 @@ public class ContractCommandService {
     private final DealTextCipher dealTextCipher;
     private final Sm3Service sm3Service;
     private final Clock clock;
+    private final ContractEvidencePublisher evidencePublisher;
 
     public ContractCommandService(final ContractRepository repository,
             final TemplateQueryService templateQueryService,
             final SubjectAdmissionPort subjectAdmissionPort,
             final ContractInitiationService contractInitiationService,
             final ContractOrderSyncService contractOrderSyncService, final DidPort didPort,
-            final DealTextCipher dealTextCipher, final Sm3Service sm3Service, final Clock clock) {
+            final DealTextCipher dealTextCipher, final Sm3Service sm3Service, final Clock clock,
+            final ContractEvidencePublisher evidencePublisher) {
         this.repository = repository;
         this.templateQueryService = templateQueryService;
         this.subjectAdmissionPort = subjectAdmissionPort;
@@ -89,6 +91,7 @@ public class ContractCommandService {
         this.dealTextCipher = dealTextCipher;
         this.sm3Service = sm3Service;
         this.clock = clock;
+        this.evidencePublisher = evidencePublisher;
     }
 
     // ==== W5 发起（行为 2 规则 1/2/3；门槛链顺序固定 hifi §5.1）====
@@ -321,6 +324,11 @@ public class ContractCommandService {
                     ContractAction.SIGN);
         }
         final Contract fresh = repository.findByNo(contractNo).orElseThrow();
+        // WBS-3.8.3 E3/E4：仅双签生效（EFFECTED）发布存证；首签 / 重复签署 / 状态冲突零事件（Q10）
+        if (outcome == ContractRepository.SignOutcome.EFFECTED) {
+            repository.findAttestation(contract.id()).ifPresent(attestation ->
+                    evidencePublisher.contractEffective(fresh, attestation, operatorNo));
+        }
         return new SignResult(contractNo, role.name(), fresh.status().name(), fresh.effectiveAt());
     }
 

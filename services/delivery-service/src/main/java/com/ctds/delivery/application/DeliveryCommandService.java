@@ -65,13 +65,15 @@ public class DeliveryCommandService {
     private final DeliveryPersistenceService persistence;
     private final DeliveryAuditService audit;
     private final DeliveryProperties properties;
+    private final DeliveryEvidencePublisher evidencePublisher;
 
     public DeliveryCommandService(final DeliveryRepository repository, final ContractPort contractPort,
             final CatalogPort catalogPort, final ConnectorInternalPort connectorPort,
             final FileSourceRegistry fileSourceRegistry,
             final FilePackageStore packageStore, final Sm4Service sm4Service,
             final Sm3Service sm3Service, final DeliveryPersistenceService persistence,
-            final DeliveryAuditService audit, final DeliveryProperties properties) {
+            final DeliveryAuditService audit, final DeliveryProperties properties,
+            final DeliveryEvidencePublisher evidencePublisher) {
         this.repository = repository;
         this.contractPort = contractPort;
         this.catalogPort = catalogPort;
@@ -83,6 +85,7 @@ public class DeliveryCommandService {
         this.persistence = persistence;
         this.audit = audit;
         this.properties = properties;
+        this.evidencePublisher = evidencePublisher;
     }
 
     /** 发起交付（API 或 FILE）；幂等键 = requester + X-Idempotency-Key。 */
@@ -192,6 +195,9 @@ public class DeliveryCommandService {
                 }
                 audit.jsonOnly(DeliveryAuditActions.CREATE, deliveryNo, contractNo, requester,
                         deliveryType);
+                // WBS-3.8.3 E5：新建交付成功后发布交付环节存证（幂等重放 / 失败分支不经过此处）
+                repository.findByDeliveryNo(deliveryNo).ifPresent(persisted ->
+                        evidencePublisher.deliveryCreated(persisted, summary.requesterDid()));
                 return repository.findByDeliveryNo(deliveryNo).map(DeliveryView::from)
                         .orElseGet(() -> DeliveryView.from(delivery));
             } finally {

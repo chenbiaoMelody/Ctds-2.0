@@ -38,13 +38,16 @@ public class SpacePolicyService {
     private final SpaceRepository repository;
     private final SpaceAccessGuard guard;
     private final SpaceGovernanceVisitLogger visitLogger;
+    private final SpaceEvidencePublisher evidencePublisher;
     private final Clock clock;
 
     public SpacePolicyService(final SpaceRepository repository, final SpaceAccessGuard guard,
-            final SpaceGovernanceVisitLogger visitLogger, final Clock clock) {
+            final SpaceGovernanceVisitLogger visitLogger,
+            final SpaceEvidencePublisher evidencePublisher, final Clock clock) {
         this.repository = repository;
         this.guard = guard;
         this.visitLogger = visitLogger;
+        this.evidencePublisher = evidencePublisher;
         this.clock = clock;
     }
 
@@ -147,14 +150,18 @@ public class SpacePolicyService {
         }
         final SpaceActionLog overrideLog = policyLog(spaceId, platformEntry.id(), "POLICY_OVERRIDE",
                 subject, before.effectiveValue(), entryValue, ActionResult.SUCCESS, null);
+        final long actionLogId;
         final SpacePolicy existing = repository.findSpaceEntry(spaceId, entryKey).orElse(null);
         if (existing != null) {
-            repository.updateSpaceOverrideValue(existing.id(), spaceId, entryValue, overrideLog);
+            actionLogId = repository.updateSpaceOverrideValueWithLogId(existing.id(), spaceId,
+                    entryValue, overrideLog);
         } else {
-            repository.insertSpaceOverride(new SpacePolicy(null, PolicyScope.SPACE, spaceId,
-                    platformEntry.id(), entryKey, entryValue, false, PolicyStatus.ACTIVE, null, null),
-                    overrideLog);
+            actionLogId = repository.insertSpaceOverrideWithLogId(new SpacePolicy(null,
+                    PolicyScope.SPACE, spaceId, platformEntry.id(), entryKey, entryValue, false,
+                    PolicyStatus.ACTIVE, null, null), overrideLog);
         }
+        // WBS-3.8.3 E2：覆盖生效后发布授权环节存证（Q4 以覆盖成功承载；同值 / 红线分支不经过此处）
+        evidencePublisher.policyEffective(spaceId, actionLogId, subject, overrideLog.createdAt());
         return effectiveRow(spaceId, platformEntry);
     }
 

@@ -60,6 +60,8 @@ class ContractGovernanceForbiddenTest {
     private DealTextCipher dealTextCipher;
     @Mock
     private Sm3Service sm3Service;
+    @Mock
+    private ContractEvidencePublisher evidencePublisher;
 
     private ContractCommandService commandService;
 
@@ -68,7 +70,8 @@ class ContractGovernanceForbiddenTest {
         commandService = new ContractCommandService(repository, templateQueryService,
                 subjectAdmissionPort, contractInitiationService, contractOrderSyncService,
                 didPort, dealTextCipher, sm3Service,
-                Clock.fixed(Instant.parse("2026-10-06T00:00:00Z"), ZoneOffset.UTC));
+                Clock.fixed(Instant.parse("2026-10-06T00:00:00Z"), ZoneOffset.UTC),
+                evidencePublisher);
     }
 
     @AfterEach

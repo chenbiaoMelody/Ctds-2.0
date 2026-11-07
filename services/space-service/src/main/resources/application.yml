@@ -35,6 +35,15 @@ ctds:
       # 仅服务间内部只读权限 space.internal.read（业务角色不持有——防空间状态/成员关系枚举；
       # 沿 subject 侧 did-internal/space-internal 先例）
       catalog-internal: space.internal.read
+  # 全链路存证埋点（WBS-3.8.3 hifi §1.5 / §6 Q8-A）：默认开启；base-url 空白 = 跳过 + WARN，
+  # 由部署清单显式注入 CTDS_EVIDENCE_BASEURL（测试默认不打网络）
+  evidence:
+    client:
+      enabled: true
+      base-url: ${CTDS_EVIDENCE_BASEURL:}
+      roles: evidence-internal
+      connect-timeout: 2s
+      read-timeout: 3s
   # 空间服务参数（WBS-3.2.3 hifi §4~§5）
   space:
     # 双轨①平台运营方角色档名（应用服务经 AuthContext.roles() 判定，配置可调）
@@ -42,6 +51,9 @@ ctds:
     # 主体服务衔接（Q1-A 资格判定只读通道）：未配置 = 资格判定不可用（1006S0001，不冒充"未入驻"防枚举）
     subject:
       base-url: ${CTDS_SPACE_SUBJECT_BASEURL:}
+    # DID 服务衔接（WBS-3.8.3 Q6-A 空间授权环节存证取主体 DID）：未配置 = 该条存证跳过 + WARN
+    did:
+      base-url: ${CTDS_SPACE_DID_BASEURL:}
   # 创建防重复提交（ADR-007 模式 B）：内存模式 = 零中间件依赖，演示/单测可执行；
   # 多实例生产部署须 mode=redis 并经 redisson-spring-boot-starter 提供 Redis 连接（WBS-2.4.7 hifi B8 边界）
   idempotency:

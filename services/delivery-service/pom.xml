@@ -32,6 +32,11 @@
       <groupId>com.ctds</groupId>
       <artifactId>common-pagination</artifactId>
     </dependency>
+    <!-- 全链路存证埋点客户端（WBS-3.8.3 Q1-A：横切能力收敛，三服务复用） -->
+    <dependency>
+      <groupId>com.ctds</groupId>
+      <artifactId>common-evidence-client</artifactId>
+    </dependency>
     <dependency>
       <groupId>com.ctds</groupId>
       <artifactId>common-logging</artifactId>

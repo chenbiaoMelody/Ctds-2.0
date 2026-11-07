@@ -65,6 +65,10 @@ spec:
             # Internal contract summary + usage check (delivery admission/policy).
             - name: CTDS_DELIVERY_CONTRACT_BASEURL
               value: "http://ctds-contract-service:8085"
+            # Evidence write face for full-chain attestation (WBS-3.8.3 hifi §6);
+            # empty = no attestation + WARN (deployment must inject explicitly, Q8-A).
+            - name: CTDS_EVIDENCE_BASEURL
+              value: "http://ctds-evidence-service:8090"
             # Internal product facts (form validation).
             - name: CTDS_DELIVERY_CATALOG_BASEURL
               value: "http://ctds-catalog-service:8084"

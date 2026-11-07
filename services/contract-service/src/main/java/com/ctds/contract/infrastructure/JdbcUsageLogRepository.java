@@ -9,6 +9,8 @@ import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.jdbc.support.GeneratedKeyHolder;
+import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,8 +40,8 @@ public class JdbcUsageLogRepository implements UsageLogRepository {
 
     @Override
     @Transactional(propagation = Propagation.REQUIRED)
-    public void insertAllowed(final UsageLogEntry entry) {
-        insert(entry);
+    public long insertAllowed(final UsageLogEntry entry) {
+        return insert(entry);
     }
 
     @Override
@@ -66,14 +68,17 @@ public class JdbcUsageLogRepository implements UsageLogRepository {
         return PageResult.of(list, total, page);
     }
 
-    private void insert(final UsageLogEntry entry) {
+    /** 写入并返回自增主键（WBS-3.8.3 Q3 存证单据号锚点；拒绝腿忽略返回值）。 */
+    private long insert(final UsageLogEntry entry) {
+        final KeyHolder keyHolder = new GeneratedKeyHolder();
         jdbc.sql("INSERT INTO contract_usage_log (contract_no, requester_no, action_type, outcome, "
                         + "reason_code, violations, used_count, occurred_at) "
                         + "VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
                 .param(entry.contractNo()).param(entry.requesterNo())
                 .param(entry.actionType().name()).param(entry.outcome().name())
                 .param(entry.reasonCode()).param(entry.violations()).param(entry.usedCount())
-                .param(entry.occurredAt()).update();
+                .param(entry.occurredAt()).update(keyHolder);
+        return keyHolder.getKey().longValue();
     }
 
     private static UsageLogEntry mapEntry(final ResultSet rs) throws SQLException {
