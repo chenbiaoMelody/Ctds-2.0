@@ -382,6 +382,27 @@ public class JdbcContractRepository implements ContractRepository {
         return PageResult.of(list, total, page);
     }
 
+    @Override
+    public Optional<ContractAttestation> findAttestationByContractNo(final String contractNo) {
+        return jdbc.sql("SELECT id, contract_id, contract_no, content_hash, provider_subject_no, "
+                        + "provider_did, provider_signed_at, requester_subject_no, requester_did, "
+                        + "requester_signed_at, attested_at FROM contract_attestation "
+                        + "WHERE contract_no = ?")
+                .param(contractNo)
+                .query((rs, rowNum) -> mapAttestation(rs))
+                .optional();
+    }
+
+    @Override
+    public List<ContractActionLog> listActionLogs(final String contractNo) {
+        return jdbc.sql("SELECT id, contract_no, version_no, action, actor_subject_no, "
+                        + "reason_code, from_value, to_value, created_at "
+                        + "FROM contract_action_log WHERE contract_no = ? ORDER BY id ASC")
+                .param(contractNo)
+                .query((rs, rowNum) -> mapActionLog(rs))
+                .list();
+    }
+
     private ContractActionLog mapActionLog(final ResultSet rs) throws SQLException {
         return new ContractActionLog(rs.getLong("id"), rs.getString("contract_no"),
                 (Integer) rs.getObject("version_no"),

@@ -3,11 +3,13 @@ package com.ctds.contract.infrastructure;
 import com.ctds.common.pagination.PageQuery;
 import com.ctds.common.pagination.PageResult;
 import com.ctds.contract.domain.policy.UsageActionType;
+import com.ctds.contract.domain.policy.UsageLogAuditRow;
 import com.ctds.contract.domain.policy.UsageLogEntry;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
@@ -66,6 +68,23 @@ public class JdbcUsageLogRepository implements UsageLogRepository {
                 .query((rs, rowNum) -> mapEntry(rs))
                 .list();
         return PageResult.of(list, total, page);
+    }
+
+    @Override
+    public Optional<UsageLogAuditRow> findAuditRowById(final long usageLogId) {
+        return jdbc.sql("SELECT id, " + LOG_COLUMNS + " FROM contract_usage_log WHERE id = ?")
+                .param(usageLogId)
+                .query((rs, rowNum) -> mapAuditRow(rs))
+                .optional();
+    }
+
+    private static UsageLogAuditRow mapAuditRow(final ResultSet rs) throws SQLException {
+        final int usedCountRaw = rs.getInt("used_count");
+        final Integer usedCount = rs.wasNull() ? null : usedCountRaw;
+        return new UsageLogAuditRow(rs.getLong("id"), rs.getString("contract_no"),
+                rs.getString("requester_no"), rs.getString("action_type"),
+                rs.getString("outcome"), rs.getString("reason_code"), rs.getString("violations"),
+                usedCount, rs.getTimestamp("occurred_at").toLocalDateTime());
     }
 
     /** 写入并返回自增主键（WBS-3.8.3 Q3 存证单据号锚点；拒绝腿忽略返回值）。 */

@@ -211,6 +211,15 @@ public class JdbcDeliveryRepository implements DeliveryRepository {
                 .param("contractNo", contractNo).query(Long.class).single();
     }
 
+    @Override
+    public List<DeliveryActionLog> listActionLogsByDeliveryNo(final String deliveryNo) {
+        return jdbc.sql("SELECT id, delivery_no, contract_no, operator_no, action, result, "
+                        + "reason_code, created_at FROM delivery_action_log "
+                        + "WHERE delivery_no = :no ORDER BY id ASC")
+                .param("no", deliveryNo)
+                .query(JdbcDeliveryRepository::mapActionLog).list();
+    }
+
     private static DeliveryActionLog mapActionLog(final ResultSet rs, final int rowNum)
             throws SQLException {
         return new DeliveryActionLog(rs.getLong("id"), rs.getString("delivery_no"),

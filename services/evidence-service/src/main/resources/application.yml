@@ -23,9 +23,11 @@ logging:
       file: logstash
 
 ctds:
-  # RBAC（WBS-3.8.2 hifi §1.2 Q6-A 权限最小面，实测基线 53 → 本卡 +2 = 55）：
+  # RBAC（WBS-3.8.2 hifi §1.2 Q6-A 权限最小面，实测基线 53 → 3.8.3 +2 = 55）：
   # 治理档持对外面全部读/核验/重试；业务系统服务身份只持内部写面（3.8.3 埋点使用）。
-  # 不新增 evidence.read（参与方读面归 3.8.4 评估）。
+  # 参与方读面评估结论（WBS-3.8.4 Q5-A，2026-11-07 编排师确认）：V1.0 不开放（涉归属过滤与
+  # 脱敏子集口径，非最小实现）——不新增 evidence.read，登记跟踪项（承接 = 3.8.5 评估或另立卡）。
+  # 监管审计读面（3.8.4）不加权限点：服务内守卫口径（非治理档与"对象不存在"同码同文，Q4-A）。
   auth:
     permissions:
       admin: evidence.governance
@@ -36,3 +38,10 @@ ctds:
     chain:
       provider: ${CTDS_EVIDENCE_CHAIN_PROVIDER:local}
       enabled: ${CTDS_EVIDENCE_CHAIN_ENABLED:true}
+    # 跨域 audit-trail 回读（WBS-3.8.4 hifi §3 / Q1-A）：默认本机回环（本地直连演示口径），
+    # k8s 由部署清单注入三变量（evidence-deployment +3 env，配置补齐非结构变更）；
+    # 测试经属性注入桩地址（不依赖 env）。base-url 空白 = 该域留痕段按 UNAVAILABLE 降级。
+    trail:
+      space-base-url: ${CTDS_EVIDENCE_SPACE_BASEURL:http://127.0.0.1:8083}
+      contract-base-url: ${CTDS_EVIDENCE_CONTRACT_BASEURL:http://127.0.0.1:8085}
+      delivery-base-url: ${CTDS_EVIDENCE_DELIVERY_BASEURL:http://127.0.0.1:8087}

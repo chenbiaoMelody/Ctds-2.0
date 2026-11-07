@@ -70,4 +70,37 @@ class EvidenceArchitectureTest {
             }
         }
     }
+
+    /** WBS-3.8.4 T21 / hifi §4.3：审计留痕与报告登记仓储 append-only（端口与实现均无改删入口）。 */
+    @Test
+    void auditAppendOnlyRepositoriesExposeNoMutation() throws IOException {
+        for (final String port : List.of("AccessLogRepository.java", "AuditReportRepository.java")) {
+            final String source = Files.readString(DOMAIN.resolve(port));
+            assertThat(source).as("审计仓储端口无改删入口：%s", port)
+                    .doesNotContainIgnoringCase("delete")
+                    .doesNotContain("updateStatus")
+                    .doesNotContain("UPDATE ");
+        }
+        for (final String infra : List.of("JdbcAccessLogRepository.java",
+                "JdbcAuditReportRepository.java")) {
+            final String source = Files.readString(INFRA.resolve(infra));
+            assertThat(source).as("审计仓储实现含插入语句：%s", infra)
+                    .contains("INSERT INTO");
+            assertThat(source).as("审计仓储实现无改删语句：%s", infra)
+                    .doesNotContain("UPDATE ")
+                    .doesNotContainIgnoringCase("delete from");
+        }
+        final String auditQuery = Files.readString(
+                INFRA.resolve("JdbcEvidenceAuditQueryRepository.java"));
+        assertThat(auditQuery).as("审计查询仓储纯只读（零写入语句）")
+                .doesNotContain("INSERT INTO")
+                .doesNotContain("UPDATE ")
+                .doesNotContainIgnoringCase("delete from");
+        final String auditPort = Files.readString(
+                DOMAIN.resolve("EvidenceAuditQueryRepository.java"));
+        assertThat(auditPort).as("审计查询端口纯只读（无写入方法）")
+                .doesNotContainIgnoringCase("insert")
+                .doesNotContainIgnoringCase("delete")
+                .doesNotContainIgnoringCase("update");
+    }
 }

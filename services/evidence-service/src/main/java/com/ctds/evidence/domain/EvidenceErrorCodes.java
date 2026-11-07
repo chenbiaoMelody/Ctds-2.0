@@ -6,7 +6,8 @@ import com.ctds.common.errorcode.ErrorCode;
  * 存证域错误码表（1012 段，hifi §5 定稿；前置检查实测 Java 零占用、docs 仅本卡设计文件）。
  *
  * <p>段位占用：C0001 记录不存在 / C0002 参数不合法 / C0003 状态冲突 /
- * S0001 存证链不可达 / S0002 取号或落库失败。空位：C0004~C0009、S0003~S0009 留白，
+ * S0001 存证链不可达 / S0002 取号或落库失败 / S0003 报告完整性校验未通过。
+ * 空位：C0004~C0009、S0004~S0009 留白，
  * 后续同域实施包按序占用，不新增 1013 段（ADR-005 一域一段惯例）。</p>
  */
 public final class EvidenceErrorCodes {
@@ -30,6 +31,10 @@ public final class EvidenceErrorCodes {
     /** 存证取号或落库失败（500，非业务可修复）。 */
     public static final ErrorCode STORAGE_FAILED = ErrorCode.of("1012S0002");
     public static final String STORAGE_FAILED_MESSAGE = "存证服务暂不可用，请稍后重试";
+
+    /** 审计报告完整性校验未通过（500，WBS-3.8.4 hifi §5.4：下载重算 SM3 ≠ 登记摘要，不输出文件）。 */
+    public static final ErrorCode REPORT_INTEGRITY_FAILED = ErrorCode.of("1012S0003");
+    public static final String REPORT_INTEGRITY_FAILED_MESSAGE = "报告内容完整性校验未通过";
 
     private EvidenceErrorCodes() {
     }
