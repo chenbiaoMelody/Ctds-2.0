@@ -98,6 +98,8 @@
 
 | 修复批（2026-11-07） | **采纳 9 项**：④P1 → 新增 `EvidenceClientContractIntegrationTest`（RANDOM_PORT + Testcontainers，被测客户端真实 HTTP 打真实写面，断言落库 1 条 + `occurred_at` 按 UTC 还原）；③R-1 告警单号统一 `businessNo()`；③R-2 `policyEffective` 5 参 → **4 参**（对齐 hifi §3.1，消除同值双传）；①F3 `String.format` 加 `Locale.ROOT`；②S-3 主体号入 URL 编码（含 `+`→`%20`，复审 N-3）；④F3 新增"存证服务不可达"用例；④F6 T20 由 `isPositive()` 收紧为**精确 1 次** + 分段 reset；④F2 DID 桩改按主体派生并断言取源（T9/T11）。**登记跟踪 30 项 = 9×P2 + 21×P3**（明细按编号列于开发日志"关键决策"；其中 ④F7"新模块覆盖率无证据"已由门禁 jacoco 产物闭合：行覆盖 79/94 = **84.0% ≥ 80%**）。验证：common **9** / space **164** / contract **267** / evidence **42** 例全绿（**0 跳过**）+ checkstyle **4 模块 0 违规** + 全仓 `compile` **SUCCESS**。**独立复审 PASS**（8 项逐条闭环、零越界、零削弱）。**全仓门禁**：编码批树 **GREEN**（`gate-report-20261107-000443`）；修复批树两次 **RED 均因阶段超时**（`-012753` coverage 超时 / `-025543` unitTest + coverage 超时；同树首次两阶段各约 19 分钟，判机器侧变慢，零断言失败）→ **重跑至 GREEN 为阻塞项**，不得以模块级绿灯替代。 |
 
+| 修复批·门禁复跑（2026-11-07） | 编排师裁定"先停演示环境再跑"（三容器已停）→ 第四次运行 **RED**：coverage 段 `jacoco report: Unknown block type 61`（`gate-report-20261107-081144`；**非超时非代码缺陷**：总时长 20:05 < 1800s 上限，metering-billing 测试全绿；根因 = 上轮超时 `taskkill /T /F` 强杀时 coverage 正停 **metering-billing [21/22]**，其 `jacoco.exec`〔创建于 2026-11-02〕尾部截断损坏，jacoco append 模式续写后 report 读全文件即炸；取证 = 全部 21 个 exec 创建时间均早于本轮）→ 处置 = **删除全部 21 个 `target/jacoco.exec`**（可再生构建产物；零代码 / 零门禁配置改动）→ 第五次单发运行 **GREEN**（`gate-report-20261107-090328`）：`PASS=15 / FAIL=0 / SKIP=2 / ERROR=0 / PENDING=5`；`ConfigSha256 955bdbba…b2ee2` 与基线**逐字一致**；coverage 整体行覆盖 **92.49%**（14736/15932，core 4 项 ≥89.74%）；mutation did 69.34%；sast 0 findings。SKIP=2 = secretsScan oversized / binary 两个 untracked 留痕子行（信息性，不影响判定）。**阻塞项解除。** |
+
 
 
 | 项 | 数值 / 说明 |
