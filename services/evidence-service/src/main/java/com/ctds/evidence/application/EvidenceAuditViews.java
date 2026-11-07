@@ -25,19 +25,20 @@ public final class EvidenceAuditViews {
     public record AnomalyCountsView(long pendingCount, long failedCount, long mismatchCount) {
     }
 
-    /** E2 异常项行：存证记录白名单字段 + 异常类型 + 最新核验结论与核验人时点。 */
+    /** E2 异常项行：存证记录白名单字段 + 异常类型 + 最新核验结论与核验人时点（核验人摘要化出站）。 */
     public record AnomalyItemView(String evidenceNo, String stageType, String businessNo,
             String operationType, String subjectDidDigest, String occurredAt,
             String contentDigest, String status, String chainTxId, Long chainBlockNo,
             int retryCount, String lastErrorSummary, String createdAt, String updatedAt,
             String anomalyType, String verifyConclusion, String verifiedBy, String verifiedAt) {
 
-        public static AnomalyItemView of(final EvidenceRecordView view, final AnomalyRow row) {
+        public static AnomalyItemView of(final EvidenceRecordView view, final AnomalyRow row,
+                final String verifiedByDigest) {
             return new AnomalyItemView(view.evidenceNo(), view.stageType(), view.businessNo(),
                     view.operationType(), view.subjectDidDigest(), view.occurredAt(),
                     view.contentDigest(), view.status(), view.chainTxId(), view.chainBlockNo(),
                     view.retryCount(), view.lastErrorSummary(), view.createdAt(), view.updatedAt(),
-                    row.anomalyType(), row.verifyConclusion(), row.verifiedBy(),
+                    row.anomalyType(), row.verifyConclusion(), verifiedByDigest,
                     row.verifiedAt() == null ? null : row.verifiedAt().toString());
         }
     }
@@ -63,8 +64,8 @@ public final class EvidenceAuditViews {
             String action, String result, String summary, String sourceStatus) {
     }
 
-    /** E4 报告生成返回：编号唯一 + 范围条数 + 结论分布 + 异常条数 + 内容摘要 + 生成要素。 */
-    public record ReportView(String reportNo, int recordCount,
+    /** E4 报告生成返回：编号唯一 + 范围口径 + 范围条数 + 结论分布 + 异常条数 + 内容摘要 + 生成要素。 */
+    public record ReportView(String reportNo, Map<String, String> scope, int recordCount,
             Map<String, Integer> conclusionSummary, int anomalyCount, String contentDigest,
             String remark, String generatedBy, String generatedAt) {
     }

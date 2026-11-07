@@ -108,6 +108,8 @@ class EvidenceAuditReportIntegrationTest {
         assertThat(body.path("generatedBy").asText()).isEqualTo(ADMIN);
         assertThat(body.path("generatedAt").asText()).isNotBlank();
         assertThat(body.path("remark").asText()).isEqualTo("季度合规审计");
+        assertThat(body.path("scope").path("stageType").asText())
+                .as("范围口径随行（hifi E4，与登记 scope_json 同源同形）").isEqualTo("DELIVERY");
 
         final String content = jdbc.queryForObject(
                 "SELECT report_content_json FROM evidence_audit_report", String.class);

@@ -170,11 +170,13 @@ class EvidenceAuditOverviewIntegrationTest {
             types.add(item.path("anomalyType").asText());
             if ("MISMATCH".equals(item.path("anomalyType").asText())) {
                 assertThat(item.path("verifyConclusion").asText()).isEqualTo("MISMATCH");
-                assertThat(item.path("verifiedBy").asText()).isEqualTo(ADMIN);
+                assertThat(item.path("verifiedBy").asText())
+                        .as("核验人摘要化出站（本族口径：原文不出读面）").matches("[0-9a-f]{64}");
                 assertThat(item.path("verifiedAt").asText()).isNotBlank();
             }
         }
         assertThat(types).as("三类类型标记齐备")
                 .containsExactlyInAnyOrder("PENDING", "FAILED", "MISMATCH");
+        assertThat(data.toString()).as("核验人主体编号原文不出异常清单").doesNotContain(ADMIN);
     }
 }

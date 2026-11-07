@@ -85,6 +85,7 @@ class EvidenceTrailIntegrationTest {
     @BeforeEach
     void cleanTables() {
         STUB.FAIL_SPACE.set(false);
+        STUB.resetCalls();
         jdbc.update("DELETE FROM evidence_record_action_log");
         jdbc.update("DELETE FROM evidence_record");
         jdbc.update("DELETE FROM evidence_chain_block");
@@ -260,6 +261,18 @@ class EvidenceTrailIntegrationTest {
     void trailsWithWideWindowRejected() throws Exception {
         final MvcResult result = mockMvc.perform(get(AUDIT_TRAILS
                         + "?from=2026-08-01T00:00:00Z&to=2026-11-05T13:30:00Z")
+                        .header("X-Ctds-Subject", ADMIN).header("X-Ctds-Roles", "admin"))
+                .andExpect(status().isBadRequest()).andReturn();
+        final JsonNode body = MAPPER.readTree(
+                result.getResponse().getContentAsString(StandardCharsets.UTF_8));
+        assertThat(body.path("code").asText()).isEqualTo("1012C0002");
+    }
+
+    /** T9 补强 / B6-2：审计侧分页超限（pageSize=101 > 上限 100）→ 1012C0002（清单模式新校验路径）。 */
+    @Test
+    void trailsWithPageSizeOverLimitRejected() throws Exception {
+        final MvcResult result = mockMvc.perform(get(
+                        AUDIT_TRAILS + "?stageType=DELIVERY&pageNum=1&pageSize=101")
                         .header("X-Ctds-Subject", ADMIN).header("X-Ctds-Roles", "admin"))
                 .andExpect(status().isBadRequest()).andReturn();
         final JsonNode body = MAPPER.readTree(

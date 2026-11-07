@@ -2,7 +2,9 @@ package com.ctds.evidence.infrastructure;
 
 import com.ctds.evidence.domain.AuditTrailPort;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.nio.charset.StandardCharsets;
 import java.util.Optional;
+import org.springframework.web.util.UriUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -27,10 +29,11 @@ public class ContractTrailClient extends InternalTrailClientSupport {
         this.baseUrl = baseUrl;
     }
 
-    /** 合约锚点：存证要素 + 统一留痕。 */
+    /** 合约锚点：存证要素 + 统一留痕（路径段沿 UriUtils.encodePathSegment 先例编码）。 */
     public Optional<AuditTrailPort.ContractTrail> fetchContract(final String contractNo) {
         return get(log, "contract", baseUrl,
-                "/api/v1/contracts/internal/" + contractNo + "/audit-trail",
+                "/api/v1/contracts/internal/" + UriUtils.encodePathSegment(contractNo,
+                        StandardCharsets.UTF_8) + "/audit-trail",
                 AuditTrailPort.ContractTrail.class);
     }
 

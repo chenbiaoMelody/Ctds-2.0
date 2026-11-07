@@ -2,7 +2,9 @@ package com.ctds.evidence.infrastructure;
 
 import com.ctds.evidence.domain.AuditTrailPort;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.nio.charset.StandardCharsets;
 import java.util.Optional;
+import org.springframework.web.util.UriUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -27,10 +29,11 @@ public class DeliveryTrailClient extends InternalTrailClientSupport {
         this.baseUrl = baseUrl;
     }
 
-    /** 交付锚点：交付记录 + 留痕。 */
+    /** 交付锚点：交付记录 + 留痕（路径段沿 UriUtils.encodePathSegment 先例编码）。 */
     public Optional<AuditTrailPort.DeliveryTrail> fetch(final String deliveryNo) {
         return get(log, "delivery", baseUrl,
-                "/api/v1/deliveries/internal/" + deliveryNo + "/audit-trail",
+                "/api/v1/deliveries/internal/" + UriUtils.encodePathSegment(deliveryNo,
+                        StandardCharsets.UTF_8) + "/audit-trail",
                 AuditTrailPort.DeliveryTrail.class);
     }
 }

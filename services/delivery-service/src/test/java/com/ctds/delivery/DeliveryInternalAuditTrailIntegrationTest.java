@@ -105,7 +105,7 @@ class DeliveryInternalAuditTrailIntegrationTest {
                 .andExpect(jsonPath("$.data.actionLogs[0].operatorNo").value("S-provider"));
     }
 
-    /** T20：锚点不存在 → 404；业务角色 → 403（delivery.internal.read 仅 evidence-internal 持有）。 */
+    /** T20：锚点不存在 → 400 + 1000C0003；业务角色 → 403（delivery.internal.read 仅 evidence-internal 持有）。 */
     @Test
     void unknownAnchorAndUnauthorizedRejected() throws Exception {
         mockMvc.perform(evidenceInternal("/api/v1/deliveries/internal/DL999999/audit-trail"))

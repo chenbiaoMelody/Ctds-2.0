@@ -34,19 +34,20 @@ public class EvidenceReportRegistrar {
         this.reportRepository = reportRepository;
     }
 
-    /** 取号 + 登记同事务；返回报告编号。 */
+    /** 取号 + 登记同事务（取号失败同映射 1012S0002，沿 EvidenceWriteService 先例）；返回报告编号。 */
     @Transactional
     public String register(final String scopeJson, final int recordCount,
             final String conclusionSummaryJson, final int anomalyCount,
             final String reportContentJson, final String contentDigest, final String remark,
             final Instant generatedAt) {
-        final String reportNo = generator.next(LocalDate.ofInstant(generatedAt, ZoneOffset.UTC));
+        final String reportNo;
         try {
+            reportNo = generator.next(LocalDate.ofInstant(generatedAt, ZoneOffset.UTC));
             reportRepository.insert(AuditReport.draft(reportNo, scopeJson, recordCount,
                     conclusionSummaryJson, anomalyCount, reportContentJson, contentDigest,
                     remark, AuthContext.subject(), generatedAt));
         } catch (final DataAccessException failure) {
-            log.error("audit report register failed: reportNo={}", reportNo, failure);
+            log.error("audit report register failed (sequence or insert)", failure);
             throw new BizException(EvidenceErrorCodes.STORAGE_FAILED,
                     EvidenceErrorCodes.STORAGE_FAILED_MESSAGE);
         }

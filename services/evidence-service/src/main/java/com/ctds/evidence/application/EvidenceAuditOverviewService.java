@@ -1,5 +1,6 @@
 package com.ctds.evidence.application;
 
+import com.ctds.common.crypto.Sm3Service;
 import com.ctds.common.pagination.PageQuery;
 import com.ctds.common.pagination.PageResult;
 import com.ctds.evidence.domain.EvidenceAuditQueryRepository;
@@ -24,11 +25,13 @@ public class EvidenceAuditOverviewService {
             "DELIVERY", "USAGE");
 
     private final EvidenceAuditQueryRepository repository;
+    private final Sm3Service sm3;
     private final Clock clock;
 
     public EvidenceAuditOverviewService(final EvidenceAuditQueryRepository repository,
-            final Clock clock) {
+            final Sm3Service sm3, final Clock clock) {
         this.repository = repository;
+        this.sm3 = sm3;
         this.clock = clock;
     }
 
@@ -77,9 +80,15 @@ public class EvidenceAuditOverviewService {
         final var page = repository.pageAnomalies(criteria, (int) pageQuery.offset(), ps);
         final List<EvidenceAuditViews.AnomalyItemView> items = page.list().stream()
                 .map(row -> EvidenceAuditViews.AnomalyItemView.of(
-                        EvidenceRecordView.from(row.record()), row))
+                        EvidenceRecordView.from(row.record()), row,
+                        digestVerifiedBy(row.verifiedBy())))
                 .toList();
         return PageResult.of(items, page.total(), pageQuery);
+    }
+
+    /** 核验人主体编号摘要（无前缀直摘——与 EvidenceTrailService.digestSubject 同口径，原文不出读面）。 */
+    private String digestVerifiedBy(final String subjectNo) {
+        return subjectNo == null ? null : sm3.digestHex(subjectNo);
     }
 
     private static int indexOfStatus(final String status) {

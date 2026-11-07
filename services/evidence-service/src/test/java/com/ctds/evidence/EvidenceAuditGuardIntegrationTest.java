@@ -124,4 +124,14 @@ class EvidenceAuditGuardIntegrationTest {
     }
 
     private static final String AUDIT_ANOMALIES_PATH = "/api/v1/evidence/audit/anomalies";
+
+    /** T12 补强：未认证（无身份头）→ 同码同文（守卫 javadoc"未认证同口径"的机器证据）。 */
+    @Test
+    void unauthenticatedRequestSharesSameOutbound() throws Exception {
+        final MvcResult result = mockMvc.perform(get(AUDIT_TRAILS + "?stageType=DELIVERY"))
+                .andExpect(status().is(EXPECTED_STATUS)).andReturn();
+        final JsonNode body = bodyOf(result);
+        assertThat(body.path("code").asText()).as("未认证同码").isEqualTo(EXPECTED_CODE);
+        assertThat(body.path("message").asText()).as("未认证同文").isEqualTo(EXPECTED_MESSAGE);
+    }
 }

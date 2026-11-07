@@ -1,5 +1,6 @@
 package com.ctds.evidence.application;
 
+import com.ctds.common.auth.AuthContext;
 import com.ctds.common.crypto.Sm3Service;
 import com.ctds.common.errorcode.BizException;
 import com.ctds.common.errorcode.ErrorCodes;
@@ -92,24 +93,27 @@ public class EvidenceReportService {
                 EvidenceAuditLimits.MAX_REPORT_RECORDS + 1);
 
         final Instant generatedAt = clock.instant();
-        final String generatedBy = com.ctds.common.auth.AuthContext.subject();
+        final String generatedBy = AuthContext.subject();
         final ObjectNode content = objectMapper.createObjectNode();
+        // 范围口径（hifi E4 出参）：与登记 scope_json 同源同形，E4 响应与 E5 JSON 导出一致
+        final Map<String, String> scopeMap = new LinkedHashMap<>();
         final ObjectNode scope = content.putObject("scope");
         if (criteria.stageType() != null) {
-            scope.put("stageType", criteria.stageType().name());
+            scopeMap.put("stageType", criteria.stageType().name());
         }
         if (criteria.businessNo() != null) {
-            scope.put("businessNo", criteria.businessNo());
+            scopeMap.put("businessNo", criteria.businessNo());
         }
         if (criteria.subjectDigest() != null) {
-            scope.put("subjectDigest", criteria.subjectDigest());
+            scopeMap.put("subjectDigest", criteria.subjectDigest());
         }
         if (criteria.from() != null) {
-            scope.put("from", criteria.from().toString());
+            scopeMap.put("from", criteria.from().toString());
         }
         if (criteria.to() != null) {
-            scope.put("to", criteria.to().toString());
+            scopeMap.put("to", criteria.to().toString());
         }
+        scopeMap.forEach(scope::put);
         content.put("generatedBy", generatedBy);
         content.put("generatedAt", EvidenceDigests.occurredAtIso(generatedAt));
         final Map<String, Integer> conclusions =
@@ -142,7 +146,7 @@ public class EvidenceReportService {
         final String reportNo = registrar.register(scopeJson, records.size(),
                 conclusionSummaryJson, (int) anomalies.total(), contentJson, contentDigest,
                 remark, generatedAt);
-        return new EvidenceAuditViews.ReportView(reportNo, records.size(), conclusions,
+        return new EvidenceAuditViews.ReportView(reportNo, scopeMap, records.size(), conclusions,
                 (int) anomalies.total(), contentDigest, remark, generatedBy,
                 EvidenceDigests.occurredAtIso(generatedAt));
     }
@@ -255,7 +259,7 @@ public class EvidenceReportService {
     private void insertExportLog(final String conditionsJson, final int resultCount) {
         try {
             accessLogRepository.insert(new AccessLogEntry(AccessLogEntry.KIND_REPORT_EXPORT,
-                    com.ctds.common.auth.AuthContext.subject(), conditionsJson, resultCount,
+                    AuthContext.subject(), conditionsJson, resultCount,
                     null, clock.instant()));
         } catch (final DataAccessException failure) {
             log.error("audit export log write failed", failure);

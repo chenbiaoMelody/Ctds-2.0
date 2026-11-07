@@ -24,7 +24,7 @@ public final class AuditStubServer {
     public static final ObjectMapper MAPPER = new ObjectMapper();
 
     private static final String SPACE_BODY = """
-            {"admission":{"id":5,"spaceId":1,"subjectNo":"S20260922000001","type":"DATA_SPACE",
+            {"admission":{"id":5,"subjectNo":"S20260922000001","type":"DATA_SPACE",
               "status":"ACTIVE","operator":"S20260922000001","reason":"联合建模准入",
               "createdAt":"2026-11-01T08:00:00.000Z"},
              "actionLogs":[{"id":9,"targetType":"ADMISSION","targetId":5,"action":"ADMIT",
@@ -37,7 +37,7 @@ public final class AuditStubServer {
               "providerDid":"did:ctds:provider-0001","providerSignedAt":"2026-11-02T08:00:00.000Z",
               "requesterDid":"did:ctds:requester-0001","requesterSignedAt":"2026-11-02T08:01:00.000Z",
               "attestedAt":"2026-11-02T08:02:00.000Z"},
-             "actionLogs":[{"id":1,"contractNo":"CO000123","action":"CONTRACT_EFFECTIVE",
+             "actionLogs":[{"id":1,"contractNo":"CO000123","versionNo":1,"action":"CONTRACT_EFFECTIVE",
               "actorSubjectNo":"S20260922000001","reasonCode":"NONE","fromValue":"NEGOTIATING",
               "toValue":"EFFECTIVE","createdAt":"2026-11-02T08:02:00.000Z"}]}""";
 
@@ -88,6 +88,12 @@ public final class AuditStubServer {
     public String lastRoles(final String key) {
         final String value = lastRoles.get(key);
         return value == null ? "" : value;
+    }
+
+    /** 清空命中计数与最近身份头（用例隔离——@BeforeEach 调用，消除跨用例顺序依赖）。 */
+    public void resetCalls() {
+        hits.clear();
+        lastRoles.clear();
     }
 
     public void stop() {

@@ -2,7 +2,8 @@ package com.ctds.evidence.domain;
 
 /**
  * 审计调阅 / 导出动作留痕仓储端口（WBS-3.8.4 hifi §2 / §4.3）：append-only——
- * 仅 insert（与按人按 kind 的只读查询），无任何更新 / 删除入口（T21 源码断言机器可证）。
+ * 仅 insert（V1.0 无查询端点，剧本 S1-6 / S2-4 留痕核对走只读 SQL），无任何更新 / 删除入口
+ * （T21 源码断言机器可证）。
  */
 public interface AccessLogRepository {
 

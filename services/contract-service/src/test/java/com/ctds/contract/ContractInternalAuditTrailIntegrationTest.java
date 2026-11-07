@@ -133,7 +133,7 @@ class ContractInternalAuditTrailIntegrationTest {
                 .andExpect(jsonPath("$.data.usageLog.occurredAt").isNotEmpty());
     }
 
-    /** T20：锚点不存在 → 404；业务角色 → 403（防枚举收敛）。 */
+    /** T20：锚点不存在 → 400 + 1000C0003；业务角色 → 403（防枚举收敛）。 */
     @Test
     void unknownAnchorAndUnauthorizedRejected() throws Exception {
         mockMvc.perform(evidenceInternal("/api/v1/contracts/internal/CO999999/audit-trail"))
