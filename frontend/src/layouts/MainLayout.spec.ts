@@ -66,7 +66,7 @@ describe('权限菜单显隐（H4）', () => {
     localStorage.clear()
   })
 
-  it('普通用户：菜单渲染 11 项，不含权限保护菜单（WBS-3.7.7 新增"我的账单"登录可见）', () => {
+  it('普通用户：菜单渲染 11 项，不含权限保护菜单（WBS-3.8.5 新增存证两菜单为治理档，普通档不可见）', () => {
     setDemoRole('user')
     const wrapper = mountLayout()
     const items = wrapper.findAll('.el-menu-item')
@@ -81,15 +81,19 @@ describe('权限菜单显隐（H4）', () => {
     expect(wrapper.text()).toContain('我的订单')
     expect(wrapper.text()).toContain('我的账单')
     expect(wrapper.text()).not.toContain('计费管理')
+    expect(wrapper.text()).not.toContain('监管审计')
+    expect(wrapper.text()).not.toContain('存证核验')
   })
 
-  it('admin 角色：菜单渲染 25 项，含"仅管理员可见"、"主体审核"、"DID 管理"、四域菜单与新计费两菜单（WBS-3.7.7 新增"计费管理""我的账单"）', () => {
+  it('admin 角色：菜单渲染 27 项，含"仅管理员可见"、"主体审核"、"DID 管理"、四域菜单、计费两菜单与存证两菜单（WBS-3.8.5 新增"监管审计""存证核验"）', () => {
     setDemoRole('admin')
     const wrapper = mountLayout()
     const items = wrapper.findAll('.el-menu-item')
-    expect(items.length).toBe(25)
+    expect(items.length).toBe(27)
     expect(wrapper.text()).toContain('我的订单')
     expect(wrapper.text()).toContain('计费管理')
+    expect(wrapper.text()).toContain('监管审计')
+    expect(wrapper.text()).toContain('存证核验')
     expect(wrapper.text()).toContain('我的账单')
     expect(wrapper.text()).toContain('仅管理员可见')
     expect(wrapper.text()).toContain('主体审核')

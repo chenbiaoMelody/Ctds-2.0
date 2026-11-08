@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest'
 import {
   connectorRolesHeader,
   deliveryRolesHeader,
+  evidenceRolesHeader,
   getActorMode,
   setActorMode,
   spaceRolesHeader,
@@ -106,5 +107,28 @@ describe('连接器域页面级角色头（WBS-3.6.7 Q2-A / T2）', () => {
       expect(header).not.toContain('connector.internal.read')
       expect(header).not.toContain('connector.internal.write')
     }
+  })
+})
+
+/**
+ * WBS-3.8.5 Q5-A / 前置检查 P5 实测：存证域页面级角色头——治理档 admin（evidence.governance
+ * 唯一映射角色）/ 普通档 requester 单头（剧本 C-8.2 V1.2 普通档身份示例一字不差；服务端
+ * 权限映射仅 admin / evidence-internal，requester 必拒 = fail-closed，即 C-8.2 S1-7 界面面）。
+ * 硬约束：普通档不得携带 admin。
+ */
+describe('存证域页面级角色头（WBS-3.8.5 Q5-A / P5 实测）', () => {
+  afterEach(() => {
+    localStorage.clear()
+  })
+
+  it('普通档 = requester 单头（剧本普通档身份示例口径；不得携带 admin）', () => {
+    setActorMode('subject')
+    expect(evidenceRolesHeader()).toBe('requester')
+    expect(evidenceRolesHeader()).not.toContain('admin')
+  })
+
+  it('运营档 = admin（evidence.governance 由服务端角色映射承载）', () => {
+    setActorMode('operator')
+    expect(evidenceRolesHeader()).toBe('admin')
   })
 })
