@@ -84,7 +84,7 @@ export const EVIDENCE_TRAIL_SOURCE_LABELS: Record<string, string> = {
   DELIVERY: '交付域',
 }
 
-/** 未知枚举兜底（billing 同型）：命中标签用标签，未命中原样显示。 */
+/** 未知枚举兜底（did / space / catalog 同型第 4 份；跨域收敛归 DB-105 前端横切收敛批）：命中标签用标签，未命中原样显示。 */
 export function labelOf(labels: Record<string, string>, value: string | null | undefined): string {
   if (value === null || value === undefined || value === '') return '—'
   return labels[value] ?? value
@@ -94,6 +94,22 @@ export function labelOf(labels: Record<string, string>, value: string | null | u
 export function orDash(value: string | number | null | undefined): string | number {
   if (value === null || value === undefined || value === '') return '—'
   return value
+}
+
+/** 摘要中截断（hifi §4 通用契约；≤24 位原样，长摘要 = 前 8 + … + 后 8）。 */
+export function truncateDigest(value: string | null | undefined): string {
+  if (value === null || value === undefined) return '—'
+  if (value.length <= 24) return value
+  return `${value.slice(0, 8)}…${value.slice(-8)}`
+}
+
+/**
+ * 90 天窗口引导判定（Q6-A 体验引导纯 UI 函数，业务裁决在后端）：
+ * datetimerange 首选日与候选日的跨度 > 90 天 → 禁选（disabled-date 回调用）。
+ */
+export function isBeyond90Days(firstPickMs: number | null, candidateMs: number): boolean {
+  if (firstPickMs === null) return false
+  return Math.abs(candidateMs - firstPickMs) > 90 * 24 * 60 * 60 * 1000
 }
 
 // ==== 页面文案（视图零散写中文，集中本文件） ====
@@ -113,17 +129,26 @@ export const EVIDENCE_TAB_LABELS = {
   reports: '审计报告',
 } as const
 
-/** 90 天体验引导（Q6-A：UI 便利非第二裁决，业务判定在后端）。 */
+/** 90 天体验引导（Q6-A：UI 便利非第二裁决，业务判定在后端）。总览 tab 全句（含"不填=全量"语义）。 */
 export const EVIDENCE_WINDOW_HINT = '时间窗不超过 90 天；不填 = 全量快照'
+/** 90 天引导半句（时间线 / 报告 tab 用——零条件被后端拒，不与"至少一个条件"并排产生"可全量"误读）。 */
+export const EVIDENCE_WINDOW_HINT_ONLY = '时间窗不超过 90 天'
 export const EVIDENCE_CONDITION_HINT = '至少填写一个条件（环节 / 单号 / 主体摘要 / 时间范围）'
 export const EVIDENCE_ACCESS_HINT = '调阅动作由平台自动留痕'
 export const EVIDENCE_TRAIL_HINT_DEFAULT = '输入业务单据号查看全链时间线'
 export const EVIDENCE_UNAVAILABLE_WARNING = '跨域留痕暂不可达，时间线可能不完整'
+export const EVIDENCE_NOT_ON_CHAIN_STATUS_PREFIX = '当前存证状态：'
 export const EVIDENCE_NOT_ON_CHAIN_FAILED_PREFIX = '当前存证状态：上链失败'
 export const EVIDENCE_NOT_ON_CHAIN_PENDING_TIP = '当前存证状态：待上链'
+export const EVIDENCE_VERIFY_TITLE_PREFIX = '核验结论：'
 export const EVIDENCE_NO_INPUT_TIP = '请输入存证编号'
+export const EVIDENCE_REDOWNLOAD_NO_TIP = '请输入报告编号'
+export const EVIDENCE_SNAPSHOT_PREFIX = '快照时点：'
+export const EVIDENCE_TRAIL_STATUS_PREFIX = '留痕状态：'
 export const EVIDENCE_EMPTY_TEXT = '暂无数据'
 export const EVIDENCE_DIGEST_HINT = '点击复制完整值'
+export const EVIDENCE_COPY_SUCCESS_TIP = '已复制完整值'
+export const EVIDENCE_COPY_FAIL_TIP = '复制失败，请手动选择复制'
 
 /** 通用动作与分区标签。 */
 export const EVIDENCE_SEARCH_LABEL = '查询'

@@ -200,11 +200,14 @@ describe('T2 审计总览 tab（C-8.2 S1-1 基线）', () => {
     expect(text).toContain('2026-11-08T02:59:19.419Z')
   })
 
-  it('FAILED > 0 单元格以 danger 徽标呈现（S1-1 失败可见）', async () => {
+  it('FAILED > 0 单元格以 danger 徽标呈现 + 计数卡数值结构断言（S1-1 失败可见）', async () => {
     const wrapper = await mountView()
     const dangerTags = wrapper.findAll('.el-tag--danger')
     expect(dangerTags.length).toBeGreaterThanOrEqual(1)
     expect(dangerTags.some((t) => t.text() === '1')).toBe(true)
+    expect(wrapper.find('.anomaly-card-failed .anomaly-card-num').text()).toBe('1')
+    expect(wrapper.find('.anomaly-card-pending .anomaly-card-num').text()).toBe('0')
+    expect(wrapper.find('.anomaly-card-mismatch .anomaly-card-num').text()).toBe('0')
   })
 
   it('异常计数卡点击跳异常项 tab（auditAnomalies 触发）', async () => {
@@ -279,10 +282,34 @@ describe('T3 存证记录 tab（C-8.2 S1-3）', () => {
     await flushPromises()
     expect(mockedDetail).toHaveBeenCalledWith('EV20261107000004')
   })
+
+  it('分页交互：total > pageSize 渲染分页条，current-change 以 pageNum=2 重查（评审④ F-1）', async () => {
+    mockedRecords.mockResolvedValue({ list: [record()], total: 25, pageNum: 1, pageSize: 10, totalPages: 3 })
+    const wrapper = await mountView()
+    await openTab(wrapper, '存证记录')
+    await wrapper.find('.records-search-btn').trigger('click')
+    await flushPromises()
+    const pagination = wrapper.findComponent({ name: 'ElPagination' })
+    expect(pagination.exists()).toBe(true)
+    pagination.vm.$emit('current-change', 2)
+    await flushPromises()
+    expect(mockedRecords).toHaveBeenLastCalledWith(
+      expect.objectContaining({ pageNum: 2, pageSize: 10 }),
+    )
+  })
+
+  it('空数据查询渲染空态文案（T2/T3 空态观察点，评审④ F-12）', async () => {
+    mockedRecords.mockResolvedValue(page([]))
+    const wrapper = await mountView()
+    await openTab(wrapper, '存证记录')
+    await wrapper.find('.records-search-btn').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.records-table').text()).toContain('暂无数据')
+  })
 })
 
 describe('T5 异常项 tab（C-8.2 S1-1）', () => {
-  it('首次激活自动拉数：异常类型标签 + MISMATCH 行附核验结论 / 核验人摘要 / 时点', async () => {
+  it('首次激活自动拉数（默认窗口 from/to 未设）：三类异常标签齐 + MISMATCH 行附核验结论 / 核验人摘要 / 时点', async () => {
     mockedAnomalies.mockResolvedValue(
       page([
         anomaly(),
@@ -294,17 +321,41 @@ describe('T5 异常项 tab（C-8.2 S1-1）', () => {
           verifiedBy: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
           verifiedAt: '2026-11-08T04:00:00.000Z',
         }),
+        anomaly({
+          evidenceNo: 'EV20261107000003',
+          anomalyType: 'PENDING',
+          status: 'PENDING',
+        }),
       ]),
     )
     const wrapper = await mountView()
     await openTab(wrapper, '异常项')
-    expect(mockedAnomalies).toHaveBeenCalledWith(expect.objectContaining({ pageNum: 1, pageSize: 10 }))
+    expect(mockedAnomalies).toHaveBeenCalledWith(
+      expect.objectContaining({ pageNum: 1, pageSize: 10, from: undefined, to: undefined }),
+    )
     const text = wrapper.text()
     expect(text).toContain('EV20261107000006')
     expect(text).toContain('上链失败')
     expect(text).toContain('不一致')
+    expect(text).toContain('待上链')
     expect(text).toContain('e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855')
     expect(text).toContain('2026-11-08T04:00:00.000Z')
+  })
+
+  it('时间范围过滤透传：异常项 picker 赋值后查询 → auditAnomalies 携 from/to（评审① F1）', async () => {
+    const wrapper = await mountView()
+    await openTab(wrapper, '异常项')
+    mockedAnomalies.mockClear()
+    // 五个 datetimerange 按模板声明序：总览 / 记录 / 异常项 / 时间线 / 报告
+    const pickers = wrapper.findAllComponents({ name: 'ElDatePicker' })
+    expect(pickers.length, '五处时间范围选择器应齐备').toBe(5)
+    pickers[2].vm.$emit('update:modelValue', ['2026-10-01T00:00:00Z', '2026-10-20T00:00:00Z'])
+    await flushPromises()
+    await wrapper.find('.anomalies-search-btn').trigger('click')
+    await flushPromises()
+    expect(mockedAnomalies).toHaveBeenCalledWith(
+      expect.objectContaining({ pageNum: 1, pageSize: 10, from: '2026-10-01T00:00:00Z', to: '2026-10-20T00:00:00Z' }),
+    )
   })
 })
 
@@ -333,7 +384,7 @@ describe('T6/T7 时间线与调阅 tab（C-8.2 S1-2 / S1-3 / S1-4 / S1-6）', ()
     expect(text).toContain('调阅动作由平台自动留痕')
   })
 
-  it('LIST 清单：条件查询 → 分页表 + trailHint 展示（mode 判模）', async () => {
+  it('LIST 清单：条件查询 → 分页表 + trailHint 缺省兜底展示（mode 判模；评审④ F-4）', async () => {
     mockedTrails.mockResolvedValue(
       trailView({
         mode: 'LIST',
@@ -346,7 +397,7 @@ describe('T6/T7 时间线与调阅 tab（C-8.2 S1-2 / S1-3 / S1-4 / S1-6）', ()
         pageNum: 1,
         pageSize: 10,
         totalPages: 1,
-        trailHint: '输入业务单据号查看全链时间线',
+        trailHint: null,
       }),
     )
     const wrapper = await mountView()
@@ -423,7 +474,7 @@ describe('T9 审计报告 tab（C-8.2 S2-1 / S2-2）', () => {
     expect(text).toContain('不一致')
     expect(text).toContain('未上链')
     expect(text).toContain('未核验')
-    expect(text).toContain('ca85f30d54d0d3b55a90ccd6f0d1767bcbb7c957d54abeec63c57ec5e4455675')
+    expect(text).toContain('ca85f30d…e4455675')
     expect(text).toContain('S-admin-evidence')
     expect(text).toContain('2026-11-08T03:02:09.080Z')
     expect(text).toContain('probe')
@@ -482,6 +533,16 @@ describe('T10 报告下载（C-8.2 S2-4 / S2-7）', () => {
     await wrapper.find('.report-csv-btn').trigger('click')
     await flushPromises()
     expect(ElMessage.error).toHaveBeenCalledWith('记录不存在')
+  })
+
+  it('按号补下载区：空编号前置拦截（零请求，评审④ F-3）', async () => {
+    stubBlobUrl()
+    const wrapper = await mountView()
+    await openTab(wrapper, '审计报告')
+    await wrapper.find('.report-redownload-csv-btn').trigger('click')
+    await flushPromises()
+    expect(mockedDownload).not.toHaveBeenCalled()
+    expect(ElMessage.error).toHaveBeenCalledWith('请输入报告编号')
   })
 
   it('按号补下载区：输入历史报告号直接下载（S2-7 界面路）', async () => {

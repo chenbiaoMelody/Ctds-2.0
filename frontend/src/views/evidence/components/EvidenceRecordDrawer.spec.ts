@@ -110,7 +110,8 @@ describe('T4 详情抽屉（hifi §4）', () => {
     expect(text).toContain('USG000000000569')
     expect(text).toContain('上链失败')
     expect(text).toContain('存证链暂不可达')
-    expect(text).toContain('dffaa2a5ad0c7030c293c7c608a9d2b7980e40ceb0c3a6a1851ced90db9ab4f5')
+    // 摘要中截断呈现（前 8 + … + 后 8；点击复制完整值，hifi §4 通用契约）
+    expect(text).toContain('dffaa2a5…db9ab4f5')
     // actions 留痕：动作与迁移 + 治理面操作人原文（Q3）+ VERIFIED 行结论
     expect(text).toContain('创建')
     expect(text).toContain('上链失败')

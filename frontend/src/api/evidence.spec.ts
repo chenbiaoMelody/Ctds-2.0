@@ -124,6 +124,23 @@ describe('T14 api/evidence：治理读面 4 函数', () => {
     expect((init.headers as Record<string, string>)['X-Ctds-Roles']).toBe('requester')
   })
 
+  it('listRecords 五维全参拼接：status + from + to 进查询串（评审④ F-2 补齐）', async () => {
+    fetchMock.mockResolvedValue(apiOk({ list: [], total: 0, pageNum: 1, pageSize: 10, totalPages: 0 }))
+    await listRecords({
+      pageNum: 1,
+      pageSize: 10,
+      stageType: 'USAGE',
+      businessNo: 'USG000000000569',
+      status: 'FAILED',
+      from: '2026-10-01T00:00:00Z',
+      to: '2026-11-08T00:00:00Z',
+    })
+    const { path } = await lastCall()
+    expect(path).toBe(
+      '/api/v1/evidence/records?pageNum=1&pageSize=10&stageType=USAGE&businessNo=USG000000000569&status=FAILED&from=2026-10-01T00%3A00%3A00Z&to=2026-11-08T00%3A00%3A00Z',
+    )
+  })
+
   it('getRecordDetail：编号 encodeURIComponent + EvidenceDetailView 透传', async () => {
     fetchMock.mockResolvedValue(apiOk({ record: record(), actions: [] }))
     const detail = await getRecordDetail('EV20261107000004')

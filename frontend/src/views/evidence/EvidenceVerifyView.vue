@@ -4,16 +4,23 @@ import { ElMessage } from 'element-plus'
 import { getRecordDetail, verifyRecord, type EvidenceDetailView, type EvidenceVerifyView } from '../../api/evidence'
 import {
   EVIDENCE_ACTION_LABELS,
+  EVIDENCE_COPY_FAIL_TIP,
+  EVIDENCE_COPY_SUCCESS_TIP,
+  EVIDENCE_DIGEST_HINT,
   EVIDENCE_EMPTY_TEXT,
   EVIDENCE_NO_INPUT_TIP,
   EVIDENCE_NOT_ON_CHAIN_FAILED_PREFIX,
   EVIDENCE_NOT_ON_CHAIN_PENDING_TIP,
+  EVIDENCE_NOT_ON_CHAIN_STATUS_PREFIX,
   EVIDENCE_STATUS_LABELS,
+  EVIDENCE_VERIFY_CONCLUSION_LABELS,
   EVIDENCE_VERIFY_PAGE_DESC,
   EVIDENCE_VERIFY_PAGE_TITLE,
   EVIDENCE_VERIFY_SUBMIT_LABEL,
+  EVIDENCE_VERIFY_TITLE_PREFIX,
   labelOf,
   orDash,
+  truncateDigest,
 } from '../../constants/evidence'
 
 /**
@@ -52,7 +59,19 @@ function notOnChainTip(): string {
     const reason = trail.value?.record.lastErrorSummary
     return reason ? `${EVIDENCE_NOT_ON_CHAIN_FAILED_PREFIX}（${reason}）` : EVIDENCE_NOT_ON_CHAIN_FAILED_PREFIX
   }
-  return `当前存证状态：${labelOf(EVIDENCE_STATUS_LABELS, result.value.status)}`
+  return `${EVIDENCE_NOT_ON_CHAIN_STATUS_PREFIX}${labelOf(EVIDENCE_STATUS_LABELS, result.value.status)}`
+}
+
+/** 摘要点击复制完整值（hifi §4 通用契约；沿 did/IndexView 先例 navigator.clipboard）。 */
+async function copyDigest(value: string | null | undefined) {
+  const text = value ?? ''
+  if (!text) return
+  try {
+    await navigator.clipboard.writeText(text)
+    ElMessage.success(EVIDENCE_COPY_SUCCESS_TIP)
+  } catch {
+    ElMessage.warning(EVIDENCE_COPY_FAIL_TIP)
+  }
 }
 </script>
 
@@ -75,9 +94,11 @@ function notOnChainTip(): string {
       </el-button>
     </div>
 
-    <!-- 三态结论卡（B-2）：PASS 绿 / MISMATCH 红 / NOT_ON_CHAIN 橙 -->
+    <!-- 三态结论卡（B-2）：PASS 绿 / MISMATCH 红 / NOT_ON_CHAIN 橙；摘要中截断 + 点击复制（hifi §4） -->
     <el-card v-if="result?.conclusion === 'PASS'" class="verify-card-pass" shadow="never">
-      <template #header><span class="verify-title-pass">核验结论：通过</span></template>
+      <template #header>
+        <span class="verify-title-pass">{{ EVIDENCE_VERIFY_TITLE_PREFIX }}{{ labelOf(EVIDENCE_VERIFY_CONCLUSION_LABELS, result.conclusion) }}</span>
+      </template>
       <el-descriptions :column="2" size="small" border>
         <el-descriptions-item label="存证编号">{{ result.evidenceNo }}</el-descriptions-item>
         <el-descriptions-item label="业务单据号">{{ result.businessNo }}</el-descriptions-item>
@@ -86,37 +107,41 @@ function notOnChainTip(): string {
         <el-descriptions-item label="核验人">{{ result.verifiedBy }}</el-descriptions-item>
         <el-descriptions-item label="核验时点">{{ result.verifiedAt }}</el-descriptions-item>
         <el-descriptions-item label="期望摘要" :span="2">
-          <span class="digest-cell">{{ result.expectedDigest }}</span>
+          <span class="digest-cell digest-copy" :title="EVIDENCE_DIGEST_HINT" @click="copyDigest(result.expectedDigest)">{{ truncateDigest(result.expectedDigest) }}</span>
         </el-descriptions-item>
         <el-descriptions-item label="实际摘要" :span="2">
-          <span class="digest-cell">{{ result.actualDigest }}</span>
+          <span class="digest-cell digest-copy" :title="EVIDENCE_DIGEST_HINT" @click="copyDigest(result.actualDigest)">{{ truncateDigest(result.actualDigest) }}</span>
         </el-descriptions-item>
         <el-descriptions-item label="本地摘要" :span="2">
-          <span class="digest-cell">{{ result.localDigest }}</span>
+          <span class="digest-cell digest-copy" :title="EVIDENCE_DIGEST_HINT" @click="copyDigest(result.localDigest)">{{ truncateDigest(result.localDigest) }}</span>
         </el-descriptions-item>
       </el-descriptions>
     </el-card>
 
     <el-card v-else-if="result?.conclusion === 'MISMATCH'" class="verify-card-mismatch" shadow="never">
-      <template #header><span class="verify-title-mismatch">核验结论：不一致</span></template>
+      <template #header>
+        <span class="verify-title-mismatch">{{ EVIDENCE_VERIFY_TITLE_PREFIX }}{{ labelOf(EVIDENCE_VERIFY_CONCLUSION_LABELS, result.conclusion) }}</span>
+      </template>
       <el-descriptions :column="2" size="small" border>
         <el-descriptions-item label="存证编号">{{ result.evidenceNo }}</el-descriptions-item>
         <el-descriptions-item label="业务单据号">{{ result.businessNo }}</el-descriptions-item>
         <el-descriptions-item label="核验时点" :span="2">{{ result.verifiedAt }}</el-descriptions-item>
         <el-descriptions-item label="期望摘要" :span="2">
-          <span class="digest-cell">{{ result.expectedDigest }}</span>
+          <span class="digest-cell digest-copy" :title="EVIDENCE_DIGEST_HINT" @click="copyDigest(result.expectedDigest)">{{ truncateDigest(result.expectedDigest) }}</span>
         </el-descriptions-item>
         <el-descriptions-item label="实际摘要" :span="2">
-          <span class="digest-cell">{{ result.actualDigest }}</span>
+          <span class="digest-cell digest-copy" :title="EVIDENCE_DIGEST_HINT" @click="copyDigest(result.actualDigest)">{{ truncateDigest(result.actualDigest) }}</span>
         </el-descriptions-item>
         <el-descriptions-item label="本地摘要" :span="2">
-          <span class="digest-cell">{{ result.localDigest }}</span>
+          <span class="digest-cell digest-copy" :title="EVIDENCE_DIGEST_HINT" @click="copyDigest(result.localDigest)">{{ truncateDigest(result.localDigest) }}</span>
         </el-descriptions-item>
       </el-descriptions>
     </el-card>
 
     <el-card v-else-if="result?.conclusion === 'NOT_ON_CHAIN'" class="verify-card-not-on-chain" shadow="never">
-      <template #header><span class="verify-title-not-on-chain">核验结论：未上链</span></template>
+      <template #header>
+        <span class="verify-title-not-on-chain">{{ EVIDENCE_VERIFY_TITLE_PREFIX }}{{ labelOf(EVIDENCE_VERIFY_CONCLUSION_LABELS, result.conclusion) }}</span>
+      </template>
       <p class="not-on-chain-tip">{{ notOnChainTip() }}</p>
       <el-descriptions :column="2" size="small" border>
         <el-descriptions-item label="存证编号">{{ result.evidenceNo }}</el-descriptions-item>
@@ -189,6 +214,14 @@ function notOnChainTip(): string {
   font-family: monospace;
   word-break: break-all;
   font-size: 12px;
+}
+
+.digest-copy {
+  cursor: pointer;
+}
+
+.digest-copy:hover {
+  color: var(--el-color-primary);
 }
 
 .verify-trail-title {

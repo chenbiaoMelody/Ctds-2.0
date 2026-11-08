@@ -1,14 +1,19 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
+import { ElMessage } from 'element-plus'
 import { getRecordDetail, type EvidenceDetailView } from '../../../api/evidence'
 import {
   EVIDENCE_ACTION_LABELS,
+  EVIDENCE_COPY_FAIL_TIP,
+  EVIDENCE_COPY_SUCCESS_TIP,
+  EVIDENCE_DIGEST_HINT,
   EVIDENCE_EMPTY_TEXT,
   EVIDENCE_STAGE_LABELS,
   EVIDENCE_STATUS_LABELS,
   EVIDENCE_STATUS_TAG,
   labelOf,
   orDash,
+  truncateDigest,
 } from '../../../constants/evidence'
 
 /**
@@ -45,6 +50,18 @@ watch(
 function statusText(value: string | null): string {
   return labelOf(EVIDENCE_STATUS_LABELS, value)
 }
+
+/** 摘要点击复制完整值（hifi §4 通用契约；沿 did/IndexView 先例 navigator.clipboard）。 */
+async function copyDigest(value: string | null | undefined) {
+  const text = value ?? ''
+  if (!text) return
+  try {
+    await navigator.clipboard.writeText(text)
+    ElMessage.success(EVIDENCE_COPY_SUCCESS_TIP)
+  } catch {
+    ElMessage.warning(EVIDENCE_COPY_FAIL_TIP)
+  }
+}
 </script>
 
 <template>
@@ -72,10 +89,10 @@ function statusText(value: string | null): string {
           </el-descriptions-item>
           <el-descriptions-item label="发生时点">{{ orDash(detail.record.occurredAt) }}</el-descriptions-item>
           <el-descriptions-item label="主体（DID 摘要）" :span="2">
-            <span class="digest-cell" :title="detail.record.subjectDidDigest">{{ detail.record.subjectDidDigest }}</span>
+            <span class="digest-cell digest-copy" :title="EVIDENCE_DIGEST_HINT" @click="copyDigest(detail.record.subjectDidDigest)">{{ truncateDigest(detail.record.subjectDidDigest) }}</span>
           </el-descriptions-item>
           <el-descriptions-item label="内容摘要" :span="2">
-            <span class="digest-cell" :title="detail.record.contentDigest">{{ detail.record.contentDigest }}</span>
+            <span class="digest-cell digest-copy" :title="EVIDENCE_DIGEST_HINT" @click="copyDigest(detail.record.contentDigest)">{{ truncateDigest(detail.record.contentDigest) }}</span>
           </el-descriptions-item>
           <el-descriptions-item label="链上交易标识">{{ orDash(detail.record.chainTxId) }}</el-descriptions-item>
           <el-descriptions-item label="块号">{{ orDash(detail.record.chainBlockNo) }}</el-descriptions-item>
@@ -123,5 +140,13 @@ function statusText(value: string | null): string {
   font-family: monospace;
   word-break: break-all;
   font-size: 12px;
+}
+
+.digest-copy {
+  cursor: pointer;
+}
+
+.digest-copy:hover {
+  color: var(--el-color-primary);
 }
 </style>

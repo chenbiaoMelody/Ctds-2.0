@@ -6,7 +6,8 @@ import { describe, it, expect } from 'vitest'
  * - 单一身份头工厂：api 层统一 `makeDomainJson(evidenceRolesHeader())`；
  * - 渲染安全：evidence 视图零 `v-html`；
  * - 请求纪律：裸 `fetch(` 在 evidence 域内恰 1 处 = `downloadAuditReport` 豁免点，
- *   且两处豁免注释锚逐字存在（№1 = delivery.ts downloadDeliveryPackage / №2 = 本文件登记）；
+ *   №2 注释锚在本文件逐字断言；№1（delivery.ts downloadDeliveryPackage）由交付域
+ *   既有守卫与注释承载（不在本域扫描面）；
  * - 角色纪律：`constants/evidence.ts` 零 admin 字面量、零端点 URL；
  * - 只读铁律：视图零写面越界（无 /retry 入口、零"重试上链"文案，N9 / B5-3）。
  */

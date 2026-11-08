@@ -23,25 +23,34 @@ import {
   EVIDENCE_AUDIT_PAGE_DESC,
   EVIDENCE_AUDIT_PAGE_TITLE,
   EVIDENCE_CONDITION_HINT,
+  EVIDENCE_COPY_FAIL_TIP,
+  EVIDENCE_COPY_SUCCESS_TIP,
+  EVIDENCE_DIGEST_HINT,
   EVIDENCE_EMPTY_TEXT,
   EVIDENCE_GENERATE_LABEL,
   EVIDENCE_JSON_LABEL,
   EVIDENCE_CSV_LABEL,
+  EVIDENCE_REDOWNLOAD_NO_TIP,
   EVIDENCE_REDOWNLOAD_TITLE,
   EVIDENCE_RETRY_LABEL,
   EVIDENCE_SEARCH_LABEL,
+  EVIDENCE_SNAPSHOT_PREFIX,
   EVIDENCE_STAGE_LABELS,
   EVIDENCE_STATUS_LABELS,
   EVIDENCE_STATUS_TAG,
   EVIDENCE_TAB_LABELS,
   EVIDENCE_TRAIL_HINT_DEFAULT,
   EVIDENCE_TRAIL_SOURCE_LABELS,
+  EVIDENCE_TRAIL_STATUS_PREFIX,
   EVIDENCE_UNAVAILABLE_WARNING,
   EVIDENCE_VERIFY_CONCLUSION_LABELS,
   EVIDENCE_VERIFY_CONCLUSION_TAG,
   EVIDENCE_WINDOW_HINT,
+  EVIDENCE_WINDOW_HINT_ONLY,
+  isBeyond90Days,
   labelOf,
   orDash,
+  truncateDigest,
 } from '../../constants/evidence'
 import EvidenceRecordDrawer from './components/EvidenceRecordDrawer.vue'
 
@@ -126,19 +135,25 @@ function onRecordPageChange(page: number) {
   void searchRecords(page)
 }
 
-// ==== T5 异常项（A-3，首激活自动拉） ====
+// ==== T5 异常项（A-3，首激活自动拉；时间范围可选——lofi A-3①，E2 from/to 透传） ====
 const anomalies = ref<PageData<AnomalyItemView> | null>(null)
 const anomaliesLoading = ref(false)
 const anomaliesError = ref('')
 const anomalyPageNum = ref(1)
 const anomalyPageSize = ref(10)
+const anomalyRange = ref<[string, string] | null>(null)
 
 async function loadAnomalies(page = 1) {
   anomalyPageNum.value = page
   anomaliesLoading.value = true
   anomaliesError.value = ''
   try {
-    anomalies.value = await auditAnomalies({ pageNum: anomalyPageNum.value, pageSize: anomalyPageSize.value })
+    anomalies.value = await auditAnomalies({
+      pageNum: anomalyPageNum.value,
+      pageSize: anomalyPageSize.value,
+      from: anomalyRange.value?.[0],
+      to: anomalyRange.value?.[1],
+    })
   } catch (e) {
     anomaliesError.value = (e as Error).message
     anomalies.value = null
@@ -243,15 +258,74 @@ async function downloadReport(reportNo: string, format: 'csv' | 'json') {
   }
 }
 
+/** 摘要点击复制完整值（hifi §4 通用契约；沿 did/IndexView 先例 navigator.clipboard）。 */
+async function copyDigest(value: string | null | undefined) {
+  const text = value ?? ''
+  if (!text) return
+  try {
+    await navigator.clipboard.writeText(text)
+    ElMessage.success(EVIDENCE_COPY_SUCCESS_TIP)
+  } catch {
+    ElMessage.warning(EVIDENCE_COPY_FAIL_TIP)
+  }
+}
+
 const redownloadNo = ref('')
 
 function submitRedownload(format: 'csv' | 'json') {
   const no = redownloadNo.value.trim()
   if (!no) {
-    ElMessage.error('请输入报告编号')
+    ElMessage.error(EVIDENCE_REDOWNLOAD_NO_TIP)
     return
   }
   void downloadReport(no, format)
+}
+
+// ==== 90 天窗口体验引导（Q6-A：纯 UI 限选非第二裁决；datetimerange 首选日 + 跨度判定） ====
+const overviewFirstPick = ref<number | null>(null)
+const recordFirstPick = ref<number | null>(null)
+const anomalyFirstPick = ref<number | null>(null)
+const trailFirstPick = ref<number | null>(null)
+const reportFirstPick = ref<number | null>(null)
+
+function onOverviewPick(dates: Date[] | null) {
+  overviewFirstPick.value = dates?.[0]?.getTime() ?? null
+}
+
+function limitOverview(date: Date) {
+  return isBeyond90Days(overviewFirstPick.value, date.getTime())
+}
+
+function onRecordPick(dates: Date[] | null) {
+  recordFirstPick.value = dates?.[0]?.getTime() ?? null
+}
+
+function limitRecord(date: Date) {
+  return isBeyond90Days(recordFirstPick.value, date.getTime())
+}
+
+function onAnomalyPick(dates: Date[] | null) {
+  anomalyFirstPick.value = dates?.[0]?.getTime() ?? null
+}
+
+function limitAnomaly(date: Date) {
+  return isBeyond90Days(anomalyFirstPick.value, date.getTime())
+}
+
+function onTrailPick(dates: Date[] | null) {
+  trailFirstPick.value = dates?.[0]?.getTime() ?? null
+}
+
+function limitTrail(date: Date) {
+  return isBeyond90Days(trailFirstPick.value, date.getTime())
+}
+
+function onReportPick(dates: Date[] | null) {
+  reportFirstPick.value = dates?.[0]?.getTime() ?? null
+}
+
+function limitReport(date: Date) {
+  return isBeyond90Days(reportFirstPick.value, date.getTime())
 }
 
 // ==== 详情抽屉（A-2 / A-3 行点击；只读） ====
@@ -292,6 +366,8 @@ watch(
             start-placeholder="起始时间（可选）"
             end-placeholder="结束时间（可选）"
             style="width: 340px"
+            @calendar-change="onOverviewPick"
+            :disabled-date="limitOverview"
           />
           <span class="hint-text">{{ EVIDENCE_WINDOW_HINT }}</span>
           <el-button type="primary" class="overview-search-btn" :loading="overviewLoading" @click="loadOverview">
@@ -339,7 +415,7 @@ watch(
               <div class="anomaly-card-label">核验不一致</div>
             </div>
           </div>
-          <p v-if="overviewData" class="snapshot-hint">快照时点：{{ overviewData.snapshotAt }}</p>
+          <p v-if="overviewData" class="snapshot-hint">{{ EVIDENCE_SNAPSHOT_PREFIX }}{{ overviewData.snapshotAt }}</p>
         </div>
       </el-tab-pane>
 
@@ -361,6 +437,8 @@ watch(
             start-placeholder="起始时间"
             end-placeholder="结束时间"
             style="width: 340px"
+            @calendar-change="onRecordPick"
+            :disabled-date="limitRecord"
           />
           <el-button type="primary" class="records-search-btn" :loading="recordsLoading" @click="searchRecords(1)">
             {{ EVIDENCE_SEARCH_LABEL }}
@@ -413,8 +491,24 @@ watch(
         />
       </el-tab-pane>
 
-      <!-- A-3 异常项：三类并集分页（MISMATCH 行附核验结论 / 核验人摘要 / 时点） -->
+      <!-- A-3 异常项：时间范围（可选）+ 三类并集分页（MISMATCH 行附核验结论 / 核验人摘要 / 时点） -->
       <el-tab-pane :label="EVIDENCE_TAB_LABELS.anomalies" name="audit-anomalies">
+        <div class="filter-bar">
+          <el-date-picker
+            v-model="anomalyRange"
+            class="anomalies-range"
+            type="datetimerange"
+            value-format="YYYY-MM-DDTHH:mm:ssZ"
+            start-placeholder="起始时间（可选）"
+            end-placeholder="结束时间（可选）"
+            style="width: 340px"
+            @calendar-change="onAnomalyPick"
+            :disabled-date="limitAnomaly"
+          />
+          <el-button class="anomalies-search-btn" :loading="anomaliesLoading" @click="loadAnomalies(1)">
+            {{ EVIDENCE_SEARCH_LABEL }}
+          </el-button>
+        </div>
         <el-alert v-if="anomaliesError" class="list-error" :title="anomaliesError" type="error" :closable="false" show-icon>
           <template #default>
             <el-button link type="primary" class="retry-btn" @click="loadAnomalies(anomalyPageNum)">{{ EVIDENCE_RETRY_LABEL }}</el-button>
@@ -498,12 +592,14 @@ watch(
             start-placeholder="起始时间"
             end-placeholder="结束时间"
             style="width: 340px"
+            @calendar-change="onTrailPick"
+            :disabled-date="limitTrail"
           />
           <el-button type="primary" class="trail-search-btn" :loading="trailLoading" @click="searchTrails(1)">
             {{ EVIDENCE_SEARCH_LABEL }}
           </el-button>
         </div>
-        <p class="hint-text">{{ EVIDENCE_WINDOW_HINT }}</p>
+        <p class="hint-text">{{ EVIDENCE_WINDOW_HINT_ONLY }}</p>
         <el-alert v-if="trailError" class="list-error" :title="trailError" type="error" :closable="false" show-icon>
           <template #default>
             <el-button link type="primary" class="retry-btn" @click="searchTrails(trailPageNum)">{{ EVIDENCE_RETRY_LABEL }}</el-button>
@@ -563,7 +659,7 @@ watch(
                 <span>{{ labelOf(EVIDENCE_TRAIL_SOURCE_LABELS, node.source) }} · {{ node.action }}</span>
                 <span class="trail-node-meta">{{ orDash(node.result) }}</span>
                 <span class="trail-node-meta">{{ orDash(node.summary) }}</span>
-                <span class="trail-node-meta">留痕状态：{{ node.sourceStatus }}</span>
+                <span class="trail-node-meta">{{ EVIDENCE_TRAIL_STATUS_PREFIX }}{{ node.sourceStatus }}</span>
               </div>
             </el-timeline-item>
           </el-timeline>
@@ -618,13 +714,15 @@ watch(
             start-placeholder="起始时间"
             end-placeholder="结束时间"
             style="width: 340px"
+            @calendar-change="onReportPick"
+            :disabled-date="limitReport"
           />
           <el-input v-model="reportRemark" class="report-remark" placeholder="备注（可空）" clearable style="width: 180px" />
           <el-button type="primary" class="report-generate-btn" :loading="reportLoading" @click="generate">
             {{ EVIDENCE_GENERATE_LABEL }}
           </el-button>
         </div>
-        <p class="hint-text">{{ EVIDENCE_CONDITION_HINT }}；{{ EVIDENCE_WINDOW_HINT }}</p>
+        <p class="hint-text">{{ EVIDENCE_CONDITION_HINT }}；{{ EVIDENCE_WINDOW_HINT_ONLY }}</p>
         <el-alert v-if="reportError" class="list-error" :title="reportError" type="error" :closable="false" show-icon />
 
         <el-card v-if="reportResult" class="report-result-card" shadow="never">
@@ -649,7 +747,11 @@ watch(
             </el-descriptions-item>
             <el-descriptions-item label="异常条数">{{ reportResult.anomalyCount }}</el-descriptions-item>
             <el-descriptions-item label="内容摘要" :span="2">
-              <span class="digest-cell">{{ reportResult.contentDigest }}</span>
+              <span
+                class="digest-cell digest-copy"
+                :title="EVIDENCE_DIGEST_HINT"
+                @click="copyDigest(reportResult.contentDigest)"
+              >{{ truncateDigest(reportResult.contentDigest) }}</span>
             </el-descriptions-item>
             <el-descriptions-item label="生成人">{{ reportResult.generatedBy }}</el-descriptions-item>
             <el-descriptions-item label="生成时点">{{ reportResult.generatedAt }}</el-descriptions-item>
@@ -761,6 +863,14 @@ watch(
   font-family: monospace;
   word-break: break-all;
   font-size: 12px;
+}
+
+.digest-copy {
+  cursor: pointer;
+}
+
+.digest-copy:hover {
+  color: var(--el-color-primary);
 }
 
 .scope-item {

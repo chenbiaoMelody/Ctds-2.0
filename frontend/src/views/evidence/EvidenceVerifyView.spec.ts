@@ -90,6 +90,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   vi.spyOn(ElMessage, 'error')
   vi.spyOn(ElMessage, 'warning')
+  vi.spyOn(ElMessage, 'success')
   setDemoSubject('S-admin-evidence')
   setActorMode('operator')
   mockedVerify.mockResolvedValue(verifyView())
@@ -111,12 +112,25 @@ describe('T11 核验三态结论卡（C-8.1 S2-1 / S2-3 / S2-5）', () => {
     expect(text).toContain('4')
     expect(text).toContain('S-admin-evidence')
     expect(text).toContain('2026-11-08T03:01:35.184Z')
-    // 三方摘要等宽原样（一致态三值相同）
-    expect(text).toContain('58a3eb769af998155b7aa1ca2bbb137a7de9948bacb472a88c9a785fefd0a69b')
+    // 三方摘要中截断呈现（一致态三值相同；点击复制完整值，hifi §4 通用契约）
+    expect(text).toContain('58a3eb76…efd0a69b')
     // 留痕表（B-3）：VERIFIED 行 + 治理档操作人原文
     const trail = wrapper.find('.verify-trail-table')
     expect(trail.exists()).toBe(true)
     expect(wrapper.text()).toContain('S-admin-evidence')
+  })
+
+  it('摘要点击复制完整值：clipboard 写入 + 成功提示（hifi §4 通用契约）', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    const wrapper = await mountView()
+    await submitNo(wrapper, 'EV20261107000004')
+    const digestCells = wrapper.findAll('.digest-copy')
+    expect(digestCells.length).toBeGreaterThanOrEqual(3)
+    await digestCells[0].trigger('click')
+    await flushPromises()
+    expect(writeText).toHaveBeenCalledWith('58a3eb769af998155b7aa1ca2bbb137a7de9948bacb472a88c9a785fefd0a69b')
+    expect(ElMessage.success).toHaveBeenCalledWith('已复制完整值')
   })
 
   it('MISMATCH：红色卡三方摘要（期望 / 实际 / 本地）+ 编号 / 单号 / 时点定位（S2-3 差异可读）', async () => {
