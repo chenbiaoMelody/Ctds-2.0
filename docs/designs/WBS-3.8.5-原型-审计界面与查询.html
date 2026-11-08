@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>WBS-3.8.5 审计界面与查询 线框原型 V0.9</title>
+<style>
+  :root {
+    --ink: #1f2733;
+    --muted: #6b7684;
+    --line: #d9dee5;
+    --soft: #f4f6f9;
+    --brand: #2f6bff;
+    --ok: #1f9d55;
+    --warn: #b7791f;
+    --bad: #c53030;
+    --side: #1f2a44;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px;
+    font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
+    color: var(--ink); background: #eef1f5;
+  }
+  h1 { font-size: 20px; margin: 0 0 6px; }
+  h2 { font-size: 15px; margin: 0 0 4px; }
+  h3 { font-size: 13px; margin: 0 0 8px; color: var(--muted); font-weight: 600; }
+  .intro { color: var(--muted); font-size: 12px; line-height: 1.7; margin-bottom: 18px; }
+  .legend { font-size: 12px; color: var(--muted); margin-bottom: 18px; }
+  .legend b { color: var(--ink); }
+  .screen {
+    background: #fff; border: 1px solid var(--line); border-radius: 8px;
+    margin-bottom: 22px; overflow: hidden; box-shadow: 0 1px 2px rgba(20,30,50,.06);
+  }
+  .screen-head {
+    display: flex; align-items: baseline; gap: 10px; padding: 10px 14px;
+    border-bottom: 1px solid var(--line); background: var(--soft);
+  }
+  .screen-head .tag {
+    font-size: 11px; color: #fff; background: var(--brand);
+    border-radius: 10px; padding: 2px 8px; flex: none;
+  }
+  .screen-head .note { font-size: 12px; color: var(--muted); }
+  .app { display: flex; min-height: 360px; }
+  .side { width: 172px; flex: none; background: var(--side); color: #c9d3e6; font-size: 12px; padding: 12px 0; }
+  .side .brand { padding: 0 14px 12px; color: #fff; font-size: 13px; font-weight: 600; border-bottom: 1px solid #33405f; margin-bottom: 8px; }
+  .side .item { padding: 7px 14px; }
+  .side .item.on { background: #2b3b5c; color: #fff; border-left: 3px solid var(--brand); }
+  .main { flex: 1; min-width: 0; padding: 14px 16px; }
+  .topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .topbar .title { font-size: 15px; font-weight: 600; }
+  .topbar .who { font-size: 12px; color: var(--muted); }
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 12px; flex-wrap: wrap; }
+  .tabs .tab { font-size: 12px; padding: 7px 12px; border: 1px solid var(--line); border-bottom: none; border-radius: 4px 4px 0 0; color: var(--muted); background: #fafbfc; }
+  .tabs .tab.on { color: var(--brand); background: #fff; font-weight: 600; border-bottom: 1px solid #fff; margin-bottom: -1px; }
+  .bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+  .field { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); }
+  .inp {
+    height: 26px; min-width: 104px; border: 1px solid var(--line); border-radius: 3px;
+    padding: 0 8px; font-size: 12px; color: var(--ink); background: #fff; display: inline-flex; align-items: center;
+  }
+  .inp.ph { color: #a7b0bc; }
+  .inp.code { font-family: Consolas, Menlo, monospace; }
+  .btn {
+    height: 26px; padding: 0 12px; border-radius: 3px; border: 1px solid var(--line);
+    background: #fff; font-size: 12px; color: var(--ink); display: inline-flex; align-items: center;
+  }
+  .btn.primary { background: var(--brand); border-color: var(--brand); color: #fff; }
+  .btn.mini { height: 22px; padding: 0 8px; font-size: 11px; }
+  table.grid { width: 100%; border-collapse: collapse; font-size: 12px; }
+  table.grid th, table.grid td { border: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top; }
+  table.grid th { background: var(--soft); color: var(--muted); font-weight: 600; white-space: nowrap; }
+  table.grid td.num { font-family: Consolas, Menlo, monospace; }
+  .tagx { display: inline-block; font-size: 11px; border-radius: 3px; padding: 1px 7px; border: 1px solid; white-space: nowrap; }
+  .tagx.ok   { color: var(--ok); border-color: var(--ok); background: #edf7f0; }
+  .tagx.warn { color: var(--warn); border-color: var(--warn); background: #fdf6ec; }
+  .tagx.bad  { color: var(--bad); border-color: var(--bad); background: #fdf0ef; }
+  .tagx.info { color: var(--brand); border-color: var(--brand); background: #eef3ff; }
+  .tagx.gray { color: var(--muted); border-color: var(--line); background: #fafbfc; }
+  .cards { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+  .card { flex: 1; min-width: 150px; border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; background: #fbfcfe; }
+  .card .k { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  .card .v { font-size: 20px; font-weight: 700; }
+  .card .v.bad { color: var(--bad); }
+  .card .v.ok { color: var(--ok); }
+  .card .v.warn { color: var(--warn); }
+  .hint { font-size: 11px; color: var(--muted); margin-top: 8px; line-height: 1.7; }
+  .alert { border: 1px solid var(--warn); background: #fdf6ec; color: var(--warn); font-size: 12px; border-radius: 4px; padding: 7px 10px; margin-bottom: 10px; }
+  .alert.bad { border-color: var(--bad); background: #fdf0ef; color: var(--bad); }
+  .verdict { border: 1px solid var(--line); border-left-width: 4px; border-radius: 6px; padding: 12px 14px; margin-bottom: 12px; }
+  .verdict.pass { border-left-color: var(--ok); background: #f4fbf6; }
+  .verdict.miss { border-left-color: var(--bad); background: #fdf4f3; }
+  .verdict.not  { border-left-color: var(--warn); background: #fdf9ef; }
+  .verdict .head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .verdict .head .t { font-size: 14px; font-weight: 700; }
+  .verdict .rows { font-size: 12px; display: grid; grid-template-columns: 110px 1fr; gap: 4px 10px; }
+  .verdict .rows .k { color: var(--muted); }
+  .verdict .rows .v { font-family: Consolas, Menlo, monospace; word-break: break-all; }
+  .tl { list-style: none; margin: 0; padding: 0 0 0 4px; }
+  .tl li { position: relative; padding: 0 0 14px 22px; border-left: 2px solid var(--line); margin-left: 8px; font-size: 12px; }
+  .tl li:last-child { border-left-color: transparent; padding-bottom: 2px; }
+  .tl li::before { content: ""; position: absolute; left: -7px; top: 2px; width: 10px; height: 10px; border-radius: 50%; background: #fff; border: 2px solid var(--brand); }
+  .tl li.ok::before { border-color: var(--ok); }
+  .tl li.bad::before { border-color: var(--bad); }
+  .tl li.warn::before { border-color: var(--warn); }
+  .tl .t1 { font-weight: 600; margin-bottom: 2px; }
+  .tl .t2 { color: var(--muted); line-height: 1.6; }
+  .tl .t2 .mono { font-family: Consolas, Menlo, monospace; }
+  .kv { display: grid; grid-template-columns: 130px 1fr 130px 1fr; gap: 5px 12px; font-size: 12px; border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; background: #fbfcfe; margin-bottom: 10px; }
+  .kv .k { color: var(--muted); }
+  .kv .v { font-family: Consolas, Menlo, monospace; word-break: break-all; }
+  .sec { margin-bottom: 14px; }
+  .sec .cap { font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
+  .pg { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; font-size: 12px; color: var(--muted); }
+  .pg .pages span { display: inline-block; min-width: 22px; text-align: center; border: 1px solid var(--line); border-radius: 3px; padding: 2px 4px; margin-left: 4px; background: #fff; }
+  .pg .pages span.on { background: var(--brand); color: #fff; border-color: var(--brand); }
+  .ann { font-size: 11px; color: var(--bad); font-weight: 600; }
+</style>
+</head>
+<body>
+
+<h1>WBS-3.8.5 审计界面与查询 —— 静态线框原型 V0.9（待编排师确认）</h1>
+<div class="intro">
+  界面类低保真配套原型（章程 2.6.3）。三屏：① 监管审计·审计总览标签页 ② 监管审计·时间线与调阅标签页（单笔模式）③ 存证核验工具单页。
+  示例数据取自演示链 C-8.1 S1 实测（四环节 AUTHORIZATION 1 / CONTRACT 1 / DELIVERY 1 / USAGE 2 + 上链失败 1）。线框仅表达布局与信息结构，非视觉稿；
+  实现按 Element Plus 既有页面范式（el-tabs + 筛选区 + el-table + el-pagination + el-drawer）。
+</div>
+<div class="legend">
+  <b>全局约定</b>：只读铁律——全界面无修改 / 删除 / 补录 / 重试按钮，唯一动作 = 查询 / 核验 / 下载；
+  摘要字段等宽字体 + 截断 + 点击复制；错误一律后端原文展示（不转译）；跨域降级 UNAVAILABLE 显式红色标记（不伪装连续）。
+</div>
+
+<!-- ============ 屏 A：监管审计 · 审计总览 ============ -->
+<div class="screen">
+  <div class="screen-head"><span class="tag">屏 A</span><b>监管审计 —— 审计总览标签页</b><span class="note">菜单 26「监管审计」（evidence.governance，仅 admin 可见）；剧本 C-8.2 S1-1 基线四值在此记录</span></div>
+  <div class="app">
+    <div class="side">
+      <div class="brand">城市可信数据空间</div>
+      <div class="item">工作台</div>
+      <div class="item">…既有菜单 1~25…</div>
+      <div class="item on">监管审计（新 · 26）</div>
+      <div class="item">存证核验（新 · 27）</div>
+    </div>
+    <div class="main">
+      <div class="topbar"><span class="title">监管审计</span><span class="who">演示身份：admin（治理档）</span></div>
+      <div class="tabs">
+        <span class="tab on">审计总览</span><span class="tab">存证记录</span><span class="tab">异常项</span><span class="tab">时间线与调阅</span><span class="tab">审计报告</span>
+      </div>
+      <div class="bar">
+        <span class="field">时间范围 <span class="inp ph">起 — 止（可选，≤90 天）</span></span>
+        <span class="btn">查询</span><span class="btn">重置</span>
+        <span class="hint" style="margin:0">不填 = 全量快照；"至少一个条件 / 时间窗 ≤90 天 / 每页 ≤100 条"由后端唯一裁决，前端仅日期控件限 90 天可选（Q6-A）</span>
+      </div>
+      <div class="sec">
+        <div class="cap">四环节 × 三状态矩阵（E1）</div>
+        <table class="grid">
+          <tr><th>环节</th><th>待上链</th><th>已上链</th><th>上链失败</th><th>小计</th></tr>
+          <tr><td>授权（准入 / 策略）</td><td class="num">0</td><td class="num">1</td><td class="num">0</td><td class="num">1</td></tr>
+          <tr><td>合约（签署）</td><td class="num">0</td><td class="num">1</td><td class="num">0</td><td class="num">1</td></tr>
+          <tr><td>交付</td><td class="num">0</td><td class="num">1</td><td class="num">0</td><td class="num">1</td></tr>
+          <tr><td>使用（放行）</td><td class="num">0</td><td class="num">2</td><td class="num bad" style="color:var(--bad);font-weight:700">1</td><td class="num">3</td></tr>
+        </table>
+      </div>
+      <div class="cards">
+        <div class="card"><div class="k">待上链</div><div class="v ok">0</div></div>
+        <div class="card"><div class="k">上链失败</div><div class="v bad">1</div></div>
+        <div class="card"><div class="k">核验不一致</div><div class="v warn">0</div></div>
+        <div class="card"><div class="k">快照时点</div><div class="v" style="font-size:12px;line-height:1.8">2026-11-07T22:xx:xxZ</div></div>
+      </div>
+      <div class="hint">异常计数卡点击 → 跳"异常项"标签页。加载 / 空态 / 错误三态齐备；错误 = el-alert + 重试（后端错误原文）。</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 屏 A-2：监管审计 · 时间线与调阅（单笔模式） ============ -->
+<div class="screen">
+  <div class="screen-head"><span class="tag">屏 A-2</span><b>监管审计 —— 时间线与调阅标签页（单笔模式）</b><span class="note">剧本 C-8.2 S1-2 / S1-4（时间线连续）/ S1-5（无条件与宽窗拒）/ S1-6（调阅自动留痕）</span></div>
+  <div class="app">
+    <div class="main" style="padding-left:16px">
+      <div class="topbar"><span class="title">时间线与调阅</span><span class="who">E3 双模：填单据号 = 单笔全链；其余条件 = 清单分页</span></div>
+      <div class="bar">
+        <span class="field">业务单据号 <span class="inp code ph">如 DL000031 / CO000043 / SPACE2:ADMISSION25 / USG…</span></span>
+        <span class="btn primary">调阅时间线</span>
+        <span class="field" style="margin-left:12px">环节 <span class="inp ph">全部</span></span>
+        <span class="field">主体摘要 <span class="inp code ph">64 位十六进制（可选）</span></span>
+        <span class="field">时间范围 <span class="inp ph">起 — 止</span></span>
+        <span class="btn">清单查询</span>
+      </div>
+      <div class="alert bad">示例（负向呈现）：不填任何条件直接查询 → 后端拒绝，原文提示"至少提供一个查询条件"（1012C0002）——前端原样展示，不转译不美化。</div>
+      <div class="sec">
+        <div class="cap">单笔存证六要素（TRAIL 模式）</div>
+        <div class="kv">
+          <span class="k">存证编号</span><span class="v">EV20261107000004</span>
+          <span class="k">环节 / 操作</span><span class="v">DELIVERY / FILE_DELIVERED</span>
+          <span class="k">业务单据号</span><span class="v">DL000031</span>
+          <span class="k">状态</span><span class="v"><span class="tagx ok">已上链</span></span>
+          <span class="k">主体（DID 摘要）</span><span class="v">9f3c…e2a1（截断 + 复制）</span>
+          <span class="k">内容摘要</span><span class="v">5d41…08c7（截断 + 复制）</span>
+          <span class="k">链上交易标识</span><span class="v">LTX000000000042 · 块 42</span>
+          <span class="k">发生时点</span><span class="v">2026-11-07T22:xx:xxZ</span>
+        </div>
+      </div>
+      <div class="sec">
+        <div class="cap">全链时间线（存证事件留痕 + 跨域业务留痕；脱敏口径 = 审计面摘要化出参原样渲染，Q3-A）</div>
+        <div class="alert">示例（降级诚实呈现）：跨域留痕暂不可达（UNAVAILABLE）——时间线可能不完整，仅展示存证侧留痕。红色标记，不伪装连续。</div>
+        <ul class="tl">
+          <li class="ok"><div class="t1">[合约域] 签署完成（CO000043）<span class="tagx ok">OK</span></div><div class="t2">动作 attestation · 操作人摘要 3a91…77bd · 2026-11-07T21:xx:xxZ</div></li>
+          <li class="ok"><div class="t1">[交付域] 交付创建（DL000031）<span class="tagx ok">OK</span></div><div class="t2">动作 create · 结果 SUCCESS · 2026-11-07T22:xx:xxZ</div></li>
+          <li><div class="t1">[存证] 已创建 → 待上链</div><div class="t2">操作人摘要 8c02…41f9 · 2026-11-07T22:xx:xxZ</div></li>
+          <li class="ok"><div class="t1">[存证] 已上链（LTX000000000042）</div><div class="t2">块 42 · 2026-11-07T22:xx:xxZ</div></li>
+          <li class="warn"><div class="t1">[交付域] 交付放行留痕 <span class="tagx bad">UNAVAILABLE</span></div><div class="t2">跨域服务暂不可达，本节点信息缺失——降级标记，不伪装连续</div></li>
+        </ul>
+        <div class="hint">每次调阅由平台自动留痕（调阅人 / 时点 / 条件 / 返回条数，可查库核对）——界面灰字提示，前端不重复留痕（S1-6）。</div>
+      </div>
+      <div class="hint">清单模式（不填单号）：返回分页表（列同存证记录精简）+ 灰字"输入业务单据号查看全链时间线"（trailHint）。时间窗超 90 天 → 后端拒绝原文展示（S1-5）。</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 屏 B：存证核验工具 ============ -->
+<div class="screen">
+  <div class="screen-head"><span class="tag">屏 B</span><b>存证核验工具 —— 单页</b><span class="note">菜单 27「存证核验」（evidence.governance）；剧本 C-8.1 S2-1 / S2-3 / S2-5；核验 = 只读比对，唯一"动作"入口</span></div>
+  <div class="app">
+    <div class="main" style="padding-left:16px">
+      <div class="topbar"><span class="title">存证核验</span><span class="who">核验 = 重算摘要并与链上记录比对；结论三态显式给出，不改变存证与业务数据</span></div>
+      <div class="bar">
+        <span class="field">存证编号 <span class="inp code">EV20261107000004</span></span>
+        <span class="btn primary">发起核验</span>
+      </div>
+
+      <div class="verdict pass">
+        <div class="head"><span class="t">结论：通过</span><span class="tagx ok">PASS</span><span class="ann" style="color:var(--muted);font-weight:400">示例 ①（正向，S2-1）</span></div>
+        <div class="rows">
+          <span class="k">存证编号</span><span class="v">EV20261107000004</span>
+          <span class="k">业务单据号</span><span class="v">DL000031</span>
+          <span class="k">链上交易标识</span><span class="v">LTX000000000042 · 块 42</span>
+          <span class="k">核验人</span><span class="v">admin（治理面出参原文，Q3-A）</span>
+          <span class="k">核验时点</span><span class="v">2026-11-08T10:xx:xxZ</span>
+        </div>
+      </div>
+
+      <div class="verdict miss">
+        <div class="head"><span class="t">结论：不一致</span><span class="tagx bad">MISMATCH</span><span class="ann">示例 ②（负向，S2-3：差异必须可定位，不允许默认通过）</span></div>
+        <div class="rows">
+          <span class="k">期望摘要（重算）</span><span class="v">e3b0…4429（截断 + 复制）</span>
+          <span class="k">实际摘要（账本）</span><span class="v">aaaa…aaaa（截断 + 复制）</span>
+          <span class="k">本地摘要（库）</span><span class="v">5d41…08c7（截断 + 复制）</span>
+          <span class="k">存证编号 / 单号</span><span class="v">EV20261107000003 / DL000031</span>
+          <span class="k">核验时点</span><span class="v">2026-11-08T10:xx:xxZ</span>
+        </div>
+      </div>
+
+      <div class="verdict not">
+        <div class="head"><span class="t">结论：未上链</span><span class="tagx warn">NOT_ON_CHAIN</span><span class="ann">示例 ③（负向，S2-5：不默认通过、不报不一致，并提示当前状态）</span></div>
+        <div class="rows">
+          <span class="k">存证编号</span><span class="v">EV20261107000006</span>
+          <span class="k">当前存证状态</span><span class="v"><span class="tagx bad">上链失败</span> 原因摘要：存证链暂不可达</span>
+          <span class="k">核验时点</span><span class="v">2026-11-08T10:xx:xxZ</span>
+        </div>
+      </div>
+
+      <div class="sec">
+        <div class="cap">该存证的状态流转与核验留痕（detail 端点 actions，只读；核验人 = 原文·治理档，Q3-A）</div>
+        <table class="grid">
+          <tr><th>动作</th><th>状态迁移</th><th>操作人</th><th>结论 / 原因</th><th>时点</th></tr>
+          <tr><td>已创建</td><td>— → 待上链</td><td class="num">svc-delivery</td><td>—</td><td class="num">2026-11-07T22:xx:xxZ</td></tr>
+          <tr><td>已上链</td><td>待上链 → 已上链</td><td class="num">svc-evidence</td><td>—</td><td class="num">2026-11-07T22:xx:xxZ</td></tr>
+          <tr><td>核验</td><td>已上链 → 已上链</td><td class="num">admin</td><td class="num">PASS</td><td class="num">2026-11-08T10:xx:xxZ</td></tr>
+        </table>
+      </div>
+      <div class="hint">编号不存在 → 后端 1012C0001 原文展示（与"对象不存在"同码同文口径不被前端破坏）；
+      非治理档 → 菜单不可见 + 直达跳 denied=1（路由守卫先行）。界面无"重试上链"入口（重试保持剧本接口承载，N9）。</div>
+    </div>
+  </div>
+</div>
+
+<div class="legend" style="margin-top:6px">
+  <b>未入线框的标签页说明</b>：存证记录（五维过滤 + 分页表 + 行点击详情抽屉 el-drawer：六要素 + 状态流转与核验留痕）、
+  异常项（三类标签清单 + MISMATCH 行附最新核验结论 / 核验人摘要 / 时点）、审计报告（生成表单 + 结果卡 + CSV/JSON 双下载 + 按号补下载）——
+  布局范式与屏 A 一致（筛选区 + 表格 + 分页），元素明细见 lofi §4 界面说明书。
+</div>
+
+</body>
+</html>
