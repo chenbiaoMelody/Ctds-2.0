@@ -621,7 +621,11 @@ watch(
             </el-descriptions-item>
             <el-descriptions-item label="链上标识">{{ orDash(trailData.evidenceRecord?.chainTxId) }}</el-descriptions-item>
             <el-descriptions-item label="内容摘要" :span="3">
-              <span class="digest-cell">{{ trailData.evidenceRecord?.contentDigest }}</span>
+              <span
+                class="digest-cell digest-copy"
+                :title="EVIDENCE_DIGEST_HINT"
+                @click="copyDigest(trailData.evidenceRecord?.contentDigest)"
+              >{{ truncateDigest(trailData.evidenceRecord?.contentDigest) }}</span>
             </el-descriptions-item>
           </el-descriptions>
 
@@ -645,7 +649,11 @@ watch(
                 <span class="trail-node-meta">
                   {{ labelOf(EVIDENCE_STATUS_LABELS, node.fromStatus) }} → {{ labelOf(EVIDENCE_STATUS_LABELS, node.toStatus) }}
                 </span>
-                <span class="trail-node-meta digest-cell" :title="node.actorDigest ?? ''">{{ node.actorDigest }}</span>
+                <span
+                  class="trail-node-meta digest-cell digest-copy"
+                  :title="EVIDENCE_DIGEST_HINT"
+                  @click="copyDigest(node.actorDigest)"
+                >{{ truncateDigest(node.actorDigest) }}</span>
                 <span v-if="node.detail" class="trail-node-meta">{{ node.detail }}</span>
               </div>
             </el-timeline-item>

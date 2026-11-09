@@ -19,6 +19,7 @@ import {
 } from '../../api/evidence'
 import { setDemoSubject } from '../../api/client'
 import { setActorMode } from '../../stores/demoIdentity'
+import { EVIDENCE_DIGEST_HINT } from '../../constants/evidence'
 
 /**
  * 监管审计页测试（WBS-3.8.5 hifi §4 / §8 T2/T3/T5/T6/T7/T8/T9/T10/T16）：
@@ -382,6 +383,24 @@ describe('T6/T7 时间线与调阅 tab（C-8.2 S1-2 / S1-3 / S1-4 / S1-6）', ()
     expect(text).toContain('跨域留痕暂不可达，时间线可能不完整')
     // 调阅留痕灰字提示（S1-6：留痕由后端落库，界面仅提示）
     expect(text).toContain('调阅动作由平台自动留痕')
+  })
+
+  it('TRAIL 卡内容摘要与时间线操作人摘要：中截断 + 点击复制（§4 通用契约收口，独立复审 P3-1）', async () => {
+    const wrapper = await mountView()
+    await openTab(wrapper, '时间线与调阅')
+    await wrapper.find('.trail-business-no input').setValue('DL000031')
+    await wrapper.find('.trail-search-btn').trigger('click')
+    await flushPromises()
+
+    // TRAIL 卡内容摘要：中截断（前 8 + … + 后 8）+ 复制引导（沿报告卡 :749 同款契约）
+    const cardDigest = wrapper.find('.trail-record-card .digest-copy')
+    expect(cardDigest.exists()).toBe(true)
+    expect(cardDigest.text()).toBe('58a3eb76…efd0a69b')
+    expect(cardDigest.attributes('title')).toBe(EVIDENCE_DIGEST_HINT)
+    // 时间线操作人摘要同契约（evidenceActions 两节点；businessTrail 节点无 actorDigest 不挂复制）
+    const nodeDigests = wrapper.findAll('.trail-node .digest-copy')
+    expect(nodeDigests.length).toBe(2)
+    expect(nodeDigests[0].text()).toBe('9fd0e666…f70e38f9')
   })
 
   it('LIST 清单：条件查询 → 分页表 + trailHint 缺省兜底展示（mode 判模；评审④ F-4）', async () => {
