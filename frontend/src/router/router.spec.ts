@@ -31,6 +31,9 @@ import '../views/billing/BillingManageView.vue'
 import '../views/billing/BillDetailView.vue'
 import '../views/portal/PortalBillListView.vue'
 import '../views/portal/PortalBillDetailView.vue'
+// WBS-3.8.5：存证域两视图为懒加载路由，同款静态预热
+import '../views/evidence/EvidenceAuditView.vue'
+import '../views/evidence/EvidenceVerifyView.vue'
 
 /**
  * WBS-2.4.9 H3/H4 测试：
@@ -68,7 +71,7 @@ describe('路由表结构（H3）', () => {
     const permissionRouteNames = ['admin-only', 'review-queue', 'did-management', 'space-list', 'platform-policy',
       'catalog-datasets', 'catalog-products', 'catalog-governance',
       'contract-templates', 'contract-workbench', 'contract-governance',
-      'delivery-governance', 'connector-governance', 'billing']
+      'delivery-governance', 'connector-governance', 'billing', 'evidence', 'evidence-verify']
     const normalRoutes = children.filter(
       (r) => r.meta?.menu === true && !permissionRouteNames.includes(String(r.name)),
     )
@@ -98,9 +101,10 @@ describe('路由表结构（H3）', () => {
   })
 
   it('DID 管理路由（WBS-3.1.11）：menuOrder=8、icon=Key、did.admin 权限；演示页不占菜单', () => {
-    // 菜单末尾追加（lofi Q1/Q8：不重排既有菜单）；WBS-3.7.7 追加 menuOrder 24/25 后全站最大值为 25
+    // 菜单末尾追加（lofi Q1/Q8：不重排既有菜单）；WBS-3.7.7 追加 menuOrder 24/25 后全站最大值为 25；
+    // WBS-3.8.5 追加存证两菜单 26/27 后全站最大值为 27
     const menuOrders = children.filter((r) => r.meta?.menu === true).map((r) => r.meta?.menuOrder ?? 0)
-    expect(Math.max(...menuOrders)).toBe(25)
+    expect(Math.max(...menuOrders)).toBe(27)
     const didRoute = children.find((r) => r.name === 'did-management')
     expect(didRoute?.path).toBe('did')
     expect(didRoute?.meta?.title).toBe('DID 管理')
@@ -171,10 +175,10 @@ describe('路由表结构（H3）', () => {
     // WBS-3.3.6（11/12/13）追加后全站最大值为 13；WBS-3.4.7（14/15/16）追加后全站最大值为 16；
     // WBS-3.5.6（17/18/19）追加后全站最大值为 19；WBS-3.6.7（20/21）追加后全站最大值为 21；
     // WBS-3.7.2（22）追加后全站最大值为 22；WBS-3.7.3（23）追加后全站最大值为 23；
-    // WBS-3.7.7（24/25）追加后全站最大值为 25
+    // WBS-3.7.7（24/25）追加后全站最大值为 25；WBS-3.8.5（26/27）追加后全站最大值为 27
     const menuOrders = children.filter((r) => r.meta?.menu === true).map((r) => r.meta?.menuOrder ?? 0)
     expect(menuOrders).toContain(7)
-    expect(Math.max(...menuOrders)).toBe(25)
+    expect(Math.max(...menuOrders)).toBe(27)
   })
 
   it('计费域路由（WBS-3.7.7 §4）：/billing 菜单 24 + billing.governance；/portal/bills 菜单 25 登录可见；两深链不占菜单且声明在列表后', () => {
@@ -653,5 +657,51 @@ describe('门户前台路由（WBS-3.7.2 T3 / T8）', () => {
     await router.push('/portal/products/15')
     expect(router.currentRoute.value.name).toBe('login')
   })
+})
+
+describe('存证域路由（WBS-3.8.5 T1/T13）', () => {
+  const root = routes.find((r) => r.path === '/')
+  const children = root && 'children' in root ? (root.children ?? []) : []
+
+  it('监管审计：menuOrder=26、icon=DataAnalysis、evidence.governance；存证核验：menuOrder=27、icon=Verified、evidence.governance（两菜单一底座，Q1-A）', () => {
+    const auditRoute = children.find((r) => r.name === 'evidence')
+    expect(auditRoute?.path).toBe('evidence')
+    expect(auditRoute?.meta?.title).toBe('监管审计')
+    expect(auditRoute?.meta?.menu).toBe(true)
+    expect(auditRoute?.meta?.menuOrder).toBe(26)
+    expect(auditRoute?.meta?.icon).toBe('DataAnalysis')
+    expect(auditRoute?.meta?.permission).toBe('evidence.governance')
+
+    const verifyRoute = children.find((r) => r.name === 'evidence-verify')
+    expect(verifyRoute?.path).toBe('evidence/verify')
+    expect(verifyRoute?.meta?.title).toBe('存证核验')
+    expect(verifyRoute?.meta?.menu).toBe(true)
+    expect(verifyRoute?.meta?.menuOrder).toBe(27)
+    expect(verifyRoute?.meta?.icon).toBe('Verified')
+    expect(verifyRoute?.meta?.permission).toBe('evidence.governance')
+  })
+
+  it('普通用户直连接证两路由：守卫逐条拦截重定向工作台带 denied（T13 负向，C-8.2 S1-7 界面面）', async () => {
+    const { default: router } = await import('../router/index')
+    signInDemo()
+    setDemoRole('user')
+    await router.push('/dashboard')
+    await router.push('/evidence')
+    expect(router.currentRoute.value.name).toBe('dashboard')
+    expect(router.currentRoute.value.query.denied).toBe('1')
+    await router.push('/evidence/verify')
+    expect(router.currentRoute.value.name).toBe('dashboard')
+    expect(router.currentRoute.value.query.denied).toBe('1')
+  })
+
+  it('admin 直连接证两路由：放行（T13 正向对照）', async () => {
+    const { default: router } = await import('../router/index')
+    signInDemo()
+    setDemoRole('admin')
+    await router.push('/evidence')
+    expect(router.currentRoute.value.name).toBe('evidence')
+    await router.push('/evidence/verify')
+    expect(router.currentRoute.value.name).toBe('evidence-verify')
+  }, 30000)
 })
 

@@ -97,6 +97,12 @@ export default defineConfig({
         target: 'http://localhost:8083',
         changeOrigin: true,
       },
+      // WBS-3.8.5 存证域（8090）：界面走查经 5173 访问存证治理与监管审计端点（开发期转发，
+      // 不改服务契约与门禁配置）。键须位于下方通用 '/api'（→8080）之前（键序先行）。
+      '/api/v1/evidence': {
+        target: 'http://localhost:8090',
+        changeOrigin: true,
+      },
       '/api': {
         target: 'http://localhost:8080',
         changeOrigin: true,

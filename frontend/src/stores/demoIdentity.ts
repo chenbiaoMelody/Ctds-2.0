@@ -104,3 +104,13 @@ export function connectorRolesHeader(): string {
 export function billingRolesHeader(): string {
   return pageRolesHeader('admin', 'requester,provider')
 }
+
+/**
+ * 存证域页面级角色头（WBS-3.8.5 Q5-A / 前置检查 P5 实测）：治理档 `admin`
+ * （evidence.governance 唯一映射角色）/ 普通档 `requester` 单头——剧本 C-8.2 V1.2 普通
+ * 档身份示例一字不差；服务端权限映射仅 admin / evidence-internal，requester 必拒
+ * = fail-closed（即 C-8.2 S1-7 界面面）。硬约束（T13）：**普通档不得携带 `admin`**。
+ */
+export function evidenceRolesHeader(): string {
+  return pageRolesHeader('admin', 'requester')
+}

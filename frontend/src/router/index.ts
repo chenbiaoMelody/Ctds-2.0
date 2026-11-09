@@ -220,6 +220,21 @@ const routes = [
         component: () => import('../views/portal/PortalBillDetailView.vue'),
         meta: { title: '账单详情' },
       },
+      // WBS-3.8.5 存证域：两菜单一底座（Q1-A）——监管审计（26，五标签页）+ 存证核验（27，单页
+      // 工具），均挂 evidence.governance（治理档；普通档守卫拦截 = C-8.2 S1-7 界面面）。
+      // 菜单末尾追加不重排既有项（lofi Q1 惯例）。
+      {
+        path: 'evidence',
+        name: 'evidence',
+        component: () => import('../views/evidence/EvidenceAuditView.vue'),
+        meta: { title: '监管审计', menu: true, menuOrder: 26, icon: 'DataAnalysis', permission: 'evidence.governance' },
+      },
+      {
+        path: 'evidence/verify',
+        name: 'evidence-verify',
+        component: () => import('../views/evidence/EvidenceVerifyView.vue'),
+        meta: { title: '存证核验', menu: true, menuOrder: 27, icon: 'Verified', permission: 'evidence.governance' },
+      },
       {
         path: 'admin-only',
         name: 'admin-only',
