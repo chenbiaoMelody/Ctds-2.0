@@ -1,12 +1,17 @@
 package com.ctds.evidence;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.ctds.common.crypto.Sm3Service;
+import com.ctds.common.errorcode.BizException;
 import com.ctds.evidence.domain.EvidenceDigests;
 import com.ctds.evidence.domain.EvidenceOperationType;
+import com.ctds.evidence.domain.EvidenceRules;
 import com.ctds.evidence.domain.EvidenceStageType;
+import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -85,5 +90,44 @@ class EvidenceDigestTest {
         assertThat(EvidenceDigests.blockHash(sm3, 2L, "a".repeat(64), "{\"k\":\"v\"}",
                 EvidenceDigests.GENESIS_PREV_HASH, OCCURRED_AT))
                 .as("块号参与哈希，同载荷不同块哈希不同").isNotEqualTo(blockHash);
+    }
+
+    /**
+     * DB-118：入参事件时点统一截断到毫秒——摘要输入（.SSS）／落库（datetime(3)）／出参同一口径，
+     * 亚毫秒精度不得因四舍五入造成"未篡改却报不一致"（缺陷卡行为清单 1~5）。
+     */
+    @Test
+    void occurredAtIsTruncatedToMillisBeforeDigestAndStorage() {
+        final Clock clock = Clock.fixed(Instant.parse("2026-11-05T13:30:00Z"), ZoneOffset.UTC);
+
+        final Instant micros = EvidenceRules.occurredAt("2026-11-05T21:02:42.866512+08:00", clock);
+        assertThat(micros).as("行为 1：亚毫秒截断为 .866（非四舍五入）")
+                .isEqualTo(Instant.parse("2026-11-05T13:02:42.866Z"));
+        assertThat(EvidenceDigests.occurredAtIso(micros)).as("行为 1：摘要 / 出参形态 .SSS")
+                .isEqualTo("2026-11-05T13:02:42.866Z");
+        assertThat(EvidenceRules.occurredAt("2026-11-05T21:02:42.999999+08:00", clock))
+                .as("行为 3：.999999 截断为 .999，不向下一秒进位")
+                .isEqualTo(Instant.parse("2026-11-05T13:02:42.999Z"));
+        assertThat(EvidenceRules.occurredAt("2026-11-05T21:02:42.000499+08:00", clock))
+                .as("行为 4：.000499 截断为 .000")
+                .isEqualTo(Instant.parse("2026-11-05T13:02:42.000Z"));
+        assertThat(EvidenceRules.occurredAt("2026-11-05T21:02:42.866+08:00", clock))
+                .as("行为 2：整毫秒输入行为不变")
+                .isEqualTo(Instant.parse("2026-11-05T13:02:42.866Z"));
+
+        assertThat(digest(BUSINESS_NO, micros)).as("截断后摘要 = 按 .866 复算的摘要")
+                .isEqualTo(digest(BUSINESS_NO, Instant.parse("2026-11-05T13:02:42.866Z")));
+        assertThat(digest(BUSINESS_NO, micros))
+                .as("库中按四舍五入存 .867 会得到不同摘要（缺陷复算证据）")
+                .isNotEqualTo(digest(BUSINESS_NO, Instant.parse("2026-11-05T13:02:42.867Z")));
+
+        assertThatThrownBy(() -> EvidenceRules.occurredAt("2026-11-05T21:35:00.0004+08:00", clock))
+                .as("行为 5：守卫先于截断判定（now+5min+0.4ms 仍拒绝；若先截断则被放行）")
+                .isInstanceOf(BizException.class)
+                .satisfies(e -> assertThat(((BizException) e).getErrorCode().value())
+                        .isEqualTo("1012C0002"));
+        assertThatThrownBy(() -> EvidenceRules.occurredAt("2019-12-31T23:59:59.999999Z", clock))
+                .as("行为 5：早于允许下限仍拒绝（亚毫秒边界）")
+                .isInstanceOf(BizException.class);
     }
 }
