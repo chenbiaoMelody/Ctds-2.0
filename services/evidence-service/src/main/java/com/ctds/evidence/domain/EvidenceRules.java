@@ -7,6 +7,7 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+import java.time.temporal.ChronoUnit;
 import java.util.regex.Pattern;
 
 /**
@@ -48,7 +49,12 @@ public final class EvidenceRules {
         return raw;
     }
 
-    /** 事件时点：ISO-8601 带偏移；拒绝 &gt; 当前时间 +5 分钟、拒绝 &lt; 2020-01-01。 */
+    /**
+     * 事件时点：ISO-8601 带偏移；拒绝 &gt; 当前时间 +5 分钟、拒绝 &lt; 2020-01-01。
+     * 返回前统一截断到毫秒（DB-118）：摘要输入（{@code .SSS}）/ 落库列 {@code datetime(3)} / 出参
+     * 三处同一口径——上游携带的亚毫秒精度若交给落库端四舍五入，会与摘要输入值不等而误报"不一致"。
+     * 守卫按原始精度判定，截断只影响毫秒以下余量，不改时点区间口径。
+     */
     public static Instant occurredAt(final String raw, final Clock clock) {
         final Instant value = instant(raw, "事件时点");
         final Instant now = clock.instant();
@@ -58,7 +64,7 @@ public final class EvidenceRules {
         if (value.isBefore(MIN_OCCURRED_AT)) {
             throw new BizException(EvidenceErrorCodes.PARAM_INVALID, "事件时点早于允许下限");
         }
-        return value;
+        return value.truncatedTo(ChronoUnit.MILLIS);
     }
 
     /** 查询过滤时间（ISO-8601 带偏移；不做区间守卫，区间由调用方校验）。 */

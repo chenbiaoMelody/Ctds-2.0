@@ -5,11 +5,15 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.ctds.evidence.domain.EvidenceDigests;
 import com.ctds.evidence.support.FixedClockTestConfiguration;
 import com.ctds.evidence.support.SharedMySqlContainer;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -66,10 +70,14 @@ class EvidenceVerifyIntegrationTest {
     }
 
     private String create(final String businessNo) throws Exception {
+        return createData(businessNo, "2026-11-05T13:30:00+08:00").path("evidenceNo").asText();
+    }
+
+    private JsonNode createData(final String businessNo, final String occurredAt) throws Exception {
         final String body = "{\"stageType\":\"DELIVERY\",\"businessNo\":\"" + businessNo
                 + "\",\"operationType\":\"DELIVERY_CREATED\""
                 + ",\"subjectDid\":\"did:ctds:provider-0001\""
-                + ",\"occurredAt\":\"2026-11-05T13:30:00+08:00\""
+                + ",\"occurredAt\":\"" + occurredAt + "\""
                 + ",\"actorSubjectNo\":\"S20260922000001\"}";
         final MvcResult result = mockMvc.perform(post(INTERNAL_PATH)
                         .contentType(MediaType.APPLICATION_JSON).content(body)
@@ -78,7 +86,7 @@ class EvidenceVerifyIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
         return MAPPER.readTree(result.getResponse().getContentAsString(StandardCharsets.UTF_8))
-                .path("data").path("evidenceNo").asText();
+                .path("data");
     }
 
     private JsonNode verify(final String evidenceNo) throws Exception {
@@ -114,6 +122,35 @@ class EvidenceVerifyIntegrationTest {
         assertThat(trace.get("detail")).isEqualTo("PASS");
         assertThat(trace.get("reason_code")).isEqualTo("NONE");
         assertThat(trace.get("created_at")).isNotNull();
+    }
+
+    /** DB-118：上游送亚毫秒事件时点 → 截断毫秒入摘要 / 落库 / 出参 → 未篡改记录核验 = PASS。 */
+    @Test
+    void verifyPassesWhenOccurredAtCarriesSubMillisecondPrecision() throws Exception {
+        final JsonNode created = createData("DL000191", "2026-11-05T21:02:42.866512+08:00");
+        final String evidenceNo = created.path("evidenceNo").asText();
+
+        final JsonNode data = verify(evidenceNo);
+        assertThat(data.path("conclusion").asText()).as("行为 1：未篡改记录核验 = 通过")
+                .isEqualTo("PASS");
+        assertThat(data.path("expectedDigest").asText())
+                .as("重算摘要 = 账本摘要 = 本地摘要").isEqualTo(data.path("actualDigest").asText())
+                .isEqualTo(data.path("localDigest").asText());
+
+        assertThat(created.path("occurredAt").asText()).as("行为 1：出参事件时点 = 截断毫秒")
+                .isEqualTo("2026-11-05T13:02:42.866Z");
+        final Instant stored = jdbc.queryForObject(
+                "SELECT occurred_at FROM evidence_record WHERE evidence_no = ?",
+                (rs, rowNum) -> rs.getObject("occurred_at", LocalDateTime.class)
+                        .toInstant(ZoneOffset.UTC), evidenceNo);
+        assertThat(EvidenceDigests.occurredAtIso(stored)).as("行为 1：落库值 = 截断毫秒（不经四舍五入）")
+                .isEqualTo("2026-11-05T13:02:42.866Z");
+
+        final String payload = jdbc.queryForObject(
+                "SELECT payload_json FROM evidence_chain_block WHERE payload_digest = ?", String.class,
+                data.path("localDigest").asText());
+        assertThat(payload).as("行为 6：上链载荷 occurredAt 同为截断毫秒（第三方复算入口）")
+                .contains("\"occurredAt\":\"2026-11-05T13:02:42.866Z\"").doesNotContain("866512");
     }
 
     /** T7② / B3-2：改账本摘要 → MISMATCH（差异可读）；还原后复验 → PASS（双向）。 */
