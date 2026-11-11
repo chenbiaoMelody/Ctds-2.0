@@ -3,6 +3,7 @@ package com.ctds.evidence;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -20,6 +21,7 @@ class EvidenceArchitectureTest {
     private static final Path DOMAIN = Path.of("src/main/java/com/ctds/evidence/domain");
     private static final Path INFRA = Path.of("src/main/java/com/ctds/evidence/infrastructure");
     private static final Path INTERFACES = Path.of("src/main/java/com/ctds/evidence/interfaces");
+    private static final Path APPLICATION = Path.of("src/main/java/com/ctds/evidence/application");
 
     @Test
     void repositoryPortExposesOnlyAppendAndStatusMethods() throws IOException {
@@ -102,5 +104,48 @@ class EvidenceArchitectureTest {
                 .doesNotContainIgnoringCase("insert")
                 .doesNotContainIgnoringCase("delete")
                 .doesNotContainIgnoringCase("update");
+    }
+
+    /**
+     * WBS-3.8.6 T10 / hifi §1（DB-115 结构位）：真链可替换性——链网关以接口暴露且生产实现唯一
+     * （本地不可变账本）；真链接入时只新增适配器，不动业务层。
+     */
+    @Test
+    void chainGatewayIsSingleInterfaceWithSingleProductionImplementation() throws IOException {
+        final String port = Files.readString(DOMAIN.resolve("EvidenceGateway.java"));
+        assertThat(port).as("链网关以接口暴露（业务代码只依赖抽象）")
+                .contains("public interface EvidenceGateway")
+                .doesNotContain("class EvidenceGateway");
+
+        final List<Path> implementations;
+        try (Stream<Path> files = Files.walk(INFRA)) {
+            implementations = files.filter(path -> path.toString().endsWith(".java"))
+                    .filter(path -> contains(path, "implements EvidenceGateway")).toList();
+        }
+        assertThat(implementations).as("生产侧链网关实现唯一（真链接入只增适配器，不改业务层）")
+                .hasSize(1);
+        assertThat(implementations.get(0).getFileName().toString())
+                .as("当前唯一实现 = 本地不可变账本适配器（真链适配器为部署期承接，DB-115）")
+                .isEqualTo("LocalLedgerEvidenceGateway.java");
+    }
+
+    /** WBS-3.8.6 T10：应用层不直接依赖基础设施实现（换链只换适配器）。 */
+    @Test
+    void applicationLayerDoesNotDependOnInfrastructure() throws IOException {
+        try (Stream<Path> files = Files.walk(APPLICATION)) {
+            for (final Path file : files.filter(path -> path.toString().endsWith(".java")).toList()) {
+                assertThat(Files.readString(file))
+                        .as("应用层零基础设施依赖：%s", file.getFileName())
+                        .doesNotContain("com.ctds.evidence.infrastructure");
+            }
+        }
+    }
+
+    private static boolean contains(final Path file, final String text) {
+        try {
+            return Files.readString(file).contains(text);
+        } catch (final IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 }

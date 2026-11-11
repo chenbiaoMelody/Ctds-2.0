@@ -52,6 +52,10 @@ public final class SharedMySqlContainer {
         try (Connection connection = DriverManager.getConnection(
                 container().getJdbcUrl(), "root", container().getPassword());
              Statement statement = connection.createStatement()) {
+            // WBS-3.8.6：类级独立库 + Spring 测试上下文缓存（每上下文一个连接池）累计后逼近
+            // 容器默认 max_connections=151（实测 1040 Too many connections）；单机容器内提升上限，
+            // 幂等，不影响生产配置与被测行为。
+            statement.execute("SET GLOBAL max_connections = 500");
             statement.execute("CREATE DATABASE IF NOT EXISTS `" + database + "`");
             statement.execute("GRANT ALL PRIVILEGES ON `" + database + "`.* TO '"
                     + applicationUsername() + "'@'%'");

@@ -121,4 +121,14 @@
 
 ## 9. 设计勘误位（编码段回填）
 
-（编码段实测与本文不一致处，编号 E1、E2… 回填本节，并在任务卡 §四留痕。）
+> **2026-11-11 编码段前置检查 P1~P8 实测回填**（留痕 `build-output/w386-precheck-2026-11-11.md`，gitignored；任务卡 §四同步登记）。契约未变更版本号，以下勘误即时生效、优先于正文对应表述。
+
+| 编号 | 勘误（以实测为准） | 实测依据 | 对 T 清单的影响 |
+| --- | --- | --- | --- |
+| **E1** | **四环节矩阵端点更正**：`GET /api/v1/evidence/overview` 实测为**三状态计数**（`onChainCount` / `pendingCount` / `failedCount` / `lastFailedAt`），**无四环节维度**；四环节 × 三状态矩阵在 `GET /api/v1/evidence/audit/overview` | `EvidenceGovernanceController:80-84`、`EvidenceOverviewView:6-11`、`EvidenceAuditController:50-56`、`EvidenceAuditViews:15-26` | **T1 / T3 落点改为 `/api/v1/evidence/audit/overview`**；T1 增量口径 = 与 `evidence_record` 按 `(stage_type,status)` 分组计数**逐项对账**（既有 `overviewMatrixCountsPerStage` 为硬编码期望值，不对账） |
+| **E2** | **T6 原文"不计入异常数"与实现语义冲突**：PENDING / FAILED 本身即异常三计数之二（`anomalies.pendingCount` / `failedCount`）；`chain_tx_id IS NULL` 的记录必为 PENDING 或 FAILED | `EvidenceAuditViews.AnomalyCountsView`、`EvidenceAuditOverviewService:38-65` | **T6 断言更正为**：`chain_tx_id IS NULL` 且状态 PENDING → 矩阵 `PENDING` 列 +1、`anomalies.pendingCount` +1、**`mismatchCount` 不变**（不被误判为核验不一致）、异常清单 `anomalyType=PENDING` |
+| **E3** | **T5 期望状态与规格/实现冲突**：`chain-enabled=false` 写入实测 = 记录落库 + 状态 **FAILED**（`last_error_summary=存证链暂不可达`）+ 零账本块（规格 B2-1 fail-visible），**不是 PENDING**；且该场景**已被** `EvidenceWriteFailureIntegrationTest.chainDisabledKeepsRecordFailedAndVisible` **完整覆盖** | `EvidenceWriteService:141-155`、`LocalLedgerEvidenceGateway:51-55`、`EvidenceWriteFailureIntegrationTest:83-104` | **T5 不新增用例**（降为既有覆盖登记） |
+| **E4** | **T4 已被覆盖**：`EvidenceWriteFailureIntegrationTest.retryWhenChainStillUnavailableReturns503AndStaysFailed` 已断言 503 + `1012S0001` + 保持 FAILED + `retry_count=1` + `RETRY_FAILED` 留痕 | 同上 `:106-128` | **T4 改为补 1 条反向断言**：重试后 `COUNT(1) FROM evidence_record = 1`（不产生第二条记录） |
+| **E5** | **T2 并发兜底路径已被覆盖**：`EvidenceIdempotencyRaceIntegrationTest`（预检漏过 + 唯一键冲突 → `duplicate=true`、零新行/留痕/块） | `EvidenceIdempotencyRaceIntegrationTest:80-106` | **T2 增量收敛为正常预检命中路径**：重复写 → `duplicate=true` + 读面（矩阵与 `anomalies`）计数均不 +1 |
+| **E6** | **权限点实测登记**（零新增）：治理 5 端点 = `@RequirePermission("evidence.governance")`；审计 5 端点 = `EvidenceAuditAccessGuard` → `AccessControl.require("evidence.governance")`（同权限点，拒绝口径 400 + 1000C0003）；内部写 1 端点 = `@RequirePermission("evidence.internal.write")` | `EvidenceGovernanceController:45/60/67/74/81`、`EvidenceAuditAccessGuard:33-40`、`EvidenceInternalController:31` | T1/T2/T3/T6/T7 沿用既有身份头（`S-admin-evidence` + `admin`）与内部写身份（`X-Ctds-Roles: evidence-internal`），零新增权限点 |
+| **E7** | **T9 不可达状态码实测 = 500**（非 502/503）：evidence 基址指向未监听端口时，Netty `AnnotatedConnectException` 经 `common` 全局异常处理器按"未知异常"映射 **500 + 通用文案**（网关侧未做 502/503 语义专化）。**502/503 语义专化 = 改网关错误映射（业务代码变更），本包零业务改动不做**，登记为观察项随缺陷/变更流程 | `common/errorcode/src/main/java/com/ctds/common/web/GlobalExceptionHandler.java:18-19`（未知异常一律 500）、`GatewayEvidenceUnavailableIntegrationTest` 实测日志 `Connection refused` + 5xx | **T9 断言口径 = 5xx 且响应体不含 `"code":"0"`（不假成功）**；不可达构造改用 **`unusedPort()` 空闲端口**（`127.0.0.1:1` 在本机触发 5s 读超时挂起而非确定性拒绝，沿 did / subject 同款先例） |

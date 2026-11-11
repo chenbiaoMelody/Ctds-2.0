@@ -125,6 +125,9 @@ class EvidenceWriteFailureIntegrationTest {
                 "SELECT action FROM evidence_record_action_log WHERE evidence_no = ? ORDER BY id",
                 String.class, evidenceNo);
         assertThat(actions).containsExactly("CREATED", "CHAIN_FAILED", "RETRY_FAILED");
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(1) FROM evidence_record WHERE business_no = ?", Long.class, "DL000072"))
+                .as("重试不产生第二条记录（hifi §1 T4）").isEqualTo(1L);
     }
 
     /** T7 / B3-1：未上链记录核验结论 = NOT_ON_CHAIN，且 actualDigest 为空。 */
