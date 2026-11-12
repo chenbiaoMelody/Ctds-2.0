@@ -9,14 +9,18 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
-import java.util.stream.Stream;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 
 /**
  * WBS-3.9.2 T1 / T2 / T7：三员权限点集合两两不重叠、admin 收权负向矩阵。
- * 依据 hifi §5 与 §9 E3 裁定 A；断言对象 = 11 服务 application.yml 的登记面（默认 profile 映射来源）。
+ * 依据 hifi §5、§9 E3 裁定 A 与 E5：Q1-A 后映射唯一权威来源 = 库表 seed（V3 迁移），
+ * 默认 profile 的 yml 仅为无库兜底，不作判定对象。
  */
 class RbacThreeAdminMatrixTest {
+
+    private static final Pattern SEED = Pattern.compile("\\('([^']+)','([^']+)'");
 
     private static final Set<String> THREE_ADMINS = Set.of(
             "platform.sysadmin", "platform.secadmin", "platform.audadmin");
@@ -83,54 +87,16 @@ class RbacThreeAdminMatrixTest {
         return left.stream().anyMatch(right::contains);
     }
 
-    /** P4：全局同名 admin 跨 9 服务同持，按角色名合并后判定。 */
+    /** 解析 V3 初始映射 seed：同名角色跨服务视为同一平台角色（P4 口径）。 */
     private static Map<String, Set<String>> globalRolePoints() throws IOException {
+        Path seed = repoRoot().resolve("services/evidence-service/src/main/resources/"
+                + "db/migration/V3__create_rbac_tables.sql");
+        assertThat(Files.exists(seed)).as("Q1-A：映射唯一权威来源 V3 seed 须存在").isTrue();
         Map<String, Set<String>> result = new LinkedHashMap<>();
-        try (Stream<Path> dirs = Files.list(repoRoot().resolve("services"))) {
-            for (Path dir : dirs.filter(Files::isDirectory).toList()) {
-                Path yml = dir.resolve("src/main/resources/application.yml");
-                if (!Files.exists(yml)) {
-                    continue;
-                }
-                parsePermissions(yml).forEach((role, points) ->
-                        result.computeIfAbsent(role, key -> new LinkedHashSet<>()).addAll(points));
-            }
-        }
-        return result;
-    }
-
-    private static Map<String, Set<String>> parsePermissions(final Path yml) throws IOException {
-        Map<String, Set<String>> result = new LinkedHashMap<>();
-        boolean inside = false;
-        int base = -1;
-        for (String line : Files.readAllLines(yml)) {
-            String text = line.trim();
-            if (text.isEmpty() || text.startsWith("#")) {
-                continue;
-            }
-            int indent = line.length() - line.stripLeading().length();
-            if (text.startsWith("permissions:")) {
-                inside = true;
-                base = indent;
-                continue;
-            }
-            if (!inside || indent <= base) {
-                if (inside) {
-                    break;
-                }
-                continue;
-            }
-            int colon = text.indexOf(':');
-            if (colon <= 0) {
-                continue;
-            }
-            Set<String> points = new LinkedHashSet<>();
-            for (String value : text.substring(colon + 1).split(",")) {
-                if (!value.isBlank()) {
-                    points.add(value.trim());
-                }
-            }
-            result.put(text.substring(0, colon).trim(), points);
+        Matcher matcher = SEED.matcher(Files.readString(seed));
+        while (matcher.find()) {
+            result.computeIfAbsent(matcher.group(1), key -> new LinkedHashSet<>())
+                    .add(matcher.group(2));
         }
         return result;
     }

@@ -27,6 +27,9 @@ public class AuthProperties {
 
     private final Jwt jwt = new Jwt();
 
+    /** 3.9.2 库表映射开关与 schema 前缀（Q1-A / hifi §9 E4）。 */
+    private final Rbac rbac = new Rbac();
+
     public boolean isEnabled() {
         return enabled;
     }
@@ -157,6 +160,33 @@ public class AuthProperties {
 
         public void setRolesClaim(final String value) {
             this.rolesClaim = value;
+        }
+    }
+
+    public Rbac getRbac() {
+        return rbac;
+    }
+
+    /** 3.9.2 Q1-A：source=jdbc 时由库表提供角色→权限点映射；schema 为只读跨库前缀。 */
+    public static class Rbac {
+
+        private String source = "config";
+        private String schema = "ctds_auth";
+
+        public String getSource() {
+            return source;
+        }
+
+        public void setSource(final String value) {
+            this.source = value;
+        }
+
+        public String getSchema() {
+            return schema;
+        }
+
+        public void setSchema(final String value) {
+            this.schema = value;
         }
     }
 }

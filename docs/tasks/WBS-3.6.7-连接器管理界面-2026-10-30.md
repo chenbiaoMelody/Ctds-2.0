@@ -103,4 +103,14 @@
 
 ---
 
+## WBS-3.9.2 权限点登记（2026-11-12，规格 B1-R1 / B6-R3 / DB-120 ⑤）
+
+| 项 | 内容 |
+| --- | --- |
+| 新增权限点 | `connector.health.read`（规格 `:194` 边界 8 允许的唯一新增点） |
+| 归属端点 | `GET /api/v1/connectors/governance/connectors`（本卡 Q3-A 加性只读端点，健康总览） |
+| 变更口径 | 该端点原挂 `connector.review`（与核验写面共用），现改挂 `connector.health.read`；核验队列读 / 核验写面仍 `connector.review`，出参零变化 |
+| 映射登记 | `services/connector-service/src/main/resources/application.yml` 授予 `platform.sysadmin`（运维读面）与演示档 `admin`；运行期权威映射 seed 见 `services/evidence-service/src/main/resources/db/migration/V3__create_rbac_tables.sql` |
+| 依据 | 规格 `docs/specs/C-10.1-10.2-系统管理.md` V1.1 B6-R3 / 边界 8；`docs/designs/WBS-3.9.2-hifi.md` V1.0 §2 R3、§9 E5 |
+
 > **边界复述（红线自查）**：本卡**只做已交付端点的界面化**（Q3-A 加性读端点为唯一例外）；**零凭据明文 / 零数据本体 / 零内部面调用 / 零 `connector-internal` 角色**；**不绕过后端校验**（体验层显隐不构成权限，服务端强制）；**普通档不得携带 `admin`**；**运营档不展示源接入区**（DB-88 挂起）；**不改既有端点语义 / 错误码 / 门禁配置 / ADR-001 条目 / `application.yml`**；**剧本核对修订业务判定一字不改**；**规格缺口走变更流程**（DB-88 不擅裁）；发现冲突或疑似 S0 安全问题立即停止上报（红线 4）。

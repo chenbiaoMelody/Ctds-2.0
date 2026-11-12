@@ -1,2 +1,3 @@
+com.ctds.common.auth.RbacJdbcAutoConfiguration
 com.ctds.common.auth.AuthAutoConfiguration
 com.ctds.common.auth.GatewayAuthAutoConfiguration

@@ -158,6 +158,13 @@
 - 口径精确化（实现层选择，业务判定零变化）：① **承载服务 = `evidence-service`** —— 迁移链最短（V1→V2，追加 V3）、已有「审计留痕与业务变更同事务」先例、`EvidenceMigrationStructureIntegrationTest` 只断言表子集不锁全集；② 端点路径（建议稿未给具体路径，按本条落定）= `/api/v1/rbac/permissions/grant`（W1）/ `/revoke`（W2）/ `GET /api/v1/rbac/roles`（R1）/ `GET /api/v1/rbac/changes`（R2）；③ 权限点复用 = W1/W2 挂 `connector.review`（E3 裁定 A 已从 `admin` 撤除，归安全管理员）、R1 挂 `connector.health.read`（系统管理员运维读面，剧本 S1-1）、R2 挂 `evidence.governance`（审计管理员，剧本 S1-12）；④ 三类关键点 = 业务配置（各域 governance 写面）/ 权限授予（`connector.review`）/ 审计读面（`evidence.governance`），三员各持一类、两两不重叠；⑤ `kms.admin` 归系统管理员（执行权），不与权限授予同持（边界 9）；⑥ `platform.policy` 维持 `platform.operator` 既有持有，不动空间策略治理演示链。
 - **补正说明三**：E4/E5 为编码段勘察所得的实测事实登记与实现层口径精确化，**不改 §2 契约表端点数量与语义 / §3 数据模型最小集 / §5 T1~T9 断言 / 不补需求 / 不重开 Q1~Q8 裁定 / 不新增权限点（除 `connector.health.read`）**；红相用例（`build-output/w392-red-*.log`）已按本口径落盘。实现与 E4/E5 不一致 = 打回项。
 
+### E6（编码段实现）映射权威来源、装配条件与运行期开关（待裁定）
+
+- 实现事实：`common/auth` 落 `JdbcRolePermissionMapper` + `RbacJdbcAutoConfiguration`（`imports` 登记、`AutoConfigureBefore` + 双条件）、`AuthProperties.rbac`；`evidence-service` 落 V3 两表 + 全量初始映射 seed（15 角色 / 59 点 + 三员 + `admin` 按 E3 裁定 A 收权 + `connector.health.read`）、`RbacErrorCodes` 1013 段、`RbacStore` 端口 / `JdbcRbacStore` / `RbacPermissionService` / `RbacGovernanceController`（W1/W2/R1/R2）；`connector-service` 健康总览改挂新点并在连接域任务卡登记。
+- **口径精确化（不改契约）**：① **库表 seed = 运行期映射唯一权威来源**；11 服务 `application.yml` 的 `ctds.auth.permissions` 仅为默认 profile / 无库兜底，不参与 Q1-A 换库表后的判定，故 `admin` 收权落在 seed、yml 的 `admin` 行不提前撤除（Q3-A 时序 + 既有集成测试基线零回归）；T1/T2/T7/T5 断言对象相应改为 V3 seed（断言语义不变、零削弱）。② `ctds.auth.rbac.source=jdbc` 由**部署期显式注入**，不在任何测试 profile 启用 —— 各服务集成测试库为独立容器库、无共享映射表，若在测试 profile 启用将因 §4 fail-closed 造成大面积 403；该开关与 E1 的部署期 SELECT 授权同属部署期配置义务。
+- **待裁定（业务影响，按红线 2 不代选）**：运行期何时把各服务切到库表映射。A（建议）= 本包交付后在部署清单统一注入 `source=jdbc` 并同步把既有演示身份换为三员，既有治理演示链按 E3 裁定 A 中断面最小；B = 维持配置兜底至 3.9.5 界面包一并切换，本包不动部署清单。**裁定前不改动任何部署清单 / 测试 profile**。
+- **补正说明四**：E6 为编码实现后的实测事实登记与载体澄清，**不改 §2 / §3 / §5 T1~T9 断言语义 / 不补需求 / 不重开 Q1~Q8 / 不新增权限点**；实现与 E4/E5/E6 不一致 = 打回项。
+
 ## 10. 债务承接（DB-120 六项，台账:155）
 
 | 项 | 承接方式 | 关闭判据（沿台账原文） |

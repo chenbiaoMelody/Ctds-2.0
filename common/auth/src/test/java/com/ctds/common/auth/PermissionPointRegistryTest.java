@@ -14,12 +14,13 @@ import org.junit.jupiter.api.Test;
 
 /**
  * WBS-3.9.2 T5：主源码 @RequirePermission 值与登记清单逐项相等，零未登记权限点。
- * 依据 hifi §5 T5 / §9 E2 口径：比对集合 = 主源注解值 ∪ 既有配置登记点（含常量守卫消费点），
+ * 依据 hifi §5 T5 / §9 E2：比对集合 = 主源注解值 ∪ 既有登记点（库表 seed 承载），
  * 测试桩排除；新增权限点仅 connector.health.read（规格边界 8）。
  */
 class PermissionPointRegistryTest {
 
     private static final Pattern ANNOTATION = Pattern.compile("@RequirePermission\\(\"([^\"]+)\"\\)");
+    private static final Pattern SEED = Pattern.compile("\\('([^']+)','([^']+)'");
     private static final Path ROOT = Path.of("").toAbsolutePath().getParent().getParent();
 
     @Test
@@ -56,43 +57,14 @@ class PermissionPointRegistryTest {
         return values;
     }
 
+    /** 登记清单 = V3 初始映射 seed（Q1-A 后唯一权威来源）。 */
     private static Set<String> registeredPoints() throws IOException {
+        Path seed = ROOT.resolve("services/evidence-service/src/main/resources/"
+                + "db/migration/V3__create_rbac_tables.sql");
         Set<String> points = new LinkedHashSet<>();
-        try (Stream<Path> dirs = Files.list(ROOT.resolve("services"))) {
-            for (Path dir : dirs.filter(Files::isDirectory).toList()) {
-                Path yml = dir.resolve("src/main/resources/application.yml");
-                if (!Files.exists(yml)) {
-                    continue;
-                }
-                boolean inside = false;
-                int base = -1;
-                for (String line : Files.readAllLines(yml)) {
-                    String text = line.trim();
-                    if (text.isEmpty() || text.startsWith("#")) {
-                        continue;
-                    }
-                    int indent = line.length() - line.stripLeading().length();
-                    if (text.startsWith("permissions:")) {
-                        inside = true;
-                        base = indent;
-                        continue;
-                    }
-                    if (!inside || indent <= base) {
-                        if (inside) {
-                            break;
-                        }
-                        continue;
-                    }
-                    int colon = text.indexOf(':');
-                    if (colon > 0) {
-                        for (String value : text.substring(colon + 1).split(",")) {
-                            if (!value.isBlank()) {
-                                points.add(value.trim());
-                            }
-                        }
-                    }
-                }
-            }
+        Matcher matcher = SEED.matcher(Files.readString(seed));
+        while (matcher.find()) {
+            points.add(matcher.group(2));
         }
         return points;
     }

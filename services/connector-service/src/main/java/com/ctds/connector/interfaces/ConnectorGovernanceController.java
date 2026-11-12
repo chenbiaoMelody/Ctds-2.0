@@ -33,7 +33,7 @@ public class ConnectorGovernanceController {
 
     /** 全平台连接器分页（运营方；status 空 = 三态全部；created_at DESC, id DESC）。 */
     @GetMapping(path = "/governance/connectors", produces = MediaType.APPLICATION_JSON_VALUE)
-    @RequirePermission("connector.review")
+    @RequirePermission("connector.health.read")
     public ApiResult<PageResult<ConnectorView>> governanceConnectors(
             @RequestParam(required = false) final String status,
             @RequestParam(required = false) final Integer pageNum,
