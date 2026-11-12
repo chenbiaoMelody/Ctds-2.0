@@ -109,9 +109,36 @@
 - 零新第三方依赖 / 零门禁配置改动 / 零迁移超出 §3 最小集 / 零演示库既有数据改动 / 零第二套判定内核 / 零规格外权限点。
 - 测试暴露真实缺陷：先红相留痕 + 报告并走缺陷流程，**不在本包顺手改业务逻辑掩盖**。
 
-## 9. 设计勘误位（立卡段预留，空）
+## 9. 设计勘误位（立卡段预留；2026-11-12 编码段前置检查回填 E1~E3）
 
 > 编码段前置检查 P1~P8 与 Q1~Q8 裁定若产生与 V0.9 不一致的实测事实，按 E1、E2… 逐条回填（含实测证据与口径修正），再转 V1.0 = 编码契约。
+>
+> **补正说明（2026-11-12）**：V1.0 已于一次确认段生效；本节按本文件头部「编码段 P1~P8 实测若与 V1.0 不符，按 §9 E1… 回填勘误（不得私自补需求）」执行，仅登记实测事实与口径精确化，**不改变 §2 契约表 / §3 最小集 / §5 T1~T9 / 不补需求 / 不重开 Q1~Q8 裁定**。P1/P2 均成立 → 不触发 §7 停机。完整实测证据见 `build-output/w392-precheck-2026-11-12.md`（gitignored）。
+
+### E1（P2）跨 schema 只读先例的适用边界
+
+- 实测成立：`docs/designs/WBS-3.7.5-hifi.md:38-43` + `services/metering-billing/.../JdbcMeteringSourceReader.java:21-26,35-36,41,50-51`（配置化 schema 前缀 + 本地 `JdbcTemplate` 只读 SELECT）；同实例多 schema 见 `deploy/k8s/*-deployment.yaml`；网关自持数据源 + 专用账号见 `services/gateway-service/.../application.yml:9-11,37-39`。
+- 边界登记：① 3.7.5 先例对象是「跨库业务表」，本卡 §3 的**共享映射表**需部署期为各服务账号另授该 schema 的 SELECT，属**部署期配置动作**；② 全仓 `GRANT SELECT` 唯一命中在集成测试 `ConnectorSourceReadApiTest.java:264-275`，`deploy/runbook.md` / `docs/manuals/` / `*.sql` 零命中 → 仓库内**无可执行授权脚本**，最小授权仍为部署期人工配置义务（沿 3.7.5 同款，`deploy/k8s/metering-billing-deployment.yaml:7-10` 文字义务）。编码段不实现授权、不虚报「已授权」。
+- 口径修正：无。Q1-A「不新建服务 + 跨 schema 只读」维持；不得据此新建服务或改裁定。
+
+### E2（P3）权限点 / 角色清单与 T5 比对口径精确化
+
+- 实测：11 服务 `application.yml` 各 1 处 `permissions:`；角色去重 15（7 业务/演示 + 8 `*-internal`），权限点去重 59；`@RequirePermission` 文本 187 处 → 实际注解 178（主源码 175），9 处注释/字符串、3 处测试桩。
+- 差异逐条登记：① 配置有、注解无 3 点 `space.admin` / `space.member` / `platform.policy`（由 `SpacePermissions.java:17,19,21` + `SpaceAccessGuard.java:19,20,51,65,66` 常量守卫消费，非注解）；② 注解有、配置无 3 点 `item.read` / `item.delete` / `"  "`（仅 `common/auth/src/test/.../AuthEnforcementWebTest.java:39,45,51`，主源码为零）；③ 三段式命名 15 点（各域 yml 注释均标 WBS/hifi 登记来源，属既有登记事实，不擅自改名）；④ 角色值域缺 `platform.sysadmin` / `secadmin` / `audadmin` 三串（代码/配置零命中，与立卡实测一致），其余 15 角色全在规格 `:46` 值域内、无值域外角色。
+- 定点核实：`connector.health.read` 代码/配置零实现；`connector.review` 单点三用（`ConnectorGovernanceController.java:36` 治理读面兼健康总览 / `ConnectorRegistrationController.java:102` 核验队列读 / `:115` 核验写面）；`kms.admin` 唯一配置 `kms/application.yml:45`，全局同名 `admin` 跨 9 服务同持核验写面与审计读面 → B2-4 当前不成立（立卡已登记）。
+- **口径精确化（不改契约）**：§5 T5「全仓 `@RequirePermission` 值与登记清单逐项相等」的比对集合 = **主源码注解值 ∪ 既有配置登记点（含 ① 的 3 个常量守卫消费点）**，测试桩 3 点排除；登记清单以本节实测 59 点为基线，新增权限点**仅** `connector.health.read`（规格边界 8）。§5 T5 / §1 B1-R1 断言语义不变。
+
+### E3（P4）`admin` 收权影响面清单 + 存疑提请教
+
+- 影响面实测（清单随设计勘误，完整表见 `build-output/w392-precheck-2026-11-12.md` §P4）：9 服务 `admin` 配置行（evidence:35 / connector:29 / kms:45 / catalog:36 / contract:36 / delivery:33 / metering-billing:32 / did:37 / example:35）；前端 `demoRole.ts:34`（`role === 'admin'`，不消费服务端权限点集合）、`demoIdentity.ts` 6 个运营档头、`MainLayout.vue:35,:59`、`router/index.ts:340-343` 与权限 meta、`router.spec.ts` admin 放行断言；剧本 `C-8.2:43,:45`（监管档 = `admin + evidence.governance`）与 `C-10.1:31,:51,:56,:62`。9 行当前**仍为原值、未提前撤权**，符合 Q3-A 时序。
+- **存疑（须编排师 / PO 裁定，本设计不代选）**：「运维写面」在现有 9 行中**无独立权限点实现**（规格 `:145/:147` 归 3.9.4；§1「不实现」明列指标接入与告警处置归 3.9.4）。`contract.template.manage` / `catalog.governance` / `delivery.governance` / `metering.governance` / `billing.governance` / `sandbox.review` 等写动作究竟归 Q2-A「保留治理读面与治理审批」还是「撤除运维写面」，规格与 V1.0 均未逐点命名。
+
+| 选项 | 业务影响 | 对验收的影响 |
+| --- | --- | --- |
+| **A（建议）**：仅撤规格逐字点名的两面 —— 审计读面 `evidence.governance` 与授权/核验写面 `connector.review`（及相关 `connector.upgrade.confirm` / `connector.cancel` / `kms.admin`），其余既有 governance 写动作按「治理审批」保留 | 既有演示链（各域治理页、C-8.2 除监管档外）中断面最小；`admin` 不再跨「审计读面 ∥ 授权」两面，满足 B2-4 / 边界 9 | §5 T7「运维写面被拒」因当前无独立端点，改以**映射层负向断言**（收权后 `admin` 权限点集合不含已撤点）承载，需在交付说明如实标注「运维写面端点归 3.9.4」 |
+| **B**：把各域 governance 写动作一并判为「运维写面」撤除 | 彻底贯彻字面口径，但 9 服务多域治理演示链大面积中断，且需逐点裁定边界（规格未授权逐点命名） | 须先更新规格 / 走变更流程，超出本卡 V1.0 契约，非本包可自行实施 |
+
+- 按 `AGENTS.md` §8 第 2 条与红线 2：**存疑即停、先问再做，不自行解释模糊需求**。裁定到达前不启动 `admin` 收权相关实现；其余编码面（映射库表 / Bean 覆盖 / 三员映射 / 授予收回面 / 留痕 / `connector.health.read` 拆分 / 1013 码值集）不受阻。
 
 ## 10. 债务承接（DB-120 六项，台账:155）
 
