@@ -192,16 +192,25 @@ class GatewayConnectorRoutesIntegrationTest {
                 .as("计费门面普通代理零交付计量事件").isEmpty();
     }
 
-    /** WBS-3.8.2：存证治理读面经 connector-evidence 普通代理转发（不进交付判定链 / 零计量）。 */
+    /** WBS-3.8.2：存证治理读面经 connector-evidence 普通代理转发（不进交付判定链 / 零计量）。
+     * WBS-3.8.6 T9 收敛（hifi §9 E11）：并入响应体逐字透传断言（含中文不丢编码）——
+     * 原 GatewayEvidenceRouteTransparencyIntegrationTest 的真增量，重复新类已删除。 */
     @Test
     void connectorEvidenceRouteForwardsInstancePath() {
         final String path = "/api/v1/evidence/records/EV20261105000001";
-        client.get().uri(path)
+        final String evidenceBody =
+                "{\"code\":\"0\",\"message\":\"成功\",\"data\":{\"onChainCount\":9,\"pendingCount\":0,"
+                        + "\"failedCount\":1,\"lastFailedAt\":\"2026-11-05T13:30:00.000Z\"}}";
+        UPSTREAM.respondUpstream(HttpStatus.OK.value(), evidenceBody);
+        final String body = client.get().uri(path)
                 .header(HttpHeaders.AUTHORIZATION,
                         "Bearer " + TestTokens.valid(REQUESTER, List.of("admin")))
-                .exchange().expectStatus().isOk();
+                .exchange().expectStatus().isOk()
+                .expectBody(String.class)
+                .returnResult().getResponseBody();
 
         assertThat(UPSTREAM.lastPath()).as("存证读面经网关转发（路径实例）").isEqualTo(path);
+        assertThat(body).as("响应体逐字透传（中文不丢编码，T9 真增量）").isEqualTo(evidenceBody);
         assertThat(JUDGE.requestCount()).as("存证门面不触发交付判定链").isEqualTo(0);
         assertThat(recorder.eventsOf(GatewayAuditActions.DELIVERY_METERING))
                 .as("存证门面普通代理零交付计量事件").isEmpty();

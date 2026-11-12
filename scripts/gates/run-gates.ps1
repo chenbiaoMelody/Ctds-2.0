@@ -23,6 +23,12 @@
 #   R4 报告目标（目录创建 + 可写探针）纳入保护区，结论纳入"报告写入失败"
 #   R5 Maven 段配置违规整段跳过（不再"检出后仍执行命令"）
 #   R6 报告头增加 RunLabel/Scenario/ExitCode/ConfigPath/ConfigSha256；mvn/npm 前置探测
+# WBS-3.8.6 V1.13（2026-11-11，门禁超时预算调整——编排师裁定 A；config V1.13 + ADR-018 V1.11 +
+# README 留痕）record: 前端四段 npm 超时改为可经 stages.<name>.timeoutSeconds 覆盖（未配键默认 300s
+# 不变：frontendTypeCheck/frontendLint 行为零变化），配合 unitTest 1800→2700s / coverage 1800→2700s /
+# frontendTest 300→600s。背景：2026-11-11 两轮全仓门禁均 RED 且 3 项 FAIL 全为执行层超时（已完成用例
+# 0 failures/0 errors；第二轮停 8 演示服务后仍推进至 22/22 evidence-service 尾部）。判定阈值 / 阶段范围 /
+# 扫描面 / 五态与退出码语义零改动（只延长上限，不放宽任何判定）。
 # DB-43（2026-10-14，门禁变更流程留痕〔红线 3〕，gates-config.json 零改动 = ConfigSha256 不变自证）
 # record: ① mvn 三段（compile/lint/unitTest）成功/失败/超时三态落盘
 #   %TEMP%\ctds-gate-<stage>-out.log（摘要行 stage/command/exitCode/elapsedSec/time + 完整原始输出；
@@ -689,14 +695,19 @@ foreach ($stageName in @("frontendTypeCheck", "frontendLint", "frontendTest", "f
     # 报告 FAIL 明细的中文变乱码（红灯不丢，但人工复核"为什么红"失效）。Maven 段保持平台编码。
     # 卡2b B2：内联 ProcessStartInfo 收敛到 Invoke-MetricProcess（默认 UTF-8，不加 -PlatformEncoding）；
     # 三态报告/日志与现行为一致。
+    # V1.13（2026-11-11，WBS-3.8.6 门禁超时预算调整，编排师裁定 A，ADR-018 V1.11）：前端阶段超时可经
+    # stages.<name>.timeoutSeconds 覆盖（与 mvn 三段 / 度量段同一配置键），未配置时默认 300s 不变
+    # （frontendTypeCheck / frontendLint 未设值 = 行为零变化；frontendTest 配 600s）。
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
     $npmArgLine = "/c npm " + $s.goals
-    $r = Invoke-MetricProcess "cmd.exe" $npmArgLine $workdir 300 $stageName
+    $npmTimeoutSec = 300
+    if ($s.PSObject.Properties['timeoutSeconds'] -and $s.timeoutSeconds) { $npmTimeoutSec = [int]$s.timeoutSeconds }
+    $r = Invoke-MetricProcess "cmd.exe" $npmArgLine $workdir $npmTimeoutSec $stageName
     $npmElapsedSec = [int]$sw.Elapsed.TotalSeconds
     if ($r.TimedOut) {
         $p = $null
         try { $p = Write-StageOutLog $stageName ("npm " + $s.goals) $r.RawOutput -1 $true $npmElapsedSec } catch { }
-        $npmTimeoutDetail = "npm " + $s.goals + " timed out after 300s (timeout sentinel -1 is NOT a process exit code)"
+        $npmTimeoutDetail = "npm " + $s.goals + " timed out after " + $npmTimeoutSec + "s (timeout sentinel -1 is NOT a process exit code)"
         if ($p) { Add-Result $stageName "FAIL" ($npmTimeoutDetail + " | full output: " + $p) }
         else { Add-Result $stageName "FAIL" $npmTimeoutDetail }
     } elseif ($r.ExitCode -eq 0) {
