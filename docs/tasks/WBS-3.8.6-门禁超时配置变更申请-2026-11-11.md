@@ -4,7 +4,7 @@
 - 申请人：AI 编码会话（冷启动承接 `docs/logs/Ctds-项目开发日志-26-11-11-1508.md` 续点）
 - 关联任务卡：`docs/tasks/WBS-3.8.6-存证审计测试与集成-2026-11-10.md`
 - 变更对象：`scripts/gates/gates-config.json` 中的**阶段超时预算**（`timeoutSeconds`）
-- 状态：**待编排师裁定（本卡不擅改，红线 3）**
+- 状态：**✅ 编排师裁定 A 已落地（2026-11-11）**——三处超时预算变更已生效（V1.13），全仓门禁复跑 GREEN，详见 §七 裁定结果
 
 ## 一、为什么提这份申请（业务可读）
 
@@ -40,16 +40,26 @@
 
 **建议**：采 **A 案**先行（阈值只增不减、阶段范围与判定标准零变化，属最小改动），并把 **B / C 作为后续技术债**登记（C 优先）。
 
-## 五、本次申请涉及的具体键位（仅申请，未改动）
+## 五、本次申请涉及的具体键位（裁定 A 已落地，键位实况如下）
 
 - `stages.unitTest.timeoutSeconds`：1800 → 2700
 - `stages.coverage.timeoutSeconds`：1800 → 2700
 - `stages.frontendTest.timeoutSeconds`：300 → 600
 
-若裁定通过，落地时必须同时：① 更新 `gates-config.json` 的 `version` / `changeLog` / `note`；② 更新 `scripts/gates/README.md` 的工具链节与 ADR-018 留痕；③ 记录新的 `ConfigSha256` 基线；④ 复跑 `selftest.ps1`（196 断言）与全仓门禁确认 GREEN。
+裁定 A 通过后已按下列要求全部落地（2026-11-11）：① 更新 `gates-config.json` 的 `version`（V1.12→V1.13）/ `changeLog` / `note`；② 更新 `scripts/gates/README.md` 的工具链节与 ADR-018 留痕（V1.11）；③ 记录新的 `ConfigSha256` 基线 `adc3f98b…5cfb`；④ 复跑 `selftest.ps1`（196 断言 0 失败）与全仓门禁确认 GREEN（`gate-report-20261111-224534.md`）。
 
-## 六、本卡声明
+## 六、本卡声明（申请时点 2026-11-11 裁定前；裁定后实况见 §七）
 
-- **未改动任何门禁配置**（`ConfigSha256` 两轮均与基线一致）；
+- **申请时点未改动任何门禁配置**（`ConfigSha256` 两轮均与旧基线 `955bdbba…2ee2` 一致）；裁定 A 后已按 §五 键位落地 V1.13（见 §七）；
 - **未降低任何判定标准、未关闭任何阶段、未扩大排除项**；
 - 本包**在门禁 GREEN 前不交付、不进入 4 视角评审**（章程原则 3 / 5，红线 3）。
+
+## 七、裁定结果（2026-11-11 编排师回复"A"，已落地）
+
+- **裁定**：编排师 2026-11-11 会话回复 **"A"** = 采 A 案最小调整（阈值只增不减、阶段范围与判定标准零变化）。
+- **落地键位**（`gates-config.json` V1.12→**V1.13**）：`stages.unitTest.timeoutSeconds` 1800→**2700**；`stages.coverage.timeoutSeconds` 1800→**2700**；`stages.frontendTest.timeoutSeconds` 300→**600**（新增键）。`run-gates.ps1` 前端四段超时改读 `stages.<name>.timeoutSeconds`，未配键默认 300s 不变（`frontendTypeCheck`/`frontendLint` 行为零变化）。
+- **零判定改动实证**：阈值（core 80 / overall 70 / 变异 60）、`coreModules` 5 项、`mutationTest.modules`（did-only）、`secretsExcludePaths`、阶段范围与五态退出码语义与 main **逐字一致**（主会话 `git diff` 键值统计复核，diff 空）。
+- **新基线**：`ConfigSha256` **`adc3f98b…5cfb`**（首次登记 `df13795c…3cd5`；2026-11-11 日志更名致 changeLog 文本级漂移，`-224534` 复跑刷新后逐字一致）。
+- **验证**：`selftest.ps1` **196 断言 0 失败**；全仓门禁单发 **GREEN** = `scripts/gates/reports/gate-report-20261111-224534.md`（RunLabel `20261111-214941-6429`，PASS=15 / FAIL=0 / SKIP=2 / ERROR=0 / PENDING=5 / ExitCode 0，unitTest 实跑 1170s、coverage overall 92.4%、frontendTest PASS）。
+- **留痕载体**：config changeLog V1.13 + `scripts/gates/README.md`（当前版本 / 基线链 / 工具链节 / V1.13 条目）+ `ADR-018` V1.11 + 任务卡 §四"超时预算调整段"/"门禁复跑刷新段" + hifi §9 E10。
+- **后续技术债**：B（拆分分片）/ C（测试提速）登记台账，**C 优先**（基准用例移出门禁常态面 / 上下文合并）。

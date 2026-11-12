@@ -97,10 +97,16 @@ class EvidenceTrailIntegrationTest {
 
     private JsonNode create(final String stageType, final String businessNo,
             final String operationType, final String subjectDid) throws Exception {
+        return create(stageType, businessNo, operationType, subjectDid, "2026-11-05T05:30:00Z");
+    }
+
+    private JsonNode create(final String stageType, final String businessNo,
+            final String operationType, final String subjectDid, final String occurredAt)
+            throws Exception {
         final String body = "{\"stageType\":\"" + stageType + "\",\"businessNo\":\"" + businessNo
                 + "\",\"operationType\":\"" + operationType + "\""
                 + ",\"subjectDid\":\"" + subjectDid + "\""
-                + ",\"occurredAt\":\"2026-11-05T05:30:00Z\""
+                + ",\"occurredAt\":\"" + occurredAt + "\""
                 + ",\"actorSubjectNo\":\"S20260922000001\"}";
         final MvcResult result = mockMvc.perform(post(INTERNAL_PATH)
                         .contentType(MediaType.APPLICATION_JSON).content(body)
@@ -243,6 +249,22 @@ class EvidenceTrailIntegrationTest {
         final JsonNode miss = auditGet(AUDIT_TRAILS + "?subjectDigest=" + "f".repeat(64))
                 .path("data");
         assertThat(miss.path("total").asLong()).as("不命中返回空清单").isZero();
+    }
+
+    /** T8 补强 / B5-2① / S1-3（P2-16）：时间窗 from 下界排除——窗前 / 窗后记录均不计入清单。 */
+    @Test
+    void timeWindowExcludesRecordsOutsideBounds() throws Exception {
+        create("DELIVERY", "DL000501", "DELIVERY_CREATED", PROVIDER_DID, "2026-11-05T02:00:00Z");
+        create("DELIVERY", "DL000502", "DELIVERY_CREATED", PROVIDER_DID, "2026-11-05T05:30:00Z");
+        create("DELIVERY", "DL000503", "DELIVERY_CREATED", PROVIDER_DID, "2026-11-05T09:00:00Z");
+
+        final JsonNode data = auditGet(AUDIT_TRAILS
+                + "?stageType=DELIVERY&from=2026-11-05T04:00:00Z&to=2026-11-05T06:00:00Z"
+                + "&pageNum=1&pageSize=10").path("data");
+        assertThat(data.path("mode").asText()).isEqualTo("LIST");
+        assertThat(data.path("total").asLong())
+                .as("仅窗内一条（窗前 DL000501 / 窗后 DL000503 均排除）").isEqualTo(1L);
+        assertThat(data.path("list").get(0).path("businessNo").asText()).isEqualTo("DL000502");
     }
 
     /** T9 / B6-2 / S1-5①：无条件调阅拒 → 1012C0002。 */

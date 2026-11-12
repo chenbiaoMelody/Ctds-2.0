@@ -2,7 +2,7 @@
 
 - 版本：**V1.0 = 编码契约**（**2026-11-10 编排师一次确认 = Q1~Q8 全采 A + D1 不拆分，本文件即时生效**；V0.9 为待确认稿）
 - 日期：2026-11-10｜对应 lofi：`docs/designs/WBS-3.8.6-lofi.md` V1.0
-- 性质：**测试与集成类**。**零新端点 / 零新表 / 零迁移 / 零新错误码 / 零新权限点 / 零新第三方依赖 / 零门禁配置改动**（Q4/Q5 采 A）
+- 性质：**测试与集成类**。**零新端点 / 零新表 / 零迁移 / 零新错误码 / 零新权限点 / 零新第三方依赖**；**门禁配置变动仅限超时预算**（2026-11-11 编排师裁定 A，V1.13；判定面零改动，见 §9 E10；Q4/Q5 采 A 维持不扩 coreModules/变异）
 
 ---
 
@@ -17,10 +17,10 @@
 | **T3** | 同上 | 库内零记录时四环节键**存在且为 0**（不出现 `null`、不省略键） | 本包核心 |
 | **T4** | 补强 `EvidenceRetryIntegrationTest` | 链不可达时 retry：状态**不前进**（仍为待上链）、失败原因可读、**不产生第二条记录** | DB-114 ② |
 | **T5** | 同上 | `chain-enabled=false` 写入 → 记录落库且状态 = 待上链（**开关被消费**，不是报错也不是假成功） | DB-114 ③ |
-| **T6** | 新 `EvidenceChainIntegrityIntegrationTest` | `chain_tx_id IS NULL` 的记录在 overview/anomalies 中按"待上链"呈现，**不计入异常数** | DB-114 ④ |
-| **T7** | 同上 | 篡改本地账本（删块）→ `GET /records/{no}/verify` 返回 **MISMATCH**（若既有 `EvidenceVerifyIntegrationTest` 已覆盖则改为补"篡改后 overview 异常计数 +1"） | DB-114 ⑥ |
+| **T6** | `EvidenceStageAggregationIntegrationTest`（与 T1~T3 同类，见 §9 E11） | `chain_tx_id IS NULL` 的记录在 overview/anomalies 中按"待上链"呈现，**不计入异常数** | DB-114 ④ |
+| **T7** | 新 `EvidenceChainIntegrityIntegrationTest` | 篡改本地账本（删块）→ `POST /records/{no}/verify` 返回 **MISMATCH**（若既有 `EvidenceVerifyIntegrationTest` 已覆盖则改为补"篡改后 overview 异常计数 +1"） | DB-114 ⑥ |
 | **T8** | 新 `EvidenceAuditBenchmarkIntegrationTest` | 造 1 万条存证流水 → 审计 `records` 列表与 `anomalies` 查询 **P95 ≤ 500ms**（5 场景 × 20 轮 + 5 轮预热，P50/P95/max 落 `target/benchmark/evidence-audit.json`） | 性能敏感路径（AGENTS 行 76） |
-| **T9** | 补 1 例（gateway 既有路由契约范式） | `GET /api/v1/evidence/overview` 经网关 → 转发成功、响应体透传、**不进交付判定链**（`filters: []`）；evidence 桩不可达 → 网关 502/503 而非 200 假成功 | 立卡实测缺口 ② |
+| **T9** | 补强既有 `GatewayConnectorRoutesIntegrationTest`（body 逐字透传断言并入 `connectorEvidenceRouteForwardsInstancePath`）+ 新 `GatewayEvidenceUnavailableIntegrationTest`（见 §9 E11） | `GET /api/v1/evidence/overview` 经网关 → 转发成功、**响应体逐字透传（含中文）**、**不进交付判定链**（`filters: []`，既有例已断言）；evidence 桩不可达 → 网关 **5xx** 而非 200 假成功（E7 实测 500） | 立卡缺口 ②（勘误：既有例已断言转发/判定链/计量，真增量 = 响应体逐字透传，见 §9 E11） |
 | **T10** | 扩展 `EvidenceArchitectureTest` | 真链可替换性**结构断言**：链网关为单接口 + 单一实现（本地账本），无业务层直接依赖实现类 | DB-115（结构位） |
 
 **测试面纪律**：T1~T10 全部**先写红相**（失败日志归档 `build-output/w386-red-*.log`）再实现；严禁改弱既有 70 例断言。
@@ -52,7 +52,7 @@
 | --- | --- | --- |
 | 环节计数 | `GET /api/v1/evidence/overview` | 治理读面，T1/T3/探针 A~E 共用 |
 | 记录检索 | `GET /api/v1/evidence/records` | T8 基准被测面 |
-| 单条核验 | `GET /api/v1/evidence/records/{evidenceNo}/verify` | T7 |
+| 单条核验 | `POST /api/v1/evidence/records/{evidenceNo}/verify` | T7（实测 `@PostMapping`，见 §9 E11） |
 | 重试 | `POST /api/v1/evidence/records/{evidenceNo}/retry` | T4 |
 | 审计异常 | `GET /api/v1/evidence/audit/anomalies` | T6/T8 |
 | 内部写面 | `POST /api/v1/evidence/internal/records` | T1 造数 |
@@ -68,7 +68,7 @@
 | evidence 行覆盖 | 实测 **≥80%**（基线 90.70%，**不得劣化**）；`com.ctds.evidence.domain` ≥90%（基线 94.44%） |
 | 全仓 overall | ≥70%（当前 92.37%） |
 | 变异测试 | **维持 did-only 不扩**（Q5-A）；evidence 变异建议登记台账，不走本包 |
-| 门禁配置 | `gates-config.json` **零改动**，ConfigSha256 与基线（`955bdbba…2ee2`）逐字一致 |
+| 门禁配置 | **变动仅限超时预算**（裁定 A：`unitTest`/`coverage` 1800→2700s、`frontendTest` 300→600s，V1.13）；判定阈值/阶段范围/扫描面零改动；ConfigSha256 与新基线 `adc3f98b…5cfb` 逐字一致（见 §9 E10） |
 
 ---
 
@@ -92,8 +92,8 @@
 | `C-8.1` **S1-2~S1-5**（授权/合约/交付/使用 各 +1 + 单号一致） | 探针 A/B/C/D | 自动化可验 |
 | `C-8.1` **S1-8**（≥2 条 × 六要素齐备） | T1 + 探针 F | 自动化可验 |
 | `C-8.1` 附录 A（链不可达 → FAILED → 恢复） | 探针 E | 自动化可验 |
-| `C-8.2` **S1-1~S1-3**（矩阵 / 五类单号 / 主体摘要 + 时间窗） | 探针 F + T8 | 部分自动化 |
-| `C-8.2` S1-4 起的界面步骤 | —— | 仍为人工（3.8.5 界面） |
+| `C-8.2` **S1-1~S1-3**（矩阵 / 五类单号 / 主体摘要 + 时间窗） | 探针 F + T1/T8 + 既有审计 CI 用例 | 服务层自动（真机探针 F + CI 背书；界面人工，见 §9 E11） |
+| `C-8.2` S1-4~S1-8（调阅 / 拒 / 留痕 / 越权 / 脱敏） | 既有审计 CI 用例（`EvidenceTrail`/`Guard`/`Overview` 等） | 服务层自动（界面人工，见 §9 E11） |
 
 **剧本修订口径（Q8-A）**：C-8.1 V1.4 → **V1.5**、C-8.2 V1.3 → **V1.4**，**仅维护说明追加《自动化覆盖对照》一节**（业务判定与步骤编号一字不改），须 PO 批准。
 
@@ -134,3 +134,6 @@
 | **E7** | **T9 不可达状态码实测 = 500**（非 502/503）：evidence 基址指向未监听端口时，Netty `AnnotatedConnectException` 经 `common` 全局异常处理器按"未知异常"映射 **500 + 通用文案**（网关侧未做 502/503 语义专化）。**502/503 语义专化 = 改网关错误映射（业务代码变更），本包零业务改动不做**，登记为观察项随缺陷/变更流程 | `common/errorcode/src/main/java/com/ctds/common/web/GlobalExceptionHandler.java:18-19`（未知异常一律 500）、`GatewayEvidenceUnavailableIntegrationTest` 实测日志 `Connection refused` + 5xx | **T9 断言口径 = 5xx 且响应体不含 `"code":"0"`（不假成功）**；不可达构造改用 **`unusedPort()` 空闲端口**（`127.0.0.1:1` 在本机触发 5s 读超时挂起而非确定性拒绝，沿 did / subject 同款先例） |
 | **E8** | **探针面四处实测校正**（18 条判定已按此执行并全 PASS，留痕 `build-output/w386-probe/verdict.md`）：① **A 链单号第 3 段 = 准入单主键**（`SPACE{spaceId}:ADMISSION{admissionId}`），非本文 §2 所写 `{subjectId}`；② **A 链申请人须由探针先签发 DID**——空间 2 全部持 DID 主体均已是成员（无法产生"新增准入"），且 2026-09 及更早的 DID 行 `guard_key` 为空，内部"当前 DID"查询不可见（仅新签发行可见），故 A 链 = 先幂等签发 DID → 空间 2 申请 → owner 审批；③ **B 链双写需 `CT000001`**（公共数据授权类）；`CT000002` 属 `API_CALL`，`isPublicDataAuthorization` 为假 → 不双写；且合约发起按条款指纹幂等，重跑须在条款值内带运行标签才能生成新合约；④ **C 链第 3 条判定 = 环节 / 操作类型**（`DELIVERY/DELIVERY_CREATED`）——本文 §2 的 C 只列 2 条，与"每链 3 条 = 18 条"口径不一致，按 18 条固化 | `SpaceEvidencePublisher:41`（`"SPACE"+spaceId+":ADMISSION"+admissionId`）、`DidJdbcRepository.findActiveOrPending`（`guard_key IS NOT NULL`）、`InternalCurrentDidController:36`、`ContractEvidencePublisher:68-71/95-99`、`ctds_contract.contract_template.template_type`（CT000001 = PUBLIC_DATA_AUTHORIZATION / CT000002 = API_CALL）、实测 `CO000045` 重复发起返回同号 | 探针按 E8 口径实现（`build-output/w386-probe/w386-probe.ps1`）；A 链"干净首跑"约束写进脚本头与脚本内提示（重跑需换申请人） |
 | **E9** | **债务处置口径校正（§5 DB-110 = 对象错配，不关闭）**：§5 原拟"DB-110 关闭（T2 幂等断言与基准造数抽公共工具类，删重复实现）"，但台账 DB-110 实为 **metering 对账测试类重复**（`BillingReconciliationAssertionIntegrationTest` / `BillingAutoReconcileIntegrationTest`，承接 = metering 测试硬化批），本包按"零 metering 改动"闸门未触碰 → **不关闭、维持跟踪**（台账行已改注承接对象）。本包 evidence 侧亦未抽公共造数类（仅 `SharedMySqlContainer` 连接上限 +4），不构成"重复实现删除"。**§5 其余处置按实登记**：DB-109 关闭 / DB-115 转部署期（T10 结构位）/ DB-114 ⑥ 关闭 + ④ 部分 / DB-113 P3-8 空集子项关闭 + P3-7 断言层部分 / DB-116·DB-117 无兑现项维持跟踪 / 新增 **DB-121**（E7 网关不可达 500 语义专化观察项） | 台账 `docs/status/进度看板与债务登记簿.md:144`（DB-110 原文对象 = metering）；编码批 `70d8161` git 实证 11 文件全在 evidence / gateway | **不影响 T1~T10 与探针**；关闭条件⑥"债务处置落地"按"可兑现者关闭、不可兑现者如实登记"判为达成（不虚报） |
+| **E10** | **门禁配置"零改动"勘误（裁定 A 超时预算变更，评审 P1-1）**：正文 §4 与 lofi/任务卡"零门禁配置改动 / 与旧基线 `955bdbba…2ee2` 逐字一致"已被 2026-11-11 编排师裁定 A 取代——`gates-config.json` V1.12→**V1.13**，仅三处超时预算变更（`unitTest`/`coverage` 1800→**2700s**、`frontendTest` 300→**600s**）+ `run-gates.ps1` 前端四段改读 `stages.<name>.timeoutSeconds`（未配键默认 300s 不变 → `frontendTypeCheck`/`frontendLint` 行为零变化）。**判定面零改动**：阈值（core 80 / overall 70 / 变异 60）、`coreModules` 5 项、`mutationTest.modules`、`secretsExcludePaths`、阶段范围与五态退出码语义与 main **逐字一致**（主会话 `git diff` 键值复核）。授权链 = 申请单 → 编排师 2026-11-11 回复"A" → ADR-018 V1.11 / README / config changeLog V1.13。新基线 `ConfigSha256 adc3f98b…5cfb`（首次登记 `df13795c…3cd5`，日志更名致 changeLog 文本级漂移，`-224534` 复跑刷新逐字一致）。GREEN 证据 = `gate-report-20261111-224534.md`（PASS=15/FAIL=0，unitTest 1170s） | 申请单 §七、ADR-018:16、config:4 changeLog V1.13、README:100、报告:7 | 关闭条件②⑨与纪律声明"零门禁配置"文本同步修订为"变动仅限超时预算（裁定 A），判定面零改动"（**契约文本修订，2026-11-12 编排师会话确认**）；不影响 T1~T10 与探针 |
+| **E11** | **评审循环 1 修复段正文校正（P2-1 / P2-6 / P1-4 / P1-5）**：① **单条核验端点 = POST**（§3 原写 GET 笔误，实测 `EvidenceGovernanceController:66 @PostMapping`，不改接口迁就文档）；② **T6 落点 = `EvidenceStageAggregationIntegrationTest`**（§1 原写"新 ChainIntegrity"失实，T6 实在 StageAgg:169-192；T7 才是新 ChainIntegrity）；③ **T9 收敛**：删新类 `GatewayEvidenceRouteTransparencyIntegrationTest`（4 条断言中 3 条与既有 `GatewayConnectorRoutesIntegrationTest:195-208` 重复），真增量"响应体逐字透传（含中文）"并入既有 `connectorEvidenceRouteForwardsInstancePath`；保留 `GatewayEvidenceUnavailableIntegrationTest`（不可达 5xx 真增量）→ gateway **49→48 例**（47 基线 + 1 不可达）；④ **立卡缺口②表述校正**：网关 `connector-evidence` 非"零自动化断言"，既有例已断言 200 + 转发路径 + 判定链零调用 + 零计量，真增量仅响应体逐字透传；⑤ **C-8.2 程度口径统一**：S1-1~S1-3 由"全自动"降为"服务层自动（界面人工）"（真机探针 F + CI 背书，S1-2 真机覆盖 4/5 单号家族、POLICY-AL 由服务层用例补），S1-4~S1-8 既有 CI 用例真实背书维持"服务层自动"（原 hifi/任务卡写"人工"属低估，校正）；两本剧本"人工"定义统一采 C-8.1:71 口径（演示期受控构造或纯观察点） | `EvidenceGovernanceController:66`、`EvidenceStageAggregationIntegrationTest:169-192`、`GatewayConnectorRoutesIntegrationTest:68/:116-132/:195-208`、C-8.1:71 / C-8.2:81 | gateway 例数 49→48（任务卡状态行/编码段、C-8.1 对照同步）；剧本程度三方一致；**契约 T9 落点变更属评审修复，留痕本勘误** |
+| **E12** | **红相取证补全（评审 P1-3，A 案真注入 + 其余 B 案豁免）**：原 `w386-red-evidence.log`/`-gateway.log` 实为全绿（78/0/0、49/0/0 + BUILD SUCCESS），未兑现 §1"先红后实现"契约。本修复段以**临时缺陷注入**补三处真红（跑红即还原，`git status services/*/src/main` 零残留）：① **T1** = `EvidenceAuditOverviewService:52` 矩阵计数 `row.count()`→`row.count()+1` → `overviewMatrixMatchesDatabaseGroupByCounts` 红（`w386-red-t1.log`：Failures:1 / expected 1L / BUILD FAILURE）；② **T7** = `EvidenceVerifyService:68` 空账本 `MISMATCH`→`PASS` → `deletedLedgerBlockReportsMismatchAndCountsAsAnomaly` 红（`w386-red-t7.log`：Failures:1 / expected MISMATCH）；③ **T9** = 临时 `TempRedBodyFilter`（Spring 6.1 `writeWith(Publisher)` 响应装饰器）篡改响应体首字节 → `connectorEvidenceRouteForwardsInstancePath` 红（`w386-red-t9.log`：Failures:1 / body `{`→`X`）。三处还原后复跑绿（StageAgg 4 + ChainIntegrity 1 + ConnectorRoutes 8 全 0 失败）。**其余 T 编号 B 案豁免**：本包**零业务代码改动**（测试断言既有正确行为，非新功能实现，"先红后实现"范式按代表点真红 + 断言反证替代）——T4/T5 复用既有 `EvidenceWriteFailureIntegrationTest` 覆盖（E3/E4）；T2 幂等 / T3 空集键 / T6 待上链 / T8 基准 / T10 结构断言均由 T1/T7/T9 三真增量点代表"断言可抓缺陷"，且 T3 缺键盲区已补 `has(status)` 真断言（P2-14）、T6 已改真实写面构造（P2-15） | 三份真红日志 `build-output/w386-red-t{1,7,9}.log`（gitignored，各含 Failures:1 + BUILD FAILURE）；还原后 src/main git 零残留 + 复跑绿 | §1 红相契约兑现（代表点真红 + 零业务改动豁免）；P1-3 关闭 |

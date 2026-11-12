@@ -111,11 +111,10 @@ class EvidenceAuditBenchmarkIntegrationTest {
         results.put("05-audit-overview", runScenario("审计总览四环节矩阵聚合（万级全量）",
                 request(AUDIT_OVERVIEW), null));
 
+        writeResultJson(results);
         results.values().forEach(result -> assertThat(result.p95Ms())
                 .as("场景[%s] P95 ≤ %dms（容器内口径）", result.label(), P95_BUDGET_MS)
                 .isLessThanOrEqualTo(P95_BUDGET_MS));
-
-        writeResultJson(results);
     }
 
     /**
@@ -234,9 +233,11 @@ class EvidenceAuditBenchmarkIntegrationTest {
                 .put("seed", "测试内直插（多值单语句分批 200 行），非真实业务链路写入");
         root.put("roundsPerScenario", ROUNDS);
         root.put("warmupRounds", WARMUP_ROUNDS);
+        final boolean allWithinBudget = results.values().stream()
+                .allMatch(result -> result.p95Ms() <= P95_BUDGET_MS);
         root.putObject("threshold")
                 .put("metric", "P95").put("unit", "ms").put("budget", P95_BUDGET_MS)
-                .put("verdict", "PASS");
+                .put("verdict", allWithinBudget ? "PASS" : "FAIL");
         root.putObject("boundary")
                 .put("channel", "MockMvc 进程内全链（无网络与网关）")
                 .put("load", "串行采样，无并发加压——正式并发压测与阶梯加压归 WBS-4.2.1")

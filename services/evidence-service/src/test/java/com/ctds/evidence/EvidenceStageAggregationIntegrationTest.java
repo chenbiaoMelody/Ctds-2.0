@@ -5,6 +5,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.ctds.evidence.support.FailingStateWriterConfiguration;
 import com.ctds.evidence.support.FixedClockTestConfiguration;
 import com.ctds.evidence.support.FlakyChainGatewayConfiguration;
 import com.ctds.evidence.support.SharedMySqlContainer;
@@ -47,7 +48,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @AutoConfigureMockMvc
 @ActiveProfiles("mysql")
 @Testcontainers(disabledWithoutDocker = true)
-@Import({FixedClockTestConfiguration.class, FlakyChainGatewayConfiguration.class})
+@Import({FixedClockTestConfiguration.class, FlakyChainGatewayConfiguration.class,
+        FailingStateWriterConfiguration.class})
 class EvidenceStageAggregationIntegrationTest {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -73,6 +75,7 @@ class EvidenceStageAggregationIntegrationTest {
     @BeforeEach
     void cleanTables() {
         FlakyChainGatewayConfiguration.FAIL_NEXT.set(false);
+        FailingStateWriterConfiguration.FAIL_NEXT.set(false);
         jdbc.update("DELETE FROM evidence_record_action_log");
         jdbc.update("DELETE FROM evidence_record");
         jdbc.update("DELETE FROM evidence_chain_block");
@@ -91,7 +94,7 @@ class EvidenceStageAggregationIntegrationTest {
         create("DELIVERY", "DL000702", "DELIVERY_CREATED");
         FlakyChainGatewayConfiguration.FAIL_NEXT.set(true);
         create("USAGE", "USG000000000701", "USAGE_ALLOWED");
-        insertPendingRecord("USAGE", "USG000000000702", "EV20261111900001");
+        createPendingRecord("USAGE", "USG000000000702", "USAGE_ALLOWED");
         create("USAGE", "USG000000000703", "USAGE_ALLOWED");
 
         final Map<String, Long> expected = new LinkedHashMap<>();
@@ -111,6 +114,8 @@ class EvidenceStageAggregationIntegrationTest {
 
         for (final String stage : STAGES) {
             for (final String status : STATUSES) {
+                assertThat(matrix.path(stage).has(status))
+                        .as("矩阵格 %s/%s 键存在（缺键即红）", stage, status).isTrue();
                 assertThat(matrix.path(stage).path(status).asLong())
                         .as("矩阵格 %s/%s 与库内分组计数逐项相等", stage, status)
                         .isEqualTo(expected.getOrDefault(stage + "/" + status, 0L));
@@ -153,6 +158,9 @@ class EvidenceStageAggregationIntegrationTest {
         assertThat(stages).as("零记录时四环节键仍存在").containsExactlyInAnyOrderElementsOf(STAGES);
         for (final String stage : STAGES) {
             for (final String status : STATUSES) {
+                assertThat(matrix.path(stage).has(status))
+                        .as("矩阵格 %s/%s 键存在（缺键即红，非 MissingNode 假通过）", stage, status)
+                        .isTrue();
                 assertThat(matrix.path(stage).path(status).isNull())
                         .as("矩阵格 %s/%s 不出现 null", stage, status).isFalse();
                 assertThat(matrix.path(stage).path(status).asLong())
@@ -166,10 +174,16 @@ class EvidenceStageAggregationIntegrationTest {
         assertThat(data.path("snapshotAt").asText()).as("快照时点可读").isNotBlank();
     }
 
-    /** T6 / E2：txId 为空的 PENDING 记录 → 待上链呈现，不计为核验不一致。 */
+    /** T6 / E2：txId 为空的 PENDING 记录 → 待上链呈现，不计为核验不一致。
+     * P2-15 修复：PENDING 经真实写面确定性构造（FailingStateWriterConfiguration：
+     * 上链成功后状态写入失败 → 记录停 PENDING、chain_tx_id 空），非直插夹具。 */
     @Test
     void pendingRecordWithNullTxIdCountsAsPendingNotMismatch() throws Exception {
-        insertPendingRecord("USAGE", "USG000000000721", "EV20261111900002");
+        createPendingRecord("USAGE", "USG000000000721", "USAGE_ALLOWED");
+        assertThat(jdbc.queryForObject("SELECT status FROM evidence_record", String.class))
+                .as("真实写面构造的记录停 PENDING").isEqualTo("PENDING");
+        assertThat(jdbc.queryForObject("SELECT chain_tx_id FROM evidence_record", String.class))
+                .as("状态写失败 → chain_tx_id 空").isNull();
 
         final JsonNode data = getJson(AUDIT_OVERVIEW).path("data");
         final JsonNode matrix = data.path("matrix");
@@ -191,15 +205,20 @@ class EvidenceStageAggregationIntegrationTest {
         assertThat(item.path("chainTxId").isNull()).as("待上链记录无链上标识").isTrue();
     }
 
-    private JsonNode create(final String stageType, final String businessNo,
-            final String operationType) throws Exception {
-        final String body = "{\"stageType\":\"" + stageType + "\",\"businessNo\":\"" + businessNo
+    private static String writeBody(final String stageType, final String businessNo,
+            final String operationType) {
+        return "{\"stageType\":\"" + stageType + "\",\"businessNo\":\"" + businessNo
                 + "\",\"operationType\":\"" + operationType + "\""
                 + ",\"subjectDid\":\"did:ctds:provider-0001\""
                 + ",\"occurredAt\":\"2026-11-05T05:30:00Z\""
                 + ",\"actorSubjectNo\":\"S20260922000001\"}";
+    }
+
+    private JsonNode create(final String stageType, final String businessNo,
+            final String operationType) throws Exception {
         final MvcResult result = mockMvc.perform(post(INTERNAL_PATH)
-                        .contentType(MediaType.APPLICATION_JSON).content(body)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(writeBody(stageType, businessNo, operationType))
                         .header("X-Ctds-Subject", "delivery-service")
                         .header("X-Ctds-Roles", "evidence-internal"))
                 .andExpect(status().isOk())
@@ -207,26 +226,17 @@ class EvidenceStageAggregationIntegrationTest {
         return MAPPER.readTree(result.getResponse().getContentAsString(StandardCharsets.UTF_8));
     }
 
-    /** 直插 PENDING 记录（待上链为崩溃窗口态，写面无法稳定构造；仅测试夹具直插）。 */
-    private void insertPendingRecord(final String stageType, final String businessNo,
-            final String evidenceNo) {
-        jdbc.update("INSERT INTO evidence_record (evidence_no, stage_type, business_no, "
-                        + "operation_type, subject_did_digest, occurred_at, content_digest, status, "
-                        + "retry_count, created_at, updated_at) VALUES (?, ?, ?, ?, ?, "
-                        + "'2026-11-05 05:30:00.000', ?, 'PENDING', 0, "
-                        + "'2026-11-05 05:30:00.000', '2026-11-05 05:30:00.000')",
-                evidenceNo, stageType, businessNo, operationOf(stageType),
-                "pending-did-digest", "pending-content-digest");
-    }
-
-    private static String operationOf(final String stageType) {
-        return switch (stageType) {
-            case "AUTHORIZATION" -> "SPACE_MEMBER_ADMITTED";
-            case "CONTRACT" -> "CONTRACT_EFFECTIVE";
-            case "DELIVERY" -> "DELIVERY_CREATED";
-            case "USAGE" -> "USAGE_ALLOWED";
-            default -> throw new IllegalStateException("未知环节: " + stageType);
-        };
+    /** P2-15：经真实写面确定性构造 PENDING（上链成功后状态写入失败 → 500 1012S0002，
+     * 记录停 PENDING、chain_tx_id 空；FailingStateWriterConfiguration 消费一次即复位）。 */
+    private void createPendingRecord(final String stageType, final String businessNo,
+            final String operationType) throws Exception {
+        FailingStateWriterConfiguration.FAIL_NEXT.set(true);
+        mockMvc.perform(post(INTERNAL_PATH)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(writeBody(stageType, businessNo, operationType))
+                        .header("X-Ctds-Subject", "delivery-service")
+                        .header("X-Ctds-Roles", "evidence-internal"))
+                .andExpect(status().isInternalServerError());
     }
 
     private JsonNode getJson(final String path) throws Exception {
