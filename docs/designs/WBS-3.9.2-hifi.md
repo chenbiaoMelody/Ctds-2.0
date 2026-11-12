@@ -146,6 +146,18 @@
   4. **限制解除与时序**：本条之前的「裁定到达前不启动 `admin` 收权相关实现」自本裁定起解除；Q3-A「落地时一次性收权、落地前不提前撤权」不变（9 服务 `admin` 行在编码实现前保持原值）。
   5. **补正说明二**：§5 T7 与 §1 B8-R3 口径按本裁定精确化，属编排师裁定授权的**口径修订**，非私自改设计、非补需求、非规格变更；**实现与本裁定不一致 = 打回项**。
 
+### E4（编码段勘察）`common/auth` 无 JDBC 依赖 + 默认 profile 无数据源
+
+- 实测：`common/auth/pom.xml` 依赖清单无 `spring-jdbc` / `mysql-connector-j` / `flyway`；11 服务 `application.yml` 均在 `spring.autoconfigure.exclude` 排除 `DataSourceAutoConfiguration`（如 `evidence-service:7-9`），默认 profile **无 `JdbcTemplate` Bean**，仅 `mysql` profile 装载数据源。
+- 口径精确化（不改契约）：① `spring-jdbc` 属 Spring Boot 3.5.16 BOM 既有构件（`WBS-3.7.5` E3 网关直引先例），**非新第三方依赖**，本包在 `common/auth` 显式声明；② 库表映射以独立 `RbacJdbcAutoConfiguration` 装配，`@ConditionalOnBean(JdbcTemplate.class)` + `ctds.auth.rbac.source=jdbc` 双条件控制，仅 `mysql` profile 生效，避免默认 profile 启动失败；③ **运行时权限查询仍为单一来源**：JDBC 生效时 `AuthAutoConfiguration` 的默认 Bean 被 `@ConditionalOnMissingBean` 抑制，未知角色 / 读失败一律空集、绝不回退配置文件旧值（§4 fail-closed 不变）。
+- 依据：P1 实测 `AuthAutoConfiguration.java:40-44` 可覆盖；E1 部署期 SELECT 授权义务不变。
+
+### E5（编码段勘察）承载服务与端点权限点复用口径（零新增权限点）
+
+- 实测：§2 契约表未指定承载服务（Q1-A 只定「不新建服务」、Q2-A 只定「映射表持有服务端单点」）；P3 实测全仓无 `grant|revoke|permission.*|rbac` 类权限点，规格边界 8 禁止新增权限点（**仅** `connector.health.read`），故 W1/W2/R1/R2 只能复用既有登记点。
+- 口径精确化（实现层选择，业务判定零变化）：① **承载服务 = `evidence-service`** —— 迁移链最短（V1→V2，追加 V3）、已有「审计留痕与业务变更同事务」先例、`EvidenceMigrationStructureIntegrationTest` 只断言表子集不锁全集；② 端点路径（建议稿未给具体路径，按本条落定）= `/api/v1/rbac/permissions/grant`（W1）/ `/revoke`（W2）/ `GET /api/v1/rbac/roles`（R1）/ `GET /api/v1/rbac/changes`（R2）；③ 权限点复用 = W1/W2 挂 `connector.review`（E3 裁定 A 已从 `admin` 撤除，归安全管理员）、R1 挂 `connector.health.read`（系统管理员运维读面，剧本 S1-1）、R2 挂 `evidence.governance`（审计管理员，剧本 S1-12）；④ 三类关键点 = 业务配置（各域 governance 写面）/ 权限授予（`connector.review`）/ 审计读面（`evidence.governance`），三员各持一类、两两不重叠；⑤ `kms.admin` 归系统管理员（执行权），不与权限授予同持（边界 9）；⑥ `platform.policy` 维持 `platform.operator` 既有持有，不动空间策略治理演示链。
+- **补正说明三**：E4/E5 为编码段勘察所得的实测事实登记与实现层口径精确化，**不改 §2 契约表端点数量与语义 / §3 数据模型最小集 / §5 T1~T9 断言 / 不补需求 / 不重开 Q1~Q8 裁定 / 不新增权限点（除 `connector.health.read`）**；红相用例（`build-output/w392-red-*.log`）已按本口径落盘。实现与 E4/E5 不一致 = 打回项。
+
 ## 10. 债务承接（DB-120 六项，台账:155）
 
 | 项 | 承接方式 | 关闭判据（沿台账原文） |
