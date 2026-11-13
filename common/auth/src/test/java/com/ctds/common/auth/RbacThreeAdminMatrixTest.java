@@ -17,6 +17,8 @@ import org.junit.jupiter.api.Test;
  * WBS-3.9.2 T1 / T2 / T7：三员权限点集合两两不重叠、admin 收权负向矩阵。
  * 依据 hifi §5、§9 E3 裁定 A 与 E5：Q1-A 后映射唯一权威来源 = 库表 seed（V3 迁移），
  * 默认 profile 的 yml 仅为无库兜底，不作判定对象。
+ * 注：本类为 V3 seed 的静态结构断言；运行期授予面可绕过边界（secadmin 自授 kms.admin）见 DB-129，
+ * 不在本类覆盖，不得据此宣称"边界 9 已由自动化守住"。
  */
 class RbacThreeAdminMatrixTest {
 
@@ -74,6 +76,21 @@ class RbacThreeAdminMatrixTest {
             assertThat(entry.getValue().contains("kms.admin") && intersects(entry.getValue(), GRANT))
                     .as("%s 不得同持 kms.admin 与权限授予", entry.getKey()).isFalse();
         }
+    }
+
+    /** B2-1~B2-3 正向腿：每员至少持有本职关键点，防止 seed 整段删空仍绿。 */
+    @Test
+    void eachThreeAdminHoldsItsOwnKeyPointClass() throws IOException {
+        Map<String, Set<String>> all = globalRolePoints();
+        assertThat(all.getOrDefault("platform.sysadmin", Set.of()))
+                .as("系统管理员持运维读数 / 密钥执行 / 业务配置")
+                .contains("connector.health.read", "kms.admin", "catalog.governance");
+        assertThat(all.getOrDefault("platform.secadmin", Set.of()))
+                .as("安全管理员持授权 / 核验写面")
+                .contains("connector.review");
+        assertThat(all.getOrDefault("platform.audadmin", Set.of()))
+                .as("审计管理员持审计读面")
+                .contains("evidence.governance");
     }
 
     @Test

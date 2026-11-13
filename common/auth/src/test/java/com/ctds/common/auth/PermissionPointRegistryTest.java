@@ -25,8 +25,9 @@ class PermissionPointRegistryTest {
 
     @Test
     void everyMainSourceAnnotationValueIsRegistered() throws IOException {
+        // 常量引用（OwnershipGuard.REVIEW_PERMISSION）由 seed 登记承载，不在此手工补白，
+        // 否则 seed 丢点仍会假绿（评审④ P3-4①）。
         Set<String> registered = new LinkedHashSet<>(registeredPoints());
-        registered.add("subject.review");
         assertThat(registered).containsAll(annotationValues());
     }
 
