@@ -1,0 +1,179 @@
+# WBS-3.9.2 高保证真设计（hifi）：RBAC 与三员分立
+
+- 版本：**V1.0 = 编码契约**（**✅ 2026-11-12 编排师一次确认"确认" = Q1~Q8 均采建议口径 A + D1 不拆分 → 本文件即时生效**；V0.9 为立卡草案）
+- 日期：2026-11-12｜对应 lofi：`docs/designs/WBS-3.9.2-lofi.md` V0.9｜任务卡：`docs/tasks/WBS-3.9.2-RBAC与三员分立-2026-11-12.md`
+- 性质：**实施包**。**零新第三方依赖 / 零门禁配置改动 / 零第二套权限判定内核 / 零库内 `tenant_id` / 零登录与令牌签发**；**新增权限点仅限 `connector.health.read`**（规格边界 8）
+- **✅ 确认留痕（2026-11-12 编排师"确认" = Q1~Q8 均采建议口径 A + D1 不拆分）**：Q1-A 不新建服务 / Q2-A 授予面与留痕单点 / Q3-A `admin` 落地时一次性收权、落地前不提前撤权 / Q4-A 配置落地 + 连接器域任务卡登记 / Q5-A `kms.admin` 分离本包承接 / **Q6-A C-8.2 目标版本顺延 V1.5 + DB-120 ① 关闭判据同步改写** / Q7-A 1013 段最小码值集 / Q8-A 两剧本仅维护说明与操作路径、须 PO 批准 / D1 不拆分。**本文件 V1.0 = 编码契约，实现与本文不一致 = 打回项**；编码段 P1~P8 实测若与 V1.0 不符，按 §9 E1… 回填勘误（不得私自补需求）。
+
+---
+
+## 1. 业务可读行为清单（只从规格派生）
+
+| 规格锚点 | 本包必须实现的行为 | 验收映射 |
+| --- | --- | --- |
+| B1-R1（:45） | 权限点命名 `<域>.<动作>`、值域封闭；新增权限点须在所属域任务卡登记 | T? 结构断言：全仓 `@RequirePermission` 值与登记清单逐项比对，零未登记点（B1-1） |
+| B1-R2（:46） | 三员角色串 `platform.sysadmin` / `platform.secadmin` / `platform.audadmin` 生效；既有业务角色与 `admin` 保留；演示档 `user` 与 `*-internal` 登记在册、不参与 B2-4 比对 | T? 角色值域清单断言 |
+| B1-R3（:47）/ ADR-005:37 | **覆盖 `RolePermissionMapper` Bean 换库表**；`DefaultAccessControl` / `PermissionInterceptor` / `@RequirePermission` 判定内核零改动；未知角色返回空集 | T? 同接口不同来源的等价性用例 + 内核零改动 diff 断言 |
+| B1-R4（:48） | 映射变更（授予 / 收回）留痕：变更人 / 时点 / 角色 / 权限点 / 前后值；3.9.2 落库后由库表留痕承载 | T? 留痕字段齐备 + 双向可查（B1-4） |
+| B1-3（:52） | 授予后角色可访问面随之变化；收回后恢复被拒 | T? 双向用例 |
+| B2-R1~R3（:59-61） | 系统管理员 = 业务配置 + 运维读数与告警处置（不含审计明细读面 / 权限授予 / 业务审批）；安全管理员 = 权限授予收回 + 密钥**授权类审批**（不含 `kms.admin` 执行权 / 密钥材料读取 / 业务配置 / 审计读面）；审计管理员 = 审计查询 / 时间线调阅 / 报告导出（不含业务配置 / 权限授予 / 业务数据写） | T? 三员 3×3 正向 + 双向负向矩阵（B2-1~B2-3） |
+| B2-R4（:62）/ 边界 9（:195） | 三类关键点两两不重叠；`kms.admin` 不得与「权限授予」同持；账号级"同一自然人不得兼任"归部署期，本包不做 | T? 结构断言（B2-4） |
+| B3-R3（:75） | 拒绝留痕属审计读面、读权限归 `platform.audadmin`，系统管理员不可读 | T? 审计读面越权负向用例 |
+| B3-R4（:76） | 平台管理面必须显式挂权限点 | T? 管理面端点 / 注解覆盖结构断言（B3-4） |
+| B3-3（:74）/ ADR-016 §2.6 | 反枚举读面越权统一 400 + `1000C0003` +「记录不存在」，与真不存在逐字同文 | T? 同码同文逐字比对 |
+| B6-R3（:119）/ DB-120 ⑤ | 拆出只读权限点 `connector.health.read`：健康总览改挂新点，核验写面仍 `connector.review` | T? 两点分离断言 |
+| B8-R3（:147）/ DB-120 ① | `admin` 收权含运维写面；`evidence.governance` 授予 `platform.audadmin`；C-8.2 演示身份由 `admin` 切换为审计管理员（**须 PO 批准**） | 剧本 C-8.2 / C-10.1 维护说明 + T? `admin` 负向矩阵 |
+
+**不实现（规格明列不做 / 归他包）**：账号表与登录、JWT 签发、`tenant_id`、租户生命周期（3.9.3）、指标接入与告警处置（3.9.4）、告警外发（G-04）、角色管理界面（3.9.5）、C-10.3 / C-10.4 / C-8.3、真实压测。
+
+---
+
+## 2. 接口契约表（V0.9 建议稿，Q1/Q2 裁定后定稿）
+
+> 端点来源 = 剧本 `C-10.1`:51/:54/:55/:56（权限清单读面 / 授权端点 / 权限授予面 / 权限点归属调整归 3.9.2）+ 规格 B1-R3/R4、B3-R4。**编码段不得增加本表之外的端点**；路径与出参以 §7 前置检查实测为准，不一致须回填 §9 勘误。
+
+| # | 端点（建议） | 方法与权限点 | 入参 / 出参 | 来源 |
+| --- | --- | --- | --- | --- |
+| W1 | 权限授予 | `POST`，仅安全管理员侧权限点可调用 | 入 = 角色 + 权限点 + 变更单号；出 = 变更后映射 + 留痕号；**拒绝重复授予（幂等，不产生第二条留痕）** | C-10.1:54/:55；B1-R3/R4 |
+| W2 | 权限收回 | `POST`，同上 | 入 = 角色 + 权限点 + 变更单号；出 = 变更后映射 + 留痕号；**收回未授予的点为零副作用拒绝** | C-10.1:54/:55；B1-3 |
+| R1 | 角色权限清单读面 | `GET`，显式挂权限点（B3-R4） | 出 = 角色 → 权限点集合（含三员、`admin`、业务角色、演示档登记项）；未知角色空集 | C-10.1:51；B1-1/B1-2 |
+| R2 | 映射变更留痕读面 | `GET`，显式挂权限点 | 出 = 分页留痕：变更人 / 时点 / 角色 / 权限点 / 变更前后值 / 变更单号 | B1-R4；B1-4 |
+| R3 | 连接器健康总览（既有端点**改挂权限点**） | `GET`，`connector.health.read`（新点） | 出参零变化；核验写面仍 `connector.review` | B6-R3；DB-120 ⑤ |
+
+- **错误码**：401 = `1000C0002`、403 = `1000C0005`（`AuthAdvice` 既有出口）；反枚举读面越权 = 400 + `1000C0003` 同码同文（ADR-016 §2.6）；本包业务错误用 **1013 段最小码值集**（Q7-A，格式 ADR-005:33，码值在编码段按实际语义落定并登记）。
+- **幂等 / 并发**：W1/W2 以 `(角色, 权限点, 变更单号)` 唯一键幂等；并发授予同一映射恰一次生效、留痕恰一条。
+- **对外信息**：错误响应不暴露内部实现 / 库表结构 / 账号信息（章程错误码统一体系）。
+
+## 3. 数据模型（最小集）
+
+| 表（建议） | 字段 | 约束 | 来源 |
+| --- | --- | --- | --- |
+| 角色 → 权限点映射表 | 角色串、权限点、生效状态、版本号 | `(角色, 权限点)` 唯一；值域封闭校验在应用层 | B1-R2/R3 |
+| 映射变更留痕表 | 留痕号、变更单号、变更人、时点、角色、权限点、变更前值、变更后值 | 留痕号唯一；与映射变更**同事务**写入 | B1-R4 |
+
+- 迁移沿用既有 Flyway 版本链，**只新增本包所需表**，不改动既有业务表、不新增 `tenant_id`（规格:159）。
+- 映射读取为本地只读查询（Q1-A 跨 schema 先例），**不引入远程鉴权调用**；库不可达时按 §4 fail-closed 处理。
+
+## 4. 边界值与异常行为
+
+| 场景 | 期望行为 | 依据 |
+| --- | --- | --- |
+| 未认证 / 无权限 | 401 + `1000C0002` / 403 + `1000C0005`，并记 `rbac.check` DENIED 留痕 | `DefaultAccessControl`；ADR-005:37 |
+| 未知角色 / 空权限集 | 映射返回空集 → 所有需权限端点被拒，**不回退到配置文件旧值**（避免双来源） | `RolePermissionMapper` 接口语义；B1-R3 |
+| 重复授予 / 收回未授予 | 幂等成功但零新增留痕 / 零副作用拒绝，不产生脏数据 | B1-3 / B1-R4 |
+| 并发授予同一映射 | 恰一次生效、留痕恰一条（唯一键 + 事务） | 章程并发纪律 |
+| 映射库不可达 / 读失败 | **fail-closed**：判定为无权限并拒绝，绝不回退到"放行"或旧配置；错误可读且不暴露内部实现 | 安全默认；ADR-016 §2.7 |
+| 归属不匹配 vs 对象不存在 | 400 + `1000C0003` +「记录不存在」**逐字同文** | B3-3；ADR-016 §2.6 |
+| 三员越权（另两职责） | 各被拒且留痕；系统管理员读审计明细被拒、安全管理员改业务配置被拒、审计管理员授权被拒 | B2-1~B2-3 |
+| 新增未登记权限点 / 角色 | 拒绝并提示走变更流程，不允许"顺手"新增 | B1-R1；规格:46 |
+| `admin` 收权后 | 审计读面 / 授权类 / 运维写面被拒，治理读面与治理审批仍可用；既有演示链按 Q3-A 落地前不提前中断 | Q2-A（规格:203/:208） |
+
+## 5. 测试面（编码段先红后绿）
+
+| 编号 | 断言（可核） | 承载 |
+| --- | --- | --- |
+| T1 | 三员权限点清单两两比对，三类关键点无一角色跨两面持有；`kms.admin` 与授权类不同持 | B2-4 / 边界 9 |
+| T2 | 三员 3×3 矩阵：每员本职动作成功、另两职责动作被拒（正向 + 双向负向） | B2-1~B2-3 |
+| T3 | 授予后访问面变化、收回后恢复被拒（双向） | B1-3 |
+| T4 | 每次映射变更留痕字段齐备、可按角色/时点查；重复授予零新增留痕 | B1-4 / 幂等 |
+| T5 | 全仓 `@RequirePermission` 值与登记清单逐项相等，零未登记权限点；管理面无未挂点端点 | B1-1 / B3-4 |
+| T6 | `connector.health.read` 与 `connector.review` 分离：健康总览只读可访问、核验写面不被只读点放行 | B6-R3 |
+| T7 | `admin` 收权后审计读面 / 授权类被拒，治理读面与治理审批保留；「运维写面」按 §9 E3 裁定 A 以**映射层负向断言**承载（收权后 `admin` 权限点集合不含已撤点；运维写面端点归 3.9.4，交付说明如实标注、不虚报） | B8-R3 / Q2-A / §9 E3 裁定 A |
+| T8 | 反枚举越权同码同文逐字比对；未知角色空集；映射库不可达 fail-closed | B3-3 / B1-R3 / 安全默认 |
+| T9 | 判定内核零改动结构断言：仅一个 `AccessControl` 实现、`RolePermissionMapper` 单一 Bean 生效 | 规格边界 2 |
+
+**纪律**：全部先写失败用例（红相日志归档 `build-output/w392-red-*.log`）再实现；严禁改弱既有 `common/auth` 48 例 / 各服务权限断言；`common/auth` 属 `coreModules`，行覆盖 **≥80%**、整体 **≥70%**（门禁 V1.13，零配置改动）。
+
+## 6. 剧本承载与修订口径（待 PO 批准）
+
+- **C-8.2**：演示身份由 `admin` + `evidence.governance` 切换为 `platform.audadmin` + `evidence.governance`（DB-120 ①；Q2-A 规格:208）；**版本按 Q6-A 顺延为 V1.5**（2026-11-12 一次确认授权，DB-120 ① 关闭判据已同步改写；原 V1.4 已被 WBS-3.8.6 占用，立卡段按红线 4 如实上报未擅改）；业务判定与 S1-1~S2-8 步骤编号零变更。
+- **C-10.1**：操作路径表由"占位；待 3.9.2 / 3.9.5 落定"改为本包实际端点（:45-62 中归 3.9.2 四行）；界面入口仍归 3.9.5；业务判定与步骤编号零变更。
+- 两本剧本修订**须 PO 批准**；立卡段零剧本改动。
+
+## 7. 编码段前置检查（P1~P8，新会话第一动作逐项实测留痕）
+
+| # | 检查项 | 不成立时 |
+| --- | --- | --- |
+| P1 | `RolePermissionMapper` Bean 可被 `@ConditionalOnMissingBean` 覆盖、`DefaultAccessControl` 无需改动（实读 `AuthAutoConfiguration`） | 停止回报，回填 §9 勘误 |
+| P2 | 各服务数据源可只读访问映射表所在 schema（复用 3.7.5 跨 schema 先例），账号最小授权路径可用 | 停止回报，Q1 重新裁定 |
+| P3 | 现有权限点 / 角色清单全量导出（11 服务 yml + 全仓 `@RequirePermission`），与规格值域逐项比对 | 差异逐条登记 |
+| P4 | `admin` 收权影响面实测（9 服务 yml + 前端 `demoRole.ts` / `demoIdentity.ts` + C-8.2 剧本 + 既有演示链） | 影响面清单随设计勘误 |
+| P5 | 1013 段零占用复核 + 1011/1012 段边界复核 | 码值冲突则走变更流程 |
+| P6 | Q6（C-8.2 版本顺延）裁定已到达、DB-120 ① 关闭判据改写留痕到位 | **停止**，不擅改剧本 |
+| P7 | 门禁配置哈希与基线 `adc3f98b…5cfb` 逐字一致、`coreModules` 含 `auth` | 停止回报 |
+| P8 | 演示库 / 服务链状态与"零数据改动"口径核对 | 按 DB-64 口径登记 |
+
+## 8. 体量与纪律
+
+- **D1 不拆分**：预估 2200~2800 行（卡 3.9.1:87），1 编码会话；超 ≤400 行/PR 按登记制豁免（沿 3.8.6 先例）。
+- 零新第三方依赖 / 零门禁配置改动 / 零迁移超出 §3 最小集 / 零演示库既有数据改动 / 零第二套判定内核 / 零规格外权限点。
+- 测试暴露真实缺陷：先红相留痕 + 报告并走缺陷流程，**不在本包顺手改业务逻辑掩盖**。
+
+## 9. 设计勘误位（立卡段预留；2026-11-12 编码段前置检查回填 E1~E3）
+
+> 编码段前置检查 P1~P8 与 Q1~Q8 裁定若产生与 V0.9 不一致的实测事实，按 E1、E2… 逐条回填（含实测证据与口径修正），再转 V1.0 = 编码契约。
+>
+> **补正说明（2026-11-12）**：V1.0 已于一次确认段生效；本节按本文件头部「编码段 P1~P8 实测若与 V1.0 不符，按 §9 E1… 回填勘误（不得私自补需求）」执行，仅登记实测事实与口径精确化，**不改变 §2 契约表 / §3 最小集 / §5 T1~T9 / 不补需求 / 不重开 Q1~Q8 裁定**。P1/P2 均成立 → 不触发 §7 停机。完整实测证据见 `build-output/w392-precheck-2026-11-12.md`（gitignored）。
+
+### E1（P2）跨 schema 只读先例的适用边界
+
+- 实测成立：`docs/designs/WBS-3.7.5-hifi.md:38-43` + `services/metering-billing/.../JdbcMeteringSourceReader.java:21-26,35-36,41,50-51`（配置化 schema 前缀 + 本地 `JdbcTemplate` 只读 SELECT）；同实例多 schema 见 `deploy/k8s/*-deployment.yaml`；网关自持数据源 + 专用账号见 `services/gateway-service/.../application.yml:9-11,37-39`。
+- 边界登记：① 3.7.5 先例对象是「跨库业务表」，本卡 §3 的**共享映射表**需部署期为各服务账号另授该 schema 的 SELECT，属**部署期配置动作**；② 全仓 `GRANT SELECT` 唯一命中在集成测试 `ConnectorSourceReadApiTest.java:264-275`，`deploy/runbook.md` / `docs/manuals/` / `*.sql` 零命中 → 仓库内**无可执行授权脚本**，最小授权仍为部署期人工配置义务（沿 3.7.5 同款，`deploy/k8s/metering-billing-deployment.yaml:7-10` 文字义务）。编码段不实现授权、不虚报「已授权」。
+- 口径修正：无。Q1-A「不新建服务 + 跨 schema 只读」维持；不得据此新建服务或改裁定。
+
+### E2（P3）权限点 / 角色清单与 T5 比对口径精确化
+
+- 实测：11 服务 `application.yml` 各 1 处 `permissions:`；角色去重 15（7 业务/演示 + 8 `*-internal`），权限点去重 59；`@RequirePermission` 文本 187 处 → 实际注解 178（主源码 175），9 处注释/字符串、3 处测试桩。
+- 差异逐条登记：① 配置有、注解无 3 点 `space.admin` / `space.member` / `platform.policy`（由 `SpacePermissions.java:17,19,21` + `SpaceAccessGuard.java:19,20,51,65,66` 常量守卫消费，非注解）；② 注解有、配置无 3 点 `item.read` / `item.delete` / `"  "`（仅 `common/auth/src/test/.../AuthEnforcementWebTest.java:39,45,51`，主源码为零）；③ 三段式命名 15 点（各域 yml 注释均标 WBS/hifi 登记来源，属既有登记事实，不擅自改名）；④ 角色值域缺 `platform.sysadmin` / `secadmin` / `audadmin` 三串（代码/配置零命中，与立卡实测一致），其余 15 角色全在规格 `:46` 值域内、无值域外角色。
+- 定点核实：`connector.health.read` 代码/配置零实现；`connector.review` 单点三用（`ConnectorGovernanceController.java:36` 治理读面兼健康总览 / `ConnectorRegistrationController.java:102` 核验队列读 / `:115` 核验写面）；`kms.admin` 唯一配置 `kms/application.yml:45`，全局同名 `admin` 跨 9 服务同持核验写面与审计读面 → B2-4 当前不成立（立卡已登记）。
+- **口径精确化（不改契约）**：§5 T5「全仓 `@RequirePermission` 值与登记清单逐项相等」的比对集合 = **主源码注解值 ∪ 既有配置登记点（含 ① 的 3 个常量守卫消费点）**，测试桩 3 点排除；登记清单以本节实测 59 点为基线，新增权限点**仅** `connector.health.read`（规格边界 8）。§5 T5 / §1 B1-R1 断言语义不变。
+
+### E3（P4）`admin` 收权影响面清单 + 存疑提请教
+
+- 影响面实测（清单随设计勘误，完整表见 `build-output/w392-precheck-2026-11-12.md` §P4）：9 服务 `admin` 配置行（evidence:35 / connector:29 / kms:45 / catalog:36 / contract:36 / delivery:33 / metering-billing:32 / did:37 / example:35）；前端 `demoRole.ts:34`（`role === 'admin'`，不消费服务端权限点集合）、`demoIdentity.ts` 6 个运营档头、`MainLayout.vue:35,:59`、`router/index.ts:340-343` 与权限 meta、`router.spec.ts` admin 放行断言；剧本 `C-8.2:43,:45`（监管档 = `admin + evidence.governance`）与 `C-10.1:31,:51,:56,:62`。9 行当前**仍为原值、未提前撤权**，符合 Q3-A 时序。
+- **存疑（须编排师 / PO 裁定，本设计不代选）**：「运维写面」在现有 9 行中**无独立权限点实现**（规格 `:145/:147` 归 3.9.4；§1「不实现」明列指标接入与告警处置归 3.9.4）。`contract.template.manage` / `catalog.governance` / `delivery.governance` / `metering.governance` / `billing.governance` / `sandbox.review` 等写动作究竟归 Q2-A「保留治理读面与治理审批」还是「撤除运维写面」，规格与 V1.0 均未逐点命名。
+
+| 选项 | 业务影响 | 对验收的影响 |
+| --- | --- | --- |
+| **A（建议）**：仅撤规格逐字点名的两面 —— 审计读面 `evidence.governance` 与授权/核验写面 `connector.review`（及相关 `connector.upgrade.confirm` / `connector.cancel` / `kms.admin`），其余既有 governance 写动作按「治理审批」保留 | 既有演示链（各域治理页、C-8.2 除监管档外）中断面最小；`admin` 不再跨「审计读面 ∥ 授权」两面，满足 B2-4 / 边界 9 | §5 T7「运维写面被拒」因当前无独立端点，改以**映射层负向断言**（收权后 `admin` 权限点集合不含已撤点）承载，需在交付说明如实标注「运维写面端点归 3.9.4」 |
+| **B**：把各域 governance 写动作一并判为「运维写面」撤除 | 彻底贯彻字面口径，但 9 服务多域治理演示链大面积中断，且需逐点裁定边界（规格未授权逐点命名） | 须先更新规格 / 走变更流程，超出本卡 V1.0 契约，非本包可自行实施 |
+
+- 按 `AGENTS.md` §8 第 2 条与红线 2：**存疑即停、先问再做，不自行解释模糊需求**。裁定到达前不启动 `admin` 收权相关实现；其余编码面（映射库表 / Bean 覆盖 / 三员映射 / 授予收回面 / 留痕 / `connector.health.read` 拆分 / 1013 码值集）不受阻。
+- **✅ 裁定留痕（2026-11-12 编排师会话回复「A」= 采建议口径 A）**：
+  1. **收权范围固化**：`admin` 落地时一次性撤除 ① 审计读面 `evidence.governance`；② 授权 / 核验写面 `connector.review` 及 `connector.upgrade.confirm` / `connector.cancel` / `kms.admin`。其余既有 governance 写动作按 Q2-A「保留治理读面与治理审批」保留，**不逐点撤除**。
+  2. **T7 承载**：§5 T7「运维写面被拒」因当前无独立端点，改以**映射层负向断言**承载 —— 断言收权后 `admin` 权限点集合**不含上述已撤点**、且仍含保留的治理读面 / 治理审批点；交付说明如实标注「运维写面端点归 3.9.4，本包不虚报」。
+  3. **不采 B**：各域 governance 写动作不判为运维写面，无需更新规格、不走变更流程；§2 契约表 / §3 最小集 / T1~T6·T8·T9 不变。
+  4. **限制解除与时序**：本条之前的「裁定到达前不启动 `admin` 收权相关实现」自本裁定起解除；Q3-A「落地时一次性收权、落地前不提前撤权」不变（9 服务 `admin` 行在编码实现前保持原值）。
+  5. **补正说明二**：§5 T7 与 §1 B8-R3 口径按本裁定精确化，属编排师裁定授权的**口径修订**，非私自改设计、非补需求、非规格变更；**实现与本裁定不一致 = 打回项**。
+
+### E4（编码段勘察）`common/auth` 无 JDBC 依赖 + 默认 profile 无数据源
+
+- 实测：`common/auth/pom.xml` 依赖清单无 `spring-jdbc` / `mysql-connector-j` / `flyway`；11 服务 `application.yml` 均在 `spring.autoconfigure.exclude` 排除 `DataSourceAutoConfiguration`（如 `evidence-service:7-9`），默认 profile **无 `JdbcTemplate` Bean**，仅 `mysql` profile 装载数据源。
+- 口径精确化（不改契约）：① `spring-jdbc` 属 Spring Boot 3.5.16 BOM 既有构件（`WBS-3.7.5` E3 网关直引先例），**非新第三方依赖**，本包在 `common/auth` 显式声明；② 库表映射以独立 `RbacJdbcAutoConfiguration` 装配，`@ConditionalOnBean(JdbcTemplate.class)` + `ctds.auth.rbac.source=jdbc` 双条件控制，仅 `mysql` profile 生效，避免默认 profile 启动失败；③ **运行时权限查询仍为单一来源**：JDBC 生效时 `AuthAutoConfiguration` 的默认 Bean 被 `@ConditionalOnMissingBean` 抑制，未知角色 / 读失败一律空集、绝不回退配置文件旧值（§4 fail-closed 不变）。
+- 依据：P1 实测 `AuthAutoConfiguration.java:40-44` 可覆盖；E1 部署期 SELECT 授权义务不变。
+
+### E5（编码段勘察）承载服务与端点权限点复用口径（零新增权限点）
+
+- 实测：§2 契约表未指定承载服务（Q1-A 只定「不新建服务」、Q2-A 只定「映射表持有服务端单点」）；P3 实测全仓无 `grant|revoke|permission.*|rbac` 类权限点，规格边界 8 禁止新增权限点（**仅** `connector.health.read`），故 W1/W2/R1/R2 只能复用既有登记点。
+- 口径精确化（实现层选择，业务判定零变化）：① **承载服务 = `evidence-service`** —— 迁移链最短（V1→V2，追加 V3）、已有「审计留痕与业务变更同事务」先例、`EvidenceMigrationStructureIntegrationTest` 只断言表子集不锁全集；② 端点路径（建议稿未给具体路径，按本条落定）= `/api/v1/rbac/permissions/grant`（W1）/ `/revoke`（W2）/ `GET /api/v1/rbac/roles`（R1）/ `GET /api/v1/rbac/changes`（R2）；③ 权限点复用 = W1/W2 挂 `connector.review`（E3 裁定 A 已从 `admin` 撤除，归安全管理员）、R1 挂 `connector.health.read`（系统管理员运维读面，剧本 S1-1）、R2 挂 `evidence.governance`（审计管理员，剧本 S1-12）；④ 三类关键点 = 业务配置（各域 governance 写面）/ 权限授予（`connector.review`）/ 审计读面（`evidence.governance`），三员各持一类、两两不重叠；⑤ `kms.admin` 归系统管理员（执行权），不与权限授予同持（边界 9）；⑥ `platform.policy` 维持 `platform.operator` 既有持有，不动空间策略治理演示链。
+- **补正说明三**：E4/E5 为编码段勘察所得的实测事实登记与实现层口径精确化，**不改 §2 契约表端点数量与语义 / §3 数据模型最小集 / §5 T1~T9 断言 / 不补需求 / 不重开 Q1~Q8 裁定 / 不新增权限点（除 `connector.health.read`）**；红相用例（`build-output/w392-red-*.log`）已按本口径落盘。实现与 E4/E5 不一致 = 打回项。
+
+### E6（编码段实现）映射权威来源、装配条件与运行期开关（A 已裁定）
+
+- 实现事实：`common/auth` 落 `JdbcRolePermissionMapper` + `RbacJdbcAutoConfiguration`（`imports` 登记、`AutoConfigureBefore` + 双条件）、`AuthProperties.rbac`；`evidence-service` 落 V3 两表 + 全量初始映射 seed（15 角色 / 59 点 + 三员 + `admin` 按 E3 裁定 A 收权 + `connector.health.read`）、`RbacErrorCodes` 1013 段、`RbacStore` 端口 / `JdbcRbacStore` / `RbacPermissionService` / `RbacGovernanceController`（W1/W2/R1/R2）；`connector-service` 健康总览改挂新点并在连接域任务卡登记。
+- **口径精确化（不改契约）**：① **库表 seed = 运行期映射唯一权威来源**；11 服务 `application.yml` 的 `ctds.auth.permissions` 仅为默认 profile / 无库兜底，不参与 Q1-A 换库表后的判定，故 `admin` 收权落在 seed、yml 的 `admin` 行不提前撤除（Q3-A 时序 + 既有集成测试基线零回归）；T1/T2/T7/T5 断言对象相应改为 V3 seed（断言语义不变、零削弱）。② `ctds.auth.rbac.source=jdbc` 由**部署期显式注入**，不在任何测试 profile 启用 —— 各服务集成测试库为独立容器库、无共享映射表，若在测试 profile 启用将因 §4 fail-closed 造成大面积 403；该开关与 E1 的部署期 SELECT 授权同属部署期配置义务。
+- **裁定留痕（2026-11-12 编排师选 A，业务影响对比见本段原表）**：运行期在本包交付后切库表映射并同步切换演示身份，不延至 3.9.5；B 不采。**裁定前不改部署清单 / 测试 profile 的约束解除。**
+- **A 落地事实（2026-11-12）**：① 部署清单注入 = `deploy/k8s/{space,catalog,contract,delivery,metering-billing,evidence}-deployment.yaml` 各 +2 env（`CTDS_AUTH_RBAC_SOURCE=jdbc` / `CTDS_AUTH_RBAC_SCHEMA=ctds_evidence`）；② **schema 口径澄清**：V3 两表由 evidence Flyway 建在 `ctds_evidence`，`AuthProperties.rbac.schema` 默认值 `ctds_auth` 仅为逻辑占位，部署必须显式覆盖，否则按 §4 fail-closed 全拒（部署陷阱写入 `deploy/runbook.md` §3.1）；③ **未覆盖服务（如实登记，合计 5 个）**：subject / connector / did / kms 无 k8s 清单，须在演示启动期以同名环境变量注入；example（backend）默认 profile 无数据源、`mysql` profile 有数据源 —— 仅 `mysql` profile 下注入生效，默认 profile 由装配条件保持配置兜底。**不虚报「11 服务已全量切换」**；④ 前端运营档演示身份（`demoIdentity.ts` 的 evidence / connector 页面级角色头）本包不改 → 界面路切换登记 **DB-128**（承接 3.9.5），C-8.2 V1.5 已注明界面路暂不可用、服务接口为唯一验收事实源；⑤ 剧本：C-8.2 → **V1.5**（监管档 `platform.audadmin`）、C-10.1 → **V1.2**（操作路径落定，含 R2 变更留痕读面），业务判定与步骤编号零变更，待 PO 批准；⑥ 本段触及部署清单 / 剧本 / 文档 → 全仓 `run-gates.ps1` 须单发复跑（预期 ConfigSha256 不变）；⑦ 评审循环 1 暴露"运行期授予面可自我授予 `kms.admin` / `evidence.governance`"缺口 → 登记 **DB-129**（须先走规格变更新增独立授权点，本段不改判定语义、不新增权限点）。
+- **补正说明四**：E6 为编码实现后的实测事实登记与载体澄清，**不改 §2 / §3 / §5 T1~T9 断言语义 / 不补需求 / 不重开 Q1~Q8 / 不新增权限点**；实现与 E4/E5/E6 不一致 = 打回项。
+- **补正说明五**：以上为裁定落地与部署事实登记，**不改 §2 / §3 / §5 T1~T9 断言语义 / 不补需求 / 不重开 Q1~Q8 / 不新增权限点**；`admin` 收权与三员授予均以 V3 seed 为准。
+
+## 10. 债务承接（DB-120 六项，台账:155）
+
+| 项 | 承接方式 | 关闭判据（沿台账原文） |
+| --- | --- | --- |
+| ① C-8.2 演示身份切换 | 本包（Q6 裁定版本 + PO 批准） | 剧本经 PO 批准且 `platform.audadmin` 授 `evidence.governance` 实测可查 |
+| ② ADR-005:37 / ADR-011:31 正文回写 | 本包 / 收口批，**走 ADR 变更流程** | 正文改为「签发归部署期 / V1.5」并留修订记录 |
+| ③ DB-03 解除条件顺延 | **本卡只登记不实施**（部署期 / V1.5 立项） | DB-03 行解除条件改写（他批） |
+| ④ 等保 G-09 顺延 | **本卡只登记不实施**（部署期 / V1.5 立项） | 等保:164 标注顺延（他批） |
+| ⑤ 拆 `connector.health.read` | 本包（Q4-A）+ 连接器域任务卡登记 | 新点落配置且健康总览改挂、核验写面仍 `connector.review` |
+| ⑥ `kms.admin` 与授权类审批分离 | 本包（Q5-A）或另立安全硬化卡（Q5-B，请裁定） | 二者不同持（结构断言可核） |

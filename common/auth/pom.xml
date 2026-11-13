@@ -28,6 +28,12 @@
       <groupId>com.ctds</groupId>
       <artifactId>common-logging</artifactId>
     </dependency>
+    <!-- WBS-3.9.2 Q1-A：库表映射只读查询所需 JdbcTemplate。Spring Boot 3.5.16 BOM 既有构件
+         （WBS-3.7.5 E3 网关直引先例），非新第三方依赖；不引入数据源/驱动，由各服务 profile 提供。 -->
+    <dependency>
+      <groupId>org.springframework</groupId>
+      <artifactId>spring-jdbc</artifactId>
+    </dependency>
     <!-- 网关侧 JWT 校验依赖：optional 使 Spring Security 不上普通服务 classpath（防 Boot 默认安全策略接管），
          网关服务（3.5.2）显式引入后配合 ctds.auth.gateway.enabled 生效。版本由 Boot 3.5.16 BOM 管理。 -->
     <dependency>

@@ -35,6 +35,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\deploy\deploy.ps1
 
 结尾看到 `[DEPLOY] PASS` 即成功，同时报告落盘：`build-output/deploy/<时间戳>/deploy-report.md`。
 
+### 3.1 鉴权映射切换（WBS-3.9.2 E6-A，2026-11-12）
+
+- 部署清单对 **6 个后端服务**（space / catalog / contract / delivery / metering-billing / evidence）注入 `CTDS_AUTH_RBAC_SOURCE=jdbc` + `CTDS_AUTH_RBAC_SCHEMA=ctds_evidence`：运行期"角色→权限点"改从库表 `ctds_evidence.role_permission` 读取，权限判定内核不变。**清单已注入 ≠ 运行态生效**：space / catalog 等清单在 §4 仍标注"未激活"，运行态是否切换以实际 Pod 启动与验收证据为准。
+- **部署期三条人工义务**：① 各服务数据库账号**仅授予** `ctds_evidence.role_permission` 与 `role_permission_change_log` 的 **SELECT**（严禁 INSERT / UPDATE / DELETE，严禁与业务写账号共用；仓库不提供 GRANT 脚本，口令与授权由人侧承接，部署验收留 `SHOW GRANTS` 结果）；② subject / connector / did / kms 四个服务当前无 k8s 清单（加 example 合计 **5 个服务未覆盖**），演示启动时须以同名环境变量注入 —— **未注入即 C-10.1 S1 幕不成立**（kms / connector 的 `admin` 仍按原配置持密钥执行权与核验写权，不得以接口 200 推断三员已分立）；③ example / kms 仅在其 `mysql` profile（有数据源）下注入才生效，默认 profile 无 `JdbcTemplate` 时由装配条件保持配置兜底。
+- **启动顺序**：须先由 evidence 服务完成 Flyway V3 迁移并写入 seed（`ctds_evidence.role_permission` 可查），再启动/放量其余服务；否则按 fail-closed 返回空权限集（403）。
+- 回退 = 去掉上述两个环境变量并重启（回配置文件来源）；`admin` 在库表 seed 中已按三员分立撤除审计读面与授权/核验写面，**回退后恢复原配置口径、三员分立判据失效**，须在验收记录标注并重跑 C-10.1 S1 前置（不得沿用已收权证据）。
+
 ## 4. 怎么看结果
 
 | 看什么 | 入口 | 预期 |

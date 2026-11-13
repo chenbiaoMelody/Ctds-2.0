@@ -26,7 +26,10 @@ ctds:
   auth:
     permissions:
       applicant: connector.register,connector.read,connector.heartbeat,connector.upgrade,connector.cancel,connector.source.manage
-      admin: connector.review,connector.read,connector.internal.read,connector.upgrade.confirm,connector.cancel
+      admin: connector.review,connector.read,connector.internal.read,connector.upgrade.confirm,connector.cancel,connector.health.read
+      # WBS-3.9.2 B6-R3 / DB-120 ⑤：健康总览只读点，与核验写面 connector.review 分离；
+      # 系统管理员持该点（运维读面），新点登记见连接器域任务卡。
+      platform.sysadmin: connector.health.read
       # 服务身份专用内部面角色（本服务作为被调方；3.6.7 / 3.6.8 与 SDK 校验消费，ADR-027 §2 / ADR-028 §2）
       connector-internal: connector.internal.read,connector.internal.write
   # 源凭据国密唯一入口（ADR-006）：未配置密钥文件 = 允许启动，登记 / 自检 fail-closed 503（1010S0004）
