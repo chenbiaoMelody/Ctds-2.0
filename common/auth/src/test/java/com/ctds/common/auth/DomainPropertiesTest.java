@@ -9,7 +9,6 @@ import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.boot.context.properties.source.MapConfigurationPropertySource;
 
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 /**
