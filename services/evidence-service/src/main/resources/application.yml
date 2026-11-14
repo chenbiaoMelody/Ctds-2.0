@@ -22,6 +22,14 @@ logging:
       console: logstash
       file: logstash
 
+# 指标暴露（WBS-3.9.4 / ADR-014 最小暴露面，12 服务接入 Q2-A）：只开 health 与 prometheus 两个端点，
+# 其余 actuator 端点一律不开（沿 example-service 样板口径）
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+
 ctds:
   # RBAC（WBS-3.8.2 hifi §1.2 Q6-A 权限最小面，实测基线 53 → 3.8.3 +2 = 55）：
   # 治理档持对外面全部读/核验/重试；业务系统服务身份只持内部写面（3.8.3 埋点使用）。
@@ -54,3 +62,16 @@ ctds:
       space-base-url: ${CTDS_EVIDENCE_SPACE_BASEURL:http://127.0.0.1:8083}
       contract-base-url: ${CTDS_EVIDENCE_CONTRACT_BASEURL:http://127.0.0.1:8085}
       delivery-base-url: ${CTDS_EVIDENCE_DELIVERY_BASEURL:http://127.0.0.1:8087}
+    # 监控读面与处置（WBS-3.9.4 hifi §3）：base-url 缺省空 = 数据源未配置（fail-closed → 503 +
+    # 1013S0003，不伪造空读数/零值）；演示链经 monitoring.ps1 端口转发 19090/19093 注入 env
+    # （CTDS_EVIDENCE_PROMETHEUS_BASEURL / CTDS_EVIDENCE_ALERTMANAGER_BASEURL）；测试经属性
+    # 注入桩地址（不依赖 env）。service-jobs = 服务标识:job 标签值（Q2-A 全集 12 项；job 名 =
+    # deploy/k8s 清单 app.kubernetes.io/name 实测标签 + 四个无清单服务同规则登记名；集群外部署
+    # 无 series → 读数如实"未接入"，接入与采集两口径分离）。静默缺省 30 分钟，上限 1440。
+    monitor:
+      prometheus:
+        base-url: ${CTDS_EVIDENCE_PROMETHEUS_BASEURL:}
+      alertmanager:
+        base-url: ${CTDS_EVIDENCE_ALERTMANAGER_BASEURL:}
+      service-jobs: example:ctds-backend,space:ctds-space-service,catalog:ctds-catalog-service,contract:ctds-contract-service,delivery:ctds-delivery-service,connector:ctds-connector-service,metering-billing:ctds-metering-billing,evidence:ctds-evidence-service,gateway:ctds-gateway-service,subject:ctds-subject-service,did:ctds-did,kms:ctds-kms
+      silence-default-minutes: 30

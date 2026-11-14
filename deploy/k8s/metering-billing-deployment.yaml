@@ -29,7 +29,13 @@ spec:
         app.kubernetes.io/part-of: ctds
         app.kubernetes.io/name: ctds-metering-billing
         app.kubernetes.io/component: metering
-    spec:
+      # Prometheus scrape-discovery annotations (WBS 3.9.4 / ADR-014): the
+      # monitoring stack discovers scrape targets from these three annotations
+      # (kubernetes_sd role=pod); without them the pod is not scraped.
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8089"
+        prometheus.io/path: "/actuator/prometheus"    spec:
       containers:
         - name: ctds-metering-billing
           # Image reference is injected by the 2.5.2 toolchain convention (ADR-012).

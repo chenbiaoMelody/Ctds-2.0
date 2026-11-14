@@ -80,6 +80,12 @@
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-actuator</artifactId>
     </dependency>
+    <!-- 指标暴露（WBS 3.9.4 / ADR-014）：micrometer-registry-prometheus 版本走 Boot BOM
+         （dependencies.md 已登记）；暴露面收敛在 application.yml exposure.include -->
+    <dependency>
+      <groupId>io.micrometer</groupId>
+      <artifactId>micrometer-registry-prometheus</artifactId>
+    </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-test</artifactId>

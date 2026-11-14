@@ -42,7 +42,7 @@ public class ConnectorGovernanceController {
         final PageQuery page = PageQuery.of(pageNum, pageSize, null);
         final List<ConnectorView> views = queryService.governanceConnectors(parsed, page).stream()
                 .map(registration -> ConnectorView.summary(registration,
-                        queryService.online(registration)))
+                        queryService.online(registration), queryService.healthStatus(registration)))
                 .toList();
         return ApiResult.ok(PageResult.of(views,
                 queryService.countGovernanceConnectors(parsed), page));

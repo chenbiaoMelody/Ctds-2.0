@@ -64,7 +64,8 @@ public abstract class ConnectorTestSupport {
         SharedMySqlContainer.register(registry, "ctds_connector_it");
         registry.add("ctds.connector.subject.base-url", STUB::baseUrl);
         registry.add("ctds.connector.did.base-url", STUB::baseUrl);
-        registry.add("ctds.connector.health.offline-after", () -> "5m");
+        // offline-after 缺省 5m 由 application.yml 承载（WBS-3.9.4 T6 起不再在此注册——
+        // 阈值翻转用例经子类 @DynamicPropertySource 单点注入，同键双注册语义不确定）
         registry.add("ctds.crypto.local.key-file", KEY_FILE::toString);
     }
 

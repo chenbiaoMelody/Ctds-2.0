@@ -39,7 +39,9 @@ public final class ConnectorViews {
         }
     }
 
-    /** 连接器视图（详情 / 绑定 / 内部面含实时 didStatus；列表摘要不含 DID 状态，避免 N 次跨域调用）。 */
+    /** 连接器视图（详情 / 绑定 / 内部面含实时 didStatus；列表摘要不含 DID 状态，避免 N 次跨域调用）。
+     * WBS-3.9.4 加性：healthStatus 三态显式值（B6-1：ONLINE/OFFLINE/NEVER_REPORTED），
+     * "从未上报"不再以空值冒充；既有 online 布尔零破坏（加性字段，前端展示归 3.9.5）。 */
     public record ConnectorView(
             String connectorNo,
             String subjectNo,
@@ -51,6 +53,7 @@ public final class ConnectorViews {
             String didStatus,
             boolean verified,
             boolean online,
+            String healthStatus,
             LocalDateTime lastHeartbeatAt,
             LocalDateTime updatedAt) {
 
@@ -60,20 +63,22 @@ public final class ConnectorViews {
             return new ConnectorView(registration.connectorNo(), registration.subjectNo(),
                     registration.connectorName(), registration.connectorType(),
                     registration.connectorVersion(), registration.status().name(), did,
-                    detail.didStatus(), detail.verified(), detail.online(),
+                    detail.didStatus(), detail.verified(), detail.online(), detail.healthStatus(),
                     registration.lastHeartbeatAt(), registration.updatedAt());
         }
 
         /**
          * 列表摘要（hifi §5 #7）：did / didStatus 不查（列表不做逐条跨域调用），
-         * `verified` 随之取 false；`online` 由调用方传入心跳读时派生值（不得写死，否则列表恒"离线"）。
+         * `verified` 随之取 false；`online` 与 `healthStatus` 由调用方传入心跳读时派生值
+         * （不得写死，否则列表恒"离线"；healthStatus 沿 ConnectorQueryService 三态口径）。
          */
         public static ConnectorView summary(final ConnectorRegistration registration,
-                final boolean online) {
+                final boolean online, final String healthStatus) {
             return new ConnectorView(registration.connectorNo(), registration.subjectNo(),
                     registration.connectorName(), registration.connectorType(),
                     registration.connectorVersion(), registration.status().name(), null, null,
-                    false, online, registration.lastHeartbeatAt(), registration.updatedAt());
+                    false, online, healthStatus, registration.lastHeartbeatAt(),
+                    registration.updatedAt());
         }
     }
 

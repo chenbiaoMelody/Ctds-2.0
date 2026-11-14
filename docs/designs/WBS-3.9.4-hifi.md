@@ -139,7 +139,10 @@
 
 | 编号 | 勘误内容 | 性质（纯勘误 / 裁定呈报） |
 | --- | --- | --- |
-| （空） | 前置检查实测后回填 | — |
+| E-1 | P2 实测：gateway 自有鉴权链 `ctds.auth.gateway.permit-paths` 原为 `[]`（3.5.2 时代注释"本卡不引入 actuator"）拦截 `/actuator/**` → 401，与 ADR-014 :35"指标端点禁新增鉴权"及 11 个 servlet 服务的 `/actuator/**` 缺省豁免不一致。修复 = permit-paths 注入 `"/actuator/**"`（gateway application.yml 配置 + 过时注释更新；Q2-A 接入口径内，方向 = 解除对指标端点的既有拦截，非新增鉴权面） | 纯勘误（配置补齐） |
+| E-2 | 既有守卫测试两处随已确认设计扩展：① `DomainGovernanceContractTest` platformRequestMapping 断言（"/api/v1/platform 命名空间唯一持有者" → 封闭两持有者集合 = DomainGovernanceController + PlatformMonitorController，Q1-A 第二读面落点）；② 同文件 noOnlineLifecycleWriteEndpointsInAnyMainSource 对 `PlatformMonitorController.java` 单文件豁免（规格 B8-R1 点名的处置写端点非部署域生命周期动作；其余文件写端点禁令不变）。守卫语义保持封闭集断言（强度不降） | 纯勘误（守卫扩展留痕） |
+| E-3 | 读数数值口径细化（P5 真机实测）：① heapMaxBytes = `max(jvm_memory_max_bytes{area="heap"})` 且数据源未定义值（G1 未定义区 = -1）→ null（不显示负值）；② errorRate5xx5m / p95LatencyMs5m 在无流量 / 无样本（0/0 = NaN）→ null——"不显示 0"精神（B5-4）在已接入但无样本场景的同口径延伸；契约字段名与含义不变 | 纯勘误（口径细化） |
+| （E-4 起） | 前置检查其余各项均与 V1.0 一致（P1/P3/P4/P5/P6/P7/P8 无勘误；详见 build-output/w394-precheck-*.md） | — |
 
 ## §10 纪律与豁免登记
 

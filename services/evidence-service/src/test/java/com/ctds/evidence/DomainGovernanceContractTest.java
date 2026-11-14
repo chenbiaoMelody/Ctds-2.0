@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
@@ -46,10 +47,10 @@ class DomainGovernanceContractTest {
     }
 
     @Test
-    void platformRequestMappingExistsOnlyInDomainController() throws IOException {
+    void platformRequestMappingOwnersAreExactlyTheTwoSanctionedControllers() throws IOException {
         Pattern mapping = Pattern.compile("@RequestMapping\\(\"/api/v1/platform");
         try (Stream<Path> files = Files.walk(SERVICE.resolve("src/main/java"))) {
-            long owners = files.filter(p -> p.toString().endsWith(".java"))
+            List<String> owners = files.filter(p -> p.toString().endsWith(".java"))
                     .filter(p -> {
                         try {
                             return mapping.matcher(Files.readString(p)).find();
@@ -57,8 +58,13 @@ class DomainGovernanceContractTest {
                             throw new IllegalStateException(e);
                         }
                     })
-                    .count();
-            assertThat(owners).as("/api/v1/platform 命名空间唯一持有者 = DomainGovernanceController").isEqualTo(1);
+                    .map(p -> p.getFileName().toString())
+                    .sorted()
+                    .toList();
+            // WBS-3.9.4 Q1-A（已确认设计）：平台读面第二持有者 = PlatformMonitorController
+            //（监控读数 + 告警列表 + 处置唯一入口）；持有者集合封闭，防止第三个未登记控制器。
+            assertThat(owners).as("/api/v1/platform 命名空间持有者 = 部署域读面 + 监控读面（封闭两件）")
+                    .containsExactly("DomainGovernanceController.java", "PlatformMonitorController.java");
         }
     }
 
@@ -115,6 +121,10 @@ class DomainGovernanceContractTest {
                 Pattern.CASE_INSENSITIVE);
         // 平台策略面 /api/v1/platform-policies（space，规格 B4）为既有合法路径，不属部署域生命周期；
         // 断言口径 = 部署域读面路径 /api/v1/platform/ 与租户路径 /api/v1/tenant 零写端点。
+        // WBS-3.9.4 已确认设计（规格 B8-R1 处置通道唯一性）：PlatformMonitorController 的
+        // POST /api/v1/platform/alerts/actions = 规格点名运维处置写端点（非部署域生命周期动作），
+        // 单文件豁免；其余写端点禁令（含其文件内 Put/Delete/Patch）不变。
+        Pattern sanctionedDispose = Pattern.compile("PlatformMonitorController\\.java$");
         Pattern lifecyclePath = Pattern.compile("/api/v1/platform/|/api/v1/platform\"|/api/v1/tenant",
                 Pattern.CASE_INSENSITIVE);
         for (Path root : new Path[] {ROOT.resolve("services"), ROOT.resolve("common")}) {
@@ -123,6 +133,9 @@ class DomainGovernanceContractTest {
                         .filter(p -> p.toString().endsWith(".java"))
                         .filter(p -> p.toString().replace('\\', '/').contains("/src/main/"))
                         .forEach(p -> {
+                            if (sanctionedDispose.matcher(p.toString()).find()) {
+                                return;
+                            }
                             try {
                                 String text = Files.readString(p);
                                 assertThat(writeMapping.matcher(text).find()
