@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -16,12 +17,18 @@ import org.junit.jupiter.api.Test;
  * WBS-3.9.2 T5：主源码 @RequirePermission 值与登记清单逐项相等，零未登记权限点。
  * 依据 hifi §5 T5 / §9 E2：比对集合 = 主源注解值 ∪ 既有登记点（库表 seed 承载），
  * 测试桩排除；新增权限点仅 connector.health.read（规格边界 8）。
+ * WBS-3.9.3 T9 扩展：登记清单 = V3 ∪ V4 seed 并集（platform.domain.read 走 V4，
+ * hifi §9 E-4 确认项——V3 已应用不可改）。
  */
 class PermissionPointRegistryTest {
 
     private static final Pattern ANNOTATION = Pattern.compile("@RequirePermission\\(\"([^\"]+)\"\\)");
     private static final Pattern SEED = Pattern.compile("\\('([^']+)','([^']+)'");
     private static final Path ROOT = Path.of("").toAbsolutePath().getParent().getParent();
+    private static final Path V3_SEED = ROOT.resolve("services/evidence-service/src/main/resources/"
+            + "db/migration/V3__create_rbac_tables.sql");
+    private static final Path V4_SEED = ROOT.resolve("services/evidence-service/src/main/resources/"
+            + "db/migration/V4__grant_platform_domain_read.sql");
 
     @Test
     void everyMainSourceAnnotationValueIsRegistered() throws IOException {
@@ -35,6 +42,14 @@ class PermissionPointRegistryTest {
     void newPointIsRegisteredAndUsedByHealthOverview() throws IOException {
         assertThat(registeredPoints()).contains("connector.health.read");
         assertThat(annotationValues()).contains("connector.health.read");
+    }
+
+    /** WBS-3.9.3 T9：platform.domain.read 走 V4 授 platform.sysadmin（边界 8 / Q13-A）。 */
+    @Test
+    void platformDomainReadIsRegisteredInV4SeedAndUsedByDomainReadFace() throws IOException {
+        assertThat(Files.exists(V4_SEED)).as("V4 授点迁移须存在（V3 已应用不可改）").isTrue();
+        assertThat(registeredPoints()).contains("platform.domain.read");
+        assertThat(annotationValues()).contains("platform.domain.read");
     }
 
     private static Set<String> annotationValues() throws IOException {
@@ -58,14 +73,14 @@ class PermissionPointRegistryTest {
         return values;
     }
 
-    /** 登记清单 = V3 初始映射 seed（Q1-A 后唯一权威来源）。 */
+    /** 登记清单 = V3 ∪ V4 映射 seed（Q1-A 后唯一权威来源；3.9.3 起并集，见 E-4）。 */
     private static Set<String> registeredPoints() throws IOException {
-        Path seed = ROOT.resolve("services/evidence-service/src/main/resources/"
-                + "db/migration/V3__create_rbac_tables.sql");
         Set<String> points = new LinkedHashSet<>();
-        Matcher matcher = SEED.matcher(Files.readString(seed));
-        while (matcher.find()) {
-            points.add(matcher.group(2));
+        for (Path seed : List.of(V3_SEED, V4_SEED)) {
+            Matcher matcher = SEED.matcher(Files.readString(seed));
+            while (matcher.find()) {
+                points.add(matcher.group(2));
+            }
         }
         return points;
     }

@@ -1,6 +1,7 @@
 package com.ctds.evidence.interfaces;
 
 import com.ctds.common.api.ApiResult;
+import com.ctds.common.auth.DomainErrorCodes;
 import com.ctds.common.errorcode.BizException;
 import com.ctds.common.errorcode.ErrorCodes;
 import com.ctds.common.errorcode.ErrorType;
@@ -43,6 +44,8 @@ public class EvidenceExceptionHandler {
             case "1012C0003" -> HttpStatus.CONFLICT;
             case "1012S0001" -> HttpStatus.SERVICE_UNAVAILABLE;
             case "1012S0002", "1012S0003" -> HttpStatus.INTERNAL_SERVER_ERROR;
+            // WBS-3.9.3：部署域配置不一致 → 503（沿 1012S0001 先例；码值/文案 = common-auth 常量，同码同文）
+            case "1013S0002" -> HttpStatus.SERVICE_UNAVAILABLE;
             case "1000C0005" -> HttpStatus.FORBIDDEN;
             case "1000C0002" -> HttpStatus.UNAUTHORIZED;
             default -> null;
@@ -97,6 +100,8 @@ public class EvidenceExceptionHandler {
             case "1012S0001" -> EvidenceErrorCodes.CHAIN_UNAVAILABLE_MESSAGE;
             case "1012S0002" -> EvidenceErrorCodes.STORAGE_FAILED_MESSAGE;
             case "1012S0003" -> EvidenceErrorCodes.REPORT_INTEGRITY_FAILED_MESSAGE;
+            // WBS-3.9.3：1013S0002 文案取 common-auth 常量（与过滤器/读面同码同文）
+            case "1013S0002" -> DomainErrorCodes.CONFIG_MISMATCH_MESSAGE;
             default -> ex.getMessage();
         };
     }

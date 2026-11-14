@@ -26,7 +26,7 @@ import org.springframework.security.web.server.ServerAuthenticationEntryPoint;
  * 职责：校验令牌（B7）、身份头剥离与注入（信任边界）、401 统一出口；服务侧只认上下文头（ADR-005 §3 第 4/7 项）。
  */
 @AutoConfiguration
-@EnableConfigurationProperties(AuthProperties.class)
+@EnableConfigurationProperties({AuthProperties.class, DomainProperties.class})
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.REACTIVE)
 @ConditionalOnClass({ServerHttpSecurity.class, JwtDecoder.class, ServerAuthenticationEntryPoint.class})
 @ConditionalOnProperty(prefix = "ctds.auth.gateway", name = "enabled", havingValue = "true")
@@ -73,6 +73,25 @@ public class GatewayAuthAutoConfiguration {
     @ConditionalOnMissingBean
     public ContextHeaderInjectFilter contextHeaderInjectFilter(final AuthProperties properties) {
         return new ContextHeaderInjectFilter(properties);
+    }
+
+    /**
+     * WBS-3.9.3 Q2-A（网关统一入口，CHG §3 防绕过）：退役态代理业务路径 503 + `1013C0004`；
+     * order -150 早于安全链（hifi §9 E-1）；豁免模式与 servlet 同一配置键（Q8-A）。
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public GatewayDomainStatusWebFilter gatewayDomainStatusWebFilter(
+            final DomainProperties domainProperties) {
+        return new GatewayDomainStatusWebFilter(domainProperties);
+    }
+
+    /** WBS-3.9.3 Q5-A：网关侧生命周期三键齐备时同样落 `domain.lifecycle` 事件。 */
+    @Bean
+    public DomainLifecycleAuditEmitter gatewayDomainLifecycleAuditEmitter(
+            final DomainProperties domainProperties,
+            final ObjectProvider<AuditRecorder> auditRecorder) {
+        return new DomainLifecycleAuditEmitter(domainProperties, auditRecorder.getIfAvailable());
     }
 
     @Bean

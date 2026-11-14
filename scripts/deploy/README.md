@@ -8,6 +8,7 @@
 | --- | --- | --- |
 | 一键部署到集群 | `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\deploy\deploy.ps1` | 结尾输出 `[DEPLOY] PASS`；报告在 `build-output/deploy/<时间戳>/deploy-report.md` |
 | 一键清场（卸载） | `powershell ... scripts\deploy\deploy.ps1 -Teardown` | 输出 `[DEPLOY] PASS (teardown)` |
+| 部署域全量一致性校验（WBS-3.9.3 B9-R4，部署/状态切换后必跑） | `powershell ... scripts\deploy\domain-consistency.ps1 -DeclaredSchemas "..." -DeclaredServices "..."`（状态切换另加 `-Action/-ExpectedStatus/-ChangeOrderNo/-Operator`） | 结尾输出 `[DOMAIN] PASS`；部署记录（含前后状态/版本）追加到 `build-output/deploy/domain-record.md`。三键部分填写、清单与集群不一致、非法状态值 = `FAIL` + 退出码 1 |
 
 - 退出码：0=全流程通过，1=部署/冒烟失败（报告含失败步骤与错误摘录），2=环境自检失败（缺什么一次性列全，附下一步指引）。
 - 部署成功后访问入口：前端 `http://localhost:30081`（SPA 深链接如 `/login` 同样 200）、后端 `http://localhost:30080`（`/` 返回 404 属正常=服务在应答）。访问由**分离式 kubectl port-forward** 提供（Docker Desktop kind 模式集群不把 NodePort 映射到 localhost，实测留痕）——脚本退出后转发仍在，`-Teardown` 统一回收。

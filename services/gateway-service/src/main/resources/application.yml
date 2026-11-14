@@ -49,6 +49,12 @@ ctds:
       # 密钥仅环境变量注入，不入库、不入日志、不入仓库（红线 7）；生产令牌签发归 3.9.1。
       secret: ${CTDS_GATEWAY_JWT_SECRET:}
       issuer: ${CTDS_GATEWAY_JWT_ISSUER:}
+  # 部署域状态（WBS-3.9.3 Q2-A/Q8-A；评审① P1-1 修复）：网关统一入口退役拦截腿；
+  # 豁免面自持一份缺省值 = actuator 类路径 + 审计读面代理路径（Q8-A"网关自持一份默认值
+  # 含审计读面路径模式"）；status 缺省 ACTIVE 零行为，退役经 CTDS_DOMAIN_STATUS 注入。
+  domain:
+    retired:
+      permit-path-patterns: /actuator/**,/api/v1/evidence/audit/**
   gateway:
     # 静态路由（hifi §1.6 + WBS-3.6.8 W1 扩路由）：交付面探针路由（白名单内，进判定链）+
     # 连接器六门面普通代理路由（白名单外，不进判定链 / 零计量；判定语义 = 各下游服务既有
@@ -129,6 +135,13 @@ ctds:
         uri: ${CTDS_EVIDENCE_BASEURL:http://127.0.0.1:8090}
         predicates:
           - Path=/api/v1/evidence/**
+        filters: []
+      # 部署域信息读面门面（WBS-3.9.3 Q1-A 预授权配置行：evidence-service 8090；普通代理路由——
+      # 不带 delivery-face，不进交付判定链 / 零计量——沿 connector-evidence 先例；P5 实测原无此路由）
+      - id: connector-platform
+        uri: ${CTDS_EVIDENCE_BASEURL:http://127.0.0.1:8090}
+        predicates:
+          - Path=/api/v1/platform/**
         filters: []
     delivery:
       # 交付面白名单（routeId 显式列举；默认空 = 无交付面可用，fail-closed，hifi §5-1）
