@@ -120,7 +120,10 @@
 
 | 编号 | 勘误内容 | 性质（纯勘误 / 裁定呈报） |
 | --- | --- | --- |
-| （预留） | | |
+| E-1 | 网关 WebFilter order"对齐 GatewayFilterOrders 白名单后、限流前"——P5 实测该类全部为 **GlobalFilter** 顺序，其 javadoc 明示 WebFilter 链先于网关过滤器链执行（跨家族不可比较）→ 实取 WebFilter 家族内 **-150**（早于 Spring Security WebFilterChainProxy -100 → 退役态未认证请求也 503 非 401；晚于 HeaderStripFilter -200）。依据 `GatewayFilterOrders.java` 注释 | 纯勘误（实现位澄清，2026-11-14 P5） |
+| E-2 | 审计事件"`outcome=APPLIED`"——P1 实测 `AuditOutcome` 枚举仅 `SUCCESS/DENIED/FAILURE` 三值（common/logging 冻结契约，不加值）→ 映射 **`outcome=SUCCESS`**，生命周期动作语义由 `action=domain.lifecycle` + detail 字段承载。依据 `AuditOutcome.java` | 纯勘误（枚举零改动，2026-11-14 P1） |
+| E-3 | §1"DomainStatusFilter 随 `ctds.auth.enabled` 挂链"——**不挂该条件**：`ctds.auth.enabled=false` 为非生产调试开关（挂接即构成退役绕过面，与 CHG §3"防绕过"冲突）；servlet 侧随 `AuthAutoConfiguration` 无条件注册，`ctds.domain.status` 缺省 ACTIVE 零行为不变 | 纯勘误（防绕过口径优先，2026-11-14 P1） |
+| E-4 | 确认项：evidence 读面 `@RequirePermission("platform.domain.read")` 注解值进入 `PermissionPointRegistryTest` 主源码扫描面（services 全扫）→ T9 的 seed 读取须改为 V3 ∪ V4 并集（否则护栏红） | 确认项（与 §5 T9 预期一致，2026-11-14 P4） |
 
 ## §10 纪律与豁免登记
 

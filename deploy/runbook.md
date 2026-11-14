@@ -42,6 +42,25 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\deploy\deploy.ps1
 - **启动顺序**：须先由 evidence 服务完成 Flyway V3 迁移并写入 seed（`ctds_evidence.role_permission` 可查），再启动/放量其余服务；否则按 fail-closed 返回空权限集（403）。
 - 回退 = 去掉上述两个环境变量并重启（回配置文件来源）；`admin` 在库表 seed 中已按三员分立撤除审计读面与授权/核验写面，**回退后恢复原配置口径、三员分立判据失效**，须在验收记录标注并重跑 C-10.1 S1 前置（不得沿用已收权证据）。
 
+### 3.2 部署域操作（WBS-3.9.3，2026-11-14）
+
+部署域 = 平台"我是谁、什么版本、开着还是停了"的声明（规格 B9；`ctds.domain.*` 配置承载，**无在线生命周期接口**——升级/退役/恢复三动作全部走"改配置 + 滚动更新/重启"，本节是唯一操作入口）。V1.0 口径：单实例单部署域；退役 = 只读封存不删数据。
+
+- **基线（开通）**：什么都不注入 = `ACTIVE` 基线（既有演示链零影响）。可选注入完整块到 evidence：`CTDS_DOMAIN_ID` / `CTDS_DOMAIN_NAME` / `CTDS_DOMAIN_PLATFORM_VERSION` / `CTDS_DOMAIN_SCHEMA_LIST`（逗号分隔）/ `CTDS_DOMAIN_SERVICE_LIST`；其余服务仅可注入 `CTDS_DOMAIN_STATUS`。
+- **升级**：`CTDS_DOMAIN_PLATFORM_VERSION` 递增（如 V1.0 → V1.1）+ 滚动更新；同时注入三键登记 `CTDS_DOMAIN_ACTION=UPGRADE` + `CTDS_DOMAIN_CHANGE_ORDER=<变更单号>` + `CTDS_DOMAIN_OPERATOR=<操作人>`——**三键要么全空要么全齐，部分填写 = 启动失败**（登记义务 fail-closed）；三键齐备时启动自动落 `domain.lifecycle` 审计事件（B9-4 第三证）。
+- **退役**：`CTDS_DOMAIN_STATUS=RETIRED`（全部业务服务 + 网关）+ 三键 `RETIRE` 登记 + 滚动更新。生效后：业务请求 503 + `1013C0004`（网关统一入口与服务侧双层拦截，**无绕过面**）；豁免面照常可读 = `/actuator/**` + evidence 审计读面 `/api/v1/evidence/audit/**` + 部署域读面 `/api/v1/platform/domain`；数据与审计分毫不动。非法状态值（非 ACTIVE/RETIRED）= 启动失败。
+- **恢复**：`CTDS_DOMAIN_STATUS=ACTIVE`（或去掉该变量）+ 三键 `RESTORE` 登记 + 滚动更新，业务自动恢复。
+- **fail-closed 校验（evidence 专属）**：evidence 若注入 `CTDS_DOMAIN_SCHEMA_LIST`，启动时校验实际数据源 schema 必须在清单内，不一致 = **启动失败**（B9-R4）。演练口径：改清单为错误值 → 重启 → 观察启动失败 → 还原 → 复验恢复。
+- **部署期全量一致性校验（B9-R4 承载）**：每次部署/状态切换后必跑独立脚本（不动既有 deploy.ps1）：
+
+  ```bat
+  powershell -NoProfile -ExecutionPolicy Bypass -File scripts\deploy\domain-consistency.ps1 ^
+    -DeclaredSchemas "ctds_evidence,ctds_subject" -DeclaredServices "evidence-service,subject-service"
+  ```
+
+  带 `-Action RETIRE -ExpectedStatus RETIRED -ChangeOrderNo ... -Operator ...` 时同时校验三键登记并在 `build-output/deploy/domain-record.md` 追加**部署记录（含前后状态与版本）**——三证之二（变更单人工保管 + 部署记录本脚本落盘 + 审计事件服务启动落盘）。结尾看到 `[DOMAIN] PASS` 即一致（未声明清单时输出 skipped 属正常基线）。
+- **回退口径**：状态类动作 = 把状态翻回并滚动更新（数据零改动，随时可逆）；升级动作 = 版本值回滚 + 滚动更新；全部动作在 `domain-record.md` 留前后值可查。
+
 ## 4. 怎么看结果
 
 | 看什么 | 入口 | 预期 |
