@@ -11,6 +11,8 @@ import java.sql.SQLException;
 import java.util.List;
 import java.util.Locale;
 import javax.sql.DataSource;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -28,6 +30,8 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/v1/platform")
 public class DomainGovernanceController {
+
+    private static final Logger log = LoggerFactory.getLogger(DomainGovernanceController.class);
 
     private final DomainProperties properties;
     private final ObjectProvider<DataSource> dataSourceProvider;
@@ -81,8 +85,10 @@ public class DomainGovernanceController {
             final String schema = connection.getSchema();
             return schema == null ? "" : schema.toLowerCase(Locale.ROOT);
         } catch (final SQLException e) {
+            // 评审② F1：留痕 + 携 cause（对外仍同码同文常量，堆栈入日志可追溯，禁止吞异常）
+            log.error("domain read-face config consistency check failed on datasource access", e);
             throw new BizException(DomainErrorCodes.CONFIG_MISMATCH,
-                    DomainErrorCodes.CONFIG_MISMATCH_MESSAGE);
+                    DomainErrorCodes.CONFIG_MISMATCH_MESSAGE, e);
         }
     }
 }

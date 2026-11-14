@@ -43,6 +43,9 @@ public class DomainConfigStartupValidator implements InitializingBean {
         }
         final String actual = actualSchema(dataSource);
         if (actual == null || actual.isBlank()) {
+            // 评审② F6：退化数据源（catalog/schema 均空）静默通过无痕迹 → 显式 WARN（读面将诚实标注 NOT_APPLICABLE）
+            log.warn("ctds.domain 启动校验跳过：实际数据源 schema 读数为空（catalog/schema 均未返回），"
+                    + "读面 configConsistency 将为 NOT_APPLICABLE");
             return;
         }
         if (!schemaList.contains(actual)) {

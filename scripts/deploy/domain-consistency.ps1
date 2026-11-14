@@ -193,21 +193,26 @@ if (Test-Path $recordPath) {
     }
 }
 New-Item -ItemType Directory -Force -Path (Split-Path $recordPath) | Out-Null
-$recordLine = "| {0} | {1} | {2} | {3} | {4} | {5} | {6} | {7} | {8} | {9} |" -f @(
+# Record verdict (review 2 F3): every appended line carries the check verdict of its
+# own run, so a FAIL run never masquerades as an executed status switch in the chain.
+$recordVerdict = "PASS"
+if ($script:Failures.Count -gt 0) { $recordVerdict = "FAIL" }
+$recordLine = "| {0} | {1} | {2} | {3} | {4} | {5} | {6} | {7} | {8} | {9} | {10} |" -f @(
     (Get-Date -Format "yyyy-MM-dd HH:mm:ss"),
     $Action, $ChangeOrderNo, $Operator, $DeclaredDomainId,
     $ExpectedStatus.ToUpperInvariant(), $DeclaredVersion,
-    $previousStatus, $previousVersion, "domain-consistency.ps1")
+    $previousStatus, $previousVersion, $recordVerdict, "domain-consistency.ps1")
 if (-not (Test-Path $recordPath)) {
     $header = @("# C-TDS deployment-domain lifecycle record (B9-4 evidence: change order +",
         "# deployment record with before/after values; audit event is the third evidence,",
         "# written by the service on startup when ctds.domain.* registration keys are set).",
+        "# verdict = this run's own check result (a FAIL row marks a switch that did NOT apply).",
         "",
-        "| time (local) | action | change order | operator | domain id | status (after) | version (after) | status (before) | version (before) | source |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
-    Set-Content -Path $recordPath -Value $header -Encoding ASCII
+        "| time (local) | action | change order | operator | domain id | status (after) | version (after) | status (before) | version (before) | verdict | source |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
+    Set-Content -Path $recordPath -Value $header -Encoding UTF8
 }
-Add-Content -Path $recordPath -Value $recordLine -Encoding ASCII
+Add-Content -Path $recordPath -Value $recordLine -Encoding UTF8
 Add-Step "A5" "PASS" ("deployment record appended (before: status " + $previousStatus +
     " / version " + $previousVersion + " -> after: status " + $ExpectedStatus.ToUpperInvariant() +
     " / version " + $DeclaredVersion + ") to " + $recordPath)

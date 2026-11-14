@@ -126,6 +126,7 @@
 | E-4 | 确认项：evidence 读面 `@RequirePermission("platform.domain.read")` 注解值进入 `PermissionPointRegistryTest` 主源码扫描面（services 全扫）→ T9 的 seed 读取须改为 V3 ∪ V4 并集（否则护栏红） | 确认项（与 §5 T9 预期一致，2026-11-14 P4） |
 | E-5 | §3 审计事件 detail 键名 `action` / `changeOrder` / `platformVersion` ——实取 **`lifecycle-action` / `change-order` / `platform-version`**（连字符键避免与 `AuditEvent.action()` 顶层字段同名混淆；`domainId` / `operator` / `status` 同名不变；语义零变化） | 纯勘误（键名澄清，2026-11-14 评审① P3-2） |
 | E-6 | 确认项：§2 退役态契约与 §3 豁免缺省在 **evidence / gateway 主配置落位**（evidence `application.yml` `ctds.domain.retired.permit-path-patterns=/actuator/**,/api/v1/evidence/audit/**,/api/v1/platform/**`；gateway 同键 `=/actuator/**,/api/v1/evidence/audit/**`）——"evidence 增配"/"网关自持一份默认值"由部署注入口径改为主配置承载，退役测试不注入豁免直接回归主配置（评审① P1-1 修复） | 确认项（主配置承载落地，2026-11-14 评审① P1-1） |
+| E-7 | 确认项（处置口径登记）：① **AuditRecorder 缺位**（`ctds.audit.enabled=false` 或组件缺失）时三键齐备的 `domain.lifecycle` 事件跳过 + 显式 WARN（文案明示"审计证缺位，两证仍有效"），不阻断启动——hifi §4 边界 10 未规定 recorder 缺位语义，本口径 = "不阻断 + 可观测"（评审② F5；升级为启动失败属新 fail-closed 需求，走变更流程另议）；② **网关腿随 `ctds.auth.gateway.enabled` 条件装配**（含 WebFilter / 网关侧三键校验与审计发射器）——该开关为非生产调试态，服务侧腿不受影响（评审② F7，与 E-3 同根因的已知降级面，runbook §3.2 已登记）；③ **网关豁免不含部署域读面路径**（fail-closed 更严方向，退役态经网关访问读面被拦；剧本演示口径 = 服务回环直连，ADR-016 §2.7） | 确认项（处置口径登记，2026-11-14 评审② F5/F7 + F2 勘正） |
 
 ## §10 纪律与豁免登记
 
