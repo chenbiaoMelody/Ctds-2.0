@@ -130,6 +130,32 @@ class PlatformAlertsIntegrationTest {
     }
 
     @Test
+    void missingRuleFallsBackToRegistrationAndConservativeResolved() throws Exception {
+        STUB.omitErrorRateRule();
+        try {
+            final MvcResult result = mockMvc.perform(get(ALERTS_PATH)
+                            .header("X-Ctds-Subject", "S-admin-alerts")
+                            .header("X-Ctds-Roles", "platform.sysadmin"))
+                    .andExpect(status().isOk())
+                    .andReturn();
+            final JsonNode alerts = MAPPER.readTree(result.getResponse()
+                    .getContentAsString(StandardCharsets.UTF_8)).path("data").path("alerts");
+            assertThat(alerts.size()).as("封闭两规则固定入列（规则缺失也占位，不静默消失）").isEqualTo(2);
+            final JsonNode errorRate = alerts.get(1);
+            assertThat(errorRate.path("alertName").asText()).isEqualTo("CtdsBackendHighErrorRate");
+            assertThat(errorRate.path("state").asText()).isEqualTo("resolved");
+            assertThat(errorRate.path("stateNote").asText())
+                    .isEqualTo("规则未在数据源注册，保守视为未触发");
+            assertThat(errorRate.path("severity").asText()).isEqualTo("warning");
+            assertThat(errorRate.path("target").asText()).isEqualTo("ctds-backend");
+            assertThat(errorRate.path("currentValue").isNull()).isTrue();
+            assertThat(errorRate.path("triggeredAt").isNull()).isTrue();
+        } finally {
+            STUB.resetErrorRateState();
+        }
+    }
+
+    @Test
     void roleWithoutPointIsForbiddenWithCommonCode() throws Exception {
         mockMvc.perform(get(ALERTS_PATH)
                         .header("X-Ctds-Subject", "S-ops-alerts")

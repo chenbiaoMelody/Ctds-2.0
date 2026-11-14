@@ -47,9 +47,10 @@ class MetricExposureStructureTest {
             String text = Files.readString(yml);
             assertThat(text).as("%s 须含 management.endpoints.web.exposure.include（ADR-014 :34）", service)
                     .contains("management:");
-            assertThat(text).as("%s 暴露面须精确为 health,prometheus（B5-1）", service)
-                    .containsPattern("(?s)management:.*exposure:\\s*\\n\\s*include: health,prometheus");
+            assertThat(text).as("%s 暴露面须精确为 health,prometheus（B5-1，评审④ P2 行尾锚防后缀追加）", service)
+                    .containsPattern("(?s)management:.*exposure:\\s*\\n\\s*include: health,prometheus(\\s|$)");
             assertThat(text).as("%s 不得开放 prometheus/health 之外的端点（B5-1 暴露面收敛）", service)
+                    .doesNotContain("include: health,prometheus,")
                     .doesNotContain("include: health,prometheus,*")
                     .doesNotContain("include: \"*\"")
                     .doesNotContain("include: '*'");
@@ -61,5 +62,27 @@ class MetricExposureStructureTest {
         String pom = Files.readString(serviceDir("example-service").resolve("pom.xml"));
         assertThat(pom).contains("spring-boot-starter-actuator");
         assertThat(pom).contains("micrometer-registry-prometheus");
+    }
+
+    /** 评审①P1 防复发守卫：k8s 七清单 YAML 可解析 + 三注解齐备（结构损坏在测试期暴露，不进部署期）。 */
+    @Test
+    void k8sDeploymentManifestsParseAndCarryScrapeAnnotations() throws IOException {
+        org.yaml.snakeyaml.Yaml yaml = new org.yaml.snakeyaml.Yaml();
+        for (String service : List.of("space", "catalog", "contract", "delivery",
+                "metering-billing", "evidence", "gateway")) {
+            Path manifest = ROOT.resolve("deploy/k8s").resolve(service + "-deployment.yaml");
+            Object parsed = yaml.load(Files.readString(manifest));
+            assertThat(parsed).as("%s 清单须为可解析 YAML（Map 结构）", manifest.getFileName()).isInstanceOf(java.util.Map.class);
+            @SuppressWarnings("unchecked")
+            java.util.Map<String, Object> template = (java.util.Map<String, Object>)
+                    ((java.util.Map<String, Object>) ((java.util.Map<String, Object>) ((java.util.Map<String, Object>)
+                            parsed).get("spec")).get("template")).get("metadata");
+            @SuppressWarnings("unchecked")
+            java.util.Map<String, Object> annotations = (java.util.Map<String, Object>) template.get("annotations");
+            assertThat(annotations).as("%s Pod 模板须含三注解（ADR-014 :36）", manifest.getFileName())
+                    .containsEntry("prometheus.io/scrape", "true")
+                    .containsKey("prometheus.io/port")
+                    .containsEntry("prometheus.io/path", "/actuator/prometheus");
+        }
     }
 }

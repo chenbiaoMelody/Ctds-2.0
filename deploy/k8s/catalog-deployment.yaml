@@ -31,7 +31,8 @@ spec:
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/port: "8084"
-        prometheus.io/path: "/actuator/prometheus"    spec:
+        prometheus.io/path: "/actuator/prometheus"
+    spec:
       containers:
         - name: ctds-catalog-service
           # Image reference is injected by the 2.5.2 toolchain convention (ADR-012).

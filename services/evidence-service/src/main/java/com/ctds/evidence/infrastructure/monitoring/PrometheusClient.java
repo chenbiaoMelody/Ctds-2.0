@@ -58,10 +58,19 @@ public class PrometheusClient implements MonitorSourcePort {
             return Optional.empty();
         }
         final String value = results.get(0).path("value").path(1).asText();
-        if (value.isBlank() || "NaN".equalsIgnoreCase(value)) {
+        if (value.isBlank() || !isFiniteNumber(value)) {
+            // NaN / +Inf / -Inf（无样本或溢出）→ empty：读面按 null 呈现，不显示非法数值（评审① P3）
             return Optional.empty();
         }
         return Optional.of(value);
+    }
+
+    private static boolean isFiniteNumber(final String value) {
+        try {
+            return Double.isFinite(Double.parseDouble(value));
+        } catch (final NumberFormatException failure) {
+            return false;
+        }
     }
 
     @Override

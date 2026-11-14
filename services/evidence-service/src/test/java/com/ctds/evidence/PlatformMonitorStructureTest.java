@@ -36,6 +36,11 @@ class PlatformMonitorStructureTest {
         assertThat(controller)
                 .as("读面/处置不得含删除类映射（B8-2）")
                 .doesNotContain("@DeleteMapping", "@PutMapping", "@PatchMapping");
+        // 评审④ P3-4：端点注解计数封闭 = 2 读面 GET + 1 处置 POST——新增任何写端点（含读面 POST）即红
+        long getMappings = controller.split("@GetMapping", -1).length - 1;
+        long postMappings = controller.split("@PostMapping", -1).length - 1;
+        assertThat(getMappings).as("metrics/alerts 读面恰两个 GET").isEqualTo(2);
+        assertThat(postMappings).as("处置恰一个 POST（alerts/actions）").isEqualTo(1);
     }
 
     @Test

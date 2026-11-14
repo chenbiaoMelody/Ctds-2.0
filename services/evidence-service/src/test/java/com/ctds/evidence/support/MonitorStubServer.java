@@ -87,9 +87,10 @@ public final class MonitorStubServer {
         pendingErrorRate.set(true);
     }
 
-    /** 规则态复位（用例隔离：finally 归还 inactive 缺省形态）。 */
+    /** 规则态复位（用例隔离：finally 归还 inactive 缺省形态，含规则缺失构造复位）。 */
     public void resetErrorRateState() {
         pendingErrorRate.set(false);
+        omitErrorRateRule.set(false);
     }
 
     public void failSilences() {
@@ -99,6 +100,24 @@ public final class MonitorStubServer {
     /** 静默失败复位（用例隔离：finally 归还 200 形态）。 */
     public void resetSilenceFailure() {
         failSilences.set(false);
+    }
+
+    /** 规则缺失构造（评审④ P3-1：错误率规则从 rules 响应中缺席 → 登记 Map 兜底口径）。 */
+    private final AtomicBoolean omitErrorRateRule = new AtomicBoolean(false);
+
+    public void omitErrorRateRule() {
+        omitErrorRateRule.set(true);
+    }
+
+    /** 全查询返回 NaN 构造（评审④ P3-3：非有限值 → empty 归一钉死测试）。 */
+    private final AtomicBoolean nanResponses = new AtomicBoolean(false);
+
+    public void serveNanResponses() {
+        nanResponses.set(true);
+    }
+
+    public void resetNanResponses() {
+        nanResponses.set(false);
     }
 
     public int silencePosts() {
@@ -125,6 +144,9 @@ public final class MonitorStubServer {
 
     /** 查询路由（读面 PromQL 与规则表达式均为封闭集合；P5 实测口径）。 */
     private String scalarFor(final String query) {
+        if (nanResponses.get()) {
+            return "NaN";
+        }
         if (query.contains("jvm_memory_used_bytes")) {
             return "28311552";
         }
@@ -160,7 +182,6 @@ public final class MonitorStubServer {
     }
 
     private String rulesBody() {
-        final String secondState = pendingErrorRate.get() ? "pending" : "inactive";
         return """
                 {"status":"success","data":{"groups":[{"name":"ctds-platform",
                   "file":"/etc/prometheus/rules.yml","rules":[
@@ -174,7 +195,16 @@ public final class MonitorStubServer {
                       "instance":"stub:8080","job":"ctds-backend","severity":"critical"},
                      "annotations":{"summary":"平台后端服务下线"},
                      "state":"firing","activeAt":"2026-11-14T15:31:00.000000Z","value":"0e+00"}],
-                   "health":"ok","lastEvaluation":"2026-11-14T15:31:09.389433903Z","type":"alerting"},
+                   "health":"ok","lastEvaluation":"2026-11-14T15:31:09.389433903Z","type":"alerting"}%s
+                ]}]}}""".formatted(secondRuleJson());
+    }
+
+    private String secondRuleJson() {
+        if (omitErrorRateRule.get()) {
+            return "";
+        }
+        return """
+                ,
                   {"state":"%s","name":"CtdsBackendHighErrorRate",
                    "query":"%s",
                    "duration":300,"keepFiringFor":0,
@@ -182,8 +212,8 @@ public final class MonitorStubServer {
                    "annotations":{"summary":"平台后端 HTTP 错误率异常",
                      "description":"后端 5 分钟窗口 5xx 错误率超过 5%%"},
                    "alerts":[],
-                   "health":"ok","lastEvaluation":"2026-11-14T15:31:09.389918828Z","type":"alerting"}
-                ]}]}}""".formatted(secondState, ERROR_RATE_QUERY);
+                   "health":"ok","lastEvaluation":"2026-11-14T15:31:09.389918828Z","type":"alerting"}""".formatted(
+                pendingErrorRate.get() ? "pending" : "inactive", ERROR_RATE_QUERY);
     }
 
     private static String alertsBody() {

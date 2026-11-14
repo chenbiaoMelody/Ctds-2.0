@@ -160,6 +160,37 @@ class AlertDisposeServiceTest {
     }
 
     @Test
+    void silenceFailureLeavesNoAuditEvent() {
+        final CapturingRecorder recorder = new CapturingRecorder();
+        final AlertDisposeService sut = service(recorder);
+        STUB.failSilences();
+        try {
+            assertThatThrownBy(() -> sut.dispose("S-admin-dispose",
+                            new DisposeRequest("CtdsBackendDown", "SILENCE", "变更窗口", 30)))
+                    .as("静默失败 → 1013S0003（处置未成功不留 OK 痕）")
+                    .isInstanceOf(BizException.class)
+                    .extracting(ex -> ((BizException) ex).getErrorCode().value())
+                    .isEqualTo("1013S0003");
+            assertThat(recorder.events).as("静默失败不落 alert.dispose 审计事件（评审④ P3-2）").isEmpty();
+        } finally {
+            STUB.resetSilenceFailure();
+        }
+    }
+
+    @Test
+    void nonFiniteQueryValuesNormalizeToEmpty() {
+        STUB.serveNanResponses();
+        try {
+            final PrometheusClient client = new PrometheusClient(STUB.baseUrl(), MAPPER);
+            assertThat(client.queryScalar("up{job=\"ctds-backend\"}"))
+                    .as("NaN → empty（读面 null，不显示非法数值；评审④ P3-3 钉死）")
+                    .isEmpty();
+        } finally {
+            STUB.resetNanResponses();
+        }
+    }
+
+    @Test
     void blankSubjectFallsBackToAnonymousActor() {
         final CapturingRecorder recorder = new CapturingRecorder();
         service(recorder).dispose(" ", new DisposeRequest("CtdsBackendDown", "ACKNOWLEDGE", null, null));
