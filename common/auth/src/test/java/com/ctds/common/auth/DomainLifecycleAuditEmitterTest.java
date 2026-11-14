@@ -93,7 +93,7 @@ class DomainLifecycleAuditEmitterTest {
     @Test
     void missingRecorderWithCompleteRegistrationIsSkippedWithoutFailure() {
         assertThatCode(() -> new DomainLifecycleAuditEmitter(completeProperties(), null).emit())
-                .as("无 recorder 时静默跳过，不抛异常")
+                .as("无 recorder 时不抛异常（hifi §9 E-7①：跳过 + 显式 WARN 审计证缺位，两证仍有效）")
                 .doesNotThrowAnyException();
     }
 }

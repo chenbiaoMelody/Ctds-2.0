@@ -181,7 +181,8 @@ if (Test-Path $recordPath) {
     # source column; dropping empty cells shifts indexes when domain id is blank; and
     # the "before" chain reads the LAST record's AFTER columns, not its own before).
     # Fragments: [0]="" [1]=time [2]=action [3]=change [4]=operator [5]=domain
-    # [6]=status-after [7]=version-after [8]=status-before [9]=version-before [10]=source [11]=""
+    # [6]=status-after [7]=version-after [8]=status-before [9]=version-before
+    # [10]=verdict [11]=source [12]="" (verdict column added in review 2 F3)
     $lastRecord = Get-Content -Path $recordPath |
         Where-Object { $_ -like "| * |*" } | Select-Object -Last 1
     if ($lastRecord) {
