@@ -59,7 +59,7 @@ public class PrometheusClient implements MonitorSourcePort {
         }
         final String value = results.get(0).path("value").path(1).asText();
         if (value.isBlank() || !isFiniteNumber(value)) {
-            // NaN / +Inf / -Inf（无样本或溢出）→ empty：读面按 null 呈现，不显示非法数值（评审① P3）
+            // NaN / +Inf / -Inf（无样本或溢出）→ empty：读面按 null 呈现，不显示非法数值（评审② P3-3）
             return Optional.empty();
         }
         return Optional.of(value);
