@@ -34,6 +34,13 @@ ctds:
     permissions:
       admin: evidence.governance
       evidence-internal: evidence.internal.write
+  # 部署域声明（WBS-3.9.3 Q3-A；评审① P1-1 修复——豁免面主配置承载，不依赖部署注入）：
+  # evidence 持完整块（标识/名称/版本/清单由部署清单 env CTDS_DOMAIN_* 注入，本卡不预注入，
+  # 缺省 ACTIVE 零行为）；retired 豁免面 = 健康读数 + 审计读面 + 部署域读面（hifi §3"evidence
+  # 增配审计读面 + 部署域读面模式"；剧本 S3-5/S3-6 退役态读面与审计可复核的配置前提）。
+  domain:
+    retired:
+      permit-path-patterns: /actuator/**,/api/v1/evidence/audit/**,/api/v1/platform/**
   # 存证网关（Q1-A）：provider 固定 local = 本地不可变哈希链账本；未知值启动 fail-fast。
   # enabled=false 仅用于演示期构造"链不可达"（需重启，无运行期开关/后门）。
   evidence:

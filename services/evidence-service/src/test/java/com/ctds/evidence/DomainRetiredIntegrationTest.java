@@ -25,12 +25,12 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * ① 业务（内部写面）503 + `1013C0004` + "部署域已退役"；② 豁免面（审计读面 / 部署域读面
  * / actuator 类模式）照常可读；③ 数据分毫不动（拦截前后存证记录行数一致，B9-R6 数据保留）；
  * ④ 读面在退役态照常返回 lifecycleStatus=RETIRED（S3-5 读面复核）。
+ * 豁免模式**不注入**——走 evidence application.yml 主配置缺省值（评审① P1-1 修复回归：
+ * 主配置下退役态豁免面成立，非测试注入产物）。
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK,
         properties = {"ctds.audit.enabled=false",
-                "ctds.domain.status=RETIRED",
-                "ctds.domain.retired.permit-path-patterns=/actuator/**,"
-                        + "/api/v1/evidence/audit/**,/api/v1/platform/**"})
+                "ctds.domain.status=RETIRED"})
 @AutoConfigureMockMvc
 @ActiveProfiles("mysql")
 @Testcontainers(disabledWithoutDocker = true)

@@ -124,6 +124,8 @@
 | E-2 | 审计事件"`outcome=APPLIED`"——P1 实测 `AuditOutcome` 枚举仅 `SUCCESS/DENIED/FAILURE` 三值（common/logging 冻结契约，不加值）→ 映射 **`outcome=SUCCESS`**，生命周期动作语义由 `action=domain.lifecycle` + detail 字段承载。依据 `AuditOutcome.java` | 纯勘误（枚举零改动，2026-11-14 P1） |
 | E-3 | §1"DomainStatusFilter 随 `ctds.auth.enabled` 挂链"——**不挂该条件**：`ctds.auth.enabled=false` 为非生产调试开关（挂接即构成退役绕过面，与 CHG §3"防绕过"冲突）；servlet 侧随 `AuthAutoConfiguration` 无条件注册，`ctds.domain.status` 缺省 ACTIVE 零行为不变 | 纯勘误（防绕过口径优先，2026-11-14 P1） |
 | E-4 | 确认项：evidence 读面 `@RequirePermission("platform.domain.read")` 注解值进入 `PermissionPointRegistryTest` 主源码扫描面（services 全扫）→ T9 的 seed 读取须改为 V3 ∪ V4 并集（否则护栏红） | 确认项（与 §5 T9 预期一致，2026-11-14 P4） |
+| E-5 | §3 审计事件 detail 键名 `action` / `changeOrder` / `platformVersion` ——实取 **`lifecycle-action` / `change-order` / `platform-version`**（连字符键避免与 `AuditEvent.action()` 顶层字段同名混淆；`domainId` / `operator` / `status` 同名不变；语义零变化） | 纯勘误（键名澄清，2026-11-14 评审① P3-2） |
+| E-6 | 确认项：§2 退役态契约与 §3 豁免缺省在 **evidence / gateway 主配置落位**（evidence `application.yml` `ctds.domain.retired.permit-path-patterns=/actuator/**,/api/v1/evidence/audit/**,/api/v1/platform/**`；gateway 同键 `=/actuator/**,/api/v1/evidence/audit/**`）——"evidence 增配"/"网关自持一份默认值"由部署注入口径改为主配置承载，退役测试不注入豁免直接回归主配置（评审① P1-1 修复） | 确认项（主配置承载落地，2026-11-14 评审① P1-1） |
 
 ## §10 纪律与豁免登记
 
