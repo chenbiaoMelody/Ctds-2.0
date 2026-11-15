@@ -85,11 +85,13 @@ class RbacGovernanceBehaviorIntegrationTest {
                 .startsWith("RC").hasSize(18);
 
         Map<String, Object> row = jdbc.queryForMap(
-                "SELECT change_no, change_order_no, changed_by, role_code, permission_point, "
+                "SELECT change_no, change_order_no, changed_by, changed_at, role_code, permission_point, "
                         + "before_value, after_value FROM role_permission_change_log "
                         + "WHERE change_order_no = ?", "CHG-W396-T1-GRANT-01");
         assertThat(row.get("change_no")).isEqualTo(changeNo);
         assertThat(row.get("changed_by")).isEqualTo(SUBJECT);
+        assertThat(row.get("changed_at")).as("留痕时点值级断言（B1-AC3 六元组含时点；评审 P2-1 修复批补齐）")
+                .isNotNull();
         assertThat(row.get("role_code")).isEqualTo("reviewer");
         assertThat(row.get("permission_point")).isEqualTo("metering.read");
         assertThat(row.get("before_value")).isEqualTo("0");
@@ -244,6 +246,7 @@ class RbacGovernanceBehaviorIntegrationTest {
         assertThat(list).as("八列出参结构齐备").isNotEmpty();
         assertThat(list.get(0)).containsKeys("changeNo", "changeOrderNo", "changedBy",
                 "changedAt", "roleCode", "permissionPoint", "beforeValue", "afterValue");
+        assertThat(list.get(0).get("changedAt")).as("变更时点值级断言（评审 P2-1 修复批补齐）").isNotBlank();
     }
 
     /** T3 库级：V5 真迁移后两点在库生效 + 留痕行落库（wbs-3.9.4 口径）。 */

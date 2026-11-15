@@ -55,7 +55,7 @@
 | B4-AC1(:93) | 部署域读面与实例一致 | 【CI】DomainGovernanceIntegrationTest 4 例 | — |
 | B4-AC2/3(:94-95) | 跨空间拒绝同码同文/检索不命中 | 【CI】空间域既有用例 | — |
 | B4-AC4(:96) | 运维读数不按空间切分(观察点) | 【人工】S2-6 观察★ | — |
-| B9-AC1(:109) | 读面八字段+越权 | 【CI】Domain 4 例+前端 DomainView.spec | — |
+| B9-AC1(:109) | 读面八字段+越权 | 【CI】Domain 3 例+前端 DomainView.spec（修复批勘误 2026-11-15：立卡段盘点误记"4 例"，@Test 精确计数 = 3，评审段视角③实证后更正） | — |
 | B9-AC2(:110) | 三态生命周期双向 | 【CI】DomainRetired 3 例;【人工】滚动更新 runbook★ | — |
 | B9-AC3(:111) | fail-closed+还原复验 | 【CI】StartupFailClosed 2 例;【人工】S3-4 受控构造★ | — |
 | B9-AC4(:112) | 生命周期留痕五要素 | 【CI】Contract+LifecycleAuditEmitter | — |
