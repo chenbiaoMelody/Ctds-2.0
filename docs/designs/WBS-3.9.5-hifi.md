@@ -137,7 +137,8 @@
 - **诚实边界**：未接入不显示 0/绿（B5-R4）/ "从未上报"≠离线（B6-R1）/ 越权与不可用原文呈现（B3-AC1）/ ESCALATE 与监控页"待生效"标注（G-04/G-07/不持久化/单副本/无集群层指标）/ 无删除伪造通道（B8-R2）/ fail-closed 不显示"正常"（B9-R4）/ DB-128 以真机走查为准不虚报；
 - **E-勘误位**（V1.0 生效后编码段专用；**✅ 2026-11-15 编码段前置检查实测回填，留痕 `build-output/w395-precheck-data/precheck-summary.md`**）：
   E-1 metrics/alerts/actions 在无监控栈环境（本地演示）实测 = HTTP 503 + `1013S0003 监控数据源暂不可用，请稍后重试`（JSON envelope）——监控读数页与告警页错误态以 ApiError 原文呈现该码；`NOT_INTEGRATED` 行场景真机不可达（需监控栈部分接入），以 T8/T9 stub 测试承载；`MetricsView`/`AlertsView` 成功形状按后端代码（`MonitorViews.java`）核对一致；
-  E-2 grant/revoke 成功出参 `data` = **变更号字符串**（幂等重放 = 空串）——授予收回成功回显 = 展示变更号（"留痕可查"提示 + changeOrderNo 可在留痕 tab 检索）；
+  E-2 grant/revoke 成功出参 `data` = **变更号字符串**（幂等重放 = 空串）——授予收回成功回显 = 展示变更号（"留痕可查"提示；变更留痕页签以分页八列承载〔后端 changes 端点无单号检索参数〕，评审① 修复轮勘正原"按变更单号检索"表述）；
+  E-4 编码段实现口径登记（评审① P2 / 评审③ 闭环）：① hifi §2 W9 括号注"管理/详情页共用 helper 同步"的实现解读 = **三态 helper 沉淀于共用常量文件 `constants/connector.ts`**〔healthLabel/healthTagType 与既有 onlineLabel 并存〕，管理页与详情页视图本期零改动（§2 文件清单 21 项为交付范围权威清单，最小实现纪律）——B6-R1 三态显式在治理页承载；② platform 消费函数实为 **8 个**（§2 "7 消费函数"为笔误）、导出类型 **10 个**、URL 常量 **8 条**（§3 "9 条"含 connector 治理端点笔误——该 URL 在既有 api/connector.ts）；③ `PlatformSourceGuard.spec.ts` 落盘 `views/platform/`（沿既有 9 域 SourceGuard 全部在 views/<域>/ 先例，§2 原写 api/ 为笔误）；④ 授予收回表单候选（RBAC_ROLE_OPTIONS/RBAC_PERMISSION_OPTIONS）为静态快照仅输入辅助，不含空间域演示档角色〔SpaceSourceGuard T29 最小权限面纪律〕；⑤ 断言同步连带文件 `api/connector.spec.ts` + `api/evidence.spec.ts` 为 DB-128 修复必要连带（§2 清单之外，零业务行为变化）；⑥ C-10.1 剧本界面路注记实际回填 **10 行（含 S1-4）**（§9 原"S1-3~S1-9 不在回填范围"表述勘正为"S1-3 未回填界面路注记、S1-4 补注记"）；
   E-3 connector `healthStatus` 对非 REGISTERED 行（CANCELLED 等）实测返回 `"NEVER_REPORTED"`（非空）——三态列沿既有"非 REGISTERED → 「—」"口径（`onlineLabel` 既有约定，健康度只对已注册态有意义），REGISTERED 行按三态渲染（"从未上报 ≠ 离线"在 REGISTERED 行承载）。
 
 ## 10. 体量与门禁

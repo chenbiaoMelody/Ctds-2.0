@@ -36,6 +36,8 @@
             >
               {{ labelOf(INTEGRATED_LABELS, scope.row.integrated) }}
             </el-tag>
+            <el-tag v-else-if="scope.row.alive === 'UP'" type="success">UP</el-tag>
+            <el-tag v-else-if="scope.row.alive === 'DOWN'" type="danger">DOWN</el-tag>
             <template v-else>{{ scope.row.alive ?? '—' }}</template>
           </template>
         </el-table-column>
@@ -76,7 +78,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { getMetrics, type MetricsView, type MonitorServiceView } from '../../api/platform'
-import { INTEGRATED_LABELS, labelOf } from '../../constants/platform'
+import { INTEGRATED_LABELS, MONITOR_EMPTY_TEXT, labelOf } from '../../constants/platform'
 import { getDemoSubject } from '../../api/client'
 import { DEMO_SUBJECT_REQUIRED_TIP } from '../../constants/space'
 
@@ -87,8 +89,6 @@ import { DEMO_SUBJECT_REQUIRED_TIP } from '../../constants/space'
  * 绝不显示 0 或绿（B5-R4）；页底诚实边界条（不持久化 / 单副本 / 无集群层指标 / G-04 待生效，
  * ADR-014 v1 不做口径）。数据源不可用（无监控栈）= ApiError 原文错误态 + 重试（E-1）。
  */
-const MONITOR_EMPTY_TEXT = '暂无服务读数'
-
 const loading = ref(false)
 const metrics = ref<MetricsView | null>(null)
 const error = ref<Error | null>(null)

@@ -52,6 +52,7 @@
         </el-table>
       </el-tab-pane>
 
+      <!-- lazy 保留（评审③ P3 回收）：本 tab 含全量候选下拉，非 lazy 会把候选渲染进 DOM 污染清单页错误态断言；EvidenceAuditView 无此候选面 -->
       <el-tab-pane label="授予与收回" name="grant" lazy>
         <div class="grant-form">
           <div class="grant-field">
@@ -105,7 +106,7 @@
           </div>
           <div v-if="grantResult" class="grant-result">
             已提交，变更号 <code class="mono">{{ grantResult }}</code>——授权映射变更留痕可查
-            （"变更留痕"页签按变更单号检索）。
+            （在"变更留痕"页签查看，变更单号列）。
           </div>
         </div>
       </el-tab-pane>
@@ -186,7 +187,15 @@ import {
   type RbacRoleView,
 } from '../../api/platform'
 import type { PageData } from '../../api/types'
-import { PLATFORM_ADMIN_ROLES, RBAC_PERMISSION_OPTIONS, RBAC_ROLE_OPTIONS } from '../../constants/platform'
+import {
+  CHANGE_ORDER_REQUIRED_TIP,
+  CHANGES_EMPTY_TEXT,
+  GRANT_ROLE_PERMISSION_REQUIRED_TIP,
+  PLATFORM_ADMIN_ROLES,
+  RBAC_PERMISSION_OPTIONS,
+  RBAC_ROLE_OPTIONS,
+  ROLES_EMPTY_TEXT,
+} from '../../constants/platform'
 import { ADMIN_PERSONA_LABELS, getAdminPersona, type AdminPersona } from '../../stores/demoIdentity'
 import { getDemoSubject } from '../../api/client'
 import { DEMO_SUBJECT_REQUIRED_TIP } from '../../constants/space'
@@ -198,10 +207,6 @@ import { DEMO_SUBJECT_REQUIRED_TIP } from '../../constants/space'
  * 变更留痕（分页八列，B1-AC3）。表单候选 = 静态快照仅输入辅助（constants/platform.ts），
  * 真实值域封闭判定在后端（B1-R1/B1-R2）。
  */
-const ROLES_EMPTY_TEXT = '暂无角色清单'
-const CHANGES_EMPTY_TEXT = '暂无变更留痕'
-const CHANGE_ORDER_REQUIRED_TIP = '变更单号必填（如 CHG-2026-001），授权映射变更以变更单留痕'
-
 const pageSize = 10
 const persona = getAdminPersona() as AdminPersona
 
@@ -248,7 +253,7 @@ async function submitGrant(): Promise<void> {
     return
   }
   if (!grantForm.role.trim() || !grantForm.permission.trim()) {
-    ElMessage.error('请先选择或输入角色与权限点')
+    ElMessage.error(GRANT_ROLE_PERMISSION_REQUIRED_TIP)
     return
   }
   grantLoading.value = true

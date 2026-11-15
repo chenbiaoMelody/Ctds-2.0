@@ -141,8 +141,9 @@ describe('监控读数页（T9 未接入显式标注，B5-R4）', () => {
     expect(notIntegratedRow).toBeDefined()
     // note 原文透传（未接入标注，B5-R4）
     expect(notIntegratedRow?.text()).toContain('未接入指标采集，读数不可用')
-    // 不出现伪造读数：该行不渲染 0 值读数（断言行内无 "0.00" 读数格式）
+    // 不出现伪造读数：该行不渲染 0 值读数（含 0.00 / 0 req/s / 0 ms / 0% 形态，评审④ P3 补强）
     expect(notIntegratedRow?.text()).not.toContain('0.00')
+    expect(notIntegratedRow?.text()).not.toMatch(/0\s*(req\/s|ms|%)/)
     // 未接入字样在行内可见
     expect(notIntegratedRow?.text()).toContain('未接入')
   })

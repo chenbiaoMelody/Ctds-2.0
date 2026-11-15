@@ -134,20 +134,23 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { disposeAlert, listAlerts, type AlertsView, type DisposeView } from '../../api/platform'
 import {
+  ALERT_EMPTY_TEXT,
   ALERT_STATE_LABELS,
   ALERT_STATE_TAG_TYPES,
+  COPY_FAILED_TIP,
   DISPOSE_ACTION_LABELS,
+  SILENCE_ID_COPIED_TIP,
   SEVERITY_LABELS,
   SEVERITY_TAG_TYPES,
   labelOf,
   tagTypeOf,
 } from '../../constants/platform'
 import { getDemoSubject } from '../../api/client'
-import { getActorMode, isSysadminPersona } from '../../stores/demoIdentity'
+import { demoIdentityRevision, getActorMode, isSysadminPersona } from '../../stores/demoIdentity'
 import { DEMO_SUBJECT_REQUIRED_TIP } from '../../constants/space'
 
 /**
@@ -157,14 +160,16 @@ import { DEMO_SUBJECT_REQUIRED_TIP } from '../../constants/space'
  * recordedAt；ESCALATE 附 G-04 待生效提示）。处置 = 唯一在线写面（B8-R1）；
  * 处置按钮仅系统管理员视角渲染（hifi §5 映射）；失败 = 服务端文案原样（不吞错）。
  */
-const ALERT_EMPTY_TEXT = '暂无告警'
-
 const loading = ref(false)
 const alerts = ref<AlertsView | null>(null)
 const error = ref<Error | null>(null)
 
-// 处置按钮视角判定（挂载时求值，视角切换经 demoIdentityRevision 整页重挂刷新——既有惯例）
-const canHandle = getActorMode() === 'operator' && isSysadminPersona()
+// 处置按钮视角判定（computed 随 demoIdentityRevision 双保险——评审② P3 补强；
+// 主机制仍 = 视角切换经 markDemoIdentityChanged 整页重挂，重挂后 computed 随 revision 重算）
+const canHandle = computed<boolean>(() => {
+  void demoIdentityRevision.value
+  return getActorMode() === 'operator' && isSysadminPersona()
+})
 
 const disposeVisible = ref(false)
 const disposing = ref(false)
@@ -211,8 +216,8 @@ function copySilenceId(): void {
   if (!value) return
   void navigator.clipboard
     ?.writeText(value)
-    .then(() => ElMessage.success('静默编号已复制'))
-    .catch(() => ElMessage.error('复制失败，请手动选择复制'))
+    .then(() => ElMessage.success(SILENCE_ID_COPIED_TIP))
+    .catch(() => ElMessage.error(COPY_FAILED_TIP))
 }
 
 async function load(): Promise<void> {

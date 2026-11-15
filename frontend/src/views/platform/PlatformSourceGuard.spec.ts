@@ -105,6 +105,13 @@ describe('平台系统管理界面源集守卫（WBS-3.9.5）', () => {
     }
   })
 
+  it('零幂等键（评审② P3 补强：platform 域 3 个 POST 端点未启用 X-Idempotency-Key；grant 幂等由三元组唯一键承载）', () => {
+    for (const source of [apiText, ...Object.values(viewSources)]) {
+      expect(source).not.toContain('X-Idempotency-Key')
+      expect(source).not.toContain('idempotencyKey')
+    }
+  })
+
   it('零内部面：视图 / API / 常量均不含 /internal/', () => {
     for (const source of [apiText, constantText, ...Object.values(viewSources)]) {
       expect(source).not.toContain('/internal/')

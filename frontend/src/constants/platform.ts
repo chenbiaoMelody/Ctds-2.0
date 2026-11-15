@@ -78,6 +78,16 @@ export const CONSISTENCY_TAG_TYPES: Record<string, string> = {
   NOT_APPLICABLE: 'info',
 }
 
+/** 界面提示文案（评审③ P3 收敛：提示文案集中 constants，视图零散写——沿 connector/billing 域惯例）。 */
+export const MONITOR_EMPTY_TEXT = '暂无服务读数'
+export const ALERT_EMPTY_TEXT = '暂无告警'
+export const ROLES_EMPTY_TEXT = '暂无角色清单'
+export const CHANGES_EMPTY_TEXT = '暂无变更留痕'
+export const CHANGE_ORDER_REQUIRED_TIP = '变更单号必填（如 CHG-2026-001），授权映射变更以变更单留痕'
+export const GRANT_ROLE_PERMISSION_REQUIRED_TIP = '请先选择或输入角色与权限点'
+export const SILENCE_ID_COPIED_TIP = '静默编号已复制'
+export const COPY_FAILED_TIP = '复制失败，请手动选择复制'
+
 /**
  * 三员角色清单（lofi C-1"三员在前"展示序白名单；空间域演示档角色不在三员之列，
  * 真机走查偏差修正 2026-11-15）。视图零字面量散写（SourceGuard 口径）。

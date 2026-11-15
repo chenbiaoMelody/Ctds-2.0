@@ -217,8 +217,13 @@ describe('角色与权限页（T2/T5 变更留痕 tab）', () => {
     expect(text).toContain('S-admin-platform')
     expect(text).toContain('2026-11-15 11:31:38.396')
     expect(text).toContain('metering.read')
-    expect(text).toContain('0')
-    expect(text).toContain('1')
+    // 前后值 cell 级断言（评审④ P3：整页 contain('0')/('1') 与时间戳/变更号重叠近恒真）
+    const changeRow = [...document.body.querySelectorAll('.el-table__row')].find((r) =>
+      r.textContent?.includes('RC7d724785ce1b4dbf'),
+    )
+    const cells = changeRow ? Array.from(changeRow.querySelectorAll('td')) : []
+    expect(cells[cells.length - 2]?.textContent?.trim()).toBe('0')
+    expect(cells[cells.length - 1]?.textContent?.trim()).toBe('1')
   })
 
   it('留痕翻页：点击下一页以 pageNum=2 重查', async () => {
@@ -248,11 +253,31 @@ describe('角色与权限页（T2/T5 变更留痕 tab）', () => {
   })
 })
 
+describe('角色与权限页（T5 矩阵补格，评审④ P3）', () => {
+  it('安全管理员视角授予成功（S1-5 界面动线：回显变更号）', async () => {
+    setAdminPersona('secadmin')
+    mockedGrant.mockResolvedValue('RC-S1-5-CASE')
+    const { wrapper } = await mountPage()
+    await activateTab(wrapper, '授予')
+    await fillGrantForm(wrapper, 'user', 'metering.read', 'CHG-W395-T5-SEC')
+    await button(wrapper, '提交')?.trigger('click')
+    await flushPromises()
+    expect(mockedGrant).toHaveBeenCalledWith({ role: 'user', permission: 'metering.read', changeOrderNo: 'CHG-W395-T5-SEC' })
+    expect(document.body.textContent).toContain('RC-S1-5-CASE')
+  })
+
+  it('审计管理员视角拉清单 403 原文（P7 实测矩阵：roles 仅 sysadmin）', async () => {
+    setAdminPersona('audadmin')
+    mockedRoles.mockRejectedValue(new ApiError('1000C0005', '无权限执行该操作'))
+    await mountPage()
+    expect(document.body.textContent).toContain('无权限执行该操作')
+  })
+})
+
 describe('角色与权限页（C-4 视角提示）', () => {
   it('页顶灰字提示当前三员视角 + 越权如实呈现口径', async () => {
-    const { wrapper } = await mountPage()
+    await mountPage()
     expect(document.body.textContent).toContain('系统管理员')
     expect(document.body.textContent).toContain('视角')
-    expect(wrapper.exists()).toBe(true)
   })
 })

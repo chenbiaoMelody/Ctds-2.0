@@ -31,8 +31,8 @@ function alert(over: Partial<AlertItemView> = {}): AlertItemView {
     severity: 'critical',
     target: 'evidence-service',
     triggeredAt: '2026-11-15T10:00:00',
-    currentValue: '0',
-    threshold: '1',
+    currentValue: '5.2',
+    threshold: '5',
     state: 'firing',
     stateNote: null,
     ...over,
@@ -94,8 +94,8 @@ describe('告警与处置页（T11 七要素列表）', () => {
     expect(text).toContain('evidence-service')
     expect(text).toContain('严重')
     expect(text).toContain('2026-11-15T10:00:00')
-    expect(text).toContain('0')
-    expect(text).toContain('1')
+    expect(text).toContain('5.2')
+    expect(text).toContain('5')
     expect(text).toContain('已触发')
     expect(text).toContain('连续 3 个周期未恢复')
     expect(wrapper.findAll('.el-table__row').length).toBe(1)
@@ -143,6 +143,11 @@ describe('告警与处置页（T13 双态呈现）', () => {
     const resolvedRow = rows.find((row) => row.text().includes('CtdsBackendHighErrorRate'))
     expect(firingRow?.text()).toContain('已触发')
     expect(resolvedRow?.text()).toContain('已恢复')
+    // 徽标类型断言（评审④ P3 补强：firing=danger / resolved=info 颜色映射有人拦）
+    const firingTag = firingRow?.findAll('.el-tag')[1]
+    const resolvedTag = resolvedRow?.findAll('.el-tag')[1]
+    expect(firingTag?.classes()).toContain('el-tag--danger')
+    expect(resolvedTag?.classes()).toContain('el-tag--info')
     // 级别双态徽标：critical 严重 / warning 警告
     expect(firingRow?.text()).toContain('严重')
     expect(resolvedRow?.text()).toContain('警告')
@@ -150,10 +155,13 @@ describe('告警与处置页（T13 双态呈现）', () => {
 })
 
 describe('告警与处置页（T12 处置对话框）', () => {
-  it('处置按钮仅系统管理员视角渲染（审计管理员视角无处置入口，S2-7 写面）', async () => {
+  it('处置按钮仅系统管理员视角渲染（审计管理员与安全管理员视角均无处置入口，S2-7 写面）', async () => {
     setAdminPersona('audadmin')
     const { wrapper } = await mountPage()
     expect(button(wrapper, '处置')).toBeUndefined()
+    setAdminPersona('secadmin')
+    const { wrapper: secWrapper } = await mountPage()
+    expect(button(secWrapper, '处置')).toBeUndefined()
     setAdminPersona('sysadmin')
     const { wrapper: sysWrapper } = await mountPage()
     expect(button(sysWrapper, '处置')).toBeDefined()

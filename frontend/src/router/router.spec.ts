@@ -633,6 +633,46 @@ describe('连接器域路由（WBS-3.6.7 T3 / T15）', () => {
     expect(router.currentRoute.value.query.denied).toBe('1')
   })
 
+  it('普通用户直连 /platform/monitor：守卫拦截重定向工作台带 denied（WBS-3.9.5 T4，菜单显隐之外的链路级锚点）', async () => {
+    const { default: router } = await import('../router/index')
+    signInDemo()
+    setDemoRole('user')
+    await router.push('/dashboard')
+    await router.push('/platform/monitor')
+    expect(router.currentRoute.value.name).toBe('dashboard')
+    expect(router.currentRoute.value.query.denied).toBe('1')
+  })
+
+  it('普通用户直连 /platform/alerts：守卫拦截重定向工作台带 denied（WBS-3.9.5 T4）', async () => {
+    const { default: router } = await import('../router/index')
+    signInDemo()
+    setDemoRole('user')
+    await router.push('/dashboard')
+    await router.push('/platform/alerts')
+    expect(router.currentRoute.value.name).toBe('dashboard')
+    expect(router.currentRoute.value.query.denied).toBe('1')
+  })
+
+  it('普通用户直连 /platform/rbac：守卫拦截重定向工作台带 denied（WBS-3.9.5 T4）', async () => {
+    const { default: router } = await import('../router/index')
+    signInDemo()
+    setDemoRole('user')
+    await router.push('/dashboard')
+    await router.push('/platform/rbac')
+    expect(router.currentRoute.value.name).toBe('dashboard')
+    expect(router.currentRoute.value.query.denied).toBe('1')
+  })
+
+  it('普通用户直连 /platform/domain：守卫拦截重定向工作台带 denied（WBS-3.9.5 T4）', async () => {
+    const { default: router } = await import('../router/index')
+    signInDemo()
+    setDemoRole('user')
+    await router.push('/dashboard')
+    await router.push('/platform/domain')
+    expect(router.currentRoute.value.name).toBe('dashboard')
+    expect(router.currentRoute.value.query.denied).toBe('1')
+  })
+
   it('admin 直连连接器治理与详情深链：放行（深链无权限点，门槛在服务端）', async () => {
     const { default: router } = await import('../router/index')
     signInDemo()

@@ -5,7 +5,7 @@ import ElementPlus from 'element-plus'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import MainLayout from './MainLayout.vue'
 import { setDemoRole, getDemoRole } from '../stores/demoRole'
-import { ACTOR_MODE_LABELS, getActorMode } from '../stores/demoIdentity'
+import { ACTOR_MODE_LABELS, getActorMode, setActorMode } from '../stores/demoIdentity'
 import { isDemoAuthed, signInDemo } from '../stores/demoAuth'
 import { routes } from '../router/index'
 import { getDemoSubject, setDemoSubject } from '../api/client'
@@ -284,5 +284,38 @@ describe('演示身份切换重拉（WBS-3.3.6 F1 修复批）', () => {
     await flushPromises()
 
     expect(mockedSearch).toHaveBeenCalledTimes(1)
+  })
+})
+
+/**
+ * WBS-3.9.5 Q3-A：三员视角控件（评审④ P2 补强——顶栏新兄弟控件沿既有逐控件测试惯例）：
+ * 仅运营档渲染 + 选择后保存写 localStorage 键 ctds-demo-admin-persona（changed 判定链路
+ * 由 demoIdentityRevision 信号承载，重挂行为既有用例覆盖）。
+ */
+describe('三员视角控件（WBS-3.9.5 Q3-A）', () => {
+  beforeEach(() => {
+    localStorage.clear()
+  })
+
+  it('普通主体档不渲染三员视角下拉；运营档渲染且默认系统管理员', () => {
+    setActorMode('subject')
+    const wrapper = mountLayout()
+    expect(wrapper.find('.identity-persona').exists()).toBe(false)
+    wrapper.unmount()
+    setActorMode('operator')
+    const opWrapper = mountLayout()
+    expect(opWrapper.find('.identity-persona').exists()).toBe(true)
+    // 默认视角=系统管理员由 demoIdentity.spec 单元覆盖；此处仅断言控件随运营档渲染（el-select 文本在浮层，根元素 text() 不含）
+    opWrapper.unmount()
+  })
+
+  it('选择安全管理员并保存：写入 localStorage 键 ctds-demo-admin-persona', async () => {
+    setActorMode('operator')
+    const wrapper = mountLayout()
+    await wrapper.findComponent('.identity-persona').setValue('secadmin')
+    await wrapper.find('.identity-save').trigger('click')
+    await flushPromises()
+    expect(localStorage.getItem('ctds-demo-admin-persona')).toBe('secadmin')
+    wrapper.unmount()
   })
 })
