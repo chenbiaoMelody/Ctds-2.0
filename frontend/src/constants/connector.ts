@@ -62,6 +62,38 @@ export function onlineTagType(status: string, online: boolean): string {
   return online ? 'success' : 'info'
 }
 
+/**
+ * 健康三态（WBS-3.9.5 Q4-A / B6-R1 三态显式：后端 healthStatus 加性字段，3.9.4 交付；
+ * "从未上报"独立呈现 ≠ 离线）。治理页"健康状态"列与概览条三数共用；
+ * **非 REGISTERED 行仍「—」**（健康度只对已注册态有意义，沿既有 onlineLabel 口径；
+ * E-3 勘误实测：后端对 CANCELLED 行返回 NEVER_REPORTED 非空值，前端呈现面不直渲原始值）。
+ * 未知值原样显示（不吞不猜，lofi 通用约定）。
+ */
+export const HEALTH_STATUS_LABELS: Record<string, string> = {
+  ONLINE: '在线',
+  OFFLINE: '离线',
+  NEVER_REPORTED: '从未上报',
+}
+
+export const HEALTH_STATUS_TAG_TYPES: Record<string, string> = {
+  ONLINE: 'success',
+  OFFLINE: 'info',
+  NEVER_REPORTED: 'warning',
+}
+
+/** 健康状态文案：非 REGISTERED → 「—」；未知三态值原样。 */
+export function healthLabel(status: string, healthStatus: string | null | undefined): string {
+  if (status !== 'REGISTERED') return ONLINE_LABELS.notApplicable
+  if (!healthStatus) return ONLINE_LABELS.notApplicable
+  return HEALTH_STATUS_LABELS[healthStatus] ?? healthStatus
+}
+
+/** 健康状态 tag 类型：非 REGISTERED / 空值一律 info；未知三态值回退 info。 */
+export function healthTagType(status: string, healthStatus: string | null | undefined): string {
+  if (status !== 'REGISTERED' || !healthStatus) return 'info'
+  return HEALTH_STATUS_TAG_TYPES[healthStatus] ?? 'info'
+}
+
 /** 绑定状态（后端 BindingStatus 枚举）。 */
 export const BINDING_STATUS_LABELS: Record<string, string> = {
   ACTIVE: '已绑定',

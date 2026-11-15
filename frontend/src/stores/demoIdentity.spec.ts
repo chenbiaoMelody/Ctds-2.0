@@ -6,6 +6,10 @@ import {
   getActorMode,
   setActorMode,
   spaceRolesHeader,
+  getAdminPersona,
+  setAdminPersona,
+  platformRolesHeader,
+  rbacRolesHeader,
 } from './demoIdentity'
 import { getDemoSubject, setDemoSubject } from '../api/client'
 
@@ -94,9 +98,13 @@ describe('连接器域页面级角色头（WBS-3.6.7 Q2-A / T2）', () => {
     expect(connectorRolesHeader()).not.toContain('admin')
   })
 
-  it('运营档 = admin（connector.review / upgrade.confirm 由服务端角色映射承载）', () => {
+  it('运营档 = platform.secadmin,admin 组合（WBS-3.9.5 Q3-A 裁决 / DB-128 修复：核验写面 + 既有读面零回归，不随三员视角变化）', () => {
     setActorMode('operator')
-    expect(connectorRolesHeader()).toBe('admin')
+    expect(connectorRolesHeader()).toBe('platform.secadmin,admin')
+    setAdminPersona('audadmin')
+    expect(connectorRolesHeader()).toBe('platform.secadmin,admin')
+    setAdminPersona('sysadmin')
+    expect(connectorRolesHeader()).toBe('platform.secadmin,admin')
   })
 
   it('硬约束：任何档位不含 connector-internal 及其内部权限点（内部面零接触）', () => {
@@ -127,8 +135,63 @@ describe('存证域页面级角色头（WBS-3.8.5 Q5-A / P5 实测）', () => {
     expect(evidenceRolesHeader()).not.toContain('admin')
   })
 
-  it('运营档 = admin（evidence.governance 由服务端角色映射承载）', () => {
+  it('运营档 = platform.audadmin（WBS-3.9.5 Q3-A 裁决 / DB-128 修复：evidence.governance 由三员种子承载，不随三员视角变化）', () => {
     setActorMode('operator')
-    expect(evidenceRolesHeader()).toBe('admin')
+    expect(evidenceRolesHeader()).toBe('platform.audadmin')
+    setAdminPersona('sysadmin')
+    expect(evidenceRolesHeader()).toBe('platform.audadmin')
+    setAdminPersona('secadmin')
+    expect(evidenceRolesHeader()).toBe('platform.audadmin')
+  })
+})
+
+/**
+ * WBS-3.9.5 Q3-A：三员视角（T15）——运营档子选择 localStorage 键 `ctds-demo-admin-persona`
+ * （sysadmin〔默认〕/ secadmin / audadmin，非法值回落默认）；rbac 域与 platform 新域头随视角；
+ * 既有两域（evidence / connector）固定映射不随视角（DB-128 修复口径）；普通档零管理角色回归。
+ */
+describe('三员视角（WBS-3.9.5 Q3-A / T15）', () => {
+  afterEach(() => {
+    localStorage.clear()
+  })
+
+  it('默认视角 = 系统管理员（sysadmin）；localStorage 键 ctds-demo-admin-persona', () => {
+    expect(getAdminPersona()).toBe('sysadmin')
+    setAdminPersona('secadmin')
+    expect(getAdminPersona()).toBe('secadmin')
+    expect(localStorage.getItem('ctds-demo-admin-persona')).toBe('secadmin')
+  })
+
+  it('非法存量值回落默认系统管理员（沿档位键回落惯例）', () => {
+    localStorage.setItem('ctds-demo-admin-persona', 'root')
+    expect(getAdminPersona()).toBe('sysadmin')
+  })
+
+  it('platform 域头随视角：sysadmin / secadmin / audadmin 三态（P7 实测矩阵口径）', () => {
+    setActorMode('operator')
+    setAdminPersona('sysadmin')
+    expect(platformRolesHeader()).toBe('platform.sysadmin')
+    setAdminPersona('secadmin')
+    expect(platformRolesHeader()).toBe('platform.secadmin')
+    setAdminPersona('audadmin')
+    expect(platformRolesHeader()).toBe('platform.audadmin')
+  })
+
+  it('rbac 域头随视角（同 platform 新域语义分离，导出面各自独立）', () => {
+    setActorMode('operator')
+    setAdminPersona('audadmin')
+    expect(rbacRolesHeader()).toBe('platform.audadmin')
+    setAdminPersona('sysadmin')
+    expect(rbacRolesHeader()).toBe('platform.sysadmin')
+  })
+
+  it('硬约束：普通主体档两域头 = requester 单头，零管理角色（fail-closed 由服务端拒）', () => {
+    setActorMode('subject')
+    for (const persona of ['sysadmin', 'secadmin', 'audadmin'] as const) {
+      setAdminPersona(persona)
+      expect(platformRolesHeader()).toBe('requester')
+      expect(rbacRolesHeader()).toBe('requester')
+      expect(platformRolesHeader()).not.toContain('admin')
+    }
   })
 })

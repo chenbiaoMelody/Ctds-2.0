@@ -55,6 +55,7 @@ function connector(over: Partial<ConnectorRecord> = {}): ConnectorRecord {
     didStatus: null,
     verified: false,
     online: true,
+    healthStatus: 'ONLINE',
     lastHeartbeatAt: '2026-10-30T10:00:00',
     updatedAt: '2026-10-30T10:00:00',
     ...over,
@@ -121,6 +122,11 @@ function button(wrapper: ReturnType<typeof mount>, text: string) {
   return wrapper.findAll('button').find((b) => b.text().includes(text))
 }
 
+/** 行级查询（attachTo document.body 惯例：直接查 DOM 行集合）。 */
+function wrapper_all_rows() {
+  return Array.from(document.body.querySelectorAll('.el-table__row')) as HTMLElement[]
+}
+
 beforeEach(() => {
   localStorage.clear()
   document.body.innerHTML = ''
@@ -167,18 +173,51 @@ describe('Tab1 全平台连接器（T10 / Q3-A）', () => {
     expect(pendingRow?.text()).toContain('—')
   })
 
-  it('本页概览条：在线 X / 离线 Y（仅已注册态计入）', async () => {
+  it('本页概览条三数：在线 X / 离线 Y / 从未上报 Z（仅已注册态计入；WBS-3.9.5 Q4-A）', async () => {
     mockedList.mockResolvedValue(
       page([
         connector(),
-        connector({ connectorNo: 'CN000003', online: false, lastHeartbeatAt: null }),
-        connector({ connectorNo: 'CN000004', status: 'CANCELLED', online: false, lastHeartbeatAt: null }),
+        connector({ connectorNo: 'CN000003', online: false, healthStatus: 'OFFLINE', lastHeartbeatAt: '2026-10-30T08:00:00' }),
+        connector({ connectorNo: 'CN000004', status: 'CANCELLED', online: false, healthStatus: 'NEVER_REPORTED', lastHeartbeatAt: null }),
       ]),
     )
     await mountPage()
     const overview = document.querySelector('.overview-bar')
     expect(overview?.textContent).toContain('本页在线 1')
     expect(overview?.textContent).toContain('离线 1')
+    expect(overview?.textContent).toContain('从未上报 0')
+  })
+
+  it('健康状态三态列：NEVER_REPORTED 独立呈现 ≠ 离线（B6-R1；WBS-3.9.5 Q4-A 单列替换布尔列）', async () => {
+    mockedList.mockResolvedValue(
+      page([
+        connector({ connectorNo: 'CN000001', healthStatus: 'ONLINE' }),
+        connector({ connectorNo: 'CN000002', connectorName: '未上报样件', healthStatus: 'NEVER_REPORTED', online: false, lastHeartbeatAt: null }),
+        connector({ connectorNo: 'CN000003', connectorName: '离线样件', healthStatus: 'OFFLINE', online: false, lastHeartbeatAt: '2026-10-30T08:00:00' }),
+      ]),
+    )
+    await mountPage()
+    const rows = wrapper_all_rows()
+    const neverRow = rows.find((row) => row.textContent?.includes('未上报样件'))
+    const offlineRow = rows.find((row) => row.textContent?.includes('离线样件'))
+    expect(neverRow?.textContent).toContain('从未上报')
+    expect(neverRow?.textContent).not.toContain('离线')
+    expect(offlineRow?.textContent).toContain('离线')
+    expect(offlineRow?.textContent).not.toContain('从未上报')
+  })
+
+  it('非已注册态健康列保持「—」（健康度只对已注册态有意义；healthStatus 原始值不直接渲染，E-3 勘误口径）', async () => {
+    mockedList.mockResolvedValue(
+      page([
+        connector({ connectorNo: 'CN000004', connectorName: '已注销样件', status: 'CANCELLED', healthStatus: 'NEVER_REPORTED', online: false, lastHeartbeatAt: null }),
+      ]),
+    )
+    await mountPage()
+    const rows = wrapper_all_rows()
+    const cancelledRow = rows.find((row) => row.textContent?.includes('已注销样件'))
+    expect(cancelledRow?.textContent).toContain('已注销')
+    expect(cancelledRow?.textContent).toContain('—')
+    expect(cancelledRow?.textContent).not.toContain('从未上报')
   })
 
   it('状态筛选为服务端筛选：选择「已注册」后以 status 参数重查', async () => {

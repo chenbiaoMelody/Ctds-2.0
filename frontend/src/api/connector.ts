@@ -45,6 +45,8 @@ export interface RegistrationRecord {
 /**
  * 连接器视图（列表摘要 did/didStatus 为 null、verified 恒 false——不得当作 DID 无效展示）。
  * 治理列表含待核验档案（`ConnectorView.summary` 直接取申请行）：`connectorNo` 可为 null。
+ * WBS-3.9.5 加性消费：`healthStatus` 三态（3.9.4 加性字段，B6-R1；既有 online 布尔零变化，
+ * 展示面由 constants/connector.ts healthLabel 三态 helper 承载）。
  */
 export interface ConnectorRecord {
   connectorNo: string | null
@@ -57,6 +59,7 @@ export interface ConnectorRecord {
   didStatus: string | null
   verified: boolean
   online: boolean
+  healthStatus?: string
   lastHeartbeatAt: string | null
   updatedAt: string
 }

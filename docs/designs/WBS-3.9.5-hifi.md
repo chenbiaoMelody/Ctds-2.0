@@ -135,7 +135,10 @@
 
 - **剧本回填（PO 批准义务）**：C-10.1 V1.4→V1.5——:11 占位落定（「角色与权限」= `/platform/rbac`、「部署域」= `/platform/domain`）+ 操作路径表界面路径回填（S1-1/S1-5/S1-6/S1-10/S1-12/S2-1/S2-6/S3-1/S3-2 相关行，S1-3~S1-9 与 S3-3~S3-8 保持 API/runbook/既有审计面承载不在回填范围）；C-10.2 V1.2→V1.3——:11 占位落定（监控读数页 / 告警列表页）+ S1-1/S1-3/S1-4~S1-7/S2-1/S2-6/S2-7 相关行回填；C-8.2 V1.5→V1.6——界面路"暂不可用"注记恢复（DB-128 闭环）；业务判定与步骤编号零变更；
 - **诚实边界**：未接入不显示 0/绿（B5-R4）/ "从未上报"≠离线（B6-R1）/ 越权与不可用原文呈现（B3-AC1）/ ESCALATE 与监控页"待生效"标注（G-04/G-07/不持久化/单副本/无集群层指标）/ 无删除伪造通道（B8-R2）/ fail-closed 不显示"正常"（B9-R4）/ DB-128 以真机走查为准不虚报；
-- **E-勘误位**（V1.0 生效后编码段专用）：E-1 ______；E-2 ______；E-3 ______（前置检查实测与本文不符时逐条回填，正文语义不改，勘误即登记）。
+- **E-勘误位**（V1.0 生效后编码段专用；**✅ 2026-11-15 编码段前置检查实测回填，留痕 `build-output/w395-precheck-data/precheck-summary.md`**）：
+  E-1 metrics/alerts/actions 在无监控栈环境（本地演示）实测 = HTTP 503 + `1013S0003 监控数据源暂不可用，请稍后重试`（JSON envelope）——监控读数页与告警页错误态以 ApiError 原文呈现该码；`NOT_INTEGRATED` 行场景真机不可达（需监控栈部分接入），以 T8/T9 stub 测试承载；`MetricsView`/`AlertsView` 成功形状按后端代码（`MonitorViews.java`）核对一致；
+  E-2 grant/revoke 成功出参 `data` = **变更号字符串**（幂等重放 = 空串）——授予收回成功回显 = 展示变更号（"留痕可查"提示 + changeOrderNo 可在留痕 tab 检索）；
+  E-3 connector `healthStatus` 对非 REGISTERED 行（CANCELLED 等）实测返回 `"NEVER_REPORTED"`（非空）——三态列沿既有"非 REGISTERED → 「—」"口径（`onlineLabel` 既有约定，健康度只对已注册态有意义），REGISTERED 行按三态渲染（"从未上报 ≠ 离线"在 REGISTERED 行承载）。
 
 ## 10. 体量与门禁
 
