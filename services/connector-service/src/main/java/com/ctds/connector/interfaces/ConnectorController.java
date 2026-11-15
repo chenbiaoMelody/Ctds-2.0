@@ -48,7 +48,8 @@ public class ConnectorController {
         final PageQuery page = PageQuery.of(pageNum, pageSize, null);
         final String subjectNo = AuthContext.subject();
         final List<ConnectorView> views = queryService.myConnectors(subjectNo, page).stream()
-                .map(registration -> ConnectorView.summary(registration, queryService.online(registration)))
+                .map(registration -> ConnectorView.summary(registration,
+                        queryService.online(registration), queryService.healthStatus(registration)))
                 .toList();
         return ApiResult.ok(PageResult.of(views, queryService.countMyConnectors(subjectNo), page));
     }

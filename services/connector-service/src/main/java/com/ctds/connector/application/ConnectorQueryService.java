@@ -104,7 +104,7 @@ public class ConnectorQueryService {
                     ConnectorErrorCodes.DID_UNAVAILABLE_MESSAGE);
         }
         return new ConnectorDetail(registration, binding.orElse(null), currentDid.status(),
-                currentDid.active(), online(registration));
+                currentDid.active(), online(registration), healthStatus(registration));
     }
 
     /** 绑定查验（行为 8 验收 1~3）：实时 DID 状态；查验动作留痕（可追溯义务）。 */
@@ -120,7 +120,7 @@ public class ConnectorQueryService {
         audit.success(ConnectorAuditActions.BINDING_READ, registration.applicationNo(), connectorNo,
                 callerNo, "didStatus=" + currentDid.status());
         return new ConnectorDetail(registration, binding, currentDid.status(), currentDid.active(),
-                online(registration));
+                online(registration), healthStatus(registration));
     }
 
     public List<ConnectorActionLog> actionLogs(final String callerNo, final boolean operator,
@@ -152,7 +152,8 @@ public class ConnectorQueryService {
         final ConnectorRegistration refreshed = repository.findByConnectorNo(connectorNo)
                 .orElseThrow(ConnectorQueryService::notFound);
         return new ConnectorDetail(refreshed,
-                bindingRepository.findActiveByConnectorNo(connectorNo).orElse(null), null, false, true);
+                bindingRepository.findActiveByConnectorNo(connectorNo).orElse(null), null, false, true,
+                healthStatus(refreshed));
     }
 
     /** 内部面（供 3.6.4 / 3.6.7 / 3.6.8 与 SDK 校验）：含绑定与实时 DID 状态。 */
@@ -167,7 +168,8 @@ public class ConnectorQueryService {
         }
         return new ConnectorDetail(registration,
                 bindingRepository.findActiveByConnectorNo(connectorNo).orElse(null),
-                currentDid.status(), currentDid.active(), online(registration));
+                currentDid.status(), currentDid.active(), online(registration),
+                healthStatus(registration));
     }
 
     private ConnectorRegistration requireVisible(final String callerNo, final boolean operator,
@@ -188,6 +190,20 @@ public class ConnectorQueryService {
         }
         return !last.plus(properties.getHealth().getOfflineAfter()).isBefore(LocalDateTime.now());
     }
+
+    /** 健康度三态显式值（WBS-3.9.4 B6-1 加性，读时派生零调度）："从未上报"为显式态，
+     * 不再以空值 / 布尔 false 冒充（B6-R1）；既有 {@link #online} 布尔语义零变化。 */
+    public String healthStatus(final ConnectorRegistration registration) {
+        if (registration.lastHeartbeatAt() == null) {
+            return HEALTH_NEVER_REPORTED;
+        }
+        return online(registration) ? HEALTH_ONLINE : HEALTH_OFFLINE;
+    }
+
+    /** 健康度三态值域（列表摘要 / 详情 / 心跳响应共用同一口径）。 */
+    public static final String HEALTH_ONLINE = "ONLINE";
+    public static final String HEALTH_OFFLINE = "OFFLINE";
+    public static final String HEALTH_NEVER_REPORTED = "NEVER_REPORTED";
 
     private static ConnectorBizException notFound() {
         return new ConnectorBizException(ConnectorErrorCodes.NOT_FOUND_OR_DENIED,

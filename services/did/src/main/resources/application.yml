@@ -13,12 +13,12 @@ server:
   # 与 mysql profile 的演示期安全边界（ADR-016 §2.7）同口径；只增不减、无行为影响。
   address: 127.0.0.1
 
-# 指标暴露（ADR-014 最小暴露面）：只开 health 探活
+# 指标暴露（WBS 3.9.4 / ADR-014 最小暴露面）：health 探活 + prometheus 指标暴露（12 服务接入）
 management:
   endpoints:
     web:
       exposure:
-        include: health
+        include: health,prometheus
 
 logging:
   file:

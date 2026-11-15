@@ -8,6 +8,7 @@ import com.ctds.common.errorcode.ErrorType;
 import com.ctds.evidence.application.EvidenceAuditLimits;
 import com.ctds.evidence.domain.EvidenceChainUnavailableException;
 import com.ctds.evidence.domain.EvidenceErrorCodes;
+import com.ctds.evidence.domain.MonitorErrorCodes;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.Ordered;
@@ -46,6 +47,10 @@ public class EvidenceExceptionHandler {
             case "1012S0002", "1012S0003" -> HttpStatus.INTERNAL_SERVER_ERROR;
             // WBS-3.9.3：部署域配置不一致 → 503（沿 1012S0001 先例；码值/文案 = common-auth 常量，同码同文）
             case "1013S0002" -> HttpStatus.SERVICE_UNAVAILABLE;
+            // WBS-3.9.4：监控数据源不可用（Prometheus / Alertmanager 未配置或不可达）→ 503（沿先例）
+            case "1013S0003" -> HttpStatus.SERVICE_UNAVAILABLE;
+            // WBS-3.9.4：告警对象未定义（处置对象非封闭两规则名）→ 400（ErrorType.C 默认同值，显式声明可读）
+            case "1013C0005" -> HttpStatus.BAD_REQUEST;
             case "1000C0005" -> HttpStatus.FORBIDDEN;
             case "1000C0002" -> HttpStatus.UNAUTHORIZED;
             default -> null;
@@ -102,6 +107,9 @@ public class EvidenceExceptionHandler {
             case "1012S0003" -> EvidenceErrorCodes.REPORT_INTEGRITY_FAILED_MESSAGE;
             // WBS-3.9.3：1013S0002 文案取 common-auth 常量（与过滤器/读面同码同文）
             case "1013S0002" -> DomainErrorCodes.CONFIG_MISMATCH_MESSAGE;
+            // WBS-3.9.4：1013S0003 / 1013C0005 文案取监控码值常量（同码同文）
+            case "1013S0003" -> MonitorErrorCodes.MONITORING_SOURCE_UNAVAILABLE_MESSAGE;
+            case "1013C0005" -> MonitorErrorCodes.ALERT_NOT_DEFINED_MESSAGE;
             default -> ex.getMessage();
         };
     }

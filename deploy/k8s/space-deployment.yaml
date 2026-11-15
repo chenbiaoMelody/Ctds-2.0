@@ -24,6 +24,13 @@ spec:
         app.kubernetes.io/part-of: ctds
         app.kubernetes.io/name: ctds-space-service
         app.kubernetes.io/component: backend
+      # Prometheus scrape-discovery annotations (WBS 3.9.4 / ADR-014): the
+      # monitoring stack discovers scrape targets from these three annotations
+      # (kubernetes_sd role=pod); without them the pod is not scraped.
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8083"
+        prometheus.io/path: "/actuator/prometheus"
     spec:
       containers:
         - name: ctds-space-service

@@ -16,6 +16,14 @@ server:
   # k8s 部署经清单环境变量放宽（ClusterIP 不外露）。
   address: 127.0.0.1
 
+# 指标暴露（WBS 3.9.4 / ADR-014 最小暴露面）：只开 health 与 prometheus 两个端点，
+# 其余 actuator 端点一律不开（沿 example-service 样板口径）
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+
 logging:
   file:
     name: logs/app.log
@@ -41,9 +49,12 @@ ctds:
     gateway:
       # 网关侧鉴权链开关（common-auth 网关侧组件；WBS 3.5.2 启用 = 兑现 DB-03 长期解除条件之一）
       enabled: true
-      # 本卡不引入 actuator（依赖最小化），健康检查面留空；部署就绪/存活探针沿 k8s
-      # tcpSocket 惯例（deploy/k8s/gateway-deployment.yaml）。业务交付路径一律 authenticated()。
-      permit-paths: []
+      # 指标暴露豁免（WBS 3.9.4 Q2-A：gateway 一并接入 ADR-014 口径）：/actuator/** 免鉴权
+      # （ADR-014 :35 指标端点禁新增鉴权；暴露面收敛 health,prometheus + 服务仅绑回环，
+      # 与 11 个 servlet 服务的 DomainProperties 缺省 /actuator/** 豁免同口径）。
+      # 业务交付路径一律 authenticated()；部署就绪/存活探针沿 k8s tcpSocket 惯例不变。
+      permit-paths:
+        - "/actuator/**"
     jwt:
       # 密钥来源二选一（common-auth fail-fast 校验）：演示期按配置化 HS256 密钥本地签发令牌，
       # 密钥仅环境变量注入，不入库、不入日志、不入仓库（红线 7）；生产令牌签发归 3.9.1。

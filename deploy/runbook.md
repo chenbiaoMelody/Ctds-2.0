@@ -61,6 +61,33 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\deploy\deploy.ps1
   带 `-Action RETIRE -ExpectedStatus RETIRED -ChangeOrderNo ... -Operator ...` 时同时校验三键登记并在 `build-output/deploy/domain-record.md` 追加**部署记录（含前后状态与版本）**——三证之二（变更单人工保管 + 部署记录本脚本落盘 + 审计事件服务启动落盘）。结尾看到 `[DOMAIN] PASS` 即一致（未声明清单时输出 skipped 属正常基线）。
 - **回退口径**：状态类动作 = 把状态翻回并滚动更新（数据零改动，随时可逆）；升级动作 = 版本值回滚 + 滚动更新；全部动作在 `domain-record.md` 留前后值可查。
 
+### 3.3 监控读数与告警处置操作（WBS-3.9.4，2026-11-14）
+
+平台监控从"散落在监控栈 UI 里的运维私有信息"变成平台自己能读、能标注、能处置、能留痕的能力（规格 B5~B8）。三个端点都在 **evidence 服务**（经网关 `/api/v1/platform/**` 路由可达，零路由改动），仅 **系统管理员（platform.sysadmin）** 持有（V5 迁移授予；其余角色一律 403）。
+
+- **数据源注入（启动 evidence 前设环境变量）**：监控读数从 Prometheus 读取、静默处置转发 Alertmanager。本机演示 = 先跑 `scripts\deploy\monitoring.ps1`（监控栈六步，内含 19090 / 19093 两条端口转发专线），再设：
+
+  ```bat
+  set CTDS_EVIDENCE_PROMETHEUS_BASEURL=http://127.0.0.1:19090
+  set CTDS_EVIDENCE_ALERTMANAGER_BASEURL=http://127.0.0.1:19093
+  ```
+
+  **缺省空 = 读面 503 + `1013S0003`（fail-closed，不伪造空读数/零值）**——这是诚实边界不是故障。k8s 部署由清单按同一变量名注入集群内 service 地址（本卡不预注入，随部署环境承接）。
+- **监控读数（四区块）**：`GET /api/v1/platform/metrics`——逐服务返回存活 / JVM 堆内存与 GC / HTTP 速率 / 5xx 错误率与 P95 时延；**未接入的服务显式标注"未接入指标采集，读数不可用"（值恒空，绝不显示 0 或绿）**。注意"接入"与"采集"两口径：12 个服务代码与配置已全部在库接入（本卡交付），但 subject / connector / did / kms 四服务无 k8s 清单（本机演示启动口径）不纳入集群内抓取——它们在读面如实显示"未接入"。
+- **告警列表（规则即告警项）**：`GET /api/v1/platform/alerts`——封闭两条告警规则固定入列（`CtdsBackendDown` / `CtdsBackendHighErrorRate`），每项含告警名 / 级别 / 对象 / 触发时点 / 当前值 / 阈值 / 状态（已触发 = firing，已恢复 = pending·inactive；状态映射以 Prometheus 规则态为权威，本卡落定口径）。
+- **运维处置（唯一入口）**：`POST /api/v1/platform/alerts/actions`——三动作 `ACKNOWLEDGE` 确认 / `SILENCE` 静默（可带 `durationMinutes`，缺省 30、上限 1440）/ `ESCALATE` 升级。**静默**经平台处置服务转 Alertmanager（响应回显 silenceId）；**确认与升级是平台留痕型动作**（不改变告警引擎状态；升级的实际通知效果"待生效"——v1 告警外发未接 G-04，诚实不虚报）。处置请求须带处置人身份头（`X-Ctds-Subject`，经网关剥离重建不可伪造）。
+- **处置留痕核对**：三动作均落审计事件 `alert.dispose`（处置人 / 时点 / 对象 / 结论四要素），查 `logs\audit-<日期>.jsonl`（或按既有 `ctds.audit.*` 配置的 metering-db sink）；**监控与告警数据无任何删除入口**（审计载体结构性满足）。
+- **告警演练**：下线触发 → 静默 → 恢复全流程直接引用 `monitoring.ps1` S6 步（缩 0 → firing → 静默 → 恢复 → resolved 端到端演练），本卡不改监控栈部署面。
+- **演示示例（服务回环直连，本机 8090）**：
+
+  ```bat
+  curl http://127.0.0.1:8090/api/v1/platform/metrics -H "X-Ctds-Subject: S-admin" -H "X-Ctds-Roles: platform.sysadmin"
+  curl http://127.0.0.1:8090/api/v1/platform/alerts -H "X-Ctds-Subject: S-admin" -H "X-Ctds-Roles: platform.sysadmin"
+  curl -X POST http://127.0.0.1:8090/api/v1/platform/alerts/actions -H "X-Ctds-Subject: S-admin" -H "X-Ctds-Roles: platform.sysadmin" -H "Content-Type: application/json" -d "{\"alertName\":\"CtdsBackendDown\",\"action\":\"SILENCE\",\"note\":\"变更窗口\",\"durationMinutes\":60}"
+  ```
+
+  业务可读验收步骤见 `docs\manuals\C-10.2-监控运维-验收剧本.md`（S1 读数幕 / S2 告警与处置幕）。
+
 ## 4. 怎么看结果
 
 | 看什么 | 入口 | 预期 |

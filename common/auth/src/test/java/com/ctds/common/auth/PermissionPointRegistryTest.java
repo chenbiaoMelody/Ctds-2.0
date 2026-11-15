@@ -19,6 +19,8 @@ import org.junit.jupiter.api.Test;
  * 测试桩排除；新增权限点仅 connector.health.read（规格边界 8）。
  * WBS-3.9.3 T9 扩展：登记清单 = V3 ∪ V4 seed 并集（platform.domain.read 走 V4，
  * hifi §9 E-4 确认项——V3 已应用不可改）。
+ * WBS-3.9.4 T12 扩展：登记清单 = V3 ∪ V4 ∪ V5 seed 并集（platform.monitor.read /
+ * platform.alert.handle 走 V5，Q3-A——均仅授 platform.sysadmin，边界 8 本卡登记）。
  */
 class PermissionPointRegistryTest {
 
@@ -29,6 +31,8 @@ class PermissionPointRegistryTest {
             + "db/migration/V3__create_rbac_tables.sql");
     private static final Path V4_SEED = ROOT.resolve("services/evidence-service/src/main/resources/"
             + "db/migration/V4__grant_platform_domain_read.sql");
+    private static final Path V5_SEED = ROOT.resolve("services/evidence-service/src/main/resources/"
+            + "db/migration/V5__grant_monitor_permissions.sql");
 
     @Test
     void everyMainSourceAnnotationValueIsRegistered() throws IOException {
@@ -52,6 +56,14 @@ class PermissionPointRegistryTest {
         assertThat(annotationValues()).contains("platform.domain.read");
     }
 
+    /** WBS-3.9.4 T12：监控读面 / 处置写面两点走 V5 授 platform.sysadmin（边界 8 / Q3-A）。 */
+    @Test
+    void monitorPointsAreRegisteredInV5SeedAndUsedByPlatformMonitorFace() throws IOException {
+        assertThat(Files.exists(V5_SEED)).as("V5 授点迁移须存在（V3/V4 已应用不可改）").isTrue();
+        assertThat(registeredPoints()).contains("platform.monitor.read", "platform.alert.handle");
+        assertThat(annotationValues()).contains("platform.monitor.read", "platform.alert.handle");
+    }
+
     private static Set<String> annotationValues() throws IOException {
         Set<String> values = new LinkedHashSet<>();
         try (Stream<Path> dirs = Files.list(ROOT.resolve("services"))) {
@@ -73,10 +85,10 @@ class PermissionPointRegistryTest {
         return values;
     }
 
-    /** 登记清单 = V3 ∪ V4 映射 seed（Q1-A 后唯一权威来源；3.9.3 起并集，见 E-4）。 */
+    /** 登记清单 = V3 ∪ V4 ∪ V5 映射 seed（Q1-A 后唯一权威来源；3.9.4 起三并集，见 T12）。 */
     private static Set<String> registeredPoints() throws IOException {
         Set<String> points = new LinkedHashSet<>();
-        for (Path seed : List.of(V3_SEED, V4_SEED)) {
+        for (Path seed : List.of(V3_SEED, V4_SEED, V5_SEED)) {
             Matcher matcher = SEED.matcher(Files.readString(seed));
             while (matcher.find()) {
                 points.add(matcher.group(2));
