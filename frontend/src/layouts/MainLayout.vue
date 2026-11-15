@@ -8,6 +8,7 @@ import { DEMO_ROLE_LABELS, getDemoRole, setDemoRole, hasPermission, type DemoRol
 import { signOutDemo } from '../stores/demoAuth'
 import { getDemoSubject, setDemoSubject } from '../api/client'
 import { ACTOR_MODE_LABELS, getActorMode, setActorMode, demoIdentityRevision, markDemoIdentityChanged, type ActorMode } from '../stores/demoIdentity'
+import { ADMIN_PERSONA_LABELS, getAdminPersona, setAdminPersona, type AdminPersona } from '../stores/demoIdentity'
 import { DEMO_SUBJECT_REQUIRED_TIP } from '../constants/space'
 
 /**
@@ -71,6 +72,9 @@ function onSignOut() {
 // WBS-3.3.6 F1 修复批（hifi §12 E3）：身份确有变化时自增变更信号 → 当前页面整体重挂并按新身份重拉。
 const subjectNo = ref(getDemoSubject())
 const actorMode = ref<ActorMode>(getActorMode())
+// WBS-3.9.5 Q3-A：三员视角（运营档子选择，rbac 域与 platform 新域头随视角）；
+// 变化纳入既有 changed 判定 → markDemoIdentityChanged 整页重挂重拉（零新机制）
+const adminPersona = ref<AdminPersona>(getAdminPersona())
 
 function onSaveIdentity() {
   const subject = subjectNo.value.trim()
@@ -79,11 +83,17 @@ function onSaveIdentity() {
     ElMessage.error(DEMO_SUBJECT_REQUIRED_TIP)
     return
   }
-  const changed = getDemoSubject() !== subject || getActorMode() !== actorMode.value
+  const changed =
+    getDemoSubject() !== subject || getActorMode() !== actorMode.value || getAdminPersona() !== adminPersona.value
   setDemoSubject(subject)
   setActorMode(actorMode.value)
+  setAdminPersona(adminPersona.value)
   if (changed) markDemoIdentityChanged()
-  ElMessage.success(`已切换演示身份（主体：${subject}，档位：${ACTOR_MODE_LABELS[actorMode.value]}）`)
+  ElMessage.success(
+    `已切换演示身份（主体：${subject}，档位：${ACTOR_MODE_LABELS[actorMode.value]}` +
+      (actorMode.value === 'operator' ? `，三员视角：${ADMIN_PERSONA_LABELS[adminPersona.value]}` : '') +
+      '）',
+  )
 }
 </script>
 
@@ -145,6 +155,21 @@ function onSaveIdentity() {
           >
             <el-option :label="ACTOR_MODE_LABELS.subject" value="subject" />
             <el-option :label="ACTOR_MODE_LABELS.operator" value="operator" />
+          </el-select>
+          <!-- WBS-3.9.5 Q3-A：三员视角下拉（仅运营档渲染；rbac 域与 platform 新域头随视角） -->
+          <el-select
+            v-if="actorMode === 'operator'"
+            v-model="adminPersona"
+            size="small"
+            class="identity-persona"
+            aria-label="三员视角"
+          >
+            <el-option
+              v-for="(label, value) in ADMIN_PERSONA_LABELS"
+              :key="value"
+              :label="label"
+              :value="value"
+            />
           </el-select>
           <el-button size="small" class="identity-save" @click="onSaveIdentity">保存</el-button>
           <el-button size="small" text class="signout-btn" @click="onSignOut">退出</el-button>
@@ -261,6 +286,10 @@ function onSaveIdentity() {
 }
 
 .identity-mode {
+  width: 120px;
+}
+
+.identity-persona {
   width: 120px;
 }
 

@@ -103,6 +103,17 @@ export default defineConfig({
         target: 'http://localhost:8090',
         changeOrigin: true,
       },
+      // WBS-3.9.5 系统管理域（8090，rbac 4 端点 + platform 4 端点均在 evidence-service）：
+      // 界面走查经 5173 访问角色权限与平台监控/部署域端点（开发期转发，不改服务契约与门禁
+      // 配置）。两键须位于下方通用 '/api'（→8080）之前（键序先行——缺键时请求误落主体服务）。
+      '/api/v1/rbac': {
+        target: 'http://localhost:8090',
+        changeOrigin: true,
+      },
+      '/api/v1/platform': {
+        target: 'http://localhost:8090',
+        changeOrigin: true,
+      },
       '/api': {
         target: 'http://localhost:8080',
         changeOrigin: true,

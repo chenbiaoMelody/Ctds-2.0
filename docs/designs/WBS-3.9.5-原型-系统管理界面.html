@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>WBS-3.9.5 系统管理界面 线框原型 V1.0</title>
+<style>
+  :root {
+    --ink: #1f2733;
+    --muted: #6b7684;
+    --line: #d9dee5;
+    --soft: #f4f6f9;
+    --brand: #2f6bff;
+    --ok: #1f9d55;
+    --warn: #b7791f;
+    --bad: #c53030;
+    --side: #1f2a44;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px;
+    font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
+    color: var(--ink); background: #eef1f5;
+  }
+  h1 { font-size: 20px; margin: 0 0 6px; }
+  h2 { font-size: 15px; margin: 0 0 4px; }
+  h3 { font-size: 13px; margin: 0 0 8px; color: var(--muted); font-weight: 600; }
+  .intro { color: var(--muted); font-size: 12px; line-height: 1.7; margin-bottom: 18px; }
+  .legend { font-size: 12px; color: var(--muted); margin-bottom: 18px; }
+  .legend b { color: var(--ink); }
+  .screen {
+    background: #fff; border: 1px solid var(--line); border-radius: 8px;
+    margin-bottom: 22px; overflow: hidden; box-shadow: 0 1px 2px rgba(20,30,50,.06);
+  }
+  .screen-head {
+    display: flex; align-items: baseline; gap: 10px; padding: 10px 14px;
+    border-bottom: 1px solid var(--line); background: var(--soft);
+  }
+  .screen-head .tag {
+    font-size: 11px; color: #fff; background: var(--brand);
+    border-radius: 10px; padding: 2px 8px; flex: none;
+  }
+  .screen-head .note { font-size: 12px; color: var(--muted); }
+  .app { display: flex; min-height: 360px; }
+  .side { width: 172px; flex: none; background: var(--side); color: #c9d3e6; font-size: 12px; padding: 12px 0; }
+  .side .brand { padding: 0 14px 12px; color: #fff; font-size: 13px; font-weight: 600; border-bottom: 1px solid #33405f; margin-bottom: 8px; }
+  .side .item { padding: 7px 14px; }
+  .side .item.on { background: #2b3b5c; color: #fff; border-left: 3px solid var(--brand); }
+  .side .item.new::after { content: "新"; margin-left: 6px; font-size: 10px; color: #fff; background: var(--brand); border-radius: 8px; padding: 1px 5px; }
+  .main { flex: 1; min-width: 0; padding: 14px 16px; }
+  .topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .topbar .title { font-size: 15px; font-weight: 600; }
+  .topbar .who { font-size: 12px; color: var(--muted); }
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 12px; flex-wrap: wrap; }
+  .tabs .tab { font-size: 12px; padding: 7px 12px; border: 1px solid var(--line); border-bottom: none; border-radius: 4px 4px 0 0; color: var(--muted); background: #fafbfc; }
+  .tabs .tab.on { color: var(--brand); background: #fff; font-weight: 600; border-bottom: 1px solid #fff; margin-bottom: -1px; }
+  .bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+  .field { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); }
+  .inp {
+    height: 26px; min-width: 104px; border: 1px solid var(--line); border-radius: 3px;
+    padding: 0 8px; font-size: 12px; color: var(--ink); background: #fff; display: inline-flex; align-items: center;
+  }
+  .inp.ph { color: #a7b0bc; }
+  .inp.code { font-family: Consolas, Menlo, monospace; }
+  .btn {
+    height: 26px; padding: 0 12px; border-radius: 3px; border: 1px solid var(--line);
+    background: #fff; font-size: 12px; color: var(--ink); display: inline-flex; align-items: center;
+  }
+  .btn.primary { background: var(--brand); border-color: var(--brand); color: #fff; }
+  .btn.mini { height: 22px; padding: 0 8px; font-size: 11px; }
+  table.grid { width: 100%; border-collapse: collapse; font-size: 12px; }
+  table.grid th, table.grid td { border: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top; }
+  table.grid th { background: var(--soft); color: var(--muted); font-weight: 600; white-space: nowrap; }
+  .pill { display: inline-block; font-size: 11px; border-radius: 9px; padding: 1px 8px; border: 1px solid var(--line); color: var(--muted); background: #fff; white-space: nowrap; }
+  .pill.ok { color: var(--ok); border-color: #bfe3cd; background: #effaf3; }
+  .pill.bad { color: var(--bad); border-color: #f0c4c4; background: #fdf1f1; }
+  .pill.warn { color: var(--warn); border-color: #ecd9b4; background: #fdf8ec; }
+  .pill.gray { color: var(--muted); background: var(--soft); }
+  .mono { font-family: Consolas, Menlo, monospace; font-size: 11px; }
+  .hint { font-size: 11px; color: var(--muted); line-height: 1.6; }
+  .alertline { border: 1px solid #f0c4c4; background: #fdf1f1; color: var(--bad); font-size: 12px; border-radius: 4px; padding: 8px 10px; margin-bottom: 10px; }
+  .infoline { border: 1px solid #cfe0fb; background: #f0f5ff; color: #2b4a8b; font-size: 12px; border-radius: 4px; padding: 8px 10px; margin-bottom: 10px; }
+  .kv { display: grid; grid-template-columns: 130px 1fr; gap: 6px 12px; font-size: 12px; border: 1px solid var(--line); border-radius: 6px; padding: 12px; background: #fcfdfe; }
+  .kv .k { color: var(--muted); }
+  .cards { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+  .stat { flex: 1; min-width: 130px; border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; background: #fcfdfe; }
+  .stat .num { font-size: 20px; font-weight: 700; }
+  .stat .lbl { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .form { border: 1px solid var(--line); border-radius: 6px; padding: 12px; background: #fcfdfe; display: flex; flex-direction: column; gap: 8px; max-width: 460px; }
+  .form .row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+  .form .row label { width: 84px; color: var(--muted); flex: none; text-align: right; }
+  .foot { padding: 8px 14px; border-top: 1px dashed var(--line); font-size: 11px; color: var(--muted); background: #fafbfc; }
+</style>
+</head>
+<body>
+
+<h1>WBS-3.9.5 系统管理界面 · 线框原型 <span class="pill">V1.0 方向定稿（2026-11-15 编排师一次确认）</span></h1>
+<div class="intro">
+  四屏线框：① 监控读数（B5 四区块 + 未接入标注）② 告警与处置（B7 七要素 + B8 处置三动作）③ 角色与权限（B1 清单 / 授予收回 / 变更留痕，三员视角承载）④ 部署域（B9 八字段只读 + fail-closed 呈现）。<br />
+  示例数据为演示口径虚构样例，仅示意布局；线框不承载交互，实现契约见 hifi V1.0。
+</div>
+<div class="legend">
+  全局约定：<b>写动作仅两处</b>（告警处置对话框 / 授予收回表单），其余全只读；未接入 / 越权 / 不可用一律<b>原文呈现，不显示 0 或绿</b>；顶部侧栏为既有扁平菜单尾部示意（本卡新增 4 项 menuOrder 28~31）。
+</div>
+
+<!-- ═══════════════ 屏 A：监控读数 ═══════════════ -->
+<div class="screen">
+  <div class="screen-head"><span class="tag">屏 A</span><h2>监控读数</h2><span class="note">menuOrder 28 · meta.permission = platform.monitor.read · 剧本 C-10.2 S1-1 / S1-3</span></div>
+  <div class="app">
+    <div class="side">
+      <div class="brand">C-TDS 平台</div>
+      <div class="item">…（既有菜单 1~27）…</div>
+      <div class="item new on">监控读数</div>
+      <div class="item new">告警与处置</div>
+      <div class="item new">角色与权限</div>
+      <div class="item new">部署域</div>
+    </div>
+    <div class="main">
+      <div class="topbar"><span class="title">监控读数</span><span class="who">三员视角：系统管理员 ▾ ｜ 运营档（demo admin）</span></div>
+      <div class="infoline">读数与各服务 /actuator/prometheus 同源（Prometheus 抓取），未接入指标采集的服务如实标注"未接入"，不显示 0 或绿值。</div>
+      <table class="grid">
+        <tr><th>服务</th><th>存活</th><th>堆内存（used / max）· GC 暂停速率</th><th>HTTP 速率（1m）</th><th>5xx 错误率（5m）</th><th>P95 时延（5m）</th></tr>
+        <tr><td>ctds-gateway-service</td><td><span class="pill ok">UP</span></td><td>512 MB / 1 GB · 0.012/s</td><td>18.4 req/s</td><td>0.4%</td><td>86 ms</td></tr>
+        <tr><td>ctds-space-service</td><td><span class="pill ok">UP</span></td><td>388 MB / 1 GB · 0.006/s</td><td>6.2 req/s</td><td>0.0%</td><td>54 ms</td></tr>
+        <tr><td>ctds-evidence-service</td><td><span class="pill bad">DOWN</span></td><td class="hint">——（存活 DOWN，读数可能失真）</td><td class="hint">——</td><td class="hint">——</td><td class="hint">——</td></tr>
+        <tr><td>ctds-subject-service</td><td><span class="pill gray">未接入</span></td><td colspan="4"><span class="pill gray">未接入</span>　未接入指标采集，读数不可用（note 原文）</td></tr>
+        <tr><td>ctds-did-service</td><td><span class="pill gray">未接入</span></td><td colspan="4"><span class="pill gray">未接入</span>　未接入指标采集，读数不可用</td></tr>
+      </table>
+      <div class="foot">诚实边界：监控读数不持久化 · 单副本部署 · 无集群层指标 · 告警外发通道"待生效"（G-04）——A-2 诚实边界条</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ 屏 B：告警与处置 ═══════════════ -->
+<div class="screen">
+  <div class="screen-head"><span class="tag">屏 B</span><h2>告警与处置</h2><span class="note">menuOrder 29 · meta.permission = platform.monitor.read · 剧本 C-10.2 S2-1 / S2-6 / S2-7</span></div>
+  <div class="app">
+    <div class="side">
+      <div class="brand">C-TDS 平台</div>
+      <div class="item">…（既有菜单 1~27）…</div>
+      <div class="item new">监控读数</div>
+      <div class="item new on">告警与处置</div>
+      <div class="item new">角色与权限</div>
+      <div class="item new">部署域</div>
+    </div>
+    <div class="main">
+      <div class="topbar"><span class="title">告警与处置</span><span class="who">三员视角：系统管理员 ▾ ｜ 处置按钮仅系统管理员视角渲染</span></div>
+      <table class="grid">
+        <tr><th>告警名</th><th>级别</th><th>对象</th><th>触发时点</th><th>当前值</th><th>阈值</th><th>状态</th><th>操作</th></tr>
+        <tr>
+          <td class="mono">CtdsBackendDown</td><td><span class="pill bad">critical</span></td><td>ctds-backend</td>
+          <td>2026-11-15T09:40:00Z</td><td>up = 0</td><td>up == 0（1m）</td>
+          <td><span class="pill bad">已触发 firing</span><div class="hint">stateNote 原文</div></td>
+          <td><span class="btn mini">处置</span></td>
+        </tr>
+        <tr>
+          <td class="mono">CtdsBackendHighErrorRate</td><td><span class="pill warn">warning</span></td><td>ctds-backend</td>
+          <td>—（未触发）</td><td>5xx 占比 0.4%</td><td>5xx 占比 &gt; 5%（5m）</td>
+          <td><span class="pill gray">已恢复 resolved</span></td>
+          <td><span class="btn mini">处置</span></td>
+        </tr>
+      </table>
+      <h3 style="margin-top:14px">处置对话框（示意展开态）</h3>
+      <div class="form">
+        <div class="row"><label>告警</label><span class="mono">CtdsBackendDown</span></div>
+        <div class="row"><label>动作</label><label style="width:auto"><input type="radio" checked /> 确认</label><label style="width:auto"><input type="radio" /> 静默</label><label style="width:auto"><input type="radio" /> 升级</label></div>
+        <div class="row"><label>静默时长（分钟）</label><span class="inp">30</span><span class="hint">仅静默时显示 · 缺省 30 · 上限 1440</span></div>
+        <div class="row"><label>备注</label><span class="inp ph" style="width:260px">可空</span></div>
+        <div class="row"><label></label><span class="btn primary">提交</span><span class="btn">取消</span></div>
+      </div>
+      <h3 style="margin-top:14px">处置响应回显（示意）</h3>
+      <div class="kv">
+        <span class="k">动作</span><span>静默（SILENCE）</span>
+        <span class="k">结果</span><span>OK</span>
+        <span class="k">silenceId</span><span class="mono">0e1a2b3c-…（仅静默，可复制）</span>
+        <span class="k">处置时点</span><span>2026-11-15T10:02:00Z</span>
+        <span class="k">留痕</span><span class="hint">处置已留痕（处置人 / 时点 / 对象 / 结论）· 升级动作附"通知外发通道待生效（G-04），以平台留痕为准"</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ 屏 C：角色与权限 ═══════════════ -->
+<div class="screen">
+  <div class="screen-head"><span class="tag">屏 C</span><h2>角色与权限</h2><span class="note">menuOrder 30 · meta.permission = connector.health.read（清单读面挂点）· 剧本 C-10.1 S1-1 / S1-4 / S1-5 / S1-6 / S1-12</span></div>
+  <div class="app">
+    <div class="side">
+      <div class="brand">C-TDS 平台</div>
+      <div class="item">…（既有菜单 1~27）…</div>
+      <div class="item new">监控读数</div>
+      <div class="item new">告警与处置</div>
+      <div class="item new on">角色与权限</div>
+      <div class="item new">部署域</div>
+    </div>
+    <div class="main">
+      <div class="topbar"><span class="title">角色与权限</span><span class="who">三员视角：安全管理员 ▾</span></div>
+      <div class="hint" style="margin-bottom:10px">当前三员视角：安全管理员——各标签页按三员职责面呈现，越权调用如实展示后端拒绝结果（403 原文，文案统一"无权限执行该操作"）。</div>
+      <div class="tabs">
+        <span class="tab">权限清单</span>
+        <span class="tab on">授予与收回</span>
+        <span class="tab">变更留痕</span>
+      </div>
+      <div class="form">
+        <div class="row"><label>动作</label><label style="width:auto"><input type="radio" checked /> 授予</label><label style="width:auto"><input type="radio" /> 收回</label></div>
+        <div class="row"><label>角色</label><span class="inp">platform.connector-ops ▾</span></div>
+        <div class="row"><label>权限点</label><span class="inp">connector.review ▾</span></div>
+        <div class="row"><label>变更单号</label><span class="inp">CHG-2026-1115-01</span><span class="hint">必填</span></div>
+        <div class="row"><label></label><span class="btn primary">提交</span><span class="hint">变更人 = 当前主体编号 · 留痕可查（变更留痕 tab）</span></div>
+      </div>
+      <h3 style="margin-top:14px">权限清单 tab（示意 · 系统管理员视角下可读）</h3>
+      <table class="grid">
+        <tr><th>角色</th><th>权限点</th></tr>
+        <tr><td class="mono">platform.sysadmin</td><td><span class="pill">connector.health.read</span> <span class="pill">kms.admin</span> <span class="pill">did.admin</span> <span class="pill">platform.domain.read</span> <span class="pill">platform.monitor.read</span> <span class="pill">platform.alert.handle</span> …（12 点）</td></tr>
+        <tr><td class="mono">platform.secadmin</td><td><span class="pill">connector.review</span> <span class="pill">connector.upgrade.confirm</span> <span class="pill">connector.cancel</span></td></tr>
+        <tr><td class="mono">platform.audadmin</td><td><span class="pill">evidence.governance</span></td></tr>
+      </table>
+      <h3 style="margin-top:14px">越权呈现（示意 · 系统管理员视角提交授予）</h3>
+      <div class="alertline">403 ｜ 无权限执行该操作（ApiError 原文呈现，不转译不美化）——S1-4 负向界面可演</div>
+      <h3 style="margin-top:14px">变更留痕 tab（示意 · 审计管理员视角下可读）</h3>
+      <table class="grid">
+        <tr><th>变更号</th><th>变更单号</th><th>变更人</th><th>时点</th><th>角色</th><th>权限点</th><th>变更前</th><th>变更后</th></tr>
+        <tr><td class="mono">RBAC-…</td><td class="mono">CHG-2026-1115-01</td><td>91110…0001（主体摘要）</td><td>2026-11-15T10:05:00Z</td><td class="mono">platform.connector-ops</td><td class="mono">connector.review</td><td>—</td><td>GRANTED</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ 屏 D：部署域 ═══════════════ -->
+<div class="screen">
+  <div class="screen-head"><span class="tag">屏 D</span><h2>部署域</h2><span class="note">menuOrder 31 · meta.permission = platform.domain.read · 剧本 C-10.1 S2-1 / S3-1 / S3-2 / S3-4 / S3-5</span></div>
+  <div class="app">
+    <div class="side">
+      <div class="brand">C-TDS 平台</div>
+      <div class="item">…（既有菜单 1~27）…</div>
+      <div class="item new">监控读数</div>
+      <div class="item new">告警与处置</div>
+      <div class="item new">角色与权限</div>
+      <div class="item new on">部署域</div>
+    </div>
+    <div class="main">
+      <div class="topbar"><span class="title">部署域信息（只读）</span><span class="who">三员视角：系统管理员 ▾</span></div>
+      <div class="kv">
+        <span class="k">部署域标识</span><span class="mono">ctds-demo-domain</span>
+        <span class="k">名称</span><span>C-TDS 演示部署域</span>
+        <span class="k">平台版本</span><span class="mono">2.0.0-SNAPSHOT（V1.0）</span>
+        <span class="k">生命周期状态</span><span><span class="pill ok">ACTIVE</span>　<span class="pill gray">RETIRED 为灰</span></span>
+        <span class="k">库 schema 清单</span><span class="mono">ctds_space · ctds_catalog · ctds_contract · …</span>
+        <span class="k">服务清单</span><span class="mono">space-service · catalog-service · …（部署清单承载）</span>
+        <span class="k">配置一致性</span><span><span class="pill ok">CONSISTENT</span>　<span class="pill gray">NOT_APPLICABLE 为灰</span></span>
+        <span class="k">口径声明</span><span class="hint">scopeNote 原文："V1.0 = 单实例单部署域，生命周期 = 配置版本与状态管理，不做多实例自动开通"（零操作按钮，生命周期动作走 runbook §3.2 部署变更）</span>
+      </div>
+      <h3 style="margin-top:14px">错误态（配置不一致 · B9-R4 fail-closed）</h3>
+      <div class="alertline">503 ｜ 部署域配置不一致（1013S0002 原文）＋"重试"——不得显示"正常"</div>
+      <div class="foot">退役态呈现：本端点豁免可读（信息卡照常 + 生命周期徽标 RETRIRED）；升级后旧版本配置与变更记录可查（B9-AC2，页面呈现当前版本 + 状态）。</div>
+    </div>
+  </div>
+</div>
+
+<div class="legend" style="margin-top:6px">
+  版本 V1.0（方向定稿，2026-11-15 编排师一次确认〔Q1~Q4 均采建议口径 A + D1 不拆分〕）· 实现契约见 <b>WBS-3.9.5-hifi.md</b> · 业务判定映射见 <b>WBS-3.9.5 任务卡 §三</b>
+</div>
+
+</body>
+</html>

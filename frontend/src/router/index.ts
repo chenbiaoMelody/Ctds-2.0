@@ -235,6 +235,34 @@ const routes = [
         component: () => import('../views/evidence/EvidenceVerifyView.vue'),
         meta: { title: '存证核验', menu: true, menuOrder: 27, icon: 'Verified', permission: 'evidence.governance' },
       },
+      // WBS-3.9.5 系统管理界面：四菜单扁平追加（Q2-A，menuOrder 28~31，与两剧本 :11 占位
+      // 口径一一对应）。meta.permission 挂真实权限点（诚实标注口径，边界 8 零新增权限点）：
+      // 监控读数/告警与处置挂 platform.monitor.read、角色与权限挂 connector.health.read
+      // （清单读面挂点，三员多视角语义在页内承载）、部署域挂 platform.domain.read。
+      {
+        path: 'platform/monitor',
+        name: 'platform-monitor',
+        component: () => import('../views/platform/MonitorView.vue'),
+        meta: { title: '监控读数', menu: true, menuOrder: 28, icon: 'Odometer', permission: 'platform.monitor.read' },
+      },
+      {
+        path: 'platform/alerts',
+        name: 'platform-alerts',
+        component: () => import('../views/platform/AlertView.vue'),
+        meta: { title: '告警与处置', menu: true, menuOrder: 29, icon: 'Bell', permission: 'platform.monitor.read' },
+      },
+      {
+        path: 'platform/rbac',
+        name: 'platform-rbac',
+        component: () => import('../views/platform/RbacView.vue'),
+        meta: { title: '角色与权限', menu: true, menuOrder: 30, icon: 'Key', permission: 'connector.health.read' },
+      },
+      {
+        path: 'platform/domain',
+        name: 'platform-domain',
+        component: () => import('../views/platform/DomainView.vue'),
+        meta: { title: '部署域', menu: true, menuOrder: 31, icon: 'OfficeBuilding', permission: 'platform.domain.read' },
+      },
       {
         path: 'admin-only',
         name: 'admin-only',

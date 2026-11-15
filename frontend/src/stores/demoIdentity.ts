@@ -87,12 +87,16 @@ export function deliveryRolesHeader(): string {
 }
 
 /**
- * 连接器域页面级角色头（WBS-3.6.7 Q2-A）：普通档 `applicant`（申请 / 读 / 心跳 / 升级 / 注销 / 源管理）/
- * 运营档 `admin`（核验 / 读 / 升级确认 / 注销）。硬约束（T2）：**普通档不得携带 `admin`**；
+ * 连接器域页面级角色头（WBS-3.6.7 Q2-A；**WBS-3.9.5 Q3-A DB-128 修复**）：普通档 `applicant`
+ * （申请 / 读 / 心跳 / 升级 / 注销 / 源管理）/ 运营档 `platform.secadmin,admin` 组合
+ * （Q3-A 裁决：secadmin 持核验写面 connector.review〔jdbc 三员种子〕+ admin 保留段持
+ * connector.read / connector.health.read 读面——治理列表与健康三态页可看、核验可操作；
+ * 纯 `platform.secadmin` 无 connector.health.read 会使治理列表 403，Q3-C 不采）。
+ * 固定映射不随三员视角变化。硬约束（T2）：**普通档不得携带 `admin`**；
  * 任何档位不得携带服务身份内部角色（内部面零接触，N8）。
  */
 export function connectorRolesHeader(): string {
-  return pageRolesHeader('admin', 'applicant')
+  return pageRolesHeader('platform.secadmin,admin', 'applicant')
 }
 
 /**
@@ -106,11 +110,60 @@ export function billingRolesHeader(): string {
 }
 
 /**
- * 存证域页面级角色头（WBS-3.8.5 Q5-A / 前置检查 P5 实测）：治理档 `admin`
- * （evidence.governance 唯一映射角色）/ 普通档 `requester` 单头——剧本 C-8.2 V1.2 普通
- * 档身份示例一字不差；服务端权限映射仅 admin / evidence-internal，requester 必拒
+ * 存证域页面级角色头（WBS-3.8.5 Q5-A / 前置检查 P5 实测；**WBS-3.9.5 Q3-A DB-128 修复**）：
+ * 治理面运营档 `platform.audadmin`（evidence.governance 唯一三员种子承载，审计管理员；
+ * 旧演示档 `admin` 已被运行期 E3-A 撤 evidence.governance，监管审计页 403 病灶即此）/
+ * 普通档 `requester` 单头——剧本 C-8.2 V1.2 普通档身份示例一字不差；requester 必拒
  * = fail-closed（即 C-8.2 S1-7 界面面）。硬约束（T13）：**普通档不得携带 `admin`**。
+ * 固定映射不随三员视角变化（Q3-A：视角仅作用于 rbac 域与 platform 新域）。
  */
 export function evidenceRolesHeader(): string {
-  return pageRolesHeader('admin', 'requester')
+  return pageRolesHeader('platform.audadmin', 'requester')
+}
+
+/**
+ * 三员视角（WBS-3.9.5 Q3-A / hifi §5）：运营档子选择，localStorage 键 `ctds-demo-admin-persona`
+ * （`sysadmin`〔默认〕/ `secadmin` / `audadmin`，非法存量值回落默认，沿档位键回落惯例）。
+ * 仅作用于 rbac 域与 platform 新域角色头（`rbacRolesHeader()` / `platformRolesHeader()`）；
+ * 既有 evidence / connector 两域固定映射不随视角（DB-128 修复口径）；普通主体档两域头发
+ * `requester` 单头（无管理角色，fail-closed 由服务端拒，P7 实测矩阵口径）。
+ * 切换由顶栏"保存"动作纳入 changed 判定（复用 `markDemoIdentityChanged()` 整页重挂，零新机制）。
+ */
+export type AdminPersona = 'sysadmin' | 'secadmin' | 'audadmin'
+
+const ADMIN_PERSONA_KEY = 'ctds-demo-admin-persona'
+const DEFAULT_ADMIN_PERSONA: AdminPersona = 'sysadmin'
+
+/** 视角 → 中文标签（顶栏"三员视角"控件；页面源码不散写视角中文）。 */
+export const ADMIN_PERSONA_LABELS: Record<AdminPersona, string> = {
+  sysadmin: '系统管理员',
+  secadmin: '安全管理员',
+  audadmin: '审计管理员',
+}
+
+/** 读取三员视角（存量非法值一律回落系统管理员）。 */
+export function getAdminPersona(): AdminPersona {
+  const stored = localStorage.getItem(ADMIN_PERSONA_KEY)
+  return stored === 'secadmin' || stored === 'audadmin' ? stored : DEFAULT_ADMIN_PERSONA
+}
+
+/** 当前是否系统管理员视角（运营档 + persona=sysadmin；视图零 persona 字面量，SourceGuard 口径）。 */
+export function isSysadminPersona(): boolean {
+  return getAdminPersona() === DEFAULT_ADMIN_PERSONA
+}
+
+/** 写入三员视角。 */
+export function setAdminPersona(persona: AdminPersona): void {
+  localStorage.setItem(ADMIN_PERSONA_KEY, persona)
+}
+
+/** 平台新域页面级角色头（metrics/alerts/actions/domain；运营档随三员视角，普通档 requester 单头）。 */
+export function platformRolesHeader(): string {
+  if (getActorMode() !== 'operator') return 'requester'
+  return `platform.${getAdminPersona()}`
+}
+
+/** rbac 域页面级角色头（roles/grant/revoke/changes；随三员视角，语义与 platform 新域分离、导出面独立）。 */
+export function rbacRolesHeader(): string {
+  return platformRolesHeader()
 }

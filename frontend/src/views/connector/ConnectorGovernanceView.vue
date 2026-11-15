@@ -19,8 +19,9 @@
           <el-button @click="loadConnectorList">刷新</el-button>
         </div>
         <div class="overview-bar">
-          {{ OVERVIEW_BAR_PREFIX }}{{ ONLINE_LABELS.online }} {{ onlineCount }} /
-          {{ ONLINE_LABELS.offline }} {{ offlineCount }}{{ OVERVIEW_BAR_SUFFIX }}
+          {{ OVERVIEW_BAR_PREFIX }}{{ HEALTH_STATUS_LABELS.ONLINE }} {{ onlineCount }} /
+          {{ HEALTH_STATUS_LABELS.OFFLINE }} {{ offlineCount }} /
+          {{ HEALTH_STATUS_LABELS.NEVER_REPORTED }} {{ neverReportedCount }}{{ OVERVIEW_BAR_SUFFIX }}
         </div>
         <el-table
           v-loading="listLoading"
@@ -46,10 +47,10 @@
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="在线" width="85">
+          <el-table-column label="健康状态" width="100">
             <template #default="scope">
-              <el-tag :type="onlineTagType(scope.row.status, scope.row.online)">
-                {{ onlineLabel(scope.row.status, scope.row.online) }}
+              <el-tag :type="healthTagType(scope.row.status, scope.row.healthStatus)">
+                {{ healthLabel(scope.row.status, scope.row.healthStatus) }}
               </el-tag>
             </template>
           </el-table-column>
@@ -221,7 +222,7 @@ import {
   CONFIRM_SUCCESS_TIP,
   CONFIRM_UPGRADE_TEXT,
   GOVERNANCE_EMPTY_TEXT,
-  ONLINE_LABELS,
+  HEALTH_STATUS_LABELS,
   OVERVIEW_BAR_PREFIX,
   OVERVIEW_BAR_SUFFIX,
   PENDING_UPGRADE_EMPTY_TEXT,
@@ -230,8 +231,8 @@ import {
   VERIFY_PASSED_TIP,
   VERIFY_REJECTED_RETRY_HINT,
   VERIFY_REJECTED_TIP,
-  onlineLabel,
-  onlineTagType,
+  healthLabel,
+  healthTagType,
 } from '../../constants/connector'
 import {
   confirmUpgrade,
@@ -282,11 +283,22 @@ const verifyResult = ref<VerificationResult | null>(null)
 
 const onlineCount = computed(
   () =>
-    connectorList.value.filter((item) => item.status === 'REGISTERED' && item.online).length,
+    connectorList.value.filter(
+      (item) => item.status === 'REGISTERED' && item.healthStatus === 'ONLINE',
+    ).length,
 )
 const offlineCount = computed(
   () =>
-    connectorList.value.filter((item) => item.status === 'REGISTERED' && !item.online).length,
+    connectorList.value.filter(
+      (item) => item.status === 'REGISTERED' && item.healthStatus === 'OFFLINE',
+    ).length,
+)
+// 概览条三数（Q4-A）：从未上报独立呈现——后端 healthStatus 权威（WBS-3.9.5 B6-R1）
+const neverReportedCount = computed(
+  () =>
+    connectorList.value.filter(
+      (item) => item.status === 'REGISTERED' && item.healthStatus === 'NEVER_REPORTED',
+    ).length,
 )
 
 function showError(error: unknown): void {

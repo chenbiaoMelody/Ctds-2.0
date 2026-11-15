@@ -98,7 +98,7 @@ afterEach(() => {
 })
 
 describe('T14 api/evidence：治理读面 4 函数', () => {
-  it('listRecords：pageQuery 拼接 + filters 空值剔除 + 运营档身份头 admin', async () => {
+  it('listRecords：pageQuery 拼接 + filters 空值剔除 + 运营档身份头 platform.audadmin（WBS-3.9.5 DB-128）', async () => {
     fetchMock.mockResolvedValue(apiOk({ list: [record()], total: 1, pageNum: 1, pageSize: 10, totalPages: 1 }))
     const page = await listRecords({
       pageNum: 1,
@@ -111,7 +111,7 @@ describe('T14 api/evidence：治理读面 4 函数', () => {
     expect(path).toBe('/api/v1/evidence/records?pageNum=1&pageSize=10&stageType=DELIVERY')
     expect(init.method).toBeUndefined()
     const headers = init.headers as Record<string, string>
-    expect(headers['X-Ctds-Roles']).toBe('admin')
+    expect(headers['X-Ctds-Roles']).toBe('platform.audadmin')
     expect(headers['X-Ctds-Subject']).toBe('S-admin-evidence')
     expect(page.list[0].evidenceNo).toBe('EV20261107000004')
   })
@@ -251,7 +251,7 @@ describe('T14 api/evidence：downloadAuditReport（裸 fetch 豁免 №2）', ()
     const { path, init } = await lastCall()
     expect(path).toBe('/api/v1/evidence/audit/reports/EV-RPT-20261108-0002/export?format=csv')
     const headers = init.headers as Record<string, string>
-    expect(headers['X-Ctds-Roles']).toBe('admin')
+    expect(headers['X-Ctds-Roles']).toBe('platform.audadmin')
     expect(headers['X-Ctds-Subject']).toBe('S-admin-evidence')
     expect(out.fileName).toBe('EV-RPT-20261108-0002.csv')
     expect(out.blob).toBeInstanceOf(Blob)

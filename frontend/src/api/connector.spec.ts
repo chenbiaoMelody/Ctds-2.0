@@ -71,10 +71,10 @@ describe('connector API 请求形态（T1 组）', () => {
     expect(lastHeaders()['X-Idempotency-Key']).toBeUndefined()
   })
 
-  it('运营档：角色头 = admin（治理面动作）', async () => {
+  it('运营档：角色头 = platform.secadmin,admin 组合（WBS-3.9.5 Q3-A / DB-128：核验写面 + 既有读面）', async () => {
     setActorMode('operator')
     await listReviewQueue(1, 10)
-    expect(lastHeaders()['X-Ctds-Roles']).toBe('admin')
+    expect(lastHeaders()['X-Ctds-Roles']).toBe('platform.secadmin,admin')
     expect(lastHeaders()['X-Ctds-Roles']).not.toContain('connector-internal')
   })
 

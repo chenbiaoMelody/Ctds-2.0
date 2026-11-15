@@ -5,7 +5,7 @@ import ElementPlus from 'element-plus'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import MainLayout from './MainLayout.vue'
 import { setDemoRole, getDemoRole } from '../stores/demoRole'
-import { ACTOR_MODE_LABELS, getActorMode } from '../stores/demoIdentity'
+import { ACTOR_MODE_LABELS, getActorMode, setActorMode } from '../stores/demoIdentity'
 import { isDemoAuthed, signInDemo } from '../stores/demoAuth'
 import { routes } from '../router/index'
 import { getDemoSubject, setDemoSubject } from '../api/client'
@@ -66,7 +66,7 @@ describe('权限菜单显隐（H4）', () => {
     localStorage.clear()
   })
 
-  it('普通用户：菜单渲染 11 项，不含权限保护菜单（WBS-3.8.5 新增存证两菜单为治理档，普通档不可见）', () => {
+  it('普通用户：菜单渲染 11 项，不含权限保护菜单（WBS-3.8.5 新增存证两菜单为治理档，普通档不可见；WBS-3.9.5 新增系统管理四菜单挂真实权限点，普通档不可见）', () => {
     setDemoRole('user')
     const wrapper = mountLayout()
     const items = wrapper.findAll('.el-menu-item')
@@ -83,13 +83,17 @@ describe('权限菜单显隐（H4）', () => {
     expect(wrapper.text()).not.toContain('计费管理')
     expect(wrapper.text()).not.toContain('监管审计')
     expect(wrapper.text()).not.toContain('存证核验')
+    expect(wrapper.text()).not.toContain('监控读数')
+    expect(wrapper.text()).not.toContain('告警与处置')
+    expect(wrapper.text()).not.toContain('角色与权限')
+    expect(wrapper.text()).not.toContain('部署域')
   })
 
-  it('admin 角色：菜单渲染 27 项，含"仅管理员可见"、"主体审核"、"DID 管理"、四域菜单、计费两菜单与存证两菜单（WBS-3.8.5 新增"监管审计""存证核验"）', () => {
+  it('admin 角色：菜单渲染 31 项，含"仅管理员可见"、"主体审核"、"DID 管理"、四域菜单、计费两菜单、存证两菜单与系统管理四菜单（WBS-3.9.5 新增"监控读数""告警与处置""角色与权限""部署域"）', () => {
     setDemoRole('admin')
     const wrapper = mountLayout()
     const items = wrapper.findAll('.el-menu-item')
-    expect(items.length).toBe(27)
+    expect(items.length).toBe(31)
     expect(wrapper.text()).toContain('我的订单')
     expect(wrapper.text()).toContain('计费管理')
     expect(wrapper.text()).toContain('监管审计')
@@ -109,6 +113,10 @@ describe('权限菜单显隐（H4）', () => {
     expect(wrapper.text()).toContain('连接器管理')
     expect(wrapper.text()).toContain('连接器治理')
     expect(wrapper.text()).toContain('数据产品门户')
+    expect(wrapper.text()).toContain('监控读数')
+    expect(wrapper.text()).toContain('告警与处置')
+    expect(wrapper.text()).toContain('角色与权限')
+    expect(wrapper.text()).toContain('部署域')
   })
 
   it('侧边栏菜单溢出可达：.sidebar 纵向可滚（overflow-y: auto——16 项菜单超出视口高时末位"合约治理"可达；走查缺陷 2 修复守卫）', () => {
@@ -276,5 +284,38 @@ describe('演示身份切换重拉（WBS-3.3.6 F1 修复批）', () => {
     await flushPromises()
 
     expect(mockedSearch).toHaveBeenCalledTimes(1)
+  })
+})
+
+/**
+ * WBS-3.9.5 Q3-A：三员视角控件（评审④ P2 补强——顶栏新兄弟控件沿既有逐控件测试惯例）：
+ * 仅运营档渲染 + 选择后保存写 localStorage 键 ctds-demo-admin-persona（changed 判定链路
+ * 由 demoIdentityRevision 信号承载，重挂行为既有用例覆盖）。
+ */
+describe('三员视角控件（WBS-3.9.5 Q3-A）', () => {
+  beforeEach(() => {
+    localStorage.clear()
+  })
+
+  it('普通主体档不渲染三员视角下拉；运营档渲染且默认系统管理员', () => {
+    setActorMode('subject')
+    const wrapper = mountLayout()
+    expect(wrapper.find('.identity-persona').exists()).toBe(false)
+    wrapper.unmount()
+    setActorMode('operator')
+    const opWrapper = mountLayout()
+    expect(opWrapper.find('.identity-persona').exists()).toBe(true)
+    // 默认视角=系统管理员由 demoIdentity.spec 单元覆盖；此处仅断言控件随运营档渲染（el-select 文本在浮层，根元素 text() 不含）
+    opWrapper.unmount()
+  })
+
+  it('选择安全管理员并保存：写入 localStorage 键 ctds-demo-admin-persona', async () => {
+    setActorMode('operator')
+    const wrapper = mountLayout()
+    await wrapper.findComponent('.identity-persona').setValue('secadmin')
+    await wrapper.find('.identity-save').trigger('click')
+    await flushPromises()
+    expect(localStorage.getItem('ctds-demo-admin-persona')).toBe('secadmin')
+    wrapper.unmount()
   })
 })

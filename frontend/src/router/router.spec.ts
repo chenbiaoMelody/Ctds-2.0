@@ -61,7 +61,7 @@ describe('路由表结构（H3）', () => {
     }
   })
 
-  it('权限路由声明权限点，其余菜单路由未声明（WBS-3.1.5 扩 admin-only/review-queue；WBS-3.1.11 扩 did-management；WBS-3.2.6 扩 space-list/platform-policy；WBS-3.3.6 扩 catalog 三菜单）', () => {
+  it('权限路由声明权限点，其余菜单路由未声明（WBS-3.1.5 扩 admin-only/review-queue；WBS-3.1.11 扩 did-management；WBS-3.2.6 扩 space-list/platform-policy；WBS-3.3.6 扩 catalog 三菜单；WBS-3.9.5 扩系统管理四菜单）', () => {
     const adminRoute = children.find((r) => r.name === 'admin-only')
     expect(adminRoute?.meta?.permission).toBe('demo:admin')
     const reviewRoute = children.find((r) => r.name === 'review-queue')
@@ -71,7 +71,8 @@ describe('路由表结构（H3）', () => {
     const permissionRouteNames = ['admin-only', 'review-queue', 'did-management', 'space-list', 'platform-policy',
       'catalog-datasets', 'catalog-products', 'catalog-governance',
       'contract-templates', 'contract-workbench', 'contract-governance',
-      'delivery-governance', 'connector-governance', 'billing', 'evidence', 'evidence-verify']
+      'delivery-governance', 'connector-governance', 'billing', 'evidence', 'evidence-verify',
+      'platform-monitor', 'platform-alerts', 'platform-rbac', 'platform-domain']
     const normalRoutes = children.filter(
       (r) => r.meta?.menu === true && !permissionRouteNames.includes(String(r.name)),
     )
@@ -102,9 +103,9 @@ describe('路由表结构（H3）', () => {
 
   it('DID 管理路由（WBS-3.1.11）：menuOrder=8、icon=Key、did.admin 权限；演示页不占菜单', () => {
     // 菜单末尾追加（lofi Q1/Q8：不重排既有菜单）；WBS-3.7.7 追加 menuOrder 24/25 后全站最大值为 25；
-    // WBS-3.8.5 追加存证两菜单 26/27 后全站最大值为 27
+    // WBS-3.8.5 追加存证两菜单 26/27 后全站最大值为 27；WBS-3.9.5 追加系统管理四菜单 28~31 后全站最大值为 31
     const menuOrders = children.filter((r) => r.meta?.menu === true).map((r) => r.meta?.menuOrder ?? 0)
-    expect(Math.max(...menuOrders)).toBe(27)
+    expect(Math.max(...menuOrders)).toBe(31)
     const didRoute = children.find((r) => r.name === 'did-management')
     expect(didRoute?.path).toBe('did')
     expect(didRoute?.meta?.title).toBe('DID 管理')
@@ -175,10 +176,52 @@ describe('路由表结构（H3）', () => {
     // WBS-3.3.6（11/12/13）追加后全站最大值为 13；WBS-3.4.7（14/15/16）追加后全站最大值为 16；
     // WBS-3.5.6（17/18/19）追加后全站最大值为 19；WBS-3.6.7（20/21）追加后全站最大值为 21；
     // WBS-3.7.2（22）追加后全站最大值为 22；WBS-3.7.3（23）追加后全站最大值为 23；
-    // WBS-3.7.7（24/25）追加后全站最大值为 25；WBS-3.8.5（26/27）追加后全站最大值为 27
+    // WBS-3.7.7（24/25）追加后全站最大值为 25；WBS-3.8.5（26/27）追加后全站最大值为 27；
+    // WBS-3.9.5（28~31）追加后全站最大值为 31
     const menuOrders = children.filter((r) => r.meta?.menu === true).map((r) => r.meta?.menuOrder ?? 0)
     expect(menuOrders).toContain(7)
-    expect(Math.max(...menuOrders)).toBe(27)
+    expect(Math.max(...menuOrders)).toBe(31)
+  })
+
+  it('系统管理四路由（WBS-3.9.5 Q2-A）：菜单 28~31 扁平追加、真实权限点 meta、深链零新增', () => {
+    const monitorRoute = children.find((r) => r.name === 'platform-monitor')
+    expect(monitorRoute?.path).toBe('platform/monitor')
+    expect(monitorRoute?.meta?.title).toBe('监控读数')
+    expect(monitorRoute?.meta?.menu).toBe(true)
+    expect(monitorRoute?.meta?.menuOrder).toBe(28)
+    expect(monitorRoute?.meta?.icon).toBe('Odometer')
+    expect(monitorRoute?.meta?.permission).toBe('platform.monitor.read')
+
+    const alertRoute = children.find((r) => r.name === 'platform-alerts')
+    expect(alertRoute?.path).toBe('platform/alerts')
+    expect(alertRoute?.meta?.title).toBe('告警与处置')
+    expect(alertRoute?.meta?.menu).toBe(true)
+    expect(alertRoute?.meta?.menuOrder).toBe(29)
+    expect(alertRoute?.meta?.icon).toBe('Bell')
+    expect(alertRoute?.meta?.permission).toBe('platform.monitor.read')
+
+    const rbacRoute = children.find((r) => r.name === 'platform-rbac')
+    expect(rbacRoute?.path).toBe('platform/rbac')
+    expect(rbacRoute?.meta?.title).toBe('角色与权限')
+    expect(rbacRoute?.meta?.menu).toBe(true)
+    expect(rbacRoute?.meta?.menuOrder).toBe(30)
+    expect(rbacRoute?.meta?.icon).toBe('Key')
+    expect(rbacRoute?.meta?.permission).toBe('connector.health.read')
+
+    const domainRoute = children.find((r) => r.name === 'platform-domain')
+    expect(domainRoute?.path).toBe('platform/domain')
+    expect(domainRoute?.meta?.title).toBe('部署域')
+    expect(domainRoute?.meta?.menu).toBe(true)
+    expect(domainRoute?.meta?.menuOrder).toBe(31)
+    expect(domainRoute?.meta?.icon).toBe('OfficeBuilding')
+    expect(domainRoute?.meta?.permission).toBe('platform.domain.read')
+
+    // 本卡无深链页（lofi S1：深链不占菜单——本卡零深链），4 新路由均为菜单页
+    const platformMenus = children.filter((r) => r.path.startsWith('platform/'))
+    expect(platformMenus.length).toBe(4)
+    for (const route of platformMenus) {
+      expect(route.meta?.menu).toBe(true)
+    }
   })
 
   it('计费域路由（WBS-3.7.7 §4）：/billing 菜单 24 + billing.governance；/portal/bills 菜单 25 登录可见；两深链不占菜单且声明在列表后', () => {
@@ -586,6 +629,46 @@ describe('连接器域路由（WBS-3.6.7 T3 / T15）', () => {
     setDemoRole('user')
     await router.push('/dashboard')
     await router.push('/connector-governance')
+    expect(router.currentRoute.value.name).toBe('dashboard')
+    expect(router.currentRoute.value.query.denied).toBe('1')
+  })
+
+  it('普通用户直连 /platform/monitor：守卫拦截重定向工作台带 denied（WBS-3.9.5 T4，菜单显隐之外的链路级锚点）', async () => {
+    const { default: router } = await import('../router/index')
+    signInDemo()
+    setDemoRole('user')
+    await router.push('/dashboard')
+    await router.push('/platform/monitor')
+    expect(router.currentRoute.value.name).toBe('dashboard')
+    expect(router.currentRoute.value.query.denied).toBe('1')
+  })
+
+  it('普通用户直连 /platform/alerts：守卫拦截重定向工作台带 denied（WBS-3.9.5 T4）', async () => {
+    const { default: router } = await import('../router/index')
+    signInDemo()
+    setDemoRole('user')
+    await router.push('/dashboard')
+    await router.push('/platform/alerts')
+    expect(router.currentRoute.value.name).toBe('dashboard')
+    expect(router.currentRoute.value.query.denied).toBe('1')
+  })
+
+  it('普通用户直连 /platform/rbac：守卫拦截重定向工作台带 denied（WBS-3.9.5 T4）', async () => {
+    const { default: router } = await import('../router/index')
+    signInDemo()
+    setDemoRole('user')
+    await router.push('/dashboard')
+    await router.push('/platform/rbac')
+    expect(router.currentRoute.value.name).toBe('dashboard')
+    expect(router.currentRoute.value.query.denied).toBe('1')
+  })
+
+  it('普通用户直连 /platform/domain：守卫拦截重定向工作台带 denied（WBS-3.9.5 T4）', async () => {
+    const { default: router } = await import('../router/index')
+    signInDemo()
+    setDemoRole('user')
+    await router.push('/dashboard')
+    await router.push('/platform/domain')
     expect(router.currentRoute.value.name).toBe('dashboard')
     expect(router.currentRoute.value.query.denied).toBe('1')
   })
