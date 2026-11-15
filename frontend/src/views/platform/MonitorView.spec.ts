@@ -168,3 +168,39 @@ describe('监控读数页（诚实边界条，S2-9）', () => {
     expect(text).toContain('待生效')
   })
 })
+
+describe('监控读数页（WBS-3.9.6 T6 spanMethod 合并结构独立回归）', () => {
+  /** 3.9.5 复审缺口二：未接入行读数三列并为 1 格的结构断言（以实现实测结构为准，零业务语义变更）。 */
+  it('NOT_INTEGRATED 行：列 2~4 并为 1 格（colspan=3，行内 3 个 td）；接入行保持 5 个 td', async () => {
+    mockedMetrics.mockResolvedValue(metrics({
+      services: [
+        svc(),
+        svc({
+          service: 'metering-billing',
+          job: 'metering',
+          integrated: 'NOT_INTEGRATED',
+          alive: null,
+          heapUsedBytes: null,
+          heapMaxBytes: null,
+          gcPauseSecondsRate5m: null,
+          httpRatePerSec1m: null,
+          errorRate5xx5m: null,
+          p95LatencyMs5m: null,
+          note: '未接入指标采集，读数不可用',
+        }),
+      ],
+    }))
+    const { wrapper } = await mountPage()
+    const rows = wrapper.findAll('.el-table__row')
+    const integratedRow = rows.find((row) => row.text().includes('evidence-service'))
+    const mergedRow = rows.find((row) => row.text().includes('metering-billing'))
+    const integratedTds = integratedRow?.findAll('td') ?? []
+    const mergedTds = mergedRow?.findAll('td') ?? []
+    expect(integratedTds.length).toBe(5)
+    expect(mergedTds.length).toBe(3)
+    const mergedTd = mergedTds.find((td) => td.attributes('colspan') === '3')
+    expect(mergedTd).toBeDefined()
+    // 合并格承载 note 原文（未接入标注），与 T9 语义断言互补（本例专测结构）
+    expect(mergedTd?.text()).toContain('未接入指标采集，读数不可用')
+  })
+})

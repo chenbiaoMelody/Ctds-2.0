@@ -281,3 +281,15 @@ describe('角色与权限页（C-4 视角提示）', () => {
     expect(document.body.textContent).toContain('视角')
   })
 })
+
+describe('角色与权限页（WBS-3.9.6 T7 主体号空值拦截独立回归）', () => {
+  /** 3.9.5 复审缺口三：角色清单空值分支文案独立断言（既有"变更单号空值零请求"主链路断言不动）。
+   *  注：getDemoSubject 对空串回退默认主体（client.ts DEFAULT_SUBJECT），守卫分支真实可达输入
+   *  = 纯空白主体（trim 判定），以实现实测为准。 */
+  it('演示主体号为纯空白：拦截拉清单（零请求）+ 提示"请先填写演示身份主体编号"', async () => {
+    setDemoSubject('   ')
+    await mountPage()
+    expect(mockedRoles).not.toHaveBeenCalled()
+    expect(document.body.textContent).toContain('请先填写演示身份主体编号')
+  })
+})
