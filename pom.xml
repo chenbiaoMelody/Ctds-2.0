@@ -28,6 +28,8 @@
     <module>common/idempotency</module>
     <!-- 全链路存证埋点客户端（WBS 3.8.3；common 横切收敛，三服务复用，规格 C-8.1-8.2 B1/B2） -->
     <module>common/evidence-client</module>
+    <!-- AI-0 模型网关抽象层（WBS 3.10.1；规格 C-11.1 / ADR-003：OpenAI 兼容契约 + Provider 适配器接口，仅抽象与配置） -->
+    <module>common/model-gateway</module>
     <module>std-adapter</module>
     <!-- 连接器 SDK 骨架（WBS 3.6.2；ADR-002 §3-1 规划位，V1.0 期间 monorepo 内开发）：参与方接入客户端库 -->
     <module>connector-sdk</module>
@@ -114,6 +116,12 @@
       <dependency>
         <groupId>com.ctds</groupId>
         <artifactId>common-evidence-client</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <!-- AI-0 模型网关抽象层（WBS 3.10.1）：供 3.10.2~3.10.4 与 V1.5 C-11.x 消费。 -->
+      <dependency>
+        <groupId>com.ctds</groupId>
+        <artifactId>common-model-gateway</artifactId>
         <version>${project.version}</version>
       </dependency>
       <!-- 标准适配层（WBS 2.4.8）：信通院测评/互联互通相关实现的唯一收口模块（章程 4.3 / ADR-008）。 -->
