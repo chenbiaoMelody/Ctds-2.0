@@ -7,7 +7,6 @@ import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
-import com.ctds.catalog.domain.CatalogErrorCodes;
 import com.ctds.catalog.domain.SpaceMembership;
 import com.ctds.catalog.domain.SpaceMembershipPort;
 import com.ctds.catalog.domain.SubjectAdmission;
@@ -128,8 +127,7 @@ class CatalogGovernanceIntegrationTest {
                 .andReturn();
         assertThat(missing.getResponse().getStatus()).isEqualTo(404);
         assertThat(codeOf(missing)).isEqualTo("1007C0005");
-        assertThat(root(missing).get("message").asText())
-                .isEqualTo(CatalogErrorCodes.DATASET_NOT_FOUND_OR_NO_ACCESS_MESSAGE);
+        assertThat(root(missing).get("message").asText()).isEqualTo("资源不存在或无权访问");
     }
 
     // ==== 非运营方治理端点拒绝且零留痕（DB-29 Q4-A 负向锚）====

@@ -117,8 +117,11 @@ class CatalogActionLogsIntegrationTest {
                 + "/action-logs"), "intruder-r14b", PROVIDER)).andReturn();
         assertThat(denied.getResponse().getStatus()).as("非本人 → 400").isEqualTo(400);
         assertThat(codeOf(denied)).isEqualTo("1000C0003");
-        assertThat(root(denied).get("message").asText())
-                .isEqualTo(CatalogErrorCodes.DATASET_READ_NOT_FOUND_MESSAGE);
+        assertThat(root(denied).get("message").asText()).isEqualTo("资源不存在");
+        assertThat(root(denied).get("data").isNull()).isTrue();
+        assertThat(root(denied).properties().stream().map(java.util.Map.Entry::getKey).toList())
+                .as("拒绝封套结构白名单（不新增存在性差异字段）")
+                .containsExactlyInAnyOrder("code", "message", "traceId", "data");
         final long after = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM dataset_action_log WHERE dataset_id = ?", Long.class, datasetId);
         assertThat(after - before).as("非本人命中写 DENIED_READ 恰 1 行（沿 R2 先例）").isEqualTo(1);
@@ -140,8 +143,11 @@ class CatalogActionLogsIntegrationTest {
         assertThat(codeOf(missing)).isEqualTo("1000C0003");
         assertThat(root(missing).get("message").asText())
                 .as("不存在与非本人逐字一致（防枚举）")
-                .isEqualTo(CatalogErrorCodes.DATASET_READ_NOT_FOUND_MESSAGE);
+                .isEqualTo("资源不存在");
         assertThat(root(missing).get("data").isNull()).isTrue();
+        assertThat(root(missing).properties().stream().map(java.util.Map.Entry::getKey).toList())
+                .as("拒绝封套结构白名单（不新增存在性差异字段）")
+                .containsExactlyInAnyOrder("code", "message", "traceId", "data");
         assertThat(jdbc.queryForObject(
                 "SELECT COUNT(*) FROM dataset_action_log WHERE dataset_id = 999999", Long.class))
                 .as("不存在对象无留痕（无对象指向）").isZero();

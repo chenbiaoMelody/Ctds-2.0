@@ -11,7 +11,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 
 import com.ctds.catalog.domain.ActionResult;
 import com.ctds.catalog.domain.CatalogBizException;
-import com.ctds.catalog.domain.CatalogErrorCodes;
 import com.ctds.catalog.domain.Dataset;
 import com.ctds.catalog.domain.DatasetActionLog;
 import com.ctds.catalog.domain.DatasetRepository;
@@ -402,6 +401,8 @@ class CatalogDatasetLifecycleIntegrationTest {
         assertThat(payload(mine).path("dataNo").asText()).startsWith("DS");
         // 非本人（同空间其他主体 / 跨空间主体）与不存在同形：400 + 1000C0003 + "资源不存在"
         // （CHG-C-10.1-V1.3 裁决 A 案：归属不匹配与对象不存在同码同文，防存在性枚举）
+        // 跨空间语义 = 非属主分支：R2 读面仅按 owner 判定、不读取空间上下文，
+        // 故跨空间成员与同空间非属主在实现上同一边界；本用例不能独立区分二者。
         final MvcResult sameSpaceOther = mockMvc.perform(auth(get(DATASETS + "/" + datasetId),
                 "admin-t10b", "provider")).andReturn();
         final MvcResult crossSpace = mockMvc.perform(auth(get(DATASETS + "/" + datasetId),
@@ -411,8 +412,7 @@ class CatalogDatasetLifecycleIntegrationTest {
         for (final MvcResult denied : new MvcResult[] {sameSpaceOther, crossSpace, absent}) {
             assertThat(denied.getResponse().getStatus()).isEqualTo(400);
             assertThat(codeOf(denied)).isEqualTo("1000C0003");
-            assertThat(root(denied).path("message").asText())
-                    .isEqualTo(CatalogErrorCodes.DATASET_READ_NOT_FOUND_MESSAGE);
+            assertThat(root(denied).path("message").asText()).isEqualTo("资源不存在");
             assertThat(root(denied).path("data").isNull()).isTrue();
             assertThat(root(denied).properties().stream().map(java.util.Map.Entry::getKey).toList())
                     .as("拒绝封套结构白名单（不新增存在性差异字段）")
@@ -447,8 +447,21 @@ class CatalogDatasetLifecycleIntegrationTest {
         final MvcResult update = update("owner-t10c", 999999L, "{\"intro\":\"不存在资源变更\"}");
         assertThat(update.getResponse().getStatus()).isEqualTo(404);
         assertThat(codeOf(update)).isEqualTo("1007C0005");
-        assertThat(root(update).path("message").asText())
-                .isEqualTo(CatalogErrorCodes.DATASET_NOT_FOUND_OR_NO_ACCESS_MESSAGE);
+        assertThat(root(update).path("message").asText()).isEqualTo("资源不存在或无权访问");
+    }
+
+    @Test
+    void detailUnauthenticatedAndPermissionDenied() throws Exception {
+        // hifi §3 鉴权边界：R2 未认证 401 + 1000C0002；有身份但无 dataset.read 403 + 1000C0005
+        final long datasetId = registerOk("owner-t10d", 1023L, "详情鉴权探针资源", "");
+        final MvcResult unauth = mockMvc.perform(get(DATASETS + "/" + datasetId)).andReturn();
+        assertThat(unauth.getResponse().getStatus()).as("未认证 → 401").isEqualTo(401);
+        assertThat(codeOf(unauth)).isEqualTo("1000C0002");
+
+        final MvcResult forbidden = mockMvc.perform(auth(get(DATASETS + "/" + datasetId),
+                "owner-t10d", "no-such-role")).andReturn();
+        assertThat(forbidden.getResponse().getStatus()).as("无权限 → 403").isEqualTo(403);
+        assertThat(codeOf(forbidden)).isEqualTo("1000C0005");
     }
 
     // ==== T15 并发与边界（评审循环 1 修复批：唯一索引兜底 / 分页边界 / 要素长度边界 / 数据标识口径）====
