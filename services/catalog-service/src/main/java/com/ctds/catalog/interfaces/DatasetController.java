@@ -85,7 +85,7 @@ public class DatasetController {
         return ApiResult.ok(views);
     }
 
-    /** R2 本人资源详情（行为 7 规则 2：非本人与不存在同形拒绝——1007C0005 防枚举）。 */
+    /** R2 本人资源详情（行为 7 规则 2：非本人与不存在同形拒绝——400 + 1000C0003 防枚举）。 */
     @GetMapping(path = "/datasets/{datasetId}", produces = MediaType.APPLICATION_JSON_VALUE)
     @RequirePermission("dataset.read")
     public ApiResult<DatasetView> detail(@PathVariable final long datasetId) {
@@ -95,7 +95,7 @@ public class DatasetController {
     /**
      * R14 资源操作留痕分页（WBS-3.3.6 hifi §1.2，Q2-A；只读既有 dataset_action_log）：
      * 读面 = 登记主体本人 或 治理例外（catalog.governance，应用服务行级判定）；
-     * 非本人与不存在 → 1007C0005 同形（非本人命中写 DENIED_READ 恰 1 行，沿 R2 先例）。
+     * 非本人与不存在 → 400 + 1000C0003 同形（非本人命中写 DENIED_READ 恰 1 行，沿 R2 先例）。
      */
     @GetMapping(path = "/datasets/{datasetId}/action-logs", produces = MediaType.APPLICATION_JSON_VALUE)
     @RequirePermission("dataset.read")

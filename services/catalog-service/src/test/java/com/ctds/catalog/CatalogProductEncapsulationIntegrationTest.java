@@ -134,6 +134,17 @@ class CatalogProductEncapsulationIntegrationTest {
     // ==== 已注销资源 / 已解散空间拒绝（1007C0016——S1-5 判定面）====
 
     @Test
+    void createProductFromMissingDatasetKeepsLegacyNotFoundShape() throws Exception {
+        // 隔离线回归：产品封装来源资源不存在仍为 404 + 1007C0005 + 旧文案（共享常量语义不变）
+        final MvcResult missing = mockMvc.perform(auth(post(PRODUCTS), "provider-p3b", PROVIDER)
+                        .content(createBody(999999L, "不存在来源资源产品", "FREE", null, null)))
+                .andReturn();
+        assertThat(missing.getResponse().getStatus()).isEqualTo(404);
+        assertThat(codeOf(missing)).isEqualTo("1007C0005");
+        assertThat(root(missing).get("message").asText()).isEqualTo("资源不存在或无权访问");
+    }
+
+    @Test
     void createProductFromDeletedDatasetOrDissolvedSpaceRejected() throws Exception {
         final long deletedId = insertDataset("待注销数据集", "provider-p4", "DELETED");
         final MvcResult byDeleted = mockMvc.perform(auth(post(PRODUCTS), "provider-p4", PROVIDER)

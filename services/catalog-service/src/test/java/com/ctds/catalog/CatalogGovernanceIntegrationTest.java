@@ -119,6 +119,17 @@ class CatalogGovernanceIntegrationTest {
         assertThat(views).as("资源侧治理查看留痕（Q5-A 两侧齐备）").isEqualTo(1);
     }
 
+    @Test
+    void adminGovernanceMissingDatasetKeepsLegacyNotFoundShape() throws Exception {
+        // 隔离线回归：R13 治理读面对象不存在仍为 404 + 1007C0005 + 旧文案（共享常量语义不变）
+        final MvcResult missing = mockMvc.perform(auth(
+                        get("/api/v1/datasets/999999/governance"), "admin-g2b", ADMIN))
+                .andReturn();
+        assertThat(missing.getResponse().getStatus()).isEqualTo(404);
+        assertThat(codeOf(missing)).isEqualTo("1007C0005");
+        assertThat(root(missing).get("message").asText()).isEqualTo("资源不存在或无权访问");
+    }
+
     // ==== 非运营方治理端点拒绝且零留痕（DB-29 Q4-A 负向锚）====
 
     @Test

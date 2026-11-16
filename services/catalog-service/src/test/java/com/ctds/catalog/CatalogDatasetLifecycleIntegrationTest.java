@@ -399,20 +399,69 @@ class CatalogDatasetLifecycleIntegrationTest {
                 "provider")).andReturn();
         assertThat(mine.getResponse().getStatus()).isEqualTo(200);
         assertThat(payload(mine).path("dataNo").asText()).startsWith("DS");
-        // 非本人与不存在同形（均为 1007C0005）+ 越权探测 DENIED 留痕
-        final MvcResult others = mockMvc.perform(auth(get(DATASETS + "/" + datasetId), "admin-t10b",
-                "provider")).andReturn();
+        // 非本人（同空间其他主体 / 跨空间主体）与不存在同形：400 + 1000C0003 + "资源不存在"
+        // （CHG-C-10.1-V1.3 裁决 A 案：归属不匹配与对象不存在同码同文，防存在性枚举）
+        // 跨空间语义 = 非属主分支：R2 读面仅按 owner 判定、不读取空间上下文，
+        // 故跨空间成员与同空间非属主在实现上同一边界；本用例不能独立区分二者。
+        final MvcResult sameSpaceOther = mockMvc.perform(auth(get(DATASETS + "/" + datasetId),
+                "admin-t10b", "provider")).andReturn();
+        final MvcResult crossSpace = mockMvc.perform(auth(get(DATASETS + "/" + datasetId),
+                "spaceB-t10b", "provider")).andReturn();
         final MvcResult absent = mockMvc.perform(auth(get(DATASETS + "/999999"), "admin-t10b",
                 "provider")).andReturn();
-        assertThat(others.getResponse().getStatus()).isEqualTo(404);
-        assertThat(absent.getResponse().getStatus()).isEqualTo(404);
-        assertThat(codeOf(others)).isEqualTo("1007C0005");
-        assertThat(codeOf(absent)).isEqualTo("1007C0005");
-        assertThat(root(others).path("message").asText())
+        for (final MvcResult denied : new MvcResult[] {sameSpaceOther, crossSpace, absent}) {
+            assertThat(denied.getResponse().getStatus()).isEqualTo(400);
+            assertThat(codeOf(denied)).isEqualTo("1000C0003");
+            assertThat(root(denied).path("message").asText()).isEqualTo("资源不存在");
+            assertThat(root(denied).path("data").isNull()).isTrue();
+            assertThat(root(denied).properties().stream().map(java.util.Map.Entry::getKey).toList())
+                    .as("拒绝封套结构白名单（不新增存在性差异字段）")
+                    .containsExactlyInAnyOrder("code", "message", "traceId", "data");
+        }
+        // 两分支逐字同码同文（码/文案/结构；traceId 为链路标识不参与判定）
+        assertThat(root(sameSpaceOther).path("code").asText())
+                .isEqualTo(root(absent).path("code").asText());
+        assertThat(root(sameSpaceOther).path("message").asText())
                 .isEqualTo(root(absent).path("message").asText());
+        assertThat(root(crossSpace).path("message").asText())
+                .isEqualTo(root(absent).path("message").asText());
+        assertThat(root(sameSpaceOther).path("data").getNodeType())
+                .isEqualTo(root(absent).path("data").getNodeType());
+        // 越权探测 DENIED_READ 各恰 1 行、reason_code 随新出站口径 C0003；不存在零留痕
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM dataset_action_log WHERE dataset_id = ? "
                 + "AND action = 'DENIED_READ' AND actor_subject_no = 'admin-t10b'", Integer.class, datasetId))
                 .isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM dataset_action_log WHERE dataset_id = ? "
+                + "AND action = 'DENIED_READ' AND actor_subject_no = 'spaceB-t10b'", Integer.class, datasetId))
+                .isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM dataset_action_log WHERE dataset_id = ? "
+                + "AND action = 'DENIED_READ' AND reason_code = 'C0003'", Integer.class, datasetId))
+                .isEqualTo(2);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM dataset_action_log WHERE dataset_id = 999999",
+                Integer.class)).isZero();
+    }
+
+    @Test
+    void writeFaceMissingDatasetKeepsLegacyNotFoundShape() throws Exception {
+        // 隔离线回归：写面对象不存在仍为 404 + 1007C0005 + 旧文案（共享常量语义不变）
+        final MvcResult update = update("owner-t10c", 999999L, "{\"intro\":\"不存在资源变更\"}");
+        assertThat(update.getResponse().getStatus()).isEqualTo(404);
+        assertThat(codeOf(update)).isEqualTo("1007C0005");
+        assertThat(root(update).path("message").asText()).isEqualTo("资源不存在或无权访问");
+    }
+
+    @Test
+    void detailUnauthenticatedAndPermissionDenied() throws Exception {
+        // hifi §3 鉴权边界：R2 未认证 401 + 1000C0002；有身份但无 dataset.read 403 + 1000C0005
+        final long datasetId = registerOk("owner-t10d", 1023L, "详情鉴权探针资源", "");
+        final MvcResult unauth = mockMvc.perform(get(DATASETS + "/" + datasetId)).andReturn();
+        assertThat(unauth.getResponse().getStatus()).as("未认证 → 401").isEqualTo(401);
+        assertThat(codeOf(unauth)).isEqualTo("1000C0002");
+
+        final MvcResult forbidden = mockMvc.perform(auth(get(DATASETS + "/" + datasetId),
+                "owner-t10d", "no-such-role")).andReturn();
+        assertThat(forbidden.getResponse().getStatus()).as("无权限 → 403").isEqualTo(403);
+        assertThat(codeOf(forbidden)).isEqualTo("1000C0005");
     }
 
     // ==== T15 并发与边界（评审循环 1 修复批：唯一索引兜底 / 分页边界 / 要素长度边界 / 数据标识口径）====
