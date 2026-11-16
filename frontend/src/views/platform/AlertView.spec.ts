@@ -246,3 +246,53 @@ describe('告警与处置页（T12 处置对话框）', () => {
     expect(document.body.textContent).toContain('监控数据源暂不可用，请稍后重试')
   })
 })
+
+describe('告警与处置页（WBS-3.9.6 T5 复制静默编号独立回归）', () => {
+  /** 3.9.5 复审缺口一：复制动作独立断言（既有 silenceId 回显主链路断言不动）。 */
+  it('复制动作：writeText 收到 silenceId 原值 + 成功提示"静默编号已复制"', async () => {
+    mockedDispose.mockResolvedValue({ alertName: 'CtdsBackendDown', action: 'SILENCE', result: 'OK', silenceId: 'SL-1001', recordedAt: '2026-11-15T11:05:00' })
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    try {
+      const { wrapper } = await mountPage()
+      await button(wrapper, '处置')?.trigger('click')
+      await flushPromises()
+      const radios = wrapper.findAll('.el-radio')
+      await radios.find((r) => r.text().includes('静默'))?.trigger('click')
+      await flushPromises()
+      await button(wrapper, '提交')?.trigger('click')
+      await flushPromises()
+      const copy = wrapper.findAll('button').find((b) => b.text().includes('复制'))
+      expect(copy).toBeDefined()
+      await copy?.trigger('click')
+      await flushPromises()
+      expect(writeText).toHaveBeenCalledWith('SL-1001')
+      expect(document.body.textContent).toContain('静默编号已复制')
+    } finally {
+      Reflect.deleteProperty(navigator, 'clipboard')
+    }
+  })
+
+  it('复制失败：writeText 拒绝 → 失败提示"复制失败，请手动选择复制"（不吞错）', async () => {
+    mockedDispose.mockResolvedValue({ alertName: 'CtdsBackendDown', action: 'SILENCE', result: 'OK', silenceId: 'SL-1002', recordedAt: '2026-11-15T11:07:00' })
+    const writeText = vi.fn().mockRejectedValue(new Error('clipboard denied'))
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    try {
+      const { wrapper } = await mountPage()
+      await button(wrapper, '处置')?.trigger('click')
+      await flushPromises()
+      const radios = wrapper.findAll('.el-radio')
+      await radios.find((r) => r.text().includes('静默'))?.trigger('click')
+      await flushPromises()
+      await button(wrapper, '提交')?.trigger('click')
+      await flushPromises()
+      const copy = wrapper.findAll('button').find((b) => b.text().includes('复制'))
+      await copy?.trigger('click')
+      await flushPromises()
+      expect(writeText).toHaveBeenCalledWith('SL-1002')
+      expect(document.body.textContent).toContain('复制失败，请手动选择复制')
+    } finally {
+      Reflect.deleteProperty(navigator, 'clipboard')
+    }
+  })
+})
