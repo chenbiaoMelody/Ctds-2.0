@@ -31,7 +31,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
  * 操作留痕读面集成测试（WBS-3.3.6 hifi §5 + §7 T1~T3；Q2-A 三个只读端点 R14/R15/R16）：
- * - T1 R14 资源留痕（本人 200 含四要素与 from→to / 非本人 1007C0005 同形 + DENIED_READ 恰 1 行 /
+ * - T1 R14 资源留痕（本人 200 含四要素与 from→to / 非本人 400+1000C0003 同形 + DENIED_READ 恰 1 行 /
  *   不存在同形 / admin 治理例外 200 且零新增留痕 / 未认证 401 / 无权限 403 / 分页与排序）；
  * - T2 R15 产品留痕（提供方本人 200 全值域：DENIED_* 与 GOVERNANCE_VIEW 在内 / 非本人 1007C0012
  *   管理面文案同形 / admin 200 且零新增留痕 / 与 R8 订阅者可见值域逐字对照）；
@@ -115,15 +115,18 @@ class CatalogActionLogsIntegrationTest {
 
         final MvcResult denied = mockMvc.perform(auth(get("/api/v1/datasets/" + datasetId
                 + "/action-logs"), "intruder-r14b", PROVIDER)).andReturn();
-        assertThat(denied.getResponse().getStatus()).as("非本人 → 404").isEqualTo(404);
-        assertThat(codeOf(denied)).isEqualTo("1007C0005");
+        assertThat(denied.getResponse().getStatus()).as("非本人 → 400").isEqualTo(400);
+        assertThat(codeOf(denied)).isEqualTo("1000C0003");
         assertThat(root(denied).get("message").asText())
-                .isEqualTo(CatalogErrorCodes.DATASET_NOT_FOUND_OR_NO_ACCESS_MESSAGE);
+                .isEqualTo(CatalogErrorCodes.DATASET_READ_NOT_FOUND_MESSAGE);
         final long after = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM dataset_action_log WHERE dataset_id = ?", Long.class, datasetId);
         assertThat(after - before).as("非本人命中写 DENIED_READ 恰 1 行（沿 R2 先例）").isEqualTo(1);
         assertThat(jdbc.queryForObject("SELECT action FROM dataset_action_log WHERE dataset_id = ? "
                 + "ORDER BY id DESC LIMIT 1", String.class, datasetId)).isEqualTo("DENIED_READ");
+        assertThat(jdbc.queryForObject("SELECT reason_code FROM dataset_action_log WHERE dataset_id = ? "
+                + "ORDER BY id DESC LIMIT 1", String.class, datasetId))
+                .as("留痕拒绝码随新出站口径记 1000C0003 尾号").isEqualTo("C0003");
         assertThat(jdbc.queryForObject("SELECT actor_subject_no FROM dataset_action_log WHERE dataset_id = ? "
                 + "ORDER BY id DESC LIMIT 1", String.class, datasetId))
                 .as("留痕归属 = 越权者本人（非资源主）").isEqualTo("intruder-r14b");
@@ -133,11 +136,12 @@ class CatalogActionLogsIntegrationTest {
     void r14MissingDatasetSameShapeWithoutLog() throws Exception {
         final MvcResult missing = mockMvc.perform(auth(get("/api/v1/datasets/999999/action-logs"),
                 "owner-r14", PROVIDER)).andReturn();
-        assertThat(missing.getResponse().getStatus()).as("不存在 → 同码同文案").isEqualTo(404);
-        assertThat(codeOf(missing)).isEqualTo("1007C0005");
+        assertThat(missing.getResponse().getStatus()).as("不存在 → 同码同文案").isEqualTo(400);
+        assertThat(codeOf(missing)).isEqualTo("1000C0003");
         assertThat(root(missing).get("message").asText())
                 .as("不存在与非本人逐字一致（防枚举）")
-                .isEqualTo(CatalogErrorCodes.DATASET_NOT_FOUND_OR_NO_ACCESS_MESSAGE);
+                .isEqualTo(CatalogErrorCodes.DATASET_READ_NOT_FOUND_MESSAGE);
+        assertThat(root(missing).get("data").isNull()).isTrue();
         assertThat(jdbc.queryForObject(
                 "SELECT COUNT(*) FROM dataset_action_log WHERE dataset_id = 999999", Long.class))
                 .as("不存在对象无留痕（无对象指向）").isZero();

@@ -7,6 +7,7 @@ import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
+import com.ctds.catalog.domain.CatalogErrorCodes;
 import com.ctds.catalog.domain.SpaceMembership;
 import com.ctds.catalog.domain.SpaceMembershipPort;
 import com.ctds.catalog.domain.SubjectAdmission;
@@ -117,6 +118,18 @@ class CatalogGovernanceIntegrationTest {
                         + "AND action = 'GOVERNANCE_VIEW' AND actor_subject_no = 'admin-g2'",
                 Integer.class, datasetId);
         assertThat(views).as("资源侧治理查看留痕（Q5-A 两侧齐备）").isEqualTo(1);
+    }
+
+    @Test
+    void adminGovernanceMissingDatasetKeepsLegacyNotFoundShape() throws Exception {
+        // 隔离线回归：R13 治理读面对象不存在仍为 404 + 1007C0005 + 旧文案（共享常量语义不变）
+        final MvcResult missing = mockMvc.perform(auth(
+                        get("/api/v1/datasets/999999/governance"), "admin-g2b", ADMIN))
+                .andReturn();
+        assertThat(missing.getResponse().getStatus()).isEqualTo(404);
+        assertThat(codeOf(missing)).isEqualTo("1007C0005");
+        assertThat(root(missing).get("message").asText())
+                .isEqualTo(CatalogErrorCodes.DATASET_NOT_FOUND_OR_NO_ACCESS_MESSAGE);
     }
 
     // ==== 非运营方治理端点拒绝且零留痕（DB-29 Q4-A 负向锚）====
