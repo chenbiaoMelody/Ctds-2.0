@@ -22,6 +22,12 @@ public interface DataProductRepository {
      */
     PageResult<CatalogProductRow> searchListed(List<String> categoryCodes, String keyword, PageQuery page);
 
+    /**
+     * 语义检索候选（WBS-3.10.2 B2）：仅 LISTED + 分类子树（空或 null = 不过滤）；
+     * 左联 dataset 取语义标签原文；按产品 id 升序返回（排序与分页由应用层落定）。
+     */
+    List<SemanticCandidateRow> listListedSemanticCandidates(List<String> categoryCodes);
+
     /** 产品详情（R7）：仅 LISTED 行（未上架/已下架/已注销/不存在一律空——同形拒绝由应用层落定）。 */
     Optional<CatalogProductRow> findListedDetail(long productId);
 

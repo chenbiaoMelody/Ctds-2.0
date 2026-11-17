@@ -35,6 +35,11 @@
       <groupId>com.ctds</groupId>
       <artifactId>common-pagination</artifactId>
     </dependency>
+    <!-- 语义检索向量化与向量存储抽象（WBS-3.10.2；common 横切组件，零外呼） -->
+    <dependency>
+      <groupId>com.ctds</groupId>
+      <artifactId>common-vector-store</artifactId>
+    </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-web</artifactId>
