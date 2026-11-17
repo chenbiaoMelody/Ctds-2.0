@@ -30,6 +30,8 @@
     <module>common/evidence-client</module>
     <!-- AI-0 模型网关抽象层（WBS 3.10.1；规格 C-11.1 / ADR-003：OpenAI 兼容契约 + Provider 适配器接口，仅抽象与配置） -->
     <module>common/model-gateway</module>
+    <!-- AI-0 向量化与向量存储抽象（WBS 3.10.2；规格 C-11.2 / ADR-003 §7：本地确定性向量 + MySQL 适配器，零外呼） -->
+    <module>common/vector-store</module>
     <module>std-adapter</module>
     <!-- 连接器 SDK 骨架（WBS 3.6.2；ADR-002 §3-1 规划位，V1.0 期间 monorepo 内开发）：参与方接入客户端库 -->
     <module>connector-sdk</module>
@@ -122,6 +124,12 @@
       <dependency>
         <groupId>com.ctds</groupId>
         <artifactId>common-model-gateway</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <!-- AI-0 向量化与向量存储抽象（WBS 3.10.2；规格 C-11.2 / ADR-003 §7：本地确定性向量 + MySQL 适配器，零外呼） -->
+      <dependency>
+        <groupId>com.ctds</groupId>
+        <artifactId>common-vector-store</artifactId>
         <version>${project.version}</version>
       </dependency>
       <!-- 标准适配层（WBS 2.4.8）：信通院测评/互联互通相关实现的唯一收口模块（章程 4.3 / ADR-008）。 -->
