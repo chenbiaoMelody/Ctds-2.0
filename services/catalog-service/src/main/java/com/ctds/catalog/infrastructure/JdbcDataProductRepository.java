@@ -9,6 +9,7 @@ import com.ctds.catalog.domain.PricingModel;
 import com.ctds.catalog.domain.ProductActionLog;
 import com.ctds.catalog.domain.ProductStatus;
 import com.ctds.catalog.domain.ProviderProductRow;
+import com.ctds.catalog.domain.SemanticCandidateRow;
 import com.ctds.common.pagination.PageQuery;
 import com.ctds.common.pagination.PageResult;
 import java.sql.ResultSet;
@@ -77,6 +78,26 @@ public class JdbcDataProductRepository implements DataProductRepository {
                 .query((rs, rowNum) -> mapRow(rs, null))
                 .list();
         return PageResult.of(list, total, page);
+    }
+
+    @Override
+    public List<SemanticCandidateRow> listListedSemanticCandidates(
+            final List<String> categoryCodes) {
+        final StringBuilder where = new StringBuilder("p.status = 'LISTED'");
+        final List<Object> params = new ArrayList<>();
+        if (categoryCodes != null && !categoryCodes.isEmpty()) {
+            where.append(" AND p.category_code IN (")
+                    .append(String.join(", ", categoryCodes.stream().map(c -> "?").toList()))
+                    .append(")");
+            params.addAll(categoryCodes);
+        }
+        return jdbc.sql("SELECT " + PRODUCT_COLUMNS + ", d.semantic_tags " + PRODUCT_FROM
+                        + " LEFT JOIN dataset d ON d.id = p.dataset_id"
+                        + " WHERE " + where + " ORDER BY p.id")
+                .params(params)
+                .query((rs, rowNum) -> new SemanticCandidateRow(mapRow(rs, null),
+                        rs.getString("semantic_tags")))
+                .list();
     }
 
     @Override

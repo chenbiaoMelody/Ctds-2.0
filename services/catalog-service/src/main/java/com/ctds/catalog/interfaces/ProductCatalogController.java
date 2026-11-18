@@ -2,6 +2,7 @@ package com.ctds.catalog.interfaces;
 
 import com.ctds.catalog.application.CategoryTreeService;
 import com.ctds.catalog.application.ProductCatalogQueryService;
+import com.ctds.catalog.application.SemanticSearchService;
 import com.ctds.catalog.domain.CatalogProductRow;
 import com.ctds.catalog.domain.ProductChangeLogRow;
 import com.ctds.catalog.interfaces.dto.CatalogFavoriteItemView;
@@ -38,11 +39,14 @@ public class ProductCatalogController {
 
     private final CategoryTreeService categoryTreeService;
     private final ProductCatalogQueryService queryService;
+    private final SemanticSearchService semanticSearchService;
 
     public ProductCatalogController(final CategoryTreeService categoryTreeService,
-            final ProductCatalogQueryService queryService) {
+            final ProductCatalogQueryService queryService,
+            final SemanticSearchService semanticSearchService) {
         this.categoryTreeService = categoryTreeService;
         this.queryService = queryService;
+        this.semanticSearchService = semanticSearchService;
     }
 
     /** R5 类目树（全量 2 级，同级按 sort_order 升序；平台公开字典——认证 + 权限点，无 ADMITTED 门槛）。 */
@@ -109,6 +113,22 @@ public class ProductCatalogController {
         return ApiResult.ok(new PageResult<>(result.list().stream()
                         .map(CatalogSubscriptionItemView::from).toList(),
                 result.total(), result.pageNum(), result.pageSize(), result.totalPages()));
+    }
+
+    /**
+     * 语义检索（WBS-3.10.2 B3；独立端点，消费 R6 响应契约；检索 ≠ 可访问）：
+     * ADMITTED + catalog.read + 分类子树 + 分页；仅 LISTED；不暴露 score/status。
+     */
+    @GetMapping(path = "/catalog/semantic-search", produces = MediaType.APPLICATION_JSON_VALUE)
+    @RequirePermission("catalog.read")
+    public ApiResult<PageResult<CatalogProductView>> semanticSearch(
+            @RequestParam(required = false) final String q,
+            @RequestParam(required = false) final String categoryCode,
+            @RequestParam(required = false) final Integer pageNum,
+            @RequestParam(required = false) final Integer pageSize) {
+        final PageResult<CatalogProductRow> result = semanticSearchService.search(q, categoryCode,
+                PageQuery.of(pageNum, pageSize, null));
+        return ApiResult.ok(mapProducts(result));
     }
 
     private static PageResult<CatalogProductView> mapProducts(final PageResult<CatalogProductRow> result) {
