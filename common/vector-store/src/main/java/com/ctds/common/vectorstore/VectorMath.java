@@ -8,7 +8,7 @@ import java.util.Map;
 /** 向量数学（C-11.2 B1/B3）：归一化 / 余弦 / 零向量 / Top-K 排序（分数降序、key 升序稳定）。 */
 public final class VectorMath {
 
-    private static final double ZERO_EPSILON = 1.0e-12;
+    private static final double ZERO_EPSILON = 1.0e-9;
 
     private VectorMath() {
     }

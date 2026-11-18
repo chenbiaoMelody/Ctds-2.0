@@ -30,7 +30,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class SemanticSearchService {
 
-    static final int QUERY_MAX_LENGTH = 64;
+    private static final int QUERY_MAX_LENGTH = 64;
 
     private static final Comparator<ScoredCandidate> RANKING = Comparator
             .comparingDouble(ScoredCandidate::score).reversed()
@@ -59,8 +59,8 @@ public class SemanticSearchService {
             final PageQuery page) {
         final String subject = guard.requireSubject();
         guard.requireAdmitted(subject);
-        final String query = q == null ? "" : q.trim();
-        if (query.isEmpty() || query.length() > QUERY_MAX_LENGTH) {
+        final String query = q == null ? "" : q.strip();
+        if (query.isEmpty() || query.codePointCount(0, query.length()) > QUERY_MAX_LENGTH) {
             throw invalidParam();
         }
         List<String> subtreeCodes = null;

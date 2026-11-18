@@ -47,13 +47,19 @@ class CatalogProductVectorMigrationIntegrationTest {
                     + "AND column_comment IS NOT NULL AND column_comment <> ''")).isEqualTo(5);
             assertThat(primaryKeyColumns(connection, "product_embedding"))
                     .containsExactly("product_id");
+            assertThat(columnTypes(connection, "product_embedding"))
+                    .containsExactly("bigint", "char(64)", "smallint unsigned", "blob", "datetime");
             assertThat(count(connection, "SELECT COUNT(*) FROM flyway_schema_history "
                     + "WHERE version = '5' AND success = 1")).isEqualTo(1);
+            assertThat(count(connection, "SELECT COUNT(*) FROM flyway_schema_history "
+                    + "WHERE version IN ('1', '2', '3', '4') AND success = 1")).isEqualTo(4);
             assertThat(columnNames(connection, "data_product"))
                     .as("V1~V4 既有产品表列零扰动").containsExactly("id", "product_name",
                             "normalized_product_name", "intro", "product_type", "pricing_model",
                             "price_amount", "status", "provider_subject_no", "dataset_id",
                             "category_code", "listed_at", "created_at", "updated_at");
+            assertThat(columnNames(connection, "dataset")).as("V1 既有资源表列零扰动")
+                    .contains("semantic_tags", "normalized_name");
         }
     }
 
@@ -72,6 +78,23 @@ class CatalogProductVectorMigrationIntegrationTest {
             }
         }
         return columns;
+    }
+
+    private static List<String> columnTypes(final Connection connection, final String table)
+            throws SQLException {
+        final List<String> types = new ArrayList<>();
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT column_type FROM information_schema.columns "
+                        + "WHERE table_schema = DATABASE() AND table_name = ? "
+                        + "ORDER BY ordinal_position")) {
+            statement.setString(1, table);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                while (resultSet.next()) {
+                    types.add(resultSet.getString(1));
+                }
+            }
+        }
+        return types;
     }
 
     private static List<String> primaryKeyColumns(final Connection connection, final String table)

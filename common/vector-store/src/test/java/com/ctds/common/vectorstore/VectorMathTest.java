@@ -27,6 +27,9 @@ class VectorMathTest {
         assertEquals(0.8, normalized[1], 1.0e-6);
         assertTrue(VectorMath.isZero(VectorMath.normalize(new float[] {0.0f, 0.0f})));
         assertFalse(VectorMath.isZero(normalized));
+        assertTrue(VectorMath.isZero(new float[] {5.0e-10f}));
+        assertFalse(VectorMath.isZero(new float[] {2.0e-9f}));
+        assertTrue(VectorMath.isZero(VectorMath.normalize(new float[] {5.0e-10f})));
     }
 
     @Test
