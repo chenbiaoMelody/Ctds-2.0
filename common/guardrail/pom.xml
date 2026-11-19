@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.ctds</groupId>
+    <artifactId>ctds-platform</artifactId>
+    <version>2.0.0-SNAPSHOT</version>
+    <relativePath>../../pom.xml</relativePath>
+  </parent>
+
+  <artifactId>common-guardrail</artifactId>
+  <name>common-guardrail</name>
+  <description>公共组件：AI 输入/输出护栏框架与 AI 调用审计预留（WBS 3.10.3，规格 C-11.5 V1.0 / ADR-003 / ADR-005；仅契约与预留，零真实外呼）</description>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.ctds</groupId>
+      <artifactId>common-model-gateway</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+</project>
