@@ -235,6 +235,8 @@ public final class GuardedModelGateway implements ModelGateway {
 
 （V0.9 空；评审与编码段发现的偏差、口径勘误在此登记，不改历史段落，按"勘误说明 + 影响范围"追加。）
 
+- **E-01（V1.0 编码段，2026-11-19）**：§2 `AiCallLog` 紧凑构造"字符串 null/空白 → `-`"与 §3 步骤 5 / §5 T6"FAILURE 时 errorCode=null"存在口径冲突。按更具体条款裁定：**errorCode 保持可空**（null/空白 → null，与 DDL `error_code NULL` 一致）；其余字符串组件（traceId / feature / actor / provider / model / guardrailReason）按 `-` 归一。影响范围：仅 `AiCallLog` 紧凑构造与 T9 用例；字段清单、DDL、装饰器时序不变。
+
 ## §10 确认记录
 
 | 版本 | 日期 | 角色 | 说明 |
