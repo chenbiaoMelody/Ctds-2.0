@@ -13,7 +13,7 @@
 | 编号 | 内容 | 承载 |
 | --- | --- | --- |
 | W1 | 路由与菜单：扁平追加 1 菜单（"AI 服务配置" menuOrder 32，挂 `platform.ai.config.read`，admin 演示档可见）；菜单计数断言三处同步（普通档 11 不变 / admin 31→32 / max 31→32） | `router/index.ts` + `MainLayout.spec.ts` + `router.spec.ts` |
-| W2 | api 域模块：AI 配置 4 端点消费函数（读配置 / 保存配置 / 判定预览 / 变更留痕分页）+ 类型定义 + URL 常量单点；**复用既有 `/api/v1/platform` 代理键（零 vite proxy 改动）** | `api/ai.ts` |
+| W2 | api 域模块：AI 配置 4 端点消费函数（读配置 / 保存配置 / 判定预览 / 变更留痕分页）+ 类型定义 + URL 常量单点；**独立命名空间 `/api/v1/ai-config`（编码段修正 E-01-2）+ vite proxy 新增 1 键（键序先行）** | `api/ai.ts` + `vite.config.ts` |
 | W3 | 常量层：供应商封闭清单双 map（编号↔中文名：glm=智谱 GLM〔默认〕/ deepseek=DeepSeek / qwen=通义千问 Qwen / kimi=Kimi）+ 判定三态 LABELS/TAG（ALLOW 绿 / DENIED_DISABLED 红 / DENIED_BUDGET_EXCEEDED 红）+ 未知枚举值原样显示 | `constants/ai.ts` |
 | W4 | 配置页：四区块纵向单页——① 网关总控（开关 el-switch / 预算 el-input-number ≥0 / 默认供应商 el-select 四项）② 判定预览条（三态芯片 + 刷新 + "已用量恒为 0"口径灰字）③ 供应商连接参数表（四行固定，行内编辑服务地址/模型名；密钥列 = 固定灰字"部署期经配置中心/KMS 注入（页面不显示）"，**零输入框**）④ 变更留痕分页表（时间/操作者/字段/变更前/变更后）+ 保存/放弃按钮 + 诚实边界提示条（页面顶部） | `views/platform/AiConfigView.vue` |
 | W5 | 校验与错误呈现：前端前置校验（预算 ≥0 整数 / URL http(s) 格式 / 模型名 ≤128）+ 后端校验拒绝统一呈现（页面顶部 el-alert 红条：1014 段错误码 + 可区分原因文案；库与留痕零变化）+ 保存成功反馈（ElMessage + 视图与留痕刷新） | `AiConfigView.vue` + `api/ai.ts` |
@@ -27,7 +27,7 @@
 | N2 | 连通性测试按钮 / 任何真实外呼 | 规格非目标 1 + ADR-003 §4 零消耗红线；V1.5 承接 |
 | N3 | 用量统计 / 预算熔断运行时 / 配置热更新消费桥 | 规格非目标 2；V1.0 无运行时消费方（配置即预留）；V1.5 / C-11.6 |
 | N4 | 留痕回滚 / 归档 / 删除操作 | 规格非目标 6：留痕只读 |
-| N5 | vite proxy 改动 | 设计实证：`/api/v1/platform` → 8090 代理键已存在（3.9.5 建立），本卡零 proxy 改动 |
+| N5 | 占用 `/api/v1/platform` 部署域读面命名空间 | 编码段实证：既有守卫（platform 命名空间持有人封闭 + `/api/v1/platform/` 零写端点）导出独立命名空间 `/api/v1/ai-config`（hifi E-01-2）；代价 = vite proxy +1 键 |
 | N6 | 菜单分组化改造 / 全站菜单机制重写 | 31 项既有菜单零改动（计数断言数字除外）；扁平追加沿 3.9.5 惯例 |
 | N7 | e2e（Playwright）扩展 | 沿先例：组件测试 + 剧本演示 |
 | N8 | `common/model-gateway` 任何改动 | 纯库消费（判定预览复用其判定语义）；3.10.1 已验收模块零改动 |

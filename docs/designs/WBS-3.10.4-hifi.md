@@ -8,14 +8,14 @@
 
 ## 1. 端点契约（4 端点，evidence-service；出参字段 → 界面元素逐字段映射）
 
-> 前缀 `/api/v1/platform`（复用既有 vite proxy 键 → 8090，零 proxy 改动）；响应封装统一 `ApiResult`（code="0" + data）；401/403 走 common-auth 公共码。
+> 前缀 = **独立命名空间 `/api/v1/ai-config`**（编码段修正 E-01-1/2：不占用部署域读面封闭命名空间——两道既有守卫导出，见 §9 E-01；前端 vite proxy 新增 1 键 `/api/v1/ai-config` → 8090，键序先行）；响应封装统一 `ApiResult`（code="0" + data）；401/403 走 common-auth 公共码。
 
 | # | 端点 | 权限点 | 入参 | 出参（data） | 界面承载 |
 | --- | --- | --- | --- | --- | --- |
-| E1 | `GET /api/v1/platform/ai-config` | `platform.ai.config.read` | — | `AiConfigView`（见 §1.1） | 区块①③初值 + 预览依据 |
-| E2 | `PUT /api/v1/platform/ai-config` | `platform.ai.config.write` | body `AiConfigSaveRequest`（§1.2）；操作者 = `X-Ctds-Subject` 头 | `AiConfigView`（保存后） | 保存按钮；成功后刷新①③④ |
-| E3 | `GET /api/v1/platform/ai-config/preview` | `platform.ai.config.read` | — | `AiConfigPreviewView { decision: "ALLOW"\|"DENIED_DISABLED"\|"DENIED_BUDGET_EXCEEDED", reason: 文案 }` | 区块②三态芯片 |
-| E4 | `GET /api/v1/platform/ai-config/changes` | `platform.ai.config.read` | `pageNum` / `pageSize`（可选，沿 PageResult 约定） | `PageResult<AiConfigChangeLogView>`（list/total/pageNum/pageSize/totalPages） | 区块④分页五列 |
+| E1 | `GET /api/v1/ai-config` | `platform.ai.config.read` | — | `AiConfigView`（见 §1.1） | 区块①③初值 + 预览依据 |
+| E2 | `POST /api/v1/ai-config/save` | `platform.ai.config.write` | body `AiConfigSaveRequest`（§1.2）；操作者 = `X-Ctds-Subject` 头 | `AiConfigView`（保存后） | 保存按钮；成功后刷新①③④ |
+| E3 | `GET /api/v1/ai-config/preview` | `platform.ai.config.read` | — | `AiConfigPreviewView { decision: "ALLOW"\|"DENIED_DISABLED"\|"DENIED_BUDGET_EXCEEDED", reason: 文案 }` | 区块②三态芯片 |
+| E4 | `GET /api/v1/ai-config/changes` | `platform.ai.config.read` | `pageNum` / `pageSize`（可选，沿 PageResult 约定） | `PageResult<AiConfigChangeLogView>`（list/total/pageNum/pageSize/totalPages） | 区块④分页五列 |
 
 **错误口径**：参数校验拒绝 = HTTP 400 + `1014C0001`（message 细分原因，见 §2.4）；无权限 = 403（common-auth 公共码）；其余沿全局异常处理惯例。**读响应（E1/E2 出参）不含 `apiKey` / `apiKeyRef` 任何密钥字段**（规格 B1-3 / B4-1 红线）。
 
@@ -68,7 +68,7 @@
 | `application.AiConfigViews` | 应用层 DTO | `AiConfigView` / `ProviderView` / `AiConfigSaveRequest` / `AiConfigPreviewView` / `AiConfigChangeLogView` |
 | `infrastructure.JdbcAiConfigStore` | 基础设施 | 三表读写（`JdbcClient`/`JdbcTemplate` 沿 `JdbcRbacStore` 惯例）；留痕逐字段 diff |
 | `domain.AiConfigErrorCodes` | 领域 | `PARAM_INVALID = ErrorCode.of("1014C0001")` + 5 条细分 message 常量（格式沿 `MonitorErrorCodes`） |
-| 测试：`AiConfigControllerTest` / `AiConfigServiceTest` / `AiConfigStoreMigrationIT` | — | T1~T8 承载（§7） |
+| 测试：`AiConfigContractTest`（零 Docker 结构锚）/ `AiConfigGovernanceIntegrationTest`（Testcontainers 行为面 T1~T6/T8 + E4）/ `AiConfigMigrationStructureIntegrationTest`（T7 迁移锚） | — | 命名沿仓内 Contract/Integration 惯例（E-01-6：原拟三名更名合并） |
 
 ### 2.2 Flyway V6 DDL 草案（`V6__create_ai_gateway_config.sql`；最终以实现为准，注释口径不变）
 
@@ -143,13 +143,14 @@ INSERT INTO role_permission_change_log
 
 | 动作 | 文件 | 内容 |
 | --- | --- | --- |
-| 新增 | `frontend/src/views/platform/AiConfigView.vue` | 单页四区块（lofi §4）；表单态集中；保存 = 全量 PUT |
+| 新增 | `frontend/src/views/platform/AiConfigView.vue` | 单页四区块（lofi §4）；表单态集中；保存 = 全量 POST /save |
 | 新增 | `frontend/src/views/platform/AiConfigView.spec.ts` | F1~F6（§7） |
 | 新增 | `frontend/src/api/ai.ts` | 4 函数 + 类型 + URL 常量单点 |
 | 新增 | `frontend/src/api/ai.spec.ts` | URL/payload 断言 |
 | 新增 | `frontend/src/constants/ai.ts` | PROVIDER/DECISION 双 map + labelOf |
 | 修改 | `frontend/src/router/index.ts` | +1 菜单项（menuOrder 32，permission 挂点） |
-| 修改 | `frontend/src/layouts/MainLayout.spec.ts` + `frontend/src/router/spec`（以实际文件名为准） | 计数断言 31→32（两处；普通档 11 不变） |
+| 修改 | `frontend/vite.config.ts` | +1 proxy 键 `/api/v1/ai-config` → 8090（键序先行，E-01-2：独立命名空间导出；原"零 proxy 改动"表述作废） |
+| 修改 | `frontend/src/layouts/MainLayout.spec.ts` + `frontend/src/router/router.spec.ts` + `frontend/src/views/platform/PlatformSourceGuard.spec.ts` | 计数断言 31→32（含 max）+ 权限路由清单/platform 视图源集清单各 +1（守卫白名单扩展登记） |
 
 ## 4. api 层契约（`api/ai.ts`）
 
@@ -160,7 +161,7 @@ INSERT INTO role_permission_change_log
 | `fetchAiConfigPreview(): Promise<AiConfigPreviewView>` | E3 | 判定预览 |
 | `fetchAiConfigChanges(pageNum?, pageSize?): Promise<PageResult<AiConfigChangeLogView>>` | E4 | 留痕分页 |
 
-URL 常量单点：`AI_CONFIG_URL = '/api/v1/platform/ai-config'`（+ `/preview`、`/changes` 派生）；类型定义与出参逐字段一致（§1）；走既有 `apiJson`（身份头/错误码断言复用，`ApiError` 保留九位错误码）。
+URL 常量单点：`AI_CONFIG_URL = '/api/v1/ai-config'`（+ `/save`、`/preview`、`/changes` 派生）；类型定义与出参逐字段一致（§1）；走既有 `apiJson`（身份头/错误码断言复用，`ApiError` 保留九位错误码）。
 
 ## 5. 视图组件契约（`AiConfigView.vue`）
 
@@ -211,7 +212,13 @@ URL 常量单点：`AI_CONFIG_URL = '/api/v1/platform/ai-config'`（+ `/preview`
 
 - 剧本（Q7-A，待建）四步 S1~S4 与 §7 映射表逐条对应；剧本执行留痕随编码段回填；
 - 诚实边界（复述规格 B4-3，页面与交付说明必须一致）：**配置落库 ≠ 配置已生效**（V1.0 无运行时消费方）；本页 ≠ AI 服务可用（零外呼）；预算上限 ≠ 已生效熔断；预览 ≠ 真实调用结果（已用量恒 0）；
-- E-勘误位：E-01 预留（编码段/评审段发现口径差在此登记）。
+- **E-01 勘误登记（编码段 2026-11-21，设计修正不改变规格 B1~B4 验收口径）**：
+  - **E-01-1** E2 动词 PUT → **POST `/save`**（`EvidenceArchitectureTest.interfacesExposeNoMutableHttpVerbs`：evidence 接口层守卫禁 Put/Patch/Delete 改删动词；写面沿仓内 POST 惯例）；
+  - **E-01-2** 前缀 `/api/v1/platform` → **独立命名空间 `/api/v1/ai-config`**（`DomainGovernanceContractTest` 双守卫导出：platform 命名空间持有人封闭清单 + `/api/v1/platform/` 与租户路径零写端点；**既有守卫零修改**，AI 域独立路径沿各域独立命名空间惯例）；vite proxy 由"零改动"改为 **+1 键**；
+  - **E-01-3** `domain/AiConfigStore` 领域接口补增（沿 `RbacStore` 接口 + `JdbcRbacStore` 实现分层先例，原清单仅列 Jdbc 实现）；
+  - **E-01-4** 错误码 message 细分常量 5 → **6 类**（补 `MSG_ENABLED_INVALID`：开关缺失口径，码值仍 1014C0001）；
+  - **E-01-5** 供应商显示名由**后端视图 providerName 承载**（前端 constants 不再复制中文标签，仅保留判定三态与封闭清单守卫）；
+  - **E-01-6** 测试类命名沿仓内 Contract/Integration 惯例（见 §2.1 更新）。
 
 ## 10. 体量与门禁
 
