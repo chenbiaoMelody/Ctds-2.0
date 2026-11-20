@@ -114,6 +114,13 @@ export default defineConfig({
         target: 'http://localhost:8090',
         changeOrigin: true,
       },
+      // WBS-3.10.4 AI 配置域（8090，独立命名空间 /api/v1/ai-config 在 evidence-service）：
+      // 界面走查经 5173 访问 AI 网关配置 4 端点（开发期转发，不改服务契约与门禁配置）。
+      // 键须位于下方通用 '/api'（→8080）之前（键序先行——缺键时请求误落主体服务）。
+      '/api/v1/ai-config': {
+        target: 'http://localhost:8090',
+        changeOrigin: true,
+      },
       '/api': {
         target: 'http://localhost:8080',
         changeOrigin: true,

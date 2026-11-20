@@ -61,7 +61,7 @@ describe('路由表结构（H3）', () => {
     }
   })
 
-  it('权限路由声明权限点，其余菜单路由未声明（WBS-3.1.5 扩 admin-only/review-queue；WBS-3.1.11 扩 did-management；WBS-3.2.6 扩 space-list/platform-policy；WBS-3.3.6 扩 catalog 三菜单；WBS-3.9.5 扩系统管理四菜单）', () => {
+  it('权限路由声明权限点，其余菜单路由未声明（WBS-3.1.5 扩 admin-only/review-queue；WBS-3.1.11 扩 did-management；WBS-3.2.6 扩 space-list/platform-policy；WBS-3.3.6 扩 catalog 三菜单；WBS-3.9.5 扩系统管理四菜单；WBS-3.10.4 扩 platform-ai-config）', () => {
     const adminRoute = children.find((r) => r.name === 'admin-only')
     expect(adminRoute?.meta?.permission).toBe('demo:admin')
     const reviewRoute = children.find((r) => r.name === 'review-queue')
@@ -72,7 +72,7 @@ describe('路由表结构（H3）', () => {
       'catalog-datasets', 'catalog-products', 'catalog-governance',
       'contract-templates', 'contract-workbench', 'contract-governance',
       'delivery-governance', 'connector-governance', 'billing', 'evidence', 'evidence-verify',
-      'platform-monitor', 'platform-alerts', 'platform-rbac', 'platform-domain']
+      'platform-monitor', 'platform-alerts', 'platform-rbac', 'platform-domain', 'platform-ai-config']
     const normalRoutes = children.filter(
       (r) => r.meta?.menu === true && !permissionRouteNames.includes(String(r.name)),
     )
@@ -103,9 +103,10 @@ describe('路由表结构（H3）', () => {
 
   it('DID 管理路由（WBS-3.1.11）：menuOrder=8、icon=Key、did.admin 权限；演示页不占菜单', () => {
     // 菜单末尾追加（lofi Q1/Q8：不重排既有菜单）；WBS-3.7.7 追加 menuOrder 24/25 后全站最大值为 25；
-    // WBS-3.8.5 追加存证两菜单 26/27 后全站最大值为 27；WBS-3.9.5 追加系统管理四菜单 28~31 后全站最大值为 31
+    // WBS-3.8.5 追加存证两菜单 26/27 后全站最大值为 27；WBS-3.9.5 追加系统管理四菜单 28~31 后全站最大值为 31；
+    // WBS-3.10.4 追加"AI 服务配置" 32 后全站最大值为 32
     const menuOrders = children.filter((r) => r.meta?.menu === true).map((r) => r.meta?.menuOrder ?? 0)
-    expect(Math.max(...menuOrders)).toBe(31)
+    expect(Math.max(...menuOrders)).toBe(32)
     const didRoute = children.find((r) => r.name === 'did-management')
     expect(didRoute?.path).toBe('did')
     expect(didRoute?.meta?.title).toBe('DID 管理')
@@ -119,6 +120,16 @@ describe('路由表结构（H3）', () => {
     expect(demoRoute?.meta?.title).toBe('DID 演示与验证')
     expect(demoRoute?.meta?.permission).toBe('did.admin')
     expect(demoRoute?.meta?.menu).toBeUndefined()
+  })
+
+  it('AI 服务配置路由（WBS-3.10.4）：menuOrder=32 追加菜单末尾、icon=Setting、platform.ai.config.read 权限', () => {
+    const aiConfigRoute = children.find((r) => r.name === 'platform-ai-config')
+    expect(aiConfigRoute?.path).toBe('platform/ai-config')
+    expect(aiConfigRoute?.meta?.title).toBe('AI 服务配置')
+    expect(aiConfigRoute?.meta?.menu).toBe(true)
+    expect(aiConfigRoute?.meta?.menuOrder).toBe(32)
+    expect(aiConfigRoute?.meta?.icon).toBe('Setting')
+    expect(aiConfigRoute?.meta?.permission).toBe('platform.ai.config.read')
   })
 
   it('合约域路由（WBS-3.4.7 §3）：三菜单 14/15/16 + 深链不占菜单且声明在 contract-workbench 之后', () => {
@@ -177,10 +188,10 @@ describe('路由表结构（H3）', () => {
     // WBS-3.5.6（17/18/19）追加后全站最大值为 19；WBS-3.6.7（20/21）追加后全站最大值为 21；
     // WBS-3.7.2（22）追加后全站最大值为 22；WBS-3.7.3（23）追加后全站最大值为 23；
     // WBS-3.7.7（24/25）追加后全站最大值为 25；WBS-3.8.5（26/27）追加后全站最大值为 27；
-    // WBS-3.9.5（28~31）追加后全站最大值为 31
+    // WBS-3.9.5（28~31）追加后全站最大值为 31；WBS-3.10.4（32）追加后全站最大值为 32
     const menuOrders = children.filter((r) => r.meta?.menu === true).map((r) => r.meta?.menuOrder ?? 0)
     expect(menuOrders).toContain(7)
-    expect(Math.max(...menuOrders)).toBe(31)
+    expect(Math.max(...menuOrders)).toBe(32)
   })
 
   it('系统管理四路由（WBS-3.9.5 Q2-A）：菜单 28~31 扁平追加、真实权限点 meta、深链零新增', () => {
@@ -216,9 +227,10 @@ describe('路由表结构（H3）', () => {
     expect(domainRoute?.meta?.icon).toBe('OfficeBuilding')
     expect(domainRoute?.meta?.permission).toBe('platform.domain.read')
 
-    // 本卡无深链页（lofi S1：深链不占菜单——本卡零深链），4 新路由均为菜单页
+    // WBS-3.9.5 无深链页（lofi S1：深链不占菜单）；WBS-3.10.4 追加"AI 服务配置"后
+    // platform/ 前缀菜单共 5 条，全部为菜单页（零深链）
     const platformMenus = children.filter((r) => r.path.startsWith('platform/'))
-    expect(platformMenus.length).toBe(4)
+    expect(platformMenus.length).toBe(5)
     for (const route of platformMenus) {
       expect(route.meta?.menu).toBe(true)
     }

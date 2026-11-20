@@ -263,6 +263,13 @@ const routes = [
         component: () => import('../views/platform/DomainView.vue'),
         meta: { title: '部署域', menu: true, menuOrder: 31, icon: 'OfficeBuilding', permission: 'platform.domain.read' },
       },
+      // WBS-3.10.4：AI 服务配置（C-11.1A 配置面；挂 platform.ai.config.read，独立命名空间 /api/v1/ai-config）
+      {
+        path: 'platform/ai-config',
+        name: 'platform-ai-config',
+        component: () => import('../views/platform/AiConfigView.vue'),
+        meta: { title: 'AI 服务配置', menu: true, menuOrder: 32, icon: 'Setting', permission: 'platform.ai.config.read' },
+      },
       {
         path: 'admin-only',
         name: 'admin-only',
