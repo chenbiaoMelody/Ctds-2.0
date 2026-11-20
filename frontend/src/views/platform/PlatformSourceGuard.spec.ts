@@ -38,9 +38,10 @@ const SERVER_CODE_LITERALS = [
   '1013S0001',
 ]
 
-describe('平台系统管理界面源集守卫（WBS-3.9.5）', () => {
-  it('platform 视图源集存在且为 4 个（监控读数 / 告警与处置 / 角色与权限 / 部署域）', () => {
+describe('平台系统管理界面源集守卫（WBS-3.9.5；WBS-3.10.4 扩 AI 服务配置）', () => {
+  it('platform 视图源集存在且为 5 个（监控读数 / 告警与处置 / 角色与权限 / 部署域 / AI 服务配置）', () => {
     expect(viewFiles.sort()).toEqual([
+      './AiConfigView.vue',
       './AlertView.vue',
       './DomainView.vue',
       './MonitorView.vue',
