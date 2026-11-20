@@ -10,7 +10,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.ctds.common.guardrail.api.GuardrailContext;
 import com.ctds.common.guardrail.api.GuardrailDecision;
 import com.ctds.common.guardrail.api.GuardrailDeniedException;
+import com.ctds.common.guardrail.api.GuardrailInput;
+import com.ctds.common.guardrail.api.GuardrailOutput;
 import com.ctds.common.guardrail.api.GuardrailStage;
+import com.ctds.common.guardrail.api.GuardrailVerdict;
 import com.ctds.common.guardrail.audit.AiCallLog;
 import com.ctds.common.guardrail.audit.AiCallLogRecorder;
 import com.ctds.common.guardrail.audit.AiCallOutcome;
@@ -24,6 +27,7 @@ import com.ctds.common.modelgateway.api.ModelGateway;
 import com.ctds.common.modelgateway.api.Usage;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -32,43 +36,59 @@ class GuardedModelGatewayTest {
     @Test
     @DisplayName("T2 输入拒绝：下游零调用、stage=INPUT、原因原样、记录 DENIED")
     void inputDenyShouldSkipDelegateAndRecordDenied() {
+        final ChatCompletionRequest givenRequest = request();
+        final GuardrailContext givenContext = context();
+        final AtomicReference<GuardrailInput> seen = new AtomicReference<>();
         final FakeGateway delegate = new FakeGateway(response(1, 2), null);
         final CapturingRecorder recorder = new CapturingRecorder();
         final GuardedModelGateway gateway = new GuardedModelGateway(delegate,
-                new GuardrailChain(List.of(input -> GuardrailDecision.deny("PII_DETECTED")), List.of()),
+                new GuardrailChain(List.of(input -> {
+                    seen.set(input);
+                    return GuardrailDecision.deny("PII_DETECTED");
+                }), List.of()),
                 recorder);
 
         final GuardrailDeniedException ex = assertThrows(GuardrailDeniedException.class,
-                () -> gateway.chat(request(), context()));
+                () -> gateway.chat(givenRequest, givenContext));
 
         assertEquals(GuardrailStage.INPUT, ex.stage());
         assertEquals("PII_DETECTED", ex.reasonCode());
         assertEquals(0, delegate.calls);
         assertEquals(1, recorder.logs.size());
+        assertSame(givenRequest, seen.get().request());
+        assertSame(givenContext, seen.get().context());
         final AiCallLog log = recorder.logs.get(0);
         assertEquals(AiCallOutcome.DENIED, log.outcome());
         assertEquals(0, log.promptTokens());
         assertEquals(0, log.completionTokens());
-        assertEquals(GuardrailDecision.deny("PII_DETECTED").verdict(), log.guardrailVerdict());
+        assertEquals(GuardrailVerdict.DENY, log.guardrailVerdict());
         assertEquals("PII_DETECTED", log.guardrailReason());
     }
 
     @Test
     @DisplayName("T4 输出拒绝：下游已调用、响应不返回、stage=OUTPUT、tokens 取响应 usage")
     void outputDenyShouldHideResponseAndRecordDenied() {
-        final FakeGateway delegate = new FakeGateway(response(12, 34), null);
+        final ChatCompletionResponse givenResponse = response(12, 34);
+        final GuardrailContext givenContext = context();
+        final AtomicReference<GuardrailOutput> seen = new AtomicReference<>();
+        final FakeGateway delegate = new FakeGateway(givenResponse, null);
         final CapturingRecorder recorder = new CapturingRecorder();
         final GuardedModelGateway gateway = new GuardedModelGateway(delegate,
-                new GuardrailChain(List.of(), List.of(output -> GuardrailDecision.deny("UNSAFE_OUTPUT"))),
+                new GuardrailChain(List.of(), List.of(output -> {
+                    seen.set(output);
+                    return GuardrailDecision.deny("UNSAFE_OUTPUT");
+                })),
                 recorder);
 
         final GuardrailDeniedException ex = assertThrows(GuardrailDeniedException.class,
-                () -> gateway.chat(request(), context()));
+                () -> gateway.chat(request(), givenContext));
 
         assertEquals(GuardrailStage.OUTPUT, ex.stage());
         assertEquals("UNSAFE_OUTPUT", ex.reasonCode());
         assertEquals(1, delegate.calls);
         assertEquals(1, recorder.logs.size());
+        assertSame(givenResponse, seen.get().response());
+        assertSame(givenContext, seen.get().context());
         final AiCallLog log = recorder.logs.get(0);
         assertEquals(AiCallOutcome.DENIED, log.outcome());
         assertEquals(12, log.promptTokens());
@@ -98,7 +118,8 @@ class GuardedModelGatewayTest {
         assertEquals("-", log.actor());
         assertEquals("-", log.provider());
         assertEquals("test-model", log.model());
-        assertEquals(GuardrailDecision.allow().verdict(), log.guardrailVerdict());
+        assertEquals(GuardrailVerdict.ALLOW, log.guardrailVerdict());
+        assertEquals("-", log.guardrailReason());
     }
 
     @Test
@@ -119,7 +140,8 @@ class GuardedModelGatewayTest {
         assertEquals(0, log.promptTokens());
         assertEquals(0, log.completionTokens());
         assertNull(log.errorCode());
-        assertEquals(GuardrailDecision.allow().verdict(), log.guardrailVerdict());
+        assertEquals(GuardrailVerdict.ALLOW, log.guardrailVerdict());
+        assertEquals("-", log.guardrailReason());
     }
 
     @Test
@@ -171,6 +193,16 @@ class GuardedModelGatewayTest {
         final GuardedModelGateway noRecorder = new GuardedModelGateway(delegate, null, null);
         assertNotNull(noRecorder.chat(request(), null));
         assertEquals(2, delegate.calls);
+
+        final ChatCompletionResponse noUsage = new ChatCompletionResponse("resp-2",
+                ChatCompletionResponse.OBJECT_CHAT_COMPLETION, 1L, "test-model",
+                List.of(new Choice(0, new ChatMessage(ChatMessage.ROLE_ASSISTANT, "hi"), "stop")), null);
+        final CapturingRecorder noUsageRecorder = new CapturingRecorder();
+        final GuardedModelGateway noUsageGateway = new GuardedModelGateway(
+                new FakeGateway(noUsage, null), null, noUsageRecorder);
+        assertNotNull(noUsageGateway.chat(request(), context()));
+        assertEquals(0, noUsageRecorder.logs.get(0).promptTokens());
+        assertEquals(0, noUsageRecorder.logs.get(0).completionTokens());
     }
 
     @Test

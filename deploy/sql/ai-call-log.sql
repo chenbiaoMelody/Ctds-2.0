@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS ai_call_log (
     error_code        VARCHAR(16)  NULL                    COMMENT '失败时的平台错误码（V1.5 映射）',
     guardrail_verdict VARCHAR(16)  NULL                    COMMENT '护栏判定：ALLOW / DENY',
     guardrail_reason  VARCHAR(64)  NULL                    COMMENT '护栏可读原因码',
-    created_at        DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '创建时间（UTC）',
+    created_at        DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '创建时间（V1.5 建表/连接须统一 UTC 会话时区）',
     PRIMARY KEY (id),
     KEY idx_ai_call_log_trace (trace_id),
     KEY idx_ai_call_log_created (created_at)
