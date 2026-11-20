@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import com.ctds.common.guardrail.api.GuardrailVerdict;
 import com.ctds.common.guardrail.audit.AiCallLog;
 import com.ctds.common.guardrail.audit.AiCallLogRecorder;
 import com.ctds.common.guardrail.audit.AiCallOutcome;
@@ -60,6 +61,12 @@ class AiCallLogContractTest {
         assertNull(log.errorCode());
         assertNull(log.guardrailVerdict());
         assertEquals("-", log.guardrailReason());
+
+        final AiCallLog withError = new AiCallLog(
+                "trace", "feature", "actor", "provider", "model",
+                1, 2, 3, AiCallOutcome.FAILURE, "AI_CALL_FAILED", GuardrailVerdict.ALLOW, "reason");
+        assertEquals("AI_CALL_FAILED", withError.errorCode());
+        assertEquals(GuardrailVerdict.ALLOW, withError.guardrailVerdict());
     }
 
     @Test

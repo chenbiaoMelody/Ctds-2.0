@@ -29,7 +29,7 @@
 | `.../audit/AiCallLogRecorder.java` | interface | 记录器契约 + `NOOP` 常量 |
 | `.../gateway/GuardedModelGateway.java` | class | `ModelGateway` 装饰器（输入前 / 输出后 / 审计） |
 | `src/test/java/com/ctds/common/guardrail/GuardrailChainTest.java` | test | T1~T3 |
-| `.../GuardedModelGatewayTest.java` | test | T4~T8 |
+| `.../GuardedModelGatewayTest.java` | test | T2 / T4~T8（含 §6 边界与构造器守卫） |
 | `.../AiCallLogContractTest.java` | test | T9 |
 | `.../AiCallLogDdlReserveTest.java` | test | T10 |
 | `.../ModuleBoundaryTest.java` | test | T11 |
@@ -177,25 +177,26 @@ public final class GuardedModelGateway implements ModelGateway {
 
 - **零内容列**：不得出现 prompt / messages / response / content / 密钥 / 个人信息字段；
 - 文件头保留并更新声明：**"仅表结构预留。禁止在 V1.0 建表或写入；V1.5 由 C-8.4 / C-11.5 填充归属服务与 Flyway 实施。"**
-- V1.0 零迁移：`services/*/src/main/resources/db/migration/` 不得新增 `ai_call_log` 相关脚本。
+- V1.0 零迁移：全仓 `**/src/main/resources/db/migration/` 不得新增 `ai_call_log` 相关脚本（T10 扫描全仓，跳过 `.git`/`target`/`node_modules`/`build-output`/`dist`）。
+- **时间口径（E-02 / 评审② P2）**：`created_at` 为 `DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3)`，不保存时区；V1.5 建表与连接须统一 UTC 会话时区（如 `connectionTimeZone=UTC` / `time_zone='+00:00'`），DDL 注释不得再表述为无条件 UTC。
 
 ## §5 测试用例表（T1~T11，先红后绿；JUnit 5，离线，无 Spring 上下文，无 Testcontainers）
 
 | 用例 | 覆盖 | 断言要点 |
 | --- | --- | --- |
 | **T1** 空链直通 | B1 | 空输入/输出链 → ALLOW；`empty()` 可用 |
-| **T2** 输入拒绝短路 | B1 | 第二个输入护栏不被调用；下游 `ModelGateway` 零调用；异常 stage=INPUT、reason 原样 |
-| **T3** 护栏异常 fail-closed | B1 | 抛 `RuntimeException` / 返回 null / verdict null → DENY + `GUARDRAIL_ERROR` |
+| **T2** 输入拒绝短路 | B1 | 链层：输入/输出第二个护栏均不被调用；装饰器：下游 `ModelGateway` 零调用、异常 stage=INPUT、reason 原样、护栏收到同一 request/context |
+| **T3** 护栏异常 fail-closed | B1 | 输入/输出两侧：抛 `RuntimeException` / 返回 null / verdict null → DENY + `GUARDRAIL_ERROR` |
 | **T4** 输出拒绝 | B1 | 下游已调用；响应不返回；异常 stage=OUTPUT；记录 DENIED 且 tokens 取响应 usage |
 | **T5** 成功路径 | B1/B2 | 下游恰一次；记录 SUCCESS、tokens、latency ≥0、verdict=ALLOW；`chat(request)` 使用 `NONE` 上下文 |
 | **T6** 下游异常 | B1/B2 | 同一异常实例原样抛出；记录 FAILURE、verdict=ALLOW、errorCode=null |
 | **T7** 记录器异常隔离 | B2 | 记录器抛 `RuntimeException` → 成功仍返回、拒绝仍拒绝、下游异常仍原样抛出 |
 | **T8** 记录器默认与上下文归一 | B2 | null recorder → NOOP 不抛错；null/空白上下文字段 → `-`；usage null → 0 tokens |
 | **T9** `AiCallLog` 契约 | B2 | record 组件恰好为契约字段；字符串归一、负数归 0、outcome 必填；**无内容字段** |
-| **T10** DDL 预留边界 | B3 | 文件含 14 列与两索引；零内容列；文件头含"禁止在 V1.0 建表或写入"；全仓无 `ai_call_log` 迁移脚本 |
-| **T11** 模块边界 | B4 | 主源零 `java.net` / `HttpClient` / Spring 导入；pom 生产依赖仅 `common-model-gateway`；测试离线 |
+| **T10** DDL 预留边界 | B3 | 文件含 14 列与两索引；零内容列（任意类型均纳检）；值域注释齐备；文件头含"禁止在 V1.0 建表或写入"；全仓无 `ai_call_log` 迁移脚本 |
+| **T11** 模块边界 | B4 | 主源零 `java.net` / `HttpClient` / Spring 导入；pom 生产依赖仅 `common-model-gateway`；测试离线（静态边界证明，E-06） |
 
-> T10 读取路径：surefire 默认工作目录 = 模块目录，测试以 `Path.of("..", "..", "deploy", "sql", "ai-call-log.sql")` 定位仓库内预留 DDL；断言文件头声明、14 列、两索引、零内容列，并扫描 `services/*/src/main/resources/db/migration/` 无 `ai_call_log` 脚本。
+> T10 读取路径：surefire 默认工作目录 = 模块目录，测试以 `Path.of("..", "..", "deploy", "sql", "ai-call-log.sql")` 定位仓库内预留 DDL；断言文件头声明、14 列（按行解析，不依赖缩进）、两索引、零内容列（任意类型均纳检），并扫描全仓 `**/src/main/resources/db/migration/`（跳过 `.git`/`target`/`node_modules`/`build-output`/`dist`）无 `ai_call_log` 脚本。
 
 ## §6 边界值与异常行为（统一表）
 
@@ -205,6 +206,8 @@ public final class GuardedModelGateway implements ModelGateway {
 | 护栏抛 `RuntimeException` | DENY + `GUARDRAIL_ERROR`；不记录原始异常内容 |
 | delegate 抛 `RuntimeException` | 原样抛出（同一实例）；记录 FAILURE |
 | delegate 抛 `Error` | 不捕获、不审计、直接传播（避免干扰致命错误） |
+| guardrail 抛 `Error` | 不捕获、不审计、直接传播（仅 `RuntimeException` 按 fail-closed 处理；E-04） |
+| recorder 抛 `Error` | 不捕获、直接传播（"绝不抛错"限 `RuntimeException`；V1.5 记录器实现方保证不抛 Error；E-04） |
 | recorder 抛 `RuntimeException` | 吞掉；主流程结果不变 |
 | recorder 为 null | 使用 `NOOP` |
 | chain 为 null | 使用 `empty()` |
@@ -217,6 +220,7 @@ public final class GuardedModelGateway implements ModelGateway {
 
 ## §7 验证命令（编码段交付口径）
 
+0. **前置（干净环境一次性）**：`mvn -B -ntp -pl common/model-gateway -am install -DskipTests`（安装内部依赖 `common-model-gateway:2.0.0-SNAPSHOT` 到本地仓库；已执行过全仓门禁/安装时可跳过——评审① P1 修复）；
 1. `mvn -B -ntp -pl common/guardrail test`（模块单测，T1~T11 红相 → 绿相）；
 2. `mvn -B -ntp compile` / `mvn -B -ntp test`（全仓编译与测试）；
 3. `mvn -B -ntp checkstyle:check -pl common/guardrail`（风格）；
@@ -236,6 +240,11 @@ public final class GuardedModelGateway implements ModelGateway {
 （V0.9 空；评审与编码段发现的偏差、口径勘误在此登记，不改历史段落，按"勘误说明 + 影响范围"追加。）
 
 - **E-01（V1.0 编码段，2026-11-19）**：§2 `AiCallLog` 紧凑构造"字符串 null/空白 → `-`"与 §3 步骤 5 / §5 T6"FAILURE 时 errorCode=null"存在口径冲突。按更具体条款裁定：**errorCode 保持可空**（null/空白 → null，与 DDL `error_code NULL` 一致）；其余字符串组件（traceId / feature / actor / provider / model / guardrailReason）按 `-` 归一。影响范围：仅 `AiCallLog` 紧凑构造与 T9 用例；字段清单、DDL、装饰器时序不变。
+- **E-02（4 视角评审轮 1，2026-11-20；①③④）**：规格 B2-2 将"时间"列为审计记录内容，而 §2 `AiCallLog` 为 12 组件、无时间字段。**口径说明**：V1.0 不落库，调用时间由落库层 `created_at` 承载（§4）；`AiCallLog` 保持 12 组件，不新增 `occurredAt`。若编排师/PO 要求记录对象自身携带时间，则升级为契约变更（12→13 + T9/剧本同步 + 重新确认）。影响范围：`AiCallLog` Javadoc、剧本 S2 注记；实现与测试计数不变。
+- **E-03（4 视角评审轮 1，2026-11-20；② P2 / ③④ P3）**：`AiCallLog` 字符串无长度/字符上限，DDL 列宽固定；V1.5 落库可能因超长失败（记录器异常被吞→审计静默丢失）、截断或 `reasonCode` 误填原文导致 PII 泄露。**V1.0 不改变已批准 12 组件契约**；V1.5 落库实现必须：按 DDL 列宽校验/截断（trace/feature/actor/provider ≤64、model ≤128、error_code ≤16、guardrail_reason ≤64）、reasonCode 仅代码形状、traceId 复用平台 ≤64 口径、参数化 SQL、暴露丢弃/失败计数；actor 语义为主体编号（64 vs 128 在 V1.5 对齐）。登记 DB-137。影响范围：`AiCallLog`/`AiCallLogRecorder` Javadoc、DDL 注释；无行为改动。
+- **E-04（4 视角评审轮 1，2026-11-20；①②④）**：`Error` 属致命错误：delegate / guardrail / recorder 抛 `Error` 均不捕获、不审计（§6 原有 delegate 口径扩展至护栏与记录器）；"绝不阻塞"由记录器实现方保证（V1.0 NOOP）。影响范围：装饰器注释、§6 新增 guardrail/recorder 两行；规格 B2-3 的"绝不抛错"按 `RuntimeException` 语义执行（与平台 `ConnectorAuditService` / `DeliveryAuditService` 先例一致，V1.5 记录器实现方保证不抛 `Error`）。
+- **E-05（4 视角评审轮 1，2026-11-20；②③ P3 登记）**：① `GuardrailInput/Output` 默认 `toString` 可打印原文——V1.5 护栏实现须只读且禁止打印/记录原文；② `"-"`/归一化/钳位在多文件重复、`checkInput/checkOutput` 近重复、`AiCallOutcome` 与 `AuditOutcome` 同值——保留（可读性优先、避免跨组件耦合，Q5-A），V1.5 落库时再评估收敛；③ latency 截顶/并发/NOOP 断言深度等测试边界登记（详见评审记录）。
+- **E-06（4 视角评审轮 1，2026-11-20；④ P3 登记）**：B4"断网全过/运行期零写库"以静态边界断言（T11：主源零网络 import、生产依赖仅网关、无 JDBC/DataSource）为结构性证据，不等同断网实测；红相证据 `build-output/w3103-red-phase.log` 按 §7 本地留痕（gitignored），红相形态 = 新模块缺生产类导致编译失败。
 
 ## §10 确认记录
 

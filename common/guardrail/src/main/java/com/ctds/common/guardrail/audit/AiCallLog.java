@@ -5,6 +5,8 @@ import com.ctds.common.guardrail.api.GuardrailVerdict;
 /**
  * B2 AI 调用审计记录：仅元数据，零 prompt / 响应原文 / 密钥 / 个人信息（CAT-01 / L2）。
  * errorCode 保持可空（hifi §3 步骤 5 / T6）；其余字符串缺省归一为 "-"。
+ * 调用时间由落库层 created_at 承载（hifi §9 E-02）；字符串长度与字符边界由 V1.5
+ * 落库实现按 DDL 列宽校验/截断（hifi §9 E-03）。
  */
 public record AiCallLog(
         String traceId,

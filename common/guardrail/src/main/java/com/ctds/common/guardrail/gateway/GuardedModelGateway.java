@@ -88,7 +88,7 @@ public final class GuardedModelGateway implements ModelGateway {
         try {
             recorder.record(log);
         } catch (final RuntimeException ignored) {
-            // 审计铁律：记录器异常绝不改变调用结果。
+            // 审计铁律：记录器异常绝不改变调用结果；Error 属致命错误，按 hifi §6 / E-04 不捕获。
         }
     }
 
