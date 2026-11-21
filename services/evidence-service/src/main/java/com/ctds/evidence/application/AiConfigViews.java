@@ -21,8 +21,13 @@ public final class AiConfigViews {
             String baseUrl, String model, boolean configured) {
     }
 
-    /** E2 入参：全量提交（hifi §1.2；校验规则见 AiConfigService.validate）。 */
-    public record AiConfigSaveRequest(Boolean enabled, String defaultProvider, Long tokenBudget,
+    /**
+     * E2 入参：全量提交（hifi §1.2；校验规则见 AiConfigService.validate）。
+     * tokenBudget 以字符串承载（E-01-9，评审 P2-A）：JSON 数字/文本形态统一进服务层解析，
+     * 非整数全形态收敛 1014C0001（MSG_BUDGET_INVALID）——不依赖 Jackson float→int 宽泛转换
+     * （默认开启，1.5 会被截断为 1 静默保存）；JSON 线上形态不变（数字或文本皆可）。
+     */
+    public record AiConfigSaveRequest(Boolean enabled, String defaultProvider, String tokenBudget,
             List<ProviderSaveItem> providers) {
     }
 

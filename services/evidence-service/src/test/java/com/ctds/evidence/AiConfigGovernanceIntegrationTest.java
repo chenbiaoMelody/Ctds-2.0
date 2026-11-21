@@ -28,7 +28,9 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * jdbc 源真跑 Flyway V1~V6，沿 RbacGovernanceBehaviorIntegrationTest 范式）：
  * - T1 缺省视图（seed 态 = C-11.1 缺省）+ T8 读响应零密钥字段（api_key_ref 不出站，红线）；
  * - T2 保存后回读；T3 保存成功逐字段留痕（仅变化字段）+ 全同保存零新留痕；
- * - T4 校验拒绝四类（清单外编号 / 默认供应商不在清单 / 负预算 / 非法 URL）零变化；
+ * - T4 校验拒绝边界值全覆盖（清单外编号 / 缺行 / 重复行 / 默认供应商不在清单 / 负预算 /
+ *   非整数数字与文本 / 非数字文本 / 预算缺参 / 开关缺失或 null / 非法或超长 URL / 超长模型名）零变化
+ *   （评审修复批 P2-A/P2-B：hifi §8 边界值表后端权威面逐行承载）；
  * - T5 权限守卫双向（secadmin 读/写均 403）；T6 判定预览（先开关后预算，已用量恒 0）。
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK,
@@ -198,6 +200,77 @@ class AiConfigGovernanceIntegrationTest {
                 + "{\"providerId\":\"qwen\",\"baseUrl\":null,\"model\":null},"
                 + "{\"providerId\":\"kimi\",\"baseUrl\":null,\"model\":null}]}",
                 "服务地址须为 http(s) URL");
+    }
+
+    /** T4#5：开关缺失 / null → 400 + 1014C0001（MSG_ENABLED_INVALID），零变化（P2-B：hifi §8 边界行补权威测试）。 */
+    @Test
+    void saveRejectsMissingOrNullEnabled() throws Exception {
+        assertRejected("{\"defaultProvider\":\"glm\",\"tokenBudget\":0," + defaultProvidersJson() + "}",
+                "网关开关须为布尔值");
+        assertRejected("{\"enabled\":null,\"defaultProvider\":\"glm\",\"tokenBudget\":0,"
+                + defaultProvidersJson() + "}", "网关开关须为布尔值");
+    }
+
+    /** T4#6：预算缺参（null）→ 400 + 1014C0001（MSG_BUDGET_INVALID），零变化（P2-B）。 */
+    @Test
+    void saveRejectsMissingBudget() throws Exception {
+        assertRejected("{\"enabled\":false,\"defaultProvider\":\"glm\",\"tokenBudget\":null,"
+                + defaultProvidersJson() + "}", "token 预算须为 ≥0 的整数");
+    }
+
+    /** T4#7：预算非整数（JSON 数字 1.5）→ 400 + 1014C0001，零变化（P2-A：禁宽泛 float→int 截断静默保存）。 */
+    @Test
+    void saveRejectsNonIntegerBudgetNumber() throws Exception {
+        assertRejected("{\"enabled\":false,\"defaultProvider\":\"glm\",\"tokenBudget\":1.5,"
+                + defaultProvidersJson() + "}", "token 预算须为 ≥0 的整数");
+    }
+
+    /** T4#8：预算非整数文本（"1.5"）/ 非数字文本（"abc"）→ 400 + 1014C0001，零变化（P2-A）。 */
+    @Test
+    void saveRejectsNonIntegerOrNonNumericBudgetText() throws Exception {
+        assertRejected("{\"enabled\":false,\"defaultProvider\":\"glm\",\"tokenBudget\":\"1.5\","
+                + defaultProvidersJson() + "}", "token 预算须为 ≥0 的整数");
+        assertRejected("{\"enabled\":false,\"defaultProvider\":\"glm\",\"tokenBudget\":\"abc\","
+                + defaultProvidersJson() + "}", "token 预算须为 ≥0 的整数");
+    }
+
+    /** T4#9：模型名 129 字符 → 400 + 1014C0001（MSG_MODEL_INVALID），零变化（P2-B：后端权威面）。 */
+    @Test
+    void saveRejectsModelOver128Chars() throws Exception {
+        assertRejected("{\"enabled\":false,\"defaultProvider\":\"glm\",\"tokenBudget\":0,\"providers\":["
+                + "{\"providerId\":\"glm\",\"baseUrl\":null,\"model\":\"" + "x".repeat(129) + "\"},"
+                + "{\"providerId\":\"deepseek\",\"baseUrl\":null,\"model\":null},"
+                + "{\"providerId\":\"qwen\",\"baseUrl\":null,\"model\":null},"
+                + "{\"providerId\":\"kimi\",\"baseUrl\":null,\"model\":null}]}",
+                "默认模型名不得超过 128 字符");
+    }
+
+    /** T4#10：服务地址合法形态但 >512 字符 → 400 + 1014C0001（MSG_BASE_URL_INVALID），零变化（P2-B）。 */
+    @Test
+    void saveRejectsBaseUrlOver512Chars() throws Exception {
+        String longUrl = "https://open.example.com/" + "a".repeat(492);
+        assertRejected("{\"enabled\":false,\"defaultProvider\":\"glm\",\"tokenBudget\":0,\"providers\":["
+                + "{\"providerId\":\"glm\",\"baseUrl\":\"" + longUrl + "\",\"model\":null},"
+                + "{\"providerId\":\"deepseek\",\"baseUrl\":null,\"model\":null},"
+                + "{\"providerId\":\"qwen\",\"baseUrl\":null,\"model\":null},"
+                + "{\"providerId\":\"kimi\",\"baseUrl\":null,\"model\":null}]}",
+                "服务地址须为 http(s) URL");
+    }
+
+    /** T4#11：providers 缺行（3 行）/ 重复行（4 行含重复）→ 400 + 1014C0001，零变化（P2-B）。 */
+    @Test
+    void saveRejectsProvidersMissingOrDuplicatedRows() throws Exception {
+        assertRejected("{\"enabled\":false,\"defaultProvider\":\"glm\",\"tokenBudget\":0,\"providers\":["
+                + "{\"providerId\":\"glm\",\"baseUrl\":null,\"model\":null},"
+                + "{\"providerId\":\"deepseek\",\"baseUrl\":null,\"model\":null},"
+                + "{\"providerId\":\"qwen\",\"baseUrl\":null,\"model\":null}]}",
+                "供应商编号不在封闭清单内");
+        assertRejected("{\"enabled\":false,\"defaultProvider\":\"glm\",\"tokenBudget\":0,\"providers\":["
+                + "{\"providerId\":\"glm\",\"baseUrl\":null,\"model\":null},"
+                + "{\"providerId\":\"glm\",\"baseUrl\":null,\"model\":null},"
+                + "{\"providerId\":\"deepseek\",\"baseUrl\":null,\"model\":null},"
+                + "{\"providerId\":\"qwen\",\"baseUrl\":null,\"model\":null}]}",
+                "供应商编号不在封闭清单内");
     }
 
     /** T5：无权限双向拒绝（读 403 / 写 403），库与留痕零变化（自备状态，顺序无关）。 */

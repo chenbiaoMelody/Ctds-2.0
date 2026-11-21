@@ -15,10 +15,10 @@ public interface AiConfigStore {
     /** 封闭清单供应商状态行（不含密钥引用列——出库即不触达）。 */
     List<ProviderState> loadProviderStates();
 
-    /** 保存总控（upsert 单例行）。 */
+    /** 保存总控（UPDATE 单例行 id=1；V6 seed 行恒在前提、无删除路径，非 upsert——E-01-13 措辞对齐实现）。 */
     void saveGatewayState(boolean enabled, String defaultProvider, long tokenBudget, String updatedBy);
 
-    /** 保存供应商连接参数（upsert；仅 base_url/model 列，api_key_ref 永不经本方法触达）。 */
+    /** 保存供应商连接参数（UPDATE 封闭清单既有行；仅 base_url/model 列，api_key_ref 永不经本方法触达）。 */
     void saveProviderState(String providerId, String baseUrl, String model);
 
     /** 逐字段变更留痕（值未变化的字段由调用方过滤后才会进入本方法）。 */

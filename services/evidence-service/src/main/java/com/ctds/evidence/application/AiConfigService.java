@@ -75,6 +75,7 @@ public class AiConfigService {
     public AiConfigViews.AiConfigView save(final AiConfigViews.AiConfigSaveRequest request,
             final String changedBy) {
         validate(request);
+        long tokenBudget = parseBudget(request.tokenBudget());
         GatewayState current = store.loadGatewayState();
         Map<String, ProviderState> currentProviders = new LinkedHashMap<>();
         store.loadProviderStates().forEach(state -> currentProviders.put(state.providerId(), state));
@@ -89,9 +90,9 @@ public class AiConfigService {
             entries.add(new ChangeEntry(actor, "defaultProvider", current.defaultProvider(),
                     request.defaultProvider()));
         }
-        if (current.tokenBudget() != request.tokenBudget()) {
+        if (current.tokenBudget() != tokenBudget) {
             entries.add(new ChangeEntry(actor, "tokenBudget", Long.toString(current.tokenBudget()),
-                    Long.toString(request.tokenBudget())));
+                    Long.toString(tokenBudget)));
         }
         for (AiConfigViews.ProviderSaveItem item : request.providers()) {
             ProviderState old = currentProviders.get(item.providerId());
@@ -109,7 +110,7 @@ public class AiConfigService {
             }
         }
 
-        store.saveGatewayState(request.enabled(), request.defaultProvider(), request.tokenBudget(), actor);
+        store.saveGatewayState(request.enabled(), request.defaultProvider(), tokenBudget, actor);
         for (AiConfigViews.ProviderSaveItem item : request.providers()) {
             store.saveProviderState(item.providerId(), normalize(item.baseUrl()), normalize(item.model()));
         }
@@ -158,9 +159,7 @@ public class AiConfigService {
             throw new BizException(AiConfigErrorCodes.PARAM_INVALID,
                     AiConfigErrorCodes.MSG_DEFAULT_PROVIDER_NOT_IN_LIST);
         }
-        if (request.tokenBudget() == null || request.tokenBudget() < 0) {
-            throw new BizException(AiConfigErrorCodes.PARAM_INVALID, AiConfigErrorCodes.MSG_BUDGET_INVALID);
-        }
+        parseBudget(request.tokenBudget());
         for (AiConfigViews.ProviderSaveItem item : request.providers()) {
             String baseUrl = normalize(item.baseUrl());
             if (baseUrl != null && (baseUrl.length() > MAX_BASE_URL
@@ -176,6 +175,27 @@ public class AiConfigService {
 
     private static boolean isBlank(final String value) {
         return value == null || value.isBlank();
+    }
+
+    /**
+     * 预算解析（E-01-9，评审 P2-A）：请求体以字符串承载（E-01-9），服务层统一解析——
+     * 缺参 / 空白 / 非整数（JSON 数字 1.5、文本 "1.5"）/ 非数字（"abc"）/ 负数 / 超 Long 范围
+     * 一律 400 + 1014C0001（MSG_BUDGET_INVALID），零 Jackson float→int 宽泛转换依赖（规格 B2-2）。
+     */
+    private static long parseBudget(final String raw) {
+        if (isBlank(raw)) {
+            throw new BizException(AiConfigErrorCodes.PARAM_INVALID, AiConfigErrorCodes.MSG_BUDGET_INVALID);
+        }
+        final long budget;
+        try {
+            budget = Long.parseLong(raw.trim());
+        } catch (NumberFormatException ex) {
+            throw new BizException(AiConfigErrorCodes.PARAM_INVALID, AiConfigErrorCodes.MSG_BUDGET_INVALID);
+        }
+        if (budget < 0) {
+            throw new BizException(AiConfigErrorCodes.PARAM_INVALID, AiConfigErrorCodes.MSG_BUDGET_INVALID);
+        }
+        return budget;
     }
 
     /** 空串归一为 null（未配置态），比较与落库共用同一口径。 */
