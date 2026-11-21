@@ -357,18 +357,102 @@ class CatalogDatasetLifecycleIntegrationTest {
     void nonOwnerIncludingSpaceAdminDeniedWithLogs() throws Exception {
         final long datasetId = registerOk("owner-t9b", 1014L, "越权数据集", "");
         // 空间管理员（非登记主体）变更 / 注销一律拒绝 + DENIED 留痕
+        // DB-135 反转（B3-R2/B3-AC2）：写面属主门槛并入统一字典——非属主与不存在同码同文
+        // （400 + 1000C0003 + "资源不存在"），消除"403 区分存在与不存在"的存在性枚举通道
         final MvcResult update = update("admin-t9b", datasetId, "{\"intro\":\"越权变更\"}");
-        assertThat(update.getResponse().getStatus()).isEqualTo(403);
-        assertThat(codeOf(update)).isEqualTo("1007C0006");
+        assertThat(update.getResponse().getStatus()).isEqualTo(400);
+        assertThat(codeOf(update)).isEqualTo("1000C0003");
+        assertThat(root(update).path("message").asText()).isEqualTo("资源不存在");
         final MvcResult cancel = cancel("admin-t9b", datasetId, "{\"confirmCancellation\":true}");
-        assertThat(cancel.getResponse().getStatus()).isEqualTo(403);
-        assertThat(codeOf(cancel)).isEqualTo("1007C0006");
+        assertThat(cancel.getResponse().getStatus()).isEqualTo(400);
+        assertThat(codeOf(cancel)).isEqualTo("1000C0003");
+        assertThat(root(cancel).path("message").asText()).isEqualTo("资源不存在");
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM dataset_action_log WHERE dataset_id = ? "
-                + "AND actor_subject_no = 'admin-t9b' AND result = 'DENIED' AND reason_code = 'C0006' "
+                + "AND actor_subject_no = 'admin-t9b' AND result = 'DENIED' AND reason_code = 'C0003' "
                 + "AND action IN ('DENIED_UPDATE','DENIED_CANCEL')", Integer.class, datasetId)).isEqualTo(2);
         // 资源本体未被改动
         assertThat(jdbc.queryForObject("SELECT intro FROM dataset WHERE id = ?", String.class, datasetId))
                 .isEqualTo("资源简介");
+    }
+
+    // ==== DB-135 写面存在性防枚举（B3-R2/B3-AC2/B4-R2/B4-AC2；DB-135 hifi §5 T1~T5/T10）====
+
+    /** 写面三态拒绝封套白名单（与读面 DB-132 同款断言手法：不新增存在性差异字段）。 */
+    private static void assertUnifiedDenyEnvelope(final MvcResult denied) throws Exception {
+        assertThat(denied.getResponse().getStatus()).isEqualTo(400);
+        assertThat(codeOf(denied)).isEqualTo("1000C0003");
+        assertThat(root(denied).path("message").asText()).isEqualTo("资源不存在");
+        assertThat(root(denied).path("data").isNull()).isTrue();
+        assertThat(root(denied).properties().stream().map(java.util.Map.Entry::getKey).toList())
+                .as("拒绝封套结构白名单（不新增存在性差异字段）")
+                .containsExactlyInAnyOrder("code", "message", "traceId", "data");
+    }
+
+    @Test
+    void writeFaceUpdateNonOwnerUsesUnifiedNotFoundShape() throws Exception {
+        final long datasetId = registerOk("owner-db135", 1030L, "写面越权数据集", "");
+        assertUnifiedDenyEnvelope(update("admin-db135", datasetId, "{\"intro\":\"越权变更\"}"));
+    }
+
+    @Test
+    void writeFaceUpdateMissingDatasetSameShapeAsNonOwner() throws Exception {
+        final MvcResult absent = update("admin-db135b", 999999L, "{\"intro\":\"不存在资源变更\"}");
+        assertUnifiedDenyEnvelope(absent);
+        // 与非属主分支逐字同码同文（status/code/message/结构；traceId 为链路标识不参与判定）
+        final long datasetId = registerOk("owner-db135b", 1031L, "写面逐字比对数据集", "");
+        final MvcResult nonOwner = update("admin-db135b", datasetId, "{\"intro\":\"越权变更\"}");
+        assertThat(absent.getResponse().getStatus()).isEqualTo(nonOwner.getResponse().getStatus());
+        assertThat(codeOf(absent)).isEqualTo(codeOf(nonOwner));
+        assertThat(root(absent).path("message").asText()).isEqualTo(root(nonOwner).path("message").asText());
+        assertThat(root(absent).path("data").getNodeType()).isEqualTo(root(nonOwner).path("data").getNodeType());
+    }
+
+    @Test
+    void writeFaceCancelThreeStatesUnified() throws Exception {
+        final long datasetId = registerOk("owner-db135c", 1032L, "注销防枚举数据集", "");
+        final MvcResult nonOwner = cancel("admin-db135c", datasetId, "{\"confirmCancellation\":true}");
+        final MvcResult absent = cancel("admin-db135c", 999999L, "{\"confirmCancellation\":true}");
+        assertUnifiedDenyEnvelope(nonOwner);
+        assertUnifiedDenyEnvelope(absent);
+        assertThat(codeOf(nonOwner)).isEqualTo(codeOf(absent));
+    }
+
+    @Test
+    void writeFaceCrossSpaceSubjectSameShapeAsSameSpaceDenial() throws Exception {
+        // 跨空间语义 = 非属主分支：W1/W2 写面仅按 owner 判定、不读取空间上下文，
+        // 故跨空间成员与同空间非属主在实现上同一边界；本用例不作独立空间归属证明（B4-R2）。
+        final long datasetId = registerOk("owner-db135d", 1033L, "跨空间写面数据集", "");
+        assertUnifiedDenyEnvelope(update("spaceB-db135d", datasetId, "{\"intro\":\"跨空间变更\"}"));
+    }
+
+    @Test
+    void writeFaceDeniedAuditTrailReasonC0003() throws Exception {
+        final long datasetId = registerOk("owner-db135e", 1034L, "写面留痕数据集", "");
+        update("admin-db135e", datasetId, "{\"intro\":\"越权变更\"}");
+        cancel("admin-db135e", datasetId, "{\"confirmCancellation\":true}");
+        // 非属主每次尝试恰 1 行 DENIED 留痕（动作名不变），reason_code 随新出站口径 C0003（Q2-A）
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM dataset_action_log WHERE dataset_id = ? "
+                + "AND actor_subject_no = 'admin-db135e' AND result = 'DENIED' AND reason_code = 'C0003' "
+                + "AND action IN ('DENIED_UPDATE','DENIED_CANCEL')", Integer.class, datasetId)).isEqualTo(2);
+        // 不存在零留痕（load 落空先于留痕）
+        update("admin-db135e", 999999L, "{\"intro\":\"不存在资源变更\"}");
+        cancel("admin-db135e", 999999L, "{\"confirmCancellation\":true}");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM dataset_action_log WHERE dataset_id = 999999",
+                Integer.class)).isZero();
+    }
+
+    @Test
+    void writeFaceUnauthenticatedRejected() throws Exception {
+        // 鉴权边界回归（沿读面探针手法）：W1/W2 未认证 401 + 1000C0002，不在本卡改造面
+        final long datasetId = registerOk("owner-db135f", 1035L, "写面鉴权探针资源", "");
+        final MvcResult unauthUpdate = mockMvc.perform(put(DATASETS + "/" + datasetId)
+                .contentType(CONTENT_TYPE).content("{\"intro\":\"未认证变更\"}")).andReturn();
+        assertThat(unauthUpdate.getResponse().getStatus()).as("未认证变更 → 401").isEqualTo(401);
+        assertThat(codeOf(unauthUpdate)).isEqualTo("1000C0002");
+        final MvcResult unauthCancel = mockMvc.perform(post(DATASETS + "/" + datasetId + "/cancellation")
+                .contentType(CONTENT_TYPE).content("{\"confirmCancellation\":true}")).andReturn();
+        assertThat(unauthCancel.getResponse().getStatus()).as("未认证注销 → 401").isEqualTo(401);
+        assertThat(codeOf(unauthCancel)).isEqualTo("1000C0002");
     }
 
     // ==== T10 读面防枚举与分页（行为 7 GWT-2/3 / 规则 1/2）====
@@ -442,12 +526,13 @@ class CatalogDatasetLifecycleIntegrationTest {
     }
 
     @Test
-    void writeFaceMissingDatasetKeepsLegacyNotFoundShape() throws Exception {
-        // 隔离线回归：写面对象不存在仍为 404 + 1007C0005 + 旧文案（共享常量语义不变）
+    void writeFaceMissingDatasetUsesUnifiedNotFoundShape() throws Exception {
+        // DB-135 反转（B3-R2）：写面对象不存在并入统一字典——400 + 1000C0003 + "资源不存在"
+        // （与读面 DB-132 同码同文；1007C0005 旧出站仅在治理面/产品面保留，共享常量语义不变）
         final MvcResult update = update("owner-t10c", 999999L, "{\"intro\":\"不存在资源变更\"}");
-        assertThat(update.getResponse().getStatus()).isEqualTo(404);
-        assertThat(codeOf(update)).isEqualTo("1007C0005");
-        assertThat(root(update).path("message").asText()).isEqualTo("资源不存在或无权访问");
+        assertThat(update.getResponse().getStatus()).isEqualTo(400);
+        assertThat(codeOf(update)).isEqualTo("1000C0003");
+        assertThat(root(update).path("message").asText()).isEqualTo("资源不存在");
     }
 
     @Test

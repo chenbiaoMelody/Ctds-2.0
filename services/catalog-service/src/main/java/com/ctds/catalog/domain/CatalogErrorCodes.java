@@ -23,13 +23,17 @@ public final class CatalogErrorCodes {
     /** 分类级别变更只能收紧就高（行为 2 规则 1——下调/放宽方向一律拒绝）。→ 409 */
     public static final ErrorCode DATASET_LEVEL_TIGHTEN_ONLY = ErrorCode.of("1007C0004");
     public static final String DATASET_LEVEL_TIGHTEN_ONLY_MESSAGE = "分类级别变更只能就高收紧，不可放宽";
-    /** 资源不存在或无权访问（写面/治理面/产品面沿用；读面属主三态已按 CHG-C-10.1-V1.3 改口径）。→ 404 */
+    /** 资源不存在或无权访问（治理面/产品面沿用；读面属主三态按 CHG-C-10.1-V1.3、写面按 DB-135
+     * 已改统一口径 400 + `1000C0003`——本码不再服务资源域读/写面，共享常量既有语义不变）。→ 404 */
     public static final ErrorCode DATASET_NOT_FOUND_OR_NO_ACCESS = ErrorCode.of("1007C0005");
     public static final String DATASET_NOT_FOUND_OR_NO_ACCESS_MESSAGE = "资源不存在或无权访问";
-    /** 属主读面三态统一文案（CHG-C-10.1-V1.3 裁决 A 案：归属不匹配 = 400 + `1000C0003`，与对象不存在
-     * 同码同文，防存在性枚举；字面与平台通用"NoResourceFound"一致）。读面专用，不复用写面文案常量。 */
+    /** 属主三态统一文案（CHG-C-10.1-V1.3 裁决 A 案：归属不匹配 = 400 + `1000C0003`，与对象不存在
+     * 同码同文，防存在性枚举；字面与平台通用"NoResourceFound"一致）。资源域读/写面统一文案
+     * （DB-132 读面 + DB-135 写面，DB-135 hifi §3-3；常量名含 READ 为历史命名，E-2 以注释澄清不改名）。 */
     public static final String DATASET_READ_NOT_FOUND_MESSAGE = "资源不存在";
-    /** 非登记主体无权操作（写面越权拒绝，行为 2 规则 5/行为 7 规则 1——含空间管理员，DENIED 留痕联动）。→ 403 */
+    /** 非登记主体无权操作（行为 2 规则 5/行为 7 规则 1——含空间管理员，DENIED 留痕联动）。
+     * 资源域写面属主门槛已按 DB-135 改出站口径（400 + `1000C0003` 统一拒绝）；本码继续服务
+     * 入驻资格门槛（CatalogAccessGuard/DatasetRegistrationService，Q8-A 防枚举独立设计）。→ 403 */
     public static final ErrorCode DATASET_FORBIDDEN = ErrorCode.of("1007C0006");
     public static final String DATASET_FORBIDDEN_MESSAGE = "仅登记主体本人可执行该资源操作";
     /** 主体未入驻统一文案（行为 1 规则 1 防枚举：不区分"主体不存在"与"主体未入驻"；
