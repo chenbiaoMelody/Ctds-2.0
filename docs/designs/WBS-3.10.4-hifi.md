@@ -15,7 +15,7 @@
 | E1 | `GET /api/v1/ai-config` | `platform.ai.config.read` | — | `AiConfigView`（见 §1.1） | 区块①③初值 + 预览依据 |
 | E2 | `POST /api/v1/ai-config/save` | `platform.ai.config.write` | body `AiConfigSaveRequest`（§1.2）；操作者 = `X-Ctds-Subject` 头 | `AiConfigView`（保存后） | 保存按钮；成功后刷新①③④ |
 | E3 | `GET /api/v1/ai-config/preview` | `platform.ai.config.read` | — | `AiConfigPreviewView { decision: "ALLOW"\|"DENIED_DISABLED"\|"DENIED_BUDGET_EXCEEDED", reason: 文案 }` | 区块②三态芯片 |
-| E4 | `GET /api/v1/ai-config/changes` | `platform.ai.config.read` | `pageNum` / `pageSize`（可选，沿 PageResult 约定） | `PageResult<AiConfigChangeLogView>`（list/total/pageNum/pageSize/totalPages） | 区块④分页五列 |
+| E4 | `GET /api/v1/ai-config/changes` | `platform.ai.config.read` | `pageNum` / `pageSize`（可选，沿 PageResult 约定） | `PageResult<AiConfigChangeView>`（list/total/pageNum/pageSize/totalPages；留痕视图落 **domain 层**，E-01-11） | 区块④分页五列 |
 
 **错误口径**：参数校验拒绝 = HTTP 400 + `1014C0001`（message 细分原因，见 §2.4）；无权限 = 403（common-auth 公共码）；其余沿全局异常处理惯例。**读响应（E1/E2 出参）不含 `apiKey` / `apiKeyRef` 任何密钥字段**（规格 B1-3 / B4-1 红线）。
 
@@ -65,9 +65,9 @@
 | --- | --- | --- |
 | `interfaces.AiConfigController` | 接口层 | 4 端点；`@RequirePermission` 双点；操作者取 `X-Ctds-Subject`（required=false，缺省 "unknown"） |
 | `application.AiConfigService` | 应用服务 | 合并视图组装 / 全量保存与校验 / 留痕写入（同事务）/ 判定预览（组 `ModelGatewayProperties` → `GatewayControl.check(props, 0)` → 文案映射） |
-| `application.AiConfigViews` | 应用层 DTO | `AiConfigView` / `ProviderView` / `AiConfigSaveRequest` / `AiConfigPreviewView` / `AiConfigChangeLogView` |
+| `application.AiConfigViews` | 应用层 DTO | `AiConfigView` / `ProviderView` / `AiConfigSaveRequest`（tokenBudget 以 **String 承载**，E-01-9）/ `AiConfigPreviewView`（留痕视图 = `domain.AiConfigChangeView`，E-01-11） |
 | `infrastructure.JdbcAiConfigStore` | 基础设施 | 三表读写（`JdbcClient`/`JdbcTemplate` 沿 `JdbcRbacStore` 惯例）；留痕逐字段 diff |
-| `domain.AiConfigErrorCodes` | 领域 | `PARAM_INVALID = ErrorCode.of("1014C0001")` + 5 条细分 message 常量（格式沿 `MonitorErrorCodes`） |
+| `domain.AiConfigErrorCodes` | 领域 | `PARAM_INVALID = ErrorCode.of("1014C0001")` + 6 条细分 message 常量（E-01-4；命名 `MSG_*` 为本卡一码多文案风格，与既有 `*_MESSAGE` 成对先例并存——评审 P3-G 登记注记） |
 | 测试：`AiConfigContractTest`（零 Docker 结构锚）/ `AiConfigGovernanceIntegrationTest`（Testcontainers 行为面 T1~T6/T8 + E4）/ `AiConfigMigrationStructureIntegrationTest`（T7 迁移锚） | — | 命名沿仓内 Contract/Integration 惯例（E-01-6：原拟三名更名合并） |
 
 ### 2.2 Flyway V6 DDL 草案（`V6__create_ai_gateway_config.sql`；最终以实现为准，注释口径不变）
@@ -130,14 +130,14 @@ INSERT INTO role_permission_change_log
 ### 2.3 合并视图与预览算法
 
 - **合并视图**：读 `ai_gateway_config` 单例行 + `ai_gateway_provider_config` 四行 → 组 `AiConfigView`（缺省态由 seed 承载，无运行时缺省分支；`providerName`/`isDefaultProvider` 由常量层组装，不落库）；
-- **保存**：整体校验（§1.2）→ 事务内：逐字段 diff（新值 vs 库值）→ 有变化的字段写 `ai_gateway_config_change_log` → upsert 主表与供应商行（`updated_by` = 操作者）→ 返回保存后视图；
+- **保存**：整体校验（§1.2）→ 事务内：逐字段 diff（新值 vs 库值）→ 有变化的字段写 `ai_gateway_config_change_log` → UPDATE 主表与供应商行（V6 seed 行恒在前提、无删除路径，非 upsert——E-01-13 措辞对齐实现；`updated_by` = 操作者）→ 返回保存后视图；
 - **判定预览**：由合并视图组 `ModelGatewayProperties`（enabled/defaultProvider/tokenBudget；providers 不参与判定）→ `GatewayControl.check(properties, 0L)` → 决策映射：ALLOW→"允许（当前配置下网关放行）" / DENIED_DISABLED→"网关未启用" / DENIED_BUDGET_EXCEEDED→"超出预算"（V1.0 已用量恒 0，该分支不可触发，界面口径灰字明示）。
 
 ### 2.4 错误码（`AiConfigErrorCodes`，1014 段启用）
 
 | 码值 | 常量 | message（细分可区分） |
 | --- | --- | --- |
-| `1014C0001` | `PARAM_INVALID` | 按 5 类细分常量：`MSG_PROVIDER_NOT_IN_LIST`（供应商编号不在封闭清单）/ `MSG_DEFAULT_PROVIDER_NOT_IN_LIST`（默认供应商不在封闭清单）/ `MSG_BUDGET_INVALID`（token 预算须为 ≥0 整数）/ `MSG_BASE_URL_INVALID`（服务地址须为 http(s) URL 或留空）/ `MSG_MODEL_INVALID`（默认模型名不得超过 128 字符） |
+| `1014C0001` | `PARAM_INVALID` | 按 6 类细分常量（E-01-4）：`MSG_PROVIDER_NOT_IN_LIST`（供应商编号不在封闭清单）/ `MSG_DEFAULT_PROVIDER_NOT_IN_LIST`（默认供应商不在封闭清单）/ `MSG_BUDGET_INVALID`（token 预算须为 ≥0 整数——非整数全形态含数字 1.5 / 文本 "1.5" / 非数字 / 缺参 / 超 Long 范围，E-01-9）/ `MSG_BASE_URL_INVALID`（服务地址须为 http(s) URL 或留空）/ `MSG_MODEL_INVALID`（默认模型名不得超过 128 字符）/ `MSG_ENABLED_INVALID`（网关开关须为布尔值） |
 
 ## 3. 前端文件清单（新增 4 + 修改 2）
 
@@ -167,7 +167,7 @@ URL 常量单点：`AI_CONFIG_URL = '/api/v1/ai-config'`（+ `/save`、`/preview
 
 - 挂载即并行拉 E1 + E3 + E4（第 1 页）；保存成功后重拉 E1/E4 并刷新预览；
 - 表单态：`enabled: boolean` / `tokenBudget: number` / `defaultProvider: string` / `providers: {providerId, baseUrl, model}[]`（与 E2 同构）；"放弃修改" = 重置为最近一次服务端视图；
-- 校验（前端前置，后端仍权威）：tokenBudget 为 ≥0 整数；baseUrl 空 或 /^https?:\/\//i；model ≤128；
+- 校验（前端前置，后端仍权威；规则变更须后端/前端/剧本**三处同步**——评审 P3-H 维护义务登记）：tokenBudget 为 ≥0 整数；baseUrl 空 或 /^https?:\/\//i；model ≤128；
 - 密钥列：静态灰字节点，**不绑定任何数据字段**（规格 B1-3；测试断言渲染结果零密钥字段）；
 - 三态芯片：constants/ai.ts DECISION map；未知枚举值原样显示；
 - 诚实边界提示条常驻页面顶部（"配置即预留"口径原文见 lofi/原型）。
@@ -185,11 +185,11 @@ URL 常量单点：`AI_CONFIG_URL = '/api/v1/ai-config'`（+ `/save`、`/preview
 | 规格行为 | 剧本步骤（Q7-A，待建） | 承载用例 |
 | --- | --- | --- |
 | B1 配置查看 | S1 配置查看 | **T1** 缺省视图（seed 态 = 关闭/glm/0/四供应商未配置）；**T2** 已保存视图回读；**T8** 读响应零密钥字段（api_key_ref 断言）；**F1** 页面渲染（缺省/未配置灰字/供应商标签）；**F4** 菜单与计数（32/三处同步） |
-| B2 编辑与校验 | S2 编辑与校验 | **T3** 保存成功（落库 + 返回视图 + 逐字段留痕仅变化字段）；**T4** 校验拒绝四类参数化（清单外编号 / 默认供应商不在清单 / 负预算 / 非法 URL → 400 + 1014C0001 + 原因文案可区分 + 库与留痕零变化）；**T5** 权限守卫（无 read 403 / 无 write 403 双向）；**F2** 编辑保存（payload/成功反馈/刷新）；**F3** 前置校验拦截提示 |
+| B2 编辑与校验 | S2 编辑与校验 | **T3** 保存成功（落库 + 返回视图 + 逐字段留痕仅变化字段）；**T4** 校验拒绝边界值全覆盖（清单外编号 / 缺行 / 重复行 / 默认供应商不在清单 / 负预算 / 非整数数字与文本 / 非数字文本 / 预算缺参 / 开关缺失或 null / 非法或超长 URL / 超长模型名 → 400 + 1014C0001 + 原因文案可区分 + 库与留痕零变化；评审修复批 P2-A/P2-B 补齐 hifi §8 后端权威面）；**T5** 权限守卫（无 read 403 / 无 write 403 双向）；**F2** 编辑保存（payload/成功反馈/留痕刷新断言，P3-I 补强）；**F3** 前置校验拦截提示 |
 | B3 判定预览 | S3 判定预览 | **T6** 预览（关闭→DENIED_DISABLED；开启+预算 0→ALLOW；props 组装正确性）；**F5** 预览芯片与口径灰字 |
-| B4 密钥红线与边界 | S4 边界回归 | **T7** 迁移 IT（V6 三表结构 + seed 单例行/四供应商行 + 权限两点入库）；**T8**（同上红线断言）；**E1** secretsScan 零命中；**E2** diff 锚定（model-gateway/既有迁移/门禁配置零改动）；**E3** 全仓门禁 GREEN（ConfigSha256 逐字一致、coverage ≥92.48%）；**F6** 留痕渲染 |
+| B4 密钥红线与边界 | S4 边界回归 | **T7** 迁移 IT（V6 三表结构 + seed 单例行/四供应商行 + 权限两点入库）；**T8**（同上红线断言）；**E1** secretsScan 零命中；**E2** diff 锚定（model-gateway/既有迁移/门禁配置零改动）；**E3** 全仓门禁 GREEN（ConfigSha256 逐字一致、coverage ≥92.48%）；**F6** 留痕渲染（含 >10 行分页控件渲染，P3-J 补强；剧本 S4-1 组件级支撑）；**F7** 留痕加载失败显式提示（P3-E） |
 
-后端 8 用例（T1~T8，含参数化展开）+ 前端 6 用例组（F1~F6）；禁止空洞断言与仅 happy-path（T4/T5 为负向主体）。
+后端 T1~T8（Governance IT **16** 用例含 T4 边界值展开 + Contract 5 + Migration IT 5）+ 前端 7 用例组（F1~F7）；禁止空洞断言与仅 happy-path（T4/T5 为负向主体）。
 
 ## 8. 边界值与异常行为
 
@@ -221,9 +221,15 @@ URL 常量单点：`AI_CONFIG_URL = '/api/v1/ai-config'`（+ `/save`、`/preview
   - **E-01-6** 测试类命名沿仓内 Contract/Integration 惯例（见 §2.1 更新）；
   - **E-01-7** `common/auth` `PermissionPointRegistryTest` 登记并集 V3∪V4∪V5 → **+V6** 并新增 T13 专项测试（门禁首跑 RED 根因：新权限点仅走 Flyway seed 未进静态登记并集；沿 V4→T9 / V5→T12 授点演进先例——守卫判定逻辑不变，登记清单演进）；
   - **E-01-8** 门禁首跑 RED（RunLabel `20261121-085622-8632`；PASS=12/FAIL=3：unitTest/coverage = E-01-7 根因 + frontendTypeCheck TS6133 未用类型/未用 scope ×2）→ 修复批（上述三处 + TS 清理）→ 复跑（RunLabel 见任务卡执行留痕）。
+  - **E-01-9**（评审修复批 P2-A）`AiConfigSaveRequest.tokenBudget` 请求承载 **Long → String**（JSON 线上形态不变，前端零改动）：非整数全形态（JSON 数字 1.5 / 文本 "1.5" / 非数字 "abc" / 缺参 / 超 Long 范围）经服务层 `parseBudget` 统一 **400 + 1014C0001（MSG_BUDGET_INVALID）**——红相实证 Jackson 默认 float→int 宽泛转换将 1.5 截断为 1 **静默保存**（`build-output/w3104-fix-red-backend.log`：Status 200），规格 B2/hifi §8 字面落实；
+  - **E-01-10**（评审修复批 P2-B）hifi §8 边界值表后端权威面补齐：开关缺失/null、预算缺参、模型名 129、服务地址 >512、providers 缺行/重复行（Governance IT T4#5~T4#11，9 → **16** 用例）；
+  - **E-01-11**（评审 ①-2/③-2）留痕视图 DTO 落位 = **`domain.AiConfigChangeView`**（沿 `RbacChangeView` domain 先例；字段形态一致）——原 §1 E4/§2.1 "application.AiConfigChangeLogView" 表述作废并同步；
+  - **E-01-12**（评审 ①-4/④-2）陈旧 PUT 表述清理：lofi S4/P2、`api/ai.spec.ts` 头注、`AiConfigView.spec.ts` 头注、§10 零改动面清单（vite.config.ts 移出）；
+  - **E-01-13**（评审 ①-3/①-5/③-4）javadoc 与 lofi 口径对齐实现：`AiConfigStore` 保存方法 "upsert" → **UPDATE（V6 seed 行恒在前提、无删除路径）**；lofi P5/权限可见性"写缺权保存按钮隐藏/禁用" → **后端 `@RequirePermission` 403 权威承载**（前端无 write 权限状态，不前置隐藏）；
+  - **E-01-14**（评审 ①-7/④-3/④-4）前端留痕加载失败**显式提示**（原 catch 静默置空与空态不可区分）+ F2 成功反馈/留痕刷新断言补强 + F6 >10 行分页控件渲染用例（新增 F7 用例承载）。
 
 ## 10. 体量与门禁
 
 - **体量预估**：后端 V6 SQL ~90 行（含注释）+ 主源 5 类 ~350 有效行 + 后端测试 ~350；前端 View ~230 + spec ~180 + api ~70 + spec ~60 + constants ~40 + router/计数 ~15 → **合计约 1000~1300 有效行（不含文档）**，超 400 行/PR → 按任务卡 Q8-A 拆 **2 批链式**（批1 = 后端 V6+API+测试；批2 = 前端全套+计数同步）；编码段实测后呈报确切拆分（若单批仍超 400，呈报编排师裁定细分或登记豁免）；
 - **门禁基线**：coverage overall 不劣于 **92.48%**（3.10.3 验收值）；ConfigSha256 与基线 `adc3f98b…5cfb` 逐字一致（零门禁配置改动）；mutation 仅 did 不受影响；前端既有测试基线全绿（计数 +F1~F6）；
-- **零改动面**（diff 锚定项）：`common/model-gateway`、`common/guardrail`、`common/vector-store`、其余全部 services（除 evidence-service 本卡新增面）、gateway-service 路由、既有迁移脚本、门禁配置、`frontend/vite.config.ts`（复用既有 `/api/v1/platform` 键）。
+- **零改动面**（diff 锚定项）：`common/model-gateway`、`common/guardrail`、`common/vector-store`、其余全部 services（除 evidence-service 本卡新增面）、gateway-service 路由、既有迁移脚本、门禁配置（`frontend/vite.config.ts` 因 E-01-2 新增 1 代理键 `/api/v1/ai-config`，**移出零改动面清单**——原"复用既有 `/api/v1/platform` 键"表述作废）。

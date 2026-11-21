@@ -38,7 +38,7 @@
 - **S1 路由与菜单**：`router/index.ts` 平铺追加 1 条（`platform/ai-config`），meta `{title: 'AI 服务配置', menu: true, menuOrder: 32, icon, permission: 'platform.ai.config.read'}`；计数断言三处同步（普通 11 不变 / admin 31→32 / max 31→32）；
 - **S2 api 层**：`api/ai.ts`——4 个消费函数走既有 `apiJson` 封装（身份头自动附），URL 常量单点；共享类型单点；分页走既有 `pageQuery` 约定；
 - **S3 常量层**：`constants/ai.ts`——PROVIDER 双 map（含"默认"徽标位）+ DECISION 三态 LABELS/TAG + `labelOf()` 未知值原样；
-- **S4 视图层**：`views/platform/AiConfigView.vue` 单页四区块（表单态 state 集中、保存 = 全量 PUT、预览 = 独立 GET）；
+- **S4 视图层**：`views/platform/AiConfigView.vue` 单页四区块（表单态 state 集中、保存 = 全量 POST /save〔E-01-1〕、预览 = 独立 GET）；
 - **S5 测试层**：`AiConfigView.spec` / `api/ai.spec` / `MainLayout.spec`+`router.spec` 计数同步（+1）。
 
 ## 3. 主要流程
@@ -46,10 +46,10 @@
 | 编号 | 流程 | 主路径 |
 | --- | --- | --- |
 | P1 | 打开配置页 | 侧边栏"AI 服务配置"（menuOrder 32）→ 自动拉 `GET /ai-config` → 渲染合并视图（无保存值 = C-11.1 缺省：关闭/glm/0/四供应商"未配置"灰字）→ 顶部诚实边界提示条常驻 |
-| P2 | 编辑保存 | 修改开关/预算/默认供应商/供应商行内字段 → 保存 → 前置校验通过 → `PUT /ai-config` 全量提交 → 成功：ElMessage + 视图刷新 + 留痕刷新；失败：顶部 el-alert 红条（1014 段错误码 + 可区分原因），表单保留修改态 |
+| P2 | 编辑保存 | 修改开关/预算/默认供应商/供应商行内字段 → 保存 → 前置校验通过 → `POST /ai-config/save` 全量提交（E-01-1）→ 成功：ElMessage + 视图刷新 + 留痕刷新；失败：顶部 el-alert 红条（1014 段错误码 + 可区分原因），表单保留修改态 |
 | P3 | 判定预览 | 自动执行 + "刷新预览"按钮 → `GET /ai-config/preview` → 三态芯片（拒绝：网关未启用〔红〕/ 允许〔绿〕）+ 口径灰字"预览按已用量 = 0 执行；V1.0 无用量源，超预算分支不可触发" |
 | P4 | 变更留痕查询 | 页面底部留痕表 → `GET /ai-config/changes`（pageNum/pageSize）→ 分页五列（时间/操作者/字段/变更前/变更后）；空态 = "暂无变更记录" |
-| P5 | 无权限呈现（负向） | 无 `platform.ai.config.read` → 403 文案统一呈现（沿既有错误态惯例）；无 `platform.ai.config.write`（读有写无）→ 页面可读、保存按钮隐藏（Q4 语义：写面缺权明确拒绝） |
+| P5 | 无权限呈现（负向） | 无 `platform.ai.config.read` → 403 文案统一呈现（沿既有错误态惯例）；无 `platform.ai.config.write`（读有写无）→ 页面可读、保存按钮**不前置隐藏**（前端无 write 权限状态），点击保存由后端 `@RequirePermission` **403 明确拒绝**（E-01-13 口径回填：写面缺权明确拒绝语义由后端权威承载，前端呈现不构成安全边界） |
 
 ## 4. 界面说明书（逐屏元素、状态与校验）
 
@@ -70,4 +70,4 @@
 
 **变更留痕（区块 ④）**：五列只读（变更时间 / 操作者 / 字段路径 / 变更前 / 变更后；空值显示"（空）"）；仅变化字段有行。
 
-**权限可见性**：菜单挂 `platform.ai.config.read`（hasPermission 占位实现下 = admin 演示档可见，沿 3.9.5 口径）；保存按钮挂 `platform.ai.config.write` 语义（写缺权隐藏/禁用）；后端 `@RequirePermission` 为权威（前端呈现不构成安全边界，负向 403 可演）。
+**权限可见性**：菜单挂 `platform.ai.config.read`（hasPermission 占位实现下 = admin 演示档可见，沿 3.9.5 口径）；保存按钮**不前置隐藏/禁用**（前端无 write 权限状态），写缺权由后端 `@RequirePermission` **403 明确拒绝**（权威）——E-01-13 口径回填；后端 `@RequirePermission` 为权威（前端呈现不构成安全边界，负向 403 可演）。
