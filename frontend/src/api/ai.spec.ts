@@ -17,7 +17,7 @@ import { setActorMode } from '../stores/demoIdentity'
  * AI 配置域 API 单元（WBS-3.10.4 hifi §4 / T 静态面；沿 api/platform.spec 先例）：
  * - URL 单点：4 端点 URL 仅存在于 `api/ai.ts`（SourceGuard 口径：视图零 URL）；
  * - 域工厂：复用 `makeDomainJson(platformRolesHeader)`（platform 域随三员视角，sysadmin 缺省）；
- * - 保存 = 全量 PUT（hifi §1.2）；留痕分页走共享 pageQuery（DB-105）。
+ * - 保存 = POST /save 全量载荷（hifi §1.2；E-01-1 写面沿仓内 POST 惯例）；留痕分页走共享 pageQuery（DB-105）。
  */
 
 type FetchCall = { path: string; init: RequestInit }

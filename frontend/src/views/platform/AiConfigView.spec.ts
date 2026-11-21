@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
-import ElementPlus from 'element-plus'
+import ElementPlus, { ElMessage } from 'element-plus'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import AiConfigView from './AiConfigView.vue'
 import {
@@ -15,12 +15,13 @@ import { ApiError } from '../../api/client'
 import { validateAiConfigForm } from '../../constants/ai'
 
 /**
- * AI 服务配置页测试（WBS-3.10.4 hifi §7 F1~F6；lofi 四区块；C-11.1A B1~B4）：
+ * AI 服务配置页测试（WBS-3.10.4 hifi §7 F1~F6 + 评审修复批 F7；lofi 四区块；C-11.1A B1~B4）：
  * - F1 缺省渲染（C-11.1 缺省 + 未配置灰字 + 密钥固定灰字零输入框 + 诚实边界条）；
- * - F2 编辑保存（全量 PUT payload + 成功反馈 + 视图/留痕刷新）；
+ * - F2 编辑保存（全量 POST /save payload + 成功反馈 + 视图/留痕刷新）；
  * - F3 前置校验（负预算 / 非 http(s) / 模型名超长 → 零请求）；
  * - F5 判定预览三态芯片与"已用量恒为 0"口径灰字；
- * - F6 变更留痕渲染与空态。
+ * - F6 变更留痕渲染与空态（>10 行分页控件渲染）；
+ * - F7 留痕加载失败显式提示（评审 P3-E：失败态与空态可区分，不吞错）。
  */
 vi.mock('../../api/ai', () => ({
   fetchAiConfig: vi.fn(),
@@ -120,7 +121,8 @@ describe('AI 服务配置页（WBS-3.10.4）', () => {
     wrapper.unmount()
   })
 
-  it('F2：编辑保存——全量 POST payload + 成功反馈 + 视图与留痕刷新', async () => {
+  it('F2：编辑保存——全量 POST /save payload + 成功反馈 + 视图与留痕刷新', async () => {
+    const successSpy = vi.spyOn(ElMessage, 'success').mockImplementation(() => undefined as never)
     mockedSave.mockResolvedValue(view({ enabled: true, tokenBudget: 100000 }))
     const wrapper = await mountPage()
     await wrapper.find('.ai-config-enabled').trigger('click')
@@ -134,6 +136,11 @@ describe('AI 服务配置页（WBS-3.10.4）', () => {
     expect(payload.tokenBudget).toBe(0)
     expect(payload.providers).toHaveLength(4)
     expect(mockedFetch).toHaveBeenCalledTimes(2)
+    // P3-I 补强（评审④-3）：成功反馈与留痕刷新均有断言（题述与断言对齐）
+    expect(successSpy).toHaveBeenCalledTimes(1)
+    expect(String(successSpy.mock.calls[0][0])).toContain('已保存')
+    expect(mockedChanges).toHaveBeenCalledTimes(2)
+    successSpy.mockRestore()
     wrapper.unmount()
   })
 
@@ -162,7 +169,7 @@ describe('AI 服务配置页（WBS-3.10.4）', () => {
     wrapper.unmount()
   })
 
-  it('F6：变更留痕渲染五列；空态"暂无变更记录"', async () => {
+  it('F6：变更留痕渲染五列；空态"暂无变更记录"；>10 行分页控件渲染', async () => {
     mockedChanges.mockResolvedValue({ list: [changeRow()], total: 1, pageNum: 1, pageSize: 10, totalPages: 1 })
     const wrapper = await mountPage()
     expect(wrapper.find('.ai-config-changes').text()).toContain('tokenBudget')
@@ -172,5 +179,26 @@ describe('AI 服务配置页（WBS-3.10.4）', () => {
     const empty = await mountPage()
     expect(empty.find('.ai-config-changes').text()).toContain('暂无变更记录')
     empty.unmount()
+    // P3-J 补强（评审④-4）：留痕 >10 行 → 分页控件渲染（剧本 S4-1 组件级支撑）
+    mockedChanges.mockResolvedValue({
+      list: Array.from({ length: 12 }, (_, index) => changeRow({ fieldPath: `tokenBudget#${index + 1}` })),
+      total: 12,
+      pageNum: 1,
+      pageSize: 10,
+      totalPages: 2,
+    })
+    const paged = await mountPage()
+    expect(paged.find('.pager').exists()).toBe(true)
+    paged.unmount()
+  })
+
+  it('F7：留痕加载失败显式提示（评审 P3-E：失败态与"暂无变更记录"空态可区分，不吞错）', async () => {
+    const errorSpy = vi.spyOn(ElMessage, 'error').mockImplementation(() => undefined as never)
+    mockedChanges.mockRejectedValue(new Error('changes unavailable'))
+    const wrapper = await mountPage()
+    expect(errorSpy).toHaveBeenCalledTimes(1)
+    expect(String(errorSpy.mock.calls[0][0])).toContain('变更留痕')
+    wrapper.unmount()
+    errorSpy.mockRestore()
   })
 })

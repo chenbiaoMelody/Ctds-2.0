@@ -77,9 +77,10 @@ async function loadChanges(): Promise<void> {
     const page = await fetchAiConfigChanges(changesPageNum.value, changesPageSize.value)
     changes.value = page.list
     changesTotal.value = page.total
-  } catch {
-    changes.value = []
-    changesTotal.value = 0
+  } catch (error) {
+    // 留痕加载失败显式提示（评审 P3-E）：失败态不得伪装成"暂无变更记录"空态；保留已有数据
+    if (guideToLoginIfAuthFailed(error, router)) return
+    ElMessage.error(error instanceof ApiError ? error.message : '变更留痕加载失败，请稍后重试')
   }
 }
 
