@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>WBS-3.10.4 原型 · AI 服务配置管理（静态线框）</title>
+<style>
+  /* 静态线框：仅示意布局与元素，示例数据为虚构样例；非最终视觉稿 */
+  body { font-family: "Microsoft YaHei", sans-serif; background: #f5f6f8; margin: 0; padding: 24px; color: #303133; }
+  .page { max-width: 980px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: #909399; font-size: 13px; margin-bottom: 16px; }
+  .wire { background: #fff; border: 1px dashed #b0b3b8; border-radius: 6px; padding: 16px; margin-bottom: 16px; }
+  .wire-title { font-size: 14px; font-weight: bold; margin: 0 0 12px; color: #606266; }
+  .notice { background: #fdf6ec; border: 1px solid #fae3b8; color: #b88230; font-size: 13px; padding: 8px 12px; border-radius: 4px; margin-bottom: 16px; }
+  .row { display: flex; gap: 24px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+  .field { display: flex; align-items: center; gap: 8px; }
+  .label { font-size: 13px; color: #606266; min-width: 110px; text-align: right; }
+  .switch { width: 40px; height: 20px; border-radius: 10px; background: #c0c4cc; position: relative; }
+  .switch::after { content: ""; position: absolute; left: 2px; top: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; }
+  .switch.on { background: #67c23a; }
+  .switch.on::after { left: 22px; }
+  .input { border: 1px solid #dcdfe6; border-radius: 4px; padding: 5px 10px; font-size: 13px; min-width: 180px; background: #fff; color: #303133; }
+  .input.disabled { background: #f5f7fa; color: #a8abb2; }
+  .select { border: 1px solid #dcdfe6; border-radius: 4px; padding: 5px 10px; font-size: 13px; min-width: 140px; background: #fff; }
+  .hint { color: #909399; font-size: 12px; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { border: 1px solid #e4e7ed; padding: 8px 10px; text-align: left; }
+  th { background: #f5f7fa; color: #606266; font-weight: normal; }
+  .unconfigured { color: #c0c4cc; font-style: italic; }
+  .chip { display: inline-block; padding: 3px 12px; border-radius: 12px; font-size: 12px; }
+  .chip.deny { background: #fef0f0; color: #f56c6c; border: 1px solid #fbc4c4; }
+  .chip.allow { background: #f0f9eb; color: #67c23a; border: 1px solid #b3e19d; }
+  .btn { display: inline-block; padding: 7px 22px; border-radius: 4px; font-size: 13px; background: #409eff; color: #fff; border: none; }
+  .btn.ghost { background: #fff; color: #606266; border: 1px solid #dcdfe6; }
+  .preview-note { color: #909399; font-size: 12px; margin-top: 8px; }
+  .legend { color: #909399; font-size: 12px; margin-top: 24px; line-height: 1.8; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>AI 服务配置</h1>
+  <div class="sub">系统管理 · 平台管理员视角 —— 菜单序 32，权限点 platform.ai.config.read / platform.ai.config.write</div>
+
+  <div class="notice">诚实边界：V1.0 配置即预留——配置落库可读写可演示，但平台尚无任何真实 AI 调用消费它（零外呼零消耗）；生效对象 = 未来 V1.5 / C-11.x 绑定。模型密钥只进配置中心/KMS，页面不显示。</div>
+
+  <!-- 区块 1：网关总控 -->
+  <div class="wire">
+    <p class="wire-title">① 网关总控</p>
+    <div class="row">
+      <div class="field"><span class="label">网关总开关</span><span class="switch"></span><span class="hint">关闭（缺省；V1.0 零消耗安全默认）</span></div>
+    </div>
+    <div class="row">
+      <div class="field"><span class="label">token 预算上限</span><span class="input">0</span><span class="hint">0 = 未设限（预留位）</span></div>
+      <div class="field"><span class="label">默认供应商</span><span class="select">glm（智谱 GLM）</span><span class="hint">必须在四家清单内</span></div>
+    </div>
+  </div>
+
+  <!-- 区块 2：判定预览 -->
+  <div class="wire">
+    <p class="wire-title">② 当前判定预览（先开关、后预算；与模型网关判定语义一致）</p>
+    <div class="row">
+      <span class="chip deny">拒绝：网关未启用</span>
+      <button class="btn ghost">刷新预览</button>
+    </div>
+    <div class="preview-note">预览按已用量 = 0 执行；V1.0 无用量累计源，"超预算"分支不可触发（判定语义由 3.10.1 单测承载）。预览为纯判定，零网络调用、零计费。</div>
+  </div>
+
+  <!-- 区块 3：供应商连接参数 -->
+  <div class="wire">
+    <p class="wire-title">③ 供应商连接参数（封闭清单：glm / deepseek / qwen / kimi）</p>
+    <table>
+      <tr>
+        <th>供应商</th><th>服务地址（http(s)）</th><th>默认模型名</th><th>密钥</th>
+      </tr>
+      <tr>
+        <td>glm（智谱 GLM，默认）</td>
+        <td><span class="input">https://open.bigmodel.cn/api/paas/v4</span></td>
+        <td><span class="input">glm-4-flash</span></td>
+        <td class="hint">部署期经配置中心/KMS 注入（页面不显示）</td>
+      </tr>
+      <tr>
+        <td>deepseek（DeepSeek）</td>
+        <td><span class="unconfigured">未配置</span></td>
+        <td><span class="unconfigured">未配置</span></td>
+        <td class="hint">部署期经配置中心/KMS 注入（页面不显示）</td>
+      </tr>
+      <tr>
+        <td>qwen（通义千问 Qwen）</td>
+        <td><span class="unconfigured">未配置</span></td>
+        <td><span class="unconfigured">未配置</span></td>
+        <td class="hint">部署期经配置中心/KMS 注入（页面不显示）</td>
+      </tr>
+      <tr>
+        <td>kimi（Kimi）</td>
+        <td><span class="unconfigured">未配置</span></td>
+        <td><span class="unconfigured">未配置</span></td>
+        <td class="hint">部署期经配置中心/KMS 注入（页面不显示）</td>
+      </tr>
+    </table>
+    <div class="preview-note">示例数据为虚构样例，仅示意布局；服务地址须为 http(s) URL，空 = 未配置；模型名空 = 未配置。</div>
+  </div>
+
+  <!-- 区块 4：变更留痕 -->
+  <div class="wire">
+    <p class="wire-title">④ 变更留痕（只读；逐字段"从何值 → 到何值"，不提供界面回滚）</p>
+    <table>
+      <tr><th>时间</th><th>操作者</th><th>字段</th><th>变更前</th><th>变更后</th></tr>
+      <tr><td>2026-11-20 10:00:00</td><td>admin</td><td>tokenBudget</td><td>0</td><td>100000</td></tr>
+      <tr><td>2026-11-20 10:00:00</td><td>admin</td><td>providers.glm.baseUrl</td><td>（空）</td><td>https://open.bigmodel.cn/api/paas/v4</td></tr>
+      <tr><td>2026-11-20 09:58:12</td><td>admin</td><td>providers.glm.model</td><td>（空）</td><td>glm-4-flash</td></tr>
+    </table>
+    <div class="preview-note">分页展示（复用 PageResult 约定）；仅值发生变化的字段产生留痕行。</div>
+  </div>
+
+  <div class="row">
+    <button class="btn">保存配置</button>
+    <button class="btn ghost">放弃修改</button>
+    <span class="hint">保存 = 唯一写入口（platform.ai.config.write）；校验拒绝时顶部红条展示原因（1014 段错误码 + 可读文案）</span>
+  </div>
+
+  <div class="legend">
+    线框说明（非最终视觉稿）：<br>
+    1. 全页单一页面，四个区块纵向排布；开关 = el-switch；预算 = el-input-number（≥0 整数）；默认供应商 = el-select（四项封闭清单）；<br>
+    2. 供应商表四行固定（封闭清单），服务地址/模型名行内编辑，未配置以灰字标注，不以 0/空串冒充；<br>
+    3. 密钥列永远只显示固定灰字，不出现输入框（Q4-A：页面零密钥输入、零回显）；<br>
+    4. 判定预览 = 芯片（拒绝红 / 允许绿）+ 说明灰字；随保存与"刷新预览"更新；<br>
+    5. 校验拒绝 = 页面顶部 el-alert 红条（错误码 + 原因文案可区分），库与留痕零变化；<br>
+    6. 本页权限：读 = platform.ai.config.read（含预览/留痕查看），写 = platform.ai.config.write（保存按钮）；无权限 403 文案统一呈现。
+  </div>
+</div>
+</body>
+</html>

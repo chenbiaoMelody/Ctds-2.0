@@ -21,6 +21,8 @@ import org.junit.jupiter.api.Test;
  * hifi §9 E-4 确认项——V3 已应用不可改）。
  * WBS-3.9.4 T12 扩展：登记清单 = V3 ∪ V4 ∪ V5 seed 并集（platform.monitor.read /
  * platform.alert.handle 走 V5，Q3-A——均仅授 platform.sysadmin，边界 8 本卡登记）。
+ * WBS-3.10.4 T13 扩展：登记清单 = V3 ∪ V4 ∪ V5 ∪ V6 seed 并集（platform.ai.config.read /
+ * platform.ai.config.write 走 V6 授 platform.sysadmin，任务卡 Q2-A——沿 V4/V5 授点演进先例）。
  */
 class PermissionPointRegistryTest {
 
@@ -33,6 +35,8 @@ class PermissionPointRegistryTest {
             + "db/migration/V4__grant_platform_domain_read.sql");
     private static final Path V5_SEED = ROOT.resolve("services/evidence-service/src/main/resources/"
             + "db/migration/V5__grant_monitor_permissions.sql");
+    private static final Path V6_SEED = ROOT.resolve("services/evidence-service/src/main/resources/"
+            + "db/migration/V6__create_ai_gateway_config.sql");
 
     @Test
     void everyMainSourceAnnotationValueIsRegistered() throws IOException {
@@ -64,6 +68,14 @@ class PermissionPointRegistryTest {
         assertThat(annotationValues()).contains("platform.monitor.read", "platform.alert.handle");
     }
 
+    /** WBS-3.10.4 T13：AI 配置读面 / 写面两点走 V6 授 platform.sysadmin（任务卡 Q2-A / Q6-A）。 */
+    @Test
+    void aiConfigPointsAreRegisteredInV6SeedAndUsedByAiConfigFace() throws IOException {
+        assertThat(Files.exists(V6_SEED)).as("V6 授点迁移须存在（V3~V5 已应用不可改）").isTrue();
+        assertThat(registeredPoints()).contains("platform.ai.config.read", "platform.ai.config.write");
+        assertThat(annotationValues()).contains("platform.ai.config.read", "platform.ai.config.write");
+    }
+
     private static Set<String> annotationValues() throws IOException {
         Set<String> values = new LinkedHashSet<>();
         try (Stream<Path> dirs = Files.list(ROOT.resolve("services"))) {
@@ -85,10 +97,10 @@ class PermissionPointRegistryTest {
         return values;
     }
 
-    /** 登记清单 = V3 ∪ V4 ∪ V5 映射 seed（Q1-A 后唯一权威来源；3.9.4 起三并集，见 T12）。 */
+    /** 登记清单 = V3 ∪ V4 ∪ V5 ∪ V6 映射 seed（Q1-A 后唯一权威来源；3.10.4 起四并集，见 T13）。 */
     private static Set<String> registeredPoints() throws IOException {
         Set<String> points = new LinkedHashSet<>();
-        for (Path seed : List.of(V3_SEED, V4_SEED, V5_SEED)) {
+        for (Path seed : List.of(V3_SEED, V4_SEED, V5_SEED, V6_SEED)) {
             Matcher matcher = SEED.matcher(Files.readString(seed));
             while (matcher.find()) {
                 points.add(matcher.group(2));
