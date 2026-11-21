@@ -226,7 +226,7 @@ onMounted(() => {
           </template>
         </el-table-column>
         <el-table-column label="密钥" min-width="240">
-          <template #default="scope">
+          <template #default>
             <span class="provider-key-note">{{ AI_KEY_NOTE }}</span>
           </template>
         </el-table-column>

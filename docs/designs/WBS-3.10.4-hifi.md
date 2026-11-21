@@ -218,7 +218,9 @@ URL 常量单点：`AI_CONFIG_URL = '/api/v1/ai-config'`（+ `/save`、`/preview
   - **E-01-3** `domain/AiConfigStore` 领域接口补增（沿 `RbacStore` 接口 + `JdbcRbacStore` 实现分层先例，原清单仅列 Jdbc 实现）；
   - **E-01-4** 错误码 message 细分常量 5 → **6 类**（补 `MSG_ENABLED_INVALID`：开关缺失口径，码值仍 1014C0001）；
   - **E-01-5** 供应商显示名由**后端视图 providerName 承载**（前端 constants 不再复制中文标签，仅保留判定三态与封闭清单守卫）；
-  - **E-01-6** 测试类命名沿仓内 Contract/Integration 惯例（见 §2.1 更新）。
+  - **E-01-6** 测试类命名沿仓内 Contract/Integration 惯例（见 §2.1 更新）；
+  - **E-01-7** `common/auth` `PermissionPointRegistryTest` 登记并集 V3∪V4∪V5 → **+V6** 并新增 T13 专项测试（门禁首跑 RED 根因：新权限点仅走 Flyway seed 未进静态登记并集；沿 V4→T9 / V5→T12 授点演进先例——守卫判定逻辑不变，登记清单演进）；
+  - **E-01-8** 门禁首跑 RED（RunLabel `20261121-085622-8632`；PASS=12/FAIL=3：unitTest/coverage = E-01-7 根因 + frontendTypeCheck TS6133 未用类型/未用 scope ×2）→ 修复批（上述三处 + TS 清理）→ 复跑（RunLabel 见任务卡执行留痕）。
 
 ## 10. 体量与门禁
 

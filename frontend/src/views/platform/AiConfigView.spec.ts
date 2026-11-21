@@ -10,7 +10,6 @@ import {
   fetchAiConfigChanges,
   type AiConfigView as AiConfigViewData,
   type AiConfigChangeLogView,
-  type AiConfigPreviewView,
 } from '../../api/ai'
 import { ApiError } from '../../api/client'
 import { validateAiConfigForm } from '../../constants/ai'
