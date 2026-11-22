@@ -25,8 +25,10 @@ import org.springframework.stereotype.Service;
 /**
  * 资源命令服务（WBS-3.3.2 hifi §1.1 W2/W3）：登记入口（要素校验 + 归一化后交幂等登记服务）、
  * 变更（可变字段白名单 + 级别只能收紧）、注销（二次确认 + 引用保护前置检查 + 两写事务）。
- * 写面越权（非登记主体本人，含空间管理员）一律 1007C0006 + DENIED 留痕（行为 2 规则 5）；
- * 终态（已注销）再动作一律 1007C0007（行为 2 规则 4）。
+ * 写面三态统一拒绝（DB-135，B3-R2/B4-R2 防存在性枚举）：不存在 / 非属主（非登记主体本人，
+ * 含空间管理员，含跨空间）一律 400 + 1000C0003 + "资源不存在"（与读面 DB-132 同码同文），
+ * 非属主另落 DENIED 留痕（行为 2 规则 5 / 行为 7 拒绝留痕，reason_code 随出站口径 C0003）；
+ * 终态（已注销）再动作一律 1007C0007（行为 2 规则 4，属主门槛之后、无枚举泄露）。
  */
 @Service
 public class DatasetCommandService {
@@ -133,9 +135,10 @@ public class DatasetCommandService {
     // ==== 变更（行为 2 规则 1）====
 
     /**
-     * 变更：仅登记主体本人（非本人含空间管理员 → 1007C0006 + DENIED 留痕）；终态拒绝（1007C0007）；
-     * 逐字段留痕 from→to；分级申报只能收紧就高（下调 → 1007C0004 + DENIED 留痕）。
-     * 判定顺序：存在性（1007C0005）→ 属主（1007C0006）→ 终态（1007C0007）→ 字段校验（400）→ 级别门槛。
+     * 变更：仅登记主体本人（非本人含空间管理员 → 400 + 1000C0003 统一拒绝 + DENIED 留痕，DB-135）；
+     * 终态拒绝（1007C0007）；逐字段留痕 from→to；分级申报只能收紧就高（下调 → 1007C0004 + DENIED 留痕）。
+     * 判定顺序：空变更载荷检查（400 参数码）→ 存在性（400 + 1000C0003 统一拒绝）→
+     * 属主（同码同文 + DENIED 留痕）→ 终态（1007C0007）→ 字段校验（400）→ 级别门槛。
      */
     public Dataset update(final long datasetId, final DatasetUpdateRequest request) {
         final String subject = guard.requireSubject();
@@ -190,8 +193,8 @@ public class DatasetCommandService {
     // ==== 注销（行为 2 规则 2/3）====
 
     /**
-     * 注销：仅登记主体本人（非本人 → 1007C0006 + DENIED 留痕）；终态拒绝（1007C0007）；
-     * 二次确认 confirmCancellation 显式 true 必填（缺省/null/false → 400 通用参数码）；
+     * 注销：仅登记主体本人（非本人 → 400 + 1000C0003 统一拒绝 + DENIED 留痕，DB-135）；
+     * 终态拒绝（1007C0007）；二次确认 confirmCancellation 显式 true 必填（缺省/null/false → 400 通用参数码）；
      * 引用保护前置检查（本卡恒放行，3.3.5 产品表落地后实体化）；两写事务 + 名称锁定。
      */
     public Dataset cancel(final long datasetId, final Boolean confirmCancellation) {
@@ -220,20 +223,32 @@ public class DatasetCommandService {
 
     private Dataset load(final long datasetId) {
         return repository.findById(datasetId)
-                .orElseThrow(() -> new CatalogBizException(
-                        CatalogErrorCodes.DATASET_NOT_FOUND_OR_NO_ACCESS,
-                        CatalogErrorCodes.DATASET_NOT_FOUND_OR_NO_ACCESS_MESSAGE));
+                .orElseThrow(DatasetCommandService::writeNotFound);
     }
 
-    /** 属主门槛（行为 2 规则 5）：非登记主体本人（含空间管理员）→ DENIED 留痕 + 1007C0006。 */
+    /**
+     * 写面三态统一拒绝（DB-135，B3-R2/B3-AC2/B4-R2/B4-AC2）：400 + 1000C0003 + "资源不存在"。
+     * 与读面 {@code DatasetQueryService.readNotFound()} 同构造——资源域读/写出站单一字典，
+     * 归属不匹配与对象不存在同码同文（防存在性枚举）；走全局处理器按 ErrorType.CLIENT 落 400，
+     * {@code CatalogExceptionHandler} 零改动（1007 段精确映射不变量保持）。
+     */
+    private static BizException writeNotFound() {
+        return new BizException(ErrorCodes.RESOURCE_NOT_FOUND,
+                CatalogErrorCodes.DATASET_READ_NOT_FOUND_MESSAGE);
+    }
+
+    /**
+     * 属主门槛（行为 2 规则 5 / 行为 7 拒绝留痕）：非登记主体本人（含空间管理员，含跨空间）→
+     * DENIED 留痕恰 1 行（reason_code 随新出站口径 C0003，Q2-A）+ 400 + 1000C0003 统一拒绝
+     * （与不存在逐字同码同文，防存在性枚举；留痕仅内部可审计，对外不泄露存在性）。
+     */
     private void requireOwner(final Dataset dataset, final String subject, final String denyAction) {
         if (!dataset.ownerSubjectNo().equals(subject)) {
             repository.insertLog(new DatasetActionLog(null, subject, dataset.spaceId(), dataset.id(),
                     denyAction, dataset.status().name(), null, ActionResult.DENIED,
-                    CatalogErrorCodes.tailOf(CatalogErrorCodes.DATASET_FORBIDDEN),
+                    CatalogErrorCodes.tailOf(ErrorCodes.RESOURCE_NOT_FOUND),
                     LocalDateTime.now(clock)));
-            throw new CatalogBizException(CatalogErrorCodes.DATASET_FORBIDDEN,
-                    CatalogErrorCodes.DATASET_FORBIDDEN_MESSAGE);
+            throw writeNotFound();
         }
     }
 
