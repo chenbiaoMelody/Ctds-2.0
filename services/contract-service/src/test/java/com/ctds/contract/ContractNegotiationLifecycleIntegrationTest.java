@@ -852,9 +852,10 @@ class ContractNegotiationLifecycleIntegrationTest {
             final MvcResult result = future.get(15, TimeUnit.SECONDS);
             statuses.add(result.getResponse().getStatus());
             if (result.getResponse().getStatus() != 201) {
-                // 恰一成一败（败者撞 uk_contract_version → 1008C0019 重试语义）
+                // 恰一成一败：败者先读写撞 uk_contract_version → 1008C0019；后读见胜者
+                // 已提交的新版本 → 交替提案门槛 → 1008C0013（插序决定，两态均合法拒绝）
                 assertThat(result.getResponse().getStatus()).isEqualTo(409);
-                assertThat(codeOf(result)).isEqualTo("1008C0019");
+                assertThat(codeOf(result)).isIn("1008C0019", "1008C0013");
             }
         }
         pool.shutdownNow();
