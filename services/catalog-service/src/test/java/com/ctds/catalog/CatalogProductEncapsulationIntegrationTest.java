@@ -14,8 +14,9 @@ import com.ctds.catalog.support.SharedMySqlContainer;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
-import java.util.HashSet;
-import java.util.Set;
+import java.sql.Timestamp;
+import java.time.LocalDateTime;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -123,20 +124,34 @@ class CatalogProductEncapsulationIntegrationTest {
     @Test
     void createProductFromOthersDatasetDeniedWithResourceLog() throws Exception {
         final long datasetId = insertDataset("他人资源数据集", "provider-owner", "ACTIVE");
+        final LocalDateTime legacyCreatedAt = LocalDateTime.of(2026, 11, 22, 16, 0);
+        jdbc.update("INSERT INTO dataset_action_log (actor_subject_no, space_id, dataset_id, action, "
+                        + "result, reason_code, created_at) VALUES (?, 1, ?, 'DENIED_CREATE', 'DENIED', "
+                        + "'C0006', ?)",
+                "provider-owner", datasetId, Timestamp.valueOf(legacyCreatedAt));
+        final long legacyLogId = jdbc.queryForObject(
+                "SELECT id FROM dataset_action_log WHERE dataset_id = ? AND reason_code = 'C0006'",
+                Long.class, datasetId);
+        final Map<String, Object> legacyLogBefore = jdbc.queryForMap(
+                "SELECT * FROM dataset_action_log WHERE id = ?", legacyLogId);
+
         final MvcResult denied = mockMvc.perform(auth(post(PRODUCTS), "provider-p3", PROVIDER)
                         .content(createBody(datasetId, "越权封装产品", "FREE", null, null)))
                 .andReturn();
-        assertThat(denied.getResponse().getStatus()).as(body(denied)).isEqualTo(400);
-        assertThat(codeOf(denied)).as("非属主并入资源域统一字典（DB-139 Q1-A1）").isEqualTo("1000C0003");
-        assertThat(root(denied).get("message").asText()).isEqualTo("资源不存在");
+        assertUnifiedNotFoundEnvelope(denied);
         final Integer deniedLogs = jdbc.queryForObject("SELECT COUNT(*) FROM dataset_action_log "
                 + "WHERE dataset_id = ? AND action = 'DENIED_CREATE' AND actor_subject_no = 'provider-p3'",
                 Integer.class, datasetId);
         assertThat(deniedLogs).as("越权封装在资源域留痕（行为 7 规则 4 可取证）").isEqualTo(1);
-        final String reason = jdbc.queryForObject("SELECT reason_code FROM dataset_action_log "
+        final Map<String, Object> deniedLog = jdbc.queryForMap("SELECT * FROM dataset_action_log "
                 + "WHERE dataset_id = ? AND action = 'DENIED_CREATE' AND actor_subject_no = 'provider-p3'",
-                String.class, datasetId);
-        assertThat(reason).as("留痕 reason_code 随统一出站口径（DB-139 Q2-A）").isEqualTo("C0003");
+                datasetId);
+        assertThat(deniedLog.get("result")).isEqualTo("DENIED");
+        assertThat(deniedLog.get("reason_code"))
+                .as("留痕 reason_code 随统一出站口径（DB-139 Q2-A）").isEqualTo("C0003");
+        assertThat(deniedLog.get("created_at")).as("拒绝留痕时间四要素齐备").isNotNull();
+        assertThat(jdbc.queryForMap("SELECT * FROM dataset_action_log WHERE id = ?", legacyLogId))
+                .as("历史 C0006 留痕逐字段不回改").isEqualTo(legacyLogBefore);
     }
 
     // ==== 两态逐字比对（T3——防枚举核心：两态同码同文同结构）====
@@ -150,17 +165,13 @@ class CatalogProductEncapsulationIntegrationTest {
         final MvcResult missing = mockMvc.perform(auth(post(PRODUCTS), "provider-p3d", PROVIDER)
                         .content(createBody(999999L, "两态比对缺源产品", "FREE", null, null)))
                 .andReturn();
+        assertUnifiedNotFoundEnvelope(notOwner);
+        assertUnifiedNotFoundEnvelope(missing);
         assertThat(notOwner.getResponse().getStatus())
                 .as("两态 HTTP 状态一致（防存在性枚举）").isEqualTo(missing.getResponse().getStatus());
         assertThat(codeOf(notOwner)).as("两态 code 逐字一致").isEqualTo(codeOf(missing));
         assertThat(root(notOwner).get("message").asText())
                 .as("两态 message 逐字一致").isEqualTo(root(missing).get("message").asText());
-        final Set<String> notOwnerFields = new HashSet<>();
-        root(notOwner).fieldNames().forEachRemaining(notOwnerFields::add);
-        final Set<String> missingFields = new HashSet<>();
-        root(missing).fieldNames().forEachRemaining(missingFields::add);
-        assertThat(notOwnerFields).as("封套根字段集合一致（白名单，不新增存在性差异字段）")
-                .isEqualTo(missingFields);
     }
 
     // ==== 已注销资源 / 已解散空间拒绝（1007C0016——S1-5 判定面）====
@@ -171,9 +182,7 @@ class CatalogProductEncapsulationIntegrationTest {
         final MvcResult missing = mockMvc.perform(auth(post(PRODUCTS), "provider-p3b", PROVIDER)
                         .content(createBody(999999L, "不存在来源资源产品", "FREE", null, null)))
                 .andReturn();
-        assertThat(missing.getResponse().getStatus()).isEqualTo(400);
-        assertThat(codeOf(missing)).isEqualTo("1000C0003");
-        assertThat(root(missing).get("message").asText()).isEqualTo("资源不存在");
+        assertUnifiedNotFoundEnvelope(missing);
         // T6：不存在零留痕自动化锚（orElseThrow 先于留痕，表内零新增行）
         final Integer missingLogs = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM dataset_action_log", Integer.class);
@@ -446,5 +455,16 @@ class CatalogProductEncapsulationIntegrationTest {
 
     private static String codeOf(final MvcResult result) throws Exception {
         return root(result).get("code").asText();
+    }
+
+    private static void assertUnifiedNotFoundEnvelope(final MvcResult result) throws Exception {
+        assertThat(result.getResponse().getStatus()).as(body(result)).isEqualTo(400);
+        final JsonNode response = root(result);
+        assertThat(response.get("code").asText()).isEqualTo("1000C0003");
+        assertThat(response.get("message").asText()).isEqualTo("资源不存在");
+        assertThat(response.get("data").isNull()).as("拒绝响应 data 恒为 null").isTrue();
+        assertThat(response.properties().stream().map(Map.Entry::getKey).toList())
+                .as("拒绝封套字段白名单（traceId 允许逐请求不同）")
+                .containsExactlyInAnyOrder("code", "message", "traceId", "data");
     }
 }
