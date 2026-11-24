@@ -14,6 +14,9 @@ import com.ctds.catalog.support.SharedMySqlContainer;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
+import java.sql.Timestamp;
+import java.time.LocalDateTime;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -31,10 +34,11 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
  * 产品封装集成测试（WBS-3.3.5 hifi §5 T7；规格行为 3 全部规则 + C-3.3 剧本 S1 判定面）：
- * 正向封装（未上架初始态 + CREATE 留痕四要素 + 类目缺省继承）、非本人资源拒绝（1007C0006 +
- * 资源域 DENIED 留痕）、已注销资源与已解散空间拒绝（1007C0016——S1-5）、同名拒绝（归一化含
- * 首尾空白——S1-4）、一资源多产品与免费显式档（S1-3）、幂等重放（S1-6）、免费档携值拒绝（Q2-A）、
- * 名称边界（1007C0018）、未入驻统一文案防枚举（零副作用）。
+ * 正向封装（未上架初始态 + CREATE 留痕四要素 + 类目缺省继承）、非本人资源拒绝与来源资源不存在
+ * 统一口径（400 + 1000C0003 + "资源不存在"，DB-139 防枚举；资源域 DENIED_CREATE 留痕保留）、
+ * 已注销资源与已解散空间拒绝（1007C0016——S1-5）、同名拒绝（归一化含首尾空白——S1-4）、
+ * 一资源多产品与免费显式档（S1-3）、幂等重放（S1-6）、免费档携值拒绝（Q2-A）、名称边界
+ * （1007C0018）、未入驻统一文案防枚举（零副作用）、未认证 401（鉴权边界）。
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 @AutoConfigureMockMvc
@@ -115,33 +119,74 @@ class CatalogProductEncapsulationIntegrationTest {
         assertThat(payload(ok).get("categoryCode").asText()).isEqualTo("transport-smart");
     }
 
-    // ==== 非本人资源拒绝（1007C0006 + 资源域 DENIED_CREATE 留痕——S1-2 判定面）====
+    // ==== 非本人资源拒绝 + 来源不存在统一口径（400 + 1000C0003——DB-139 防枚举；S1-2 判定面）====
 
     @Test
     void createProductFromOthersDatasetDeniedWithResourceLog() throws Exception {
         final long datasetId = insertDataset("他人资源数据集", "provider-owner", "ACTIVE");
+        final LocalDateTime legacyCreatedAt = LocalDateTime.of(2026, 11, 22, 16, 0);
+        jdbc.update("INSERT INTO dataset_action_log (actor_subject_no, space_id, dataset_id, action, "
+                        + "result, reason_code, created_at) VALUES (?, 1, ?, 'DENIED_CREATE', 'DENIED', "
+                        + "'C0006', ?)",
+                "provider-owner", datasetId, Timestamp.valueOf(legacyCreatedAt));
+        final long legacyLogId = jdbc.queryForObject(
+                "SELECT id FROM dataset_action_log WHERE dataset_id = ? AND reason_code = 'C0006'",
+                Long.class, datasetId);
+        final Map<String, Object> legacyLogBefore = jdbc.queryForMap(
+                "SELECT * FROM dataset_action_log WHERE id = ?", legacyLogId);
+
         final MvcResult denied = mockMvc.perform(auth(post(PRODUCTS), "provider-p3", PROVIDER)
                         .content(createBody(datasetId, "越权封装产品", "FREE", null, null)))
                 .andReturn();
-        assertThat(denied.getResponse().getStatus()).as(body(denied)).isEqualTo(403);
-        assertThat(codeOf(denied)).isEqualTo("1007C0006");
+        assertUnifiedNotFoundEnvelope(denied);
         final Integer deniedLogs = jdbc.queryForObject("SELECT COUNT(*) FROM dataset_action_log "
                 + "WHERE dataset_id = ? AND action = 'DENIED_CREATE' AND actor_subject_no = 'provider-p3'",
                 Integer.class, datasetId);
         assertThat(deniedLogs).as("越权封装在资源域留痕（行为 7 规则 4 可取证）").isEqualTo(1);
+        final Map<String, Object> deniedLog = jdbc.queryForMap("SELECT * FROM dataset_action_log "
+                + "WHERE dataset_id = ? AND action = 'DENIED_CREATE' AND actor_subject_no = 'provider-p3'",
+                datasetId);
+        assertThat(deniedLog.get("result")).isEqualTo("DENIED");
+        assertThat(deniedLog.get("reason_code"))
+                .as("留痕 reason_code 随统一出站口径（DB-139 Q2-A）").isEqualTo("C0003");
+        assertThat(deniedLog.get("created_at")).as("拒绝留痕时间四要素齐备").isNotNull();
+        assertThat(jdbc.queryForMap("SELECT * FROM dataset_action_log WHERE id = ?", legacyLogId))
+                .as("历史 C0006 留痕逐字段不回改").isEqualTo(legacyLogBefore);
+    }
+
+    // ==== 两态逐字比对（T3——防枚举核心：两态同码同文同结构）====
+
+    @Test
+    void createProductFromOthersAndMissingDatasetShareUnifiedShape() throws Exception {
+        final long datasetId = insertDataset("两态比对资源", "provider-owner-t3", "ACTIVE");
+        final MvcResult notOwner = mockMvc.perform(auth(post(PRODUCTS), "provider-p3c", PROVIDER)
+                        .content(createBody(datasetId, "两态比对越权产品", "FREE", null, null)))
+                .andReturn();
+        final MvcResult missing = mockMvc.perform(auth(post(PRODUCTS), "provider-p3d", PROVIDER)
+                        .content(createBody(999999L, "两态比对缺源产品", "FREE", null, null)))
+                .andReturn();
+        assertUnifiedNotFoundEnvelope(notOwner);
+        assertUnifiedNotFoundEnvelope(missing);
+        assertThat(notOwner.getResponse().getStatus())
+                .as("两态 HTTP 状态一致（防存在性枚举）").isEqualTo(missing.getResponse().getStatus());
+        assertThat(codeOf(notOwner)).as("两态 code 逐字一致").isEqualTo(codeOf(missing));
+        assertThat(root(notOwner).get("message").asText())
+                .as("两态 message 逐字一致").isEqualTo(root(missing).get("message").asText());
     }
 
     // ==== 已注销资源 / 已解散空间拒绝（1007C0016——S1-5 判定面）====
 
     @Test
-    void createProductFromMissingDatasetKeepsLegacyNotFoundShape() throws Exception {
-        // 隔离线回归：产品封装来源资源不存在仍为 404 + 1007C0005 + 旧文案（共享常量语义不变）
+    void createProductFromMissingDatasetUsesUnifiedNotFoundShape() throws Exception {
+        // DB-139 统一口径：来源资源不存在 → 400 + 1000C0003 + "资源不存在"（与资源域 DB-132/135 同字典）
         final MvcResult missing = mockMvc.perform(auth(post(PRODUCTS), "provider-p3b", PROVIDER)
                         .content(createBody(999999L, "不存在来源资源产品", "FREE", null, null)))
                 .andReturn();
-        assertThat(missing.getResponse().getStatus()).isEqualTo(404);
-        assertThat(codeOf(missing)).isEqualTo("1007C0005");
-        assertThat(root(missing).get("message").asText()).isEqualTo("资源不存在或无权访问");
+        assertUnifiedNotFoundEnvelope(missing);
+        // T6：不存在零留痕自动化锚（orElseThrow 先于留痕，表内零新增行）
+        final Integer missingLogs = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM dataset_action_log", Integer.class);
+        assertThat(missingLogs).as("来源资源不存在零留痕").isZero();
     }
 
     @Test
@@ -352,6 +397,19 @@ class CatalogProductEncapsulationIntegrationTest {
         assertThat(countProducts()).as("零副作用").isEqualTo(productBefore);
     }
 
+    // ==== 鉴权边界（未认证 401——沿 DB-135 T10 手法）====
+
+    @Test
+    void createProductUnauthenticatedRejected() throws Exception {
+        // 鉴权边界回归：封装未认证 401 + 1000C0002，不在本卡改造面（身份头由网关剥离重建）
+        final MvcResult unauth = mockMvc.perform(post(PRODUCTS)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(createBody(999999L, "未认证封装产品", "FREE", null, null)))
+                .andReturn();
+        assertThat(unauth.getResponse().getStatus()).as("未认证封装 → 401").isEqualTo(401);
+        assertThat(codeOf(unauth)).isEqualTo("1000C0002");
+    }
+
     // ==== 助手 ====
 
     private long countProducts() {
@@ -397,5 +455,16 @@ class CatalogProductEncapsulationIntegrationTest {
 
     private static String codeOf(final MvcResult result) throws Exception {
         return root(result).get("code").asText();
+    }
+
+    private static void assertUnifiedNotFoundEnvelope(final MvcResult result) throws Exception {
+        assertThat(result.getResponse().getStatus()).as(body(result)).isEqualTo(400);
+        final JsonNode response = root(result);
+        assertThat(response.get("code").asText()).isEqualTo("1000C0003");
+        assertThat(response.get("message").asText()).isEqualTo("资源不存在");
+        assertThat(response.get("data").isNull()).as("拒绝响应 data 恒为 null").isTrue();
+        assertThat(response.properties().stream().map(Map.Entry::getKey).toList())
+                .as("拒绝封套字段白名单（traceId 允许逐请求不同）")
+                .containsExactlyInAnyOrder("code", "message", "traceId", "data");
     }
 }

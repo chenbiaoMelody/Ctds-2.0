@@ -82,9 +82,9 @@ public class ProductCommandService {
 
     /**
      * 封装入口（hifi §4 W8 校验链，顺序即错误码优先序）：①认证+权限点（controller 静态门）→
-     * ②ADMITTED → ③载体校验（名称 1007C0018/简介必填 400/枚举 400）→ ④资源存在且本人
-     * （1007C0005/0006 复用 + DENIED_CREATE 资源域留痕）→ ⑤资源 ACTIVE 且空间未解散
-     * （1007C0016）→ ⑥类目（显式校验 1007C0014/缺省继承）→ ⑦定价组合（1007C0020/400）→
+     * ②ADMITTED → ③载体校验（名称 1007C0018/简介必填 400/枚举 400）→ ④来源检查（非属主/不存在
+     * 统一拒绝 400 + 1000C0003——DB-139 防枚举 + DENIED_CREATE 资源域留痕）→ ⑤资源 ACTIVE 且
+     * 空间未解散（1007C0016）→ ⑥类目（显式校验 1007C0014/缺省继承）→ ⑦定价组合（1007C0020/400）→
      * ⑨幂等边界（判重预检在其内——{@link ProductCreationService}，跨 Bean）。
      */
     public ProviderProductRow create(final CreateProductCommand request) {
@@ -102,20 +102,18 @@ public class ProductCommandService {
         final String model = requireModel(request.pricingModel());
         validPricingAmount(model, request.priceAmount());
         final Dataset dataset = datasetRepository.findById(request.datasetId())
-                .orElseThrow(() -> new CatalogBizException(
-                        CatalogErrorCodes.DATASET_NOT_FOUND_OR_NO_ACCESS,
-                        CatalogErrorCodes.DATASET_NOT_FOUND_OR_NO_ACCESS_MESSAGE));
+                .orElseThrow(ProductCommandService::sourceNotFound);
         if (!dataset.ownerSubjectNo().equals(subject)) {
             // 封装前提 = 资源登记主体本人（行为 3 规则 1）；越权属资源域动作 → DENIED_CREATE 留痕落
-            // dataset_action_log（沿 dataset requireOwner 模式），码复用 1007C0006（hifi §2）
+            // dataset_action_log（沿 dataset requireOwner 模式），reason_code 随统一出站口径记 C0003
+            // （DB-139 Q2-A，历史行不回改）；对外与"不存在"同码同文统一拒绝（防存在性枚举），留痕仅内部可审计
             datasetRepository.insertLog(new com.ctds.catalog.domain.DatasetActionLog(null, subject,
                     dataset.spaceId(), dataset.id(),
                     ProductActionLog.deniedActionOf(ProductActionLog.ACTION_CREATE),
                     dataset.status().name(), null, com.ctds.catalog.domain.ActionResult.DENIED,
-                    CatalogErrorCodes.tailOf(CatalogErrorCodes.DATASET_FORBIDDEN),
+                    CatalogErrorCodes.tailOf(ErrorCodes.RESOURCE_NOT_FOUND),
                     LocalDateTime.now(clock)));
-            throw new CatalogBizException(CatalogErrorCodes.DATASET_FORBIDDEN,
-                    CatalogErrorCodes.DATASET_FORBIDDEN_MESSAGE);
+            throw sourceNotFound();
         }
         requireDatasetUsable(dataset.id(), subject);
         final String categoryCode = resolveCategory(request.categoryCode(), dataset);
@@ -124,6 +122,17 @@ public class ProductCommandService {
         return productCreationService.create(new ProductCreationService.CreateProductCommand(subject,
                 dataset.id(), productName, normalizedName, intro, type, model, request.priceAmount(),
                 categoryCode));
+    }
+
+    /**
+     * 封装来源检查统一拒绝（DB-139，Q1-A1）：400 + 1000C0003 + "资源不存在"。与资源域
+     * {@code DatasetCommandService.writeNotFound()} 同构造——非属主与对象不存在同码同文
+     * （防存在性枚举），资源域读/写/产品封装引用出站单一字典；走全局处理器按 ErrorType.CLIENT
+     * 落 400，{@code CatalogExceptionHandler} 零改动（1007 段精确映射不变量保持）。
+     */
+    private static BizException sourceNotFound() {
+        return new BizException(ErrorCodes.RESOURCE_NOT_FOUND,
+                CatalogErrorCodes.DATASET_READ_NOT_FOUND_MESSAGE);
     }
 
     /** W8 请求载荷（hifi §1：六要素齐备 + 类目可选；接口层 CreateProductRequest.toCommand() 产出）。 */
