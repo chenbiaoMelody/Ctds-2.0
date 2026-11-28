@@ -107,6 +107,9 @@ public final class CatalogErrorCodes {
      * WBS-3.3.5 hifi §2；C-3.1 剧本 S3 步骤 4 判定面）。→ 409 */
     public static final ErrorCode PRODUCT_DATASET_REFERENCED = ErrorCode.of("1007C0021");
     public static final String PRODUCT_DATASET_REFERENCED_MESSAGE = "资源存在未注销产品引用，请先处理产品";
+    /** 同一主体对同一对象同一动作或跨对象累计拒绝探测超限（DB-134 V1.2）。→ 429 */
+    public static final ErrorCode OBJECT_ACCESS_RATE_LIMITED = ErrorCode.of("1007C0022");
+    public static final String OBJECT_ACCESS_RATE_LIMITED_MESSAGE = "对象访问频率超出限制";
     /** 主体服务不可达/失败（UNAVAILABLE 统一文案，不冒充资格拒绝——hifi §5）。→ 503 */
     public static final ErrorCode SUBJECT_SERVICE_UNAVAILABLE = ErrorCode.of("1007S0001");
     public static final String SUBJECT_SERVICE_UNAVAILABLE_MESSAGE = "主体服务暂不可用，请稍后重试";

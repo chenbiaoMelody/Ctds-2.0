@@ -67,6 +67,8 @@ public final class SharedMySqlContainer {
         try (Connection connection = DriverManager.getConnection(
                 container().getJdbcUrl(), "root", container().getPassword());
              Statement statement = connection.createStatement()) {
+            // 类级 Spring 上下文累计连接会超过容器默认 151；仅测试容器提升上限。
+            statement.execute("SET GLOBAL max_connections = 500");
             statement.execute("CREATE DATABASE IF NOT EXISTS `" + database + "`");
             statement.execute("GRANT ALL PRIVILEGES ON `" + database + "`.* TO '"
                     + applicationUsername() + "'@'%'");

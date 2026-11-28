@@ -183,10 +183,15 @@ class CatalogProductEncapsulationIntegrationTest {
                         .content(createBody(999999L, "不存在来源资源产品", "FREE", null, null)))
                 .andReturn();
         assertUnifiedNotFoundEnvelope(missing);
-        // T6：不存在零留痕自动化锚（orElseThrow 先于留痕，表内零新增行）
-        final Integer missingLogs = jdbc.queryForObject(
-                "SELECT COUNT(*) FROM dataset_action_log", Integer.class);
-        assertThat(missingLogs).as("来源资源不存在零留痕").isZero();
+        final Map<String, Object> missingLog = jdbc.queryForMap(
+                "SELECT space_id, dataset_id, action, result, reason_code, dedup_key "
+                        + "FROM dataset_action_log WHERE dataset_id = 999999 "
+                        + "AND actor_subject_no = 'provider-p3b' AND action = 'DENIED_CREATE'");
+        assertThat(missingLog.get("space_id")).isNull();
+        assertThat(missingLog.get("dataset_id")).isEqualTo(999999L);
+        assertThat(missingLog.get("result")).isEqualTo("DENIED");
+        assertThat(missingLog.get("reason_code")).isEqualTo("C0003");
+        assertThat(missingLog.get("dedup_key")).isNotNull();
     }
 
     @Test

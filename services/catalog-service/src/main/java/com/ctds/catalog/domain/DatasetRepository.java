@@ -66,6 +66,9 @@ public interface DatasetRepository {
     /** 独立写一条留痕（DENIED 拒绝留痕等；只插不改）。 */
     void insertLog(DatasetActionLog log);
 
+    /** 等强拒绝审计：同键每分钟只新增一行，重复键不改写首条。 */
+    void insertDeniedLog(DatasetActionLog log, String dedupKey);
+
     /**
      * 数据标识当日序号原子取号（Q3-A，沿 subject nextDailySeq 先例）：与登记调用方同事务；
      * 当日从 1 起、跨日重置；上限 999999（超出按超限错误处理而非溢出编号）。

@@ -4,6 +4,7 @@ import com.ctds.common.logging.AuditEvent;
 import com.ctds.common.logging.AuditRecorder;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
@@ -21,6 +22,7 @@ public class RecordingAuditRecorder implements AuditRecorder {
     public synchronized void record(final AuditEvent event) {
         if (event != null) {
             events.add(event);
+            notifyAll();
         }
     }
 
@@ -33,7 +35,24 @@ public class RecordingAuditRecorder implements AuditRecorder {
                 .collect(Collectors.toList());
     }
 
+    public synchronized List<AuditEvent> awaitEventsOf(final String action, final int expected)
+            throws InterruptedException {
+        final long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+        while (true) {
+            final List<AuditEvent> matched = eventsOf(action);
+            if (matched.size() >= expected) {
+                return matched;
+            }
+            final long remaining = deadline - System.nanoTime();
+            if (remaining <= 0) {
+                return matched;
+            }
+            wait(remaining);
+        }
+    }
+
     public synchronized void clear() {
         events.clear();
+        notifyAll();
     }
 }

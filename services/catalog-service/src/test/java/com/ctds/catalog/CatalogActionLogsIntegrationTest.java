@@ -8,17 +8,20 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import com.ctds.catalog.domain.CatalogErrorCodes;
 import com.ctds.catalog.domain.SubjectAdmission;
 import com.ctds.catalog.domain.SubjectAdmissionPort;
+import com.ctds.catalog.support.FixedClockConfig;
 import com.ctds.catalog.support.SharedMySqlContainer;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -45,6 +48,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @AutoConfigureMockMvc
 @ActiveProfiles("mysql")
 @Testcontainers(disabledWithoutDocker = true)
+@Import(FixedClockConfig.class)
 class CatalogActionLogsIntegrationTest {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -136,7 +140,7 @@ class CatalogActionLogsIntegrationTest {
     }
 
     @Test
-    void r14MissingDatasetSameShapeWithoutLog() throws Exception {
+    void r14MissingDatasetSameShapeWithDedupDeniedLog() throws Exception {
         final MvcResult missing = mockMvc.perform(auth(get("/api/v1/datasets/999999/action-logs"),
                 "owner-r14", PROVIDER)).andReturn();
         assertThat(missing.getResponse().getStatus()).as("不存在 → 同码同文案").isEqualTo(400);
@@ -148,9 +152,44 @@ class CatalogActionLogsIntegrationTest {
         assertThat(root(missing).properties().stream().map(java.util.Map.Entry::getKey).toList())
                 .as("拒绝封套结构白名单（不新增存在性差异字段）")
                 .containsExactlyInAnyOrder("code", "message", "traceId", "data");
-        assertThat(jdbc.queryForObject(
-                "SELECT COUNT(*) FROM dataset_action_log WHERE dataset_id = 999999", Long.class))
-                .as("不存在对象无留痕（无对象指向）").isZero();
+        final Map<String, Object> denial = jdbc.queryForMap(
+                "SELECT space_id, dataset_id, action, from_value, to_value, result, reason_code, "
+                        + "actor_subject_no, created_at, dedup_key FROM dataset_action_log "
+                        + "WHERE dataset_id = 999999 AND actor_subject_no = 'owner-r14' "
+                        + "AND action = 'DENIED_READ'");
+        assertThat(denial.get("space_id")).isNull();
+        assertThat(denial.get("dataset_id")).isEqualTo(999999L);
+        assertThat(denial.get("from_value")).isNull();
+        assertThat(denial.get("to_value")).isNull();
+        assertThat(denial.get("result")).isEqualTo("DENIED");
+        assertThat(denial.get("reason_code")).isEqualTo("C0003");
+        assertThat(denial.get("created_at")).isNotNull();
+        assertThat(denial.get("dedup_key")).isNotNull();
+    }
+
+    @Test
+    void r14RepeatedMissingDatasetIsDedupedAndRateLimited() throws Exception {
+        final long missingId = 999998L;
+        for (int attempt = 1; attempt <= 20; attempt++) {
+            final MvcResult denied = mockMvc.perform(auth(get("/api/v1/datasets/" + missingId
+                    + "/action-logs"), "limiter-r14", PROVIDER)).andReturn();
+            assertThat(denied.getResponse().getStatus()).as("前 20 次统一拒绝").isEqualTo(400);
+        }
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM dataset_action_log WHERE dataset_id = ? "
+                + "AND actor_subject_no = 'limiter-r14' AND action = 'DENIED_READ'", Long.class,
+                missingId)).isEqualTo(1);
+
+        final MvcResult limited = mockMvc.perform(auth(get("/api/v1/datasets/" + missingId
+                + "/action-logs"), "limiter-r14", PROVIDER)).andReturn();
+        assertThat(limited.getResponse().getStatus()).as("第 21 次起统一 429").isEqualTo(429);
+        assertThat(codeOf(limited)).isEqualTo("1007C0022");
+        assertThat(root(limited).get("message").asText()).isEqualTo("对象访问频率超出限制");
+        assertThat(root(limited).get("data").isNull()).isTrue();
+        assertThat(limited.getResponse().getHeader("Retry-After")).isNotNull();
+        assertThat(Integer.parseInt(limited.getResponse().getHeader("Retry-After"))).isBetween(1, 60);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM dataset_action_log WHERE dataset_id = ? "
+                + "AND actor_subject_no = 'limiter-r14' AND action = 'DENIED_READ'", Long.class,
+                missingId)).isEqualTo(1);
     }
 
     @Test
@@ -168,6 +207,20 @@ class CatalogActionLogsIntegrationTest {
         final long after = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM dataset_action_log WHERE dataset_id = ?", Long.class, datasetId);
         assertThat(after - before).as("admin 治理例外读留痕不另写留痕（避免看留痕产生留痕的递归）").isZero();
+    }
+
+    @Test
+    void r14GovernancePermissionDoesNotBypassMissingObjectDenial() throws Exception {
+        final long missingId = 999994L;
+        final MvcResult denied = mockMvc.perform(auth(get("/api/v1/datasets/" + missingId
+                + "/action-logs"), "governor-r14-missing", ADMIN)).andReturn();
+
+        assertThat(denied.getResponse().getStatus()).as(body(denied)).isEqualTo(400);
+        assertThat(codeOf(denied)).isEqualTo("1000C0003");
+        assertThat(root(denied).get("message").asText()).isEqualTo("资源不存在");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM dataset_action_log WHERE dataset_id = ? "
+                + "AND actor_subject_no = 'governor-r14-missing' AND action = 'DENIED_READ'",
+                Long.class, missingId)).isEqualTo(1);
     }
 
     @Test

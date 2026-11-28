@@ -3,20 +3,33 @@ package com.ctds.catalog;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.ctds.catalog.domain.ActionResult;
+import com.ctds.catalog.domain.DatasetActionLog;
+import com.ctds.catalog.infrastructure.JdbcDatasetRepository;
 import com.ctds.catalog.support.SharedMySqlContainer;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.SQLIntegrityConstraintViolationException;
+import java.sql.Timestamp;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
+import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
@@ -52,7 +65,7 @@ class CatalogMigrationIntegrationTest {
                 "declare_important", "status", "created_at", "updated_at"));
         columns.put("dataset_name_lock", List.of("space_id", "normalized_name", "dataset_id", "locked_at"));
         columns.put("dataset_action_log", List.of("id", "actor_subject_no", "space_id", "dataset_id",
-                "action", "from_value", "to_value", "result", "reason_code", "created_at"));
+                "action", "from_value", "to_value", "result", "reason_code", "created_at", "dedup_key"));
         columns.put("dataset_no_seq", List.of("seq_date", "seq_key", "seq_value"));
         return columns;
     }
@@ -114,8 +127,151 @@ class CatalogMigrationIntegrationTest {
                 .containsExactlyInAnyOrder("space_id", "normalized_name");
         assertThat(indexColumns(db, "dataset_name_lock", "PRIMARY"))
                 .containsExactlyInAnyOrder("space_id", "normalized_name");
+        assertThat(indexColumns(db, "dataset_action_log", "uk_dataset_action_denial_dedup"))
+                .containsExactly("dedup_key");
+        assertThat(collation(db, "dataset_action_log", "dedup_key")).isEqualTo("utf8mb4_bin");
+        assertThat(count(db, "SELECT COUNT(*) FROM information_schema.columns "
+                + "WHERE table_schema = ? AND table_name = 'dataset_action_log' "
+                + "AND column_name = 'space_id' AND is_nullable = 'YES'", db)).isEqualTo(1);
+        assertThat(count(db, "SELECT COUNT(*) FROM information_schema.columns "
+                + "WHERE table_schema = ? AND table_name = 'dataset_action_log' "
+                + "AND column_name = 'actor_subject_no' AND character_maximum_length = 128", db))
+                .isEqualTo(1);
+        assertThat(count(db, "SELECT COUNT(*) FROM information_schema.columns "
+                + "WHERE table_schema = ? AND table_name = 'dataset_action_log' "
+                + "AND column_name = 'dedup_key' AND character_maximum_length = 255", db))
+                .isEqualTo(1);
         // 判重前提：列排序规则为 0900_ai_ci（大小写/重音不敏感，"过阻断"方向）
         assertThat(collation(db, "dataset", "normalized_name")).isEqualTo("utf8mb4_0900_ai_ci");
+    }
+
+    @Test
+    void denialDedupKeyIsUniqueAndCaseSensitive() throws SQLException {
+        final String db = freshDatabaseWithMigration("denial_dedup");
+        insertDenialAudit(db, "7:subject|1|DENIED_READ|C0003|1");
+        assertThatThrownBy(() -> insertDenialAudit(db, "7:subject|1|DENIED_READ|C0003|1"))
+                .isInstanceOf(SQLIntegrityConstraintViolationException.class);
+        insertDenialAudit(db, "7:Subject|1|DENIED_READ|C0003|1");
+        assertThat(count(db, "SELECT COUNT(*) FROM dataset_action_log WHERE dedup_key IS NOT NULL"))
+                .isEqualTo(2);
+    }
+
+    @Test
+    void v6MigrationPreservesV5HistoryAndAllowsMultipleNullDedupKeys() throws SQLException {
+        final String database = "ctds_catalog_v5_upgrade_" + DB_SEQ.incrementAndGet();
+        final String url = SharedMySqlContainer.jdbcUrlFor(database);
+        final String username = SharedMySqlContainer.container().getUsername();
+        final String password = SharedMySqlContainer.container().getPassword();
+        Flyway.configure().dataSource(url, username, password).locations("classpath:db/migration")
+                .target("5").load().migrate();
+        insertLegacyActionLog(database, "legacy-success", 1L, 1L, "REGISTER", "SUCCESS", null);
+        insertLegacyActionLog(database, "legacy-denied", 1L, 2L, "DENIED_READ", "DENIED", "C0003");
+        final String historicalColumns = "id, actor_subject_no, space_id, dataset_id, action, "
+                + "from_value, to_value, result, reason_code, created_at";
+        final List<Map<String, Object>> before = queryRows(database,
+                "SELECT " + historicalColumns + " FROM dataset_action_log ORDER BY id");
+
+        Flyway.configure().dataSource(url, username, password).locations("classpath:db/migration")
+                .load().migrate();
+
+        assertThat(queryRows(database, "SELECT " + historicalColumns
+                + " FROM dataset_action_log ORDER BY id")).isEqualTo(before);
+        assertThat(count(database, "SELECT COUNT(*) FROM dataset_action_log WHERE dedup_key IS NULL"))
+                .isEqualTo(2);
+        assertThat(count(database, "SELECT COUNT(*) FROM flyway_schema_history "
+                + "WHERE version = '6' AND success = 1")).isEqualTo(1);
+
+        final DriverManagerDataSource dataSource = new DriverManagerDataSource(
+                url, username, password);
+        final JdbcDatasetRepository repository = new JdbcDatasetRepository(
+                JdbcClient.create(dataSource));
+        repository.insertDeniedLog(new DatasetActionLog(null, "post-migration", null, 3L,
+                "DENIED_READ", null, null, ActionResult.DENIED, "C0003",
+                LocalDateTime.of(2026, 11, 24, 14, 2)),
+                "14:post-migration|3|DENIED_READ|C0003|1");
+        assertThat(queryRows(database, "SELECT " + historicalColumns
+                + " FROM dataset_action_log ORDER BY id LIMIT 2")).isEqualTo(before);
+    }
+
+    @Test
+    void duplicateDenialUpsertDoesNotModifyFirstRow() throws SQLException {
+        final String db = freshDatabaseWithMigration("denial_upsert");
+        final DriverManagerDataSource dataSource = new DriverManagerDataSource(
+                SharedMySqlContainer.jdbcUrlFor(db), SharedMySqlContainer.container().getUsername(),
+                SharedMySqlContainer.container().getPassword());
+        final JdbcDatasetRepository repository = new JdbcDatasetRepository(JdbcClient.create(dataSource));
+        final String dedupKey = "7:subject|1|DENIED_READ|C0003|1";
+        final DatasetActionLog first = new DatasetActionLog(null, "subject", 1L, 1L, "DENIED_READ",
+                "before", "after", ActionResult.DENIED, "C0003",
+                LocalDateTime.of(2026, 11, 24, 14, 0));
+        repository.insertDeniedLog(first, dedupKey);
+        final List<Map<String, Object>> before = queryRows(db,
+                "SELECT * FROM dataset_action_log WHERE dedup_key = ?", dedupKey);
+
+        final DatasetActionLog duplicate = new DatasetActionLog(null, "other-subject", 2L, 2L,
+                "DENIED_UPDATE", "changed", "changed-again", ActionResult.DENIED, "C9999",
+                LocalDateTime.of(2026, 11, 24, 14, 1));
+        repository.insertDeniedLog(duplicate, dedupKey);
+
+        assertThat(queryRows(db, "SELECT * FROM dataset_action_log WHERE dedup_key = ?", dedupKey))
+                .isEqualTo(before);
+        assertThat(count(db, "SELECT COUNT(*) FROM dataset_action_log WHERE dedup_key = ?", dedupKey))
+                .isEqualTo(1);
+    }
+
+    @Test
+    void twoRepositoryInstancesInsertOneDenialRowForSameKey() throws Exception {
+        final String db = freshDatabaseWithMigration("denial_concurrent");
+        final DriverManagerDataSource dataSource = new DriverManagerDataSource(
+                SharedMySqlContainer.jdbcUrlFor(db), SharedMySqlContainer.container().getUsername(),
+                SharedMySqlContainer.container().getPassword());
+        final JdbcDatasetRepository first = new JdbcDatasetRepository(JdbcClient.create(dataSource));
+        final JdbcDatasetRepository second = new JdbcDatasetRepository(JdbcClient.create(dataSource));
+        final DatasetActionLog log = new DatasetActionLog(null, "subject", null, 1L, "DENIED_READ",
+                null, null, ActionResult.DENIED, "C0003", LocalDateTime.of(2026, 11, 24, 14, 0));
+        final String dedupKey = "7:subject|1|DENIED_READ|C0003|1";
+        final CountDownLatch ready = new CountDownLatch(2);
+        final CountDownLatch start = new CountDownLatch(1);
+        final ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            final List<Callable<Void>> calls = List.of(() -> {
+                ready.countDown();
+                start.await();
+                first.insertDeniedLog(log, dedupKey);
+                return null;
+            }, () -> {
+                ready.countDown();
+                start.await();
+                second.insertDeniedLog(log, dedupKey);
+                return null;
+            });
+            final List<Future<Void>> futures = new ArrayList<>();
+            for (final Callable<Void> call : calls) {
+                futures.add(executor.submit(call));
+            }
+            ready.await();
+            start.countDown();
+            for (final Future<Void> future : futures) {
+                future.get();
+            }
+            assertThat(count(db, "SELECT COUNT(*) FROM dataset_action_log WHERE dedup_key = ?",
+                    dedupKey)).isEqualTo(1);
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    private static void insertDenialAudit(final String database, final String dedupKey)
+            throws SQLException {
+        try (Connection connection = connect(database);
+             PreparedStatement statement = connection.prepareStatement(
+                     "INSERT INTO dataset_action_log (actor_subject_no, space_id, dataset_id, action, "
+                             + "result, reason_code, created_at, dedup_key) "
+                             + "VALUES ('subject', NULL, 1, 'DENIED_READ', 'DENIED', 'C0003', ?, ?)")) {
+            statement.setTimestamp(1, Timestamp.valueOf(LocalDateTime.of(2026, 11, 24, 14, 0)));
+            statement.setString(2, dedupKey);
+            statement.executeUpdate();
+        }
     }
 
     // ==== 探针 3：数据标识全平台唯一（反向探针）====
@@ -295,6 +451,44 @@ class CatalogMigrationIntegrationTest {
         return DriverManager.getConnection(SharedMySqlContainer.jdbcUrlFor(database),
                 SharedMySqlContainer.container().getUsername(),
                 SharedMySqlContainer.container().getPassword());
+    }
+
+    private static void insertLegacyActionLog(final String database, final String actor,
+            final long spaceId, final long datasetId, final String action, final String result,
+            final String reasonCode) throws SQLException {
+        try (Connection connection = connect(database);
+             PreparedStatement statement = connection.prepareStatement(
+                     "INSERT INTO dataset_action_log (actor_subject_no, space_id, dataset_id, action, "
+                             + "result, reason_code, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")) {
+            statement.setString(1, actor);
+            statement.setLong(2, spaceId);
+            statement.setLong(3, datasetId);
+            statement.setString(4, action);
+            statement.setString(5, result);
+            statement.setString(6, reasonCode);
+            statement.setTimestamp(7, Timestamp.valueOf(LocalDateTime.of(2026, 11, 24, 14, 0)));
+            statement.executeUpdate();
+        }
+    }
+
+    private static List<Map<String, Object>> queryRows(final String database, final String sql,
+            final Object... params) throws SQLException {
+        try (Connection connection = connect(database);
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+            bind(statement, params);
+            try (ResultSet rs = statement.executeQuery()) {
+                final ResultSetMetaData metadata = rs.getMetaData();
+                final List<Map<String, Object>> rows = new ArrayList<>();
+                while (rs.next()) {
+                    final Map<String, Object> row = new LinkedHashMap<>();
+                    for (int column = 1; column <= metadata.getColumnCount(); column++) {
+                        row.put(metadata.getColumnLabel(column), rs.getObject(column));
+                    }
+                    rows.add(row);
+                }
+                return rows;
+            }
+        }
     }
 
     private static long count(final String database, final String sql, final Object... params)

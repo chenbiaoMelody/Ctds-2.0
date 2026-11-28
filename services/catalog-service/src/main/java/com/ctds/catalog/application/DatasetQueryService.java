@@ -1,6 +1,5 @@
 package com.ctds.catalog.application;
 
-import com.ctds.catalog.domain.ActionResult;
 import com.ctds.catalog.domain.CatalogErrorCodes;
 import com.ctds.catalog.domain.Dataset;
 import com.ctds.catalog.domain.DatasetActionLog;
@@ -10,8 +9,6 @@ import com.ctds.common.errorcode.BizException;
 import com.ctds.common.errorcode.ErrorCodes;
 import com.ctds.common.pagination.PageQuery;
 import com.ctds.common.pagination.PageResult;
-import java.time.Clock;
-import java.time.LocalDateTime;
 import org.springframework.stereotype.Service;
 
 /**
@@ -34,14 +31,14 @@ public class DatasetQueryService {
     private final DatasetRepository repository;
     private final CatalogAccessGuard guard;
     private final AccessControl accessControl;
-    private final Clock clock;
+    private final DatasetDenialService denialService;
 
     public DatasetQueryService(final DatasetRepository repository, final CatalogAccessGuard guard,
-            final AccessControl accessControl, final Clock clock) {
+            final AccessControl accessControl, final DatasetDenialService denialService) {
         this.repository = repository;
         this.guard = guard;
         this.accessControl = accessControl;
-        this.clock = clock;
+        this.denialService = denialService;
     }
 
     /** 本人资源分页列表（spaceId 可选过滤；仅 owner_subject_no 命中，createdAt 倒序）。 */
@@ -52,18 +49,13 @@ public class DatasetQueryService {
 
     /**
      * 本人资源详情：非本人（含空间管理员、跨空间成员）与不存在同形拒绝（400 + 1000C0003 + 统一文案，
-     * 规格 B3-R2/B4-R2 防枚举）；资源存在但非本人时落 DENIED_READ 拒绝留痕（reason_code C0003）。
+     * 规格 B3-R2/B4-R2 防枚举）；两态均落 DENIED_READ 拒绝留痕（reason_code C0003）。
      */
     public Dataset detail(final long datasetId) {
         final String subject = guard.requireSubject();
-        final Dataset dataset = repository.findById(datasetId)
-                .orElseThrow(DatasetQueryService::readNotFound);
-        if (!dataset.ownerSubjectNo().equals(subject)) {
-            repository.insertLog(new DatasetActionLog(null, subject, dataset.spaceId(), dataset.id(),
-                    ACTION_DENIED_READ, dataset.status().name(), null, ActionResult.DENIED,
-                    CatalogErrorCodes.tailOf(ErrorCodes.RESOURCE_NOT_FOUND),
-                    LocalDateTime.now(clock)));
-            throw readNotFound();
+        final Dataset dataset = repository.findById(datasetId).orElse(null);
+        if (dataset == null || !dataset.ownerSubjectNo().equals(subject)) {
+            denyRead(subject, datasetId);
         }
         return dataset;
     }
@@ -71,21 +63,24 @@ public class DatasetQueryService {
     /**
      * R14 资源操作留痕分页（WBS-3.3.6 hifi §1.2）：读面 = 登记主体本人 或 治理例外
      * （{@code catalog.governance}，admin 读不另写留痕）；非本人且非治理档 → 400 + 1000C0003
-     * 同形 + DENIED_READ 恰 1 行（沿 R2 同款口径）；对象不存在 → 同形拒绝、无留痕（无对象指向）。
+     * 同形 + DENIED_READ 恰 1 行（沿 R2 同款口径）；对象不存在 → 同形拒绝并留痕。
      */
     public PageResult<DatasetActionLog> actionLogs(final long datasetId, final PageQuery page) {
         final String subject = guard.requireSubject();
-        final Dataset dataset = repository.findById(datasetId)
-                .orElseThrow(DatasetQueryService::readNotFound);
+        final Dataset dataset = repository.findById(datasetId).orElse(null);
+        if (dataset == null) {
+            denyRead(subject, datasetId);
+        }
         final boolean owner = dataset.ownerSubjectNo().equals(subject);
         if (!owner && !accessControl.hasPermission(PERMISSION_GOVERNANCE)) {
-            repository.insertLog(new DatasetActionLog(null, subject, dataset.spaceId(), dataset.id(),
-                    ACTION_DENIED_READ, dataset.status().name(), null, ActionResult.DENIED,
-                    CatalogErrorCodes.tailOf(ErrorCodes.RESOURCE_NOT_FOUND),
-                    LocalDateTime.now(clock)));
-            throw readNotFound();
+            denyRead(subject, datasetId);
         }
         return repository.pageLogsByDataset(datasetId, page);
+    }
+
+    private void denyRead(final String subject, final long datasetId) {
+        denialService.record(subject, ACTION_DENIED_READ, datasetId);
+        throw readNotFound();
     }
 
     /** 属主读面三态统一拒绝（400 + 1000C0003 + "资源不存在"，CHG-C-10.1-V1.3 裁决 A 案）。 */

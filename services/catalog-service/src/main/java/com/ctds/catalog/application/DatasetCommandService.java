@@ -27,7 +27,7 @@ import org.springframework.stereotype.Service;
  * 变更（可变字段白名单 + 级别只能收紧）、注销（二次确认 + 引用保护前置检查 + 两写事务）。
  * 写面三态统一拒绝（DB-135，B3-R2/B4-R2 防存在性枚举）：不存在 / 非属主（非登记主体本人，
  * 含空间管理员，含跨空间）一律 400 + 1000C0003 + "资源不存在"（与读面 DB-132 同码同文），
- * 非属主另落 DENIED 留痕（行为 2 规则 5 / 行为 7 拒绝留痕，reason_code 随出站口径 C0003）；
+ * 两态均落 DENIED 留痕（行为 2 规则 5 / 行为 7 拒绝留痕，reason_code 随出站口径 C0003）；
  * 终态（已注销）再动作一律 1007C0007（行为 2 规则 4，属主门槛之后、无枚举泄露）。
  */
 @Service
@@ -57,11 +57,13 @@ public class DatasetCommandService {
     private final TagTermPort tagTermPort;
     private final CategoryPort categoryPort;
     private final Clock clock;
+    private final DatasetDenialService denialService;
 
     public DatasetCommandService(final DatasetRepository repository,
             final DatasetRegistrationService registrationService, final ProductReferenceGuard guard,
             final CatalogAccessGuard accessGuard, final TagTermPort tagTermPort,
-            final CategoryPort categoryPort, final Clock clock) {
+            final CategoryPort categoryPort, final Clock clock,
+            final DatasetDenialService denialService) {
         this.repository = repository;
         this.registrationService = registrationService;
         this.productReferenceGuard = guard;
@@ -69,6 +71,7 @@ public class DatasetCommandService {
         this.tagTermPort = tagTermPort;
         this.categoryPort = categoryPort;
         this.clock = clock;
+        this.denialService = denialService;
     }
 
     // ==== 登记（行为 1；校验 + 归一化后交幂等边界）====
@@ -135,7 +138,7 @@ public class DatasetCommandService {
     // ==== 变更（行为 2 规则 1）====
 
     /**
-     * 变更：仅登记主体本人（非本人含空间管理员 → 400 + 1000C0003 统一拒绝 + DENIED 留痕，DB-135）；
+     * 变更：仅登记主体本人（不存在 / 非本人含空间管理员 → 400 + 1000C0003 统一拒绝 + DENIED 留痕，DB-135）；
      * 终态拒绝（1007C0007）；逐字段留痕 from→to；分级申报只能收紧就高（下调 → 1007C0004 + DENIED 留痕）。
      * 判定顺序：空变更载荷检查（400 参数码）→ 存在性（400 + 1000C0003 统一拒绝）→
      * 属主（同码同文 + DENIED 留痕）→ 终态（1007C0007）→ 字段校验（400）→ 级别门槛。
@@ -146,8 +149,8 @@ public class DatasetCommandService {
             throw new BizException(ErrorCodes.PARAM_INVALID,
                     "至少提供一项可变更字段（简介/语义标签/分类申报/分级申报）");
         }
-        final Dataset dataset = load(datasetId);
-        requireOwner(dataset, subject, ACTION_DENIED_UPDATE);
+        final Dataset dataset = repository.findById(datasetId).orElse(null);
+        requireOwner(dataset, subject, ACTION_DENIED_UPDATE, datasetId);
         requireActive(dataset);
         final String intro = validIntro(request.intro());
         final String tagsJson = validTagsJson(request.semanticTags());
@@ -193,14 +196,14 @@ public class DatasetCommandService {
     // ==== 注销（行为 2 规则 2/3）====
 
     /**
-     * 注销：仅登记主体本人（非本人 → 400 + 1000C0003 统一拒绝 + DENIED 留痕，DB-135）；
+     * 注销：仅登记主体本人（不存在 / 非本人 → 400 + 1000C0003 统一拒绝 + DENIED 留痕，DB-135）；
      * 终态拒绝（1007C0007）；二次确认 confirmCancellation 显式 true 必填（缺省/null/false → 400 通用参数码）；
      * 引用保护前置检查（本卡恒放行，3.3.5 产品表落地后实体化）；两写事务 + 名称锁定。
      */
     public Dataset cancel(final long datasetId, final Boolean confirmCancellation) {
         final String subject = guard.requireSubject();
-        final Dataset dataset = load(datasetId);
-        requireOwner(dataset, subject, ACTION_DENIED_CANCEL);
+        final Dataset dataset = repository.findById(datasetId).orElse(null);
+        requireOwner(dataset, subject, ACTION_DENIED_CANCEL, datasetId);
         requireActive(dataset);
         if (!Boolean.TRUE.equals(confirmCancellation)) {
             throw new BizException(ErrorCodes.PARAM_INVALID, CANCEL_CONFIRM_REQUIRED_MESSAGE);
@@ -242,12 +245,10 @@ public class DatasetCommandService {
      * DENIED 留痕恰 1 行（reason_code 随新出站口径 C0003，Q2-A）+ 400 + 1000C0003 统一拒绝
      * （与不存在逐字同码同文，防存在性枚举；留痕仅内部可审计，对外不泄露存在性）。
      */
-    private void requireOwner(final Dataset dataset, final String subject, final String denyAction) {
-        if (!dataset.ownerSubjectNo().equals(subject)) {
-            repository.insertLog(new DatasetActionLog(null, subject, dataset.spaceId(), dataset.id(),
-                    denyAction, dataset.status().name(), null, ActionResult.DENIED,
-                    CatalogErrorCodes.tailOf(ErrorCodes.RESOURCE_NOT_FOUND),
-                    LocalDateTime.now(clock)));
+    private void requireOwner(final Dataset dataset, final String subject, final String denyAction,
+            final long datasetId) {
+        if (dataset == null || !dataset.ownerSubjectNo().equals(subject)) {
+            denialService.record(subject, denyAction, datasetId);
             throw writeNotFound();
         }
     }

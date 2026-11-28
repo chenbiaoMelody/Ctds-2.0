@@ -55,12 +55,13 @@ public class ProductCommandService {
     private final ProductCreationService productCreationService;
     private final CatalogAccessGuard guard;
     private final Clock clock;
+    private final DatasetDenialService denialService;
 
     public ProductCommandService(final DataProductRepository productRepository,
             final DatasetRepository datasetRepository, final SpaceMembershipPort spaceMembershipPort,
             final com.ctds.catalog.domain.CategoryPort categoryPort,
             final ProductCreationService productCreationService, final CatalogAccessGuard guard,
-            final Clock clock) {
+            final Clock clock, final DatasetDenialService denialService) {
         this.productRepository = productRepository;
         this.datasetRepository = datasetRepository;
         this.spaceMembershipPort = spaceMembershipPort;
@@ -68,6 +69,7 @@ public class ProductCommandService {
         this.productCreationService = productCreationService;
         this.guard = guard;
         this.clock = clock;
+        this.denialService = denialService;
     }
 
     // ==== R11 提供方管理列表 ====
@@ -101,18 +103,10 @@ public class ProductCommandService {
         final String type = validType(request.productType(), true);
         final String model = requireModel(request.pricingModel());
         validPricingAmount(model, request.priceAmount());
-        final Dataset dataset = datasetRepository.findById(request.datasetId())
-                .orElseThrow(ProductCommandService::sourceNotFound);
-        if (!dataset.ownerSubjectNo().equals(subject)) {
-            // 封装前提 = 资源登记主体本人（行为 3 规则 1）；越权属资源域动作 → DENIED_CREATE 留痕落
-            // dataset_action_log（沿 dataset requireOwner 模式），reason_code 随统一出站口径记 C0003
-            // （DB-139 Q2-A，历史行不回改）；对外与"不存在"同码同文统一拒绝（防存在性枚举），留痕仅内部可审计
-            datasetRepository.insertLog(new com.ctds.catalog.domain.DatasetActionLog(null, subject,
-                    dataset.spaceId(), dataset.id(),
-                    ProductActionLog.deniedActionOf(ProductActionLog.ACTION_CREATE),
-                    dataset.status().name(), null, com.ctds.catalog.domain.ActionResult.DENIED,
-                    CatalogErrorCodes.tailOf(ErrorCodes.RESOURCE_NOT_FOUND),
-                    LocalDateTime.now(clock)));
+        final Dataset dataset = datasetRepository.findById(request.datasetId()).orElse(null);
+        if (dataset == null || !dataset.ownerSubjectNo().equals(subject)) {
+            denialService.record(subject, ProductActionLog.deniedActionOf(ProductActionLog.ACTION_CREATE),
+                    request.datasetId());
             throw sourceNotFound();
         }
         requireDatasetUsable(dataset.id(), subject);
