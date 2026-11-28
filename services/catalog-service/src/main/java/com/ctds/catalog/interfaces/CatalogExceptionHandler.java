@@ -1,11 +1,13 @@
 package com.ctds.catalog.interfaces;
 
 import com.ctds.catalog.domain.CatalogBizException;
+import com.ctds.catalog.domain.CatalogRateLimitException;
 import com.ctds.common.api.ApiResult;
 import com.ctds.common.errorcode.BizException;
 import java.util.Set;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -14,7 +16,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 /**
  * 目录业务异常出站（独立 advice 沿 space SpaceExceptionHandler 先例；common 组件零改动）：
  * 1007 段错误码精确映射 HTTP（hifi §2 状态列）——403 越权、409 名称占用/状态门槛/重要数据拒收/
- * 级别放宽/终态、404 不存在或无权、400 名称非法、503 依赖服务不可用（保留业务文案，不走全局 S 型脱敏）。
+ * 级别放宽/终态、404 不存在或无权、400 名称非法、429 拒绝探测超限（附 Retry-After）、503 依赖服务不可用（保留业务文案，不走全局 S 型脱敏）。
  */
 @Order(Ordered.HIGHEST_PRECEDENCE)
 @RestControllerAdvice
@@ -26,7 +28,7 @@ public class CatalogExceptionHandler {
             "1007C0005", "1007C0006", "1007C0007", "1007C0008", "1007C0009", "1007C0010",
             "1007C0011", "1007C0012", "1007C0013", "1007C0014",
             "1007C0015", "1007C0016", "1007C0017", "1007C0018", "1007C0019", "1007C0020", "1007C0021",
-            "1007S0001", "1007S0002");
+            "1007C0022", "1007S0001", "1007S0002");
 
     @ExceptionHandler(CatalogBizException.class)
     public ResponseEntity<ApiResult<Void>> onCatalogBizException(final CatalogBizException ex) {
@@ -39,6 +41,14 @@ public class CatalogExceptionHandler {
                 .body(new ApiResult<>(code, ex.getMessage(), ApiResult.currentTraceId(), null));
     }
 
+    @ExceptionHandler(CatalogRateLimitException.class)
+    public ResponseEntity<ApiResult<Void>> onRateLimit(final CatalogRateLimitException ex) {
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header(HttpHeaders.RETRY_AFTER, Integer.toString(ex.getRetryAfterSeconds()))
+                .body(new ApiResult<>(ex.getErrorCode().value(), ex.getMessage(),
+                        ApiResult.currentTraceId(), null));
+    }
+
     private static HttpStatus statusOf(final String code) {
         return switch (code) {
             case "1007C0006", "1007C0015" -> HttpStatus.FORBIDDEN;
@@ -46,6 +56,7 @@ public class CatalogExceptionHandler {
                  "1007C0016", "1007C0017", "1007C0019", "1007C0020", "1007C0021" -> HttpStatus.CONFLICT;
             case "1007C0005", "1007C0010", "1007C0011", "1007C0012" -> HttpStatus.NOT_FOUND;
             case "1007C0008", "1007C0009", "1007C0013", "1007C0014", "1007C0018" -> HttpStatus.BAD_REQUEST;
+            case "1007C0022" -> HttpStatus.TOO_MANY_REQUESTS;
             default -> HttpStatus.SERVICE_UNAVAILABLE;   // 1007S0001 / 1007S0002
         };
     }

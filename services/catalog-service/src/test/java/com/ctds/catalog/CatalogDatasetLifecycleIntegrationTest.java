@@ -434,11 +434,12 @@ class CatalogDatasetLifecycleIntegrationTest {
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM dataset_action_log WHERE dataset_id = ? "
                 + "AND actor_subject_no = 'admin-db135e' AND result = 'DENIED' AND reason_code = 'C0003' "
                 + "AND action IN ('DENIED_UPDATE','DENIED_CANCEL')", Integer.class, datasetId)).isEqualTo(2);
-        // 不存在零留痕（load 落空先于留痕）
+        // 不存在也留痕：变更 / 注销各 1 行，space_id 为空、dedup_key 非空
         update("admin-db135e", 999999L, "{\"intro\":\"不存在资源变更\"}");
         cancel("admin-db135e", 999999L, "{\"confirmCancellation\":true}");
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM dataset_action_log WHERE dataset_id = 999999",
-                Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM dataset_action_log WHERE dataset_id = 999999 "
+                + "AND actor_subject_no = 'admin-db135e' AND action IN ('DENIED_UPDATE','DENIED_CANCEL') "
+                + "AND space_id IS NULL AND dedup_key IS NOT NULL", Integer.class)).isEqualTo(2);
     }
 
     @Test
@@ -511,7 +512,7 @@ class CatalogDatasetLifecycleIntegrationTest {
                 .isEqualTo(root(absent).path("message").asText());
         assertThat(root(sameSpaceOther).path("data").getNodeType())
                 .isEqualTo(root(absent).path("data").getNodeType());
-        // 越权探测 DENIED_READ 各恰 1 行、reason_code 随新出站口径 C0003；不存在零留痕
+        // 越权探测 DENIED_READ 各恰 1 行、reason_code 随新出站口径 C0003；不存在也留 1 行
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM dataset_action_log WHERE dataset_id = ? "
                 + "AND action = 'DENIED_READ' AND actor_subject_no = 'admin-t10b'", Integer.class, datasetId))
                 .isEqualTo(1);
@@ -521,8 +522,9 @@ class CatalogDatasetLifecycleIntegrationTest {
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM dataset_action_log WHERE dataset_id = ? "
                 + "AND action = 'DENIED_READ' AND reason_code = 'C0003'", Integer.class, datasetId))
                 .isEqualTo(2);
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM dataset_action_log WHERE dataset_id = 999999",
-                Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM dataset_action_log WHERE dataset_id = 999999 "
+                + "AND actor_subject_no = 'admin-t10b' AND action = 'DENIED_READ' "
+                + "AND space_id IS NULL AND dedup_key IS NOT NULL", Integer.class)).isEqualTo(1);
     }
 
     @Test

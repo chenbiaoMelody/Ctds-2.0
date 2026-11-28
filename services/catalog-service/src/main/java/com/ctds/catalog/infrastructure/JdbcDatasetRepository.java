@@ -123,7 +123,8 @@ public class JdbcDatasetRepository implements DatasetRepository {
 
     private static DatasetActionLog mapActionLog(final ResultSet rs) throws SQLException {
         return new DatasetActionLog(rs.getLong("id"), rs.getString("actor_subject_no"),
-                rs.getLong("space_id"), rs.getLong("dataset_id"), rs.getString("action"),
+                rs.getObject("space_id", Long.class), rs.getObject("dataset_id", Long.class),
+                rs.getString("action"),
                 rs.getString("from_value"), rs.getString("to_value"),
                 ActionResult.valueOf(rs.getString("result")), rs.getString("reason_code"),
                 rs.getTimestamp("created_at").toLocalDateTime());
@@ -230,6 +231,18 @@ public class JdbcDatasetRepository implements DatasetRepository {
     @Override
     public void insertLog(final DatasetActionLog log) {
         insertLogWithinTransaction(log);
+    }
+
+    @Override
+    public void insertDeniedLog(final DatasetActionLog log, final String dedupKey) {
+        jdbc.sql("INSERT INTO dataset_action_log (actor_subject_no, space_id, dataset_id, action, "
+                        + "from_value, to_value, result, reason_code, created_at, dedup_key) "
+                        + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                        + "ON DUPLICATE KEY UPDATE id = id")
+                .params(log.actorSubjectNo(), log.spaceId(), log.datasetId(), log.action(),
+                        log.fromValue(), log.toValue(), log.result().name(), log.reasonCode(),
+                        timestamp(log.createdAt()), dedupKey)
+                .update();
     }
 
     /**

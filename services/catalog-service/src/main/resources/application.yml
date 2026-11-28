@@ -50,6 +50,12 @@ ctds:
       delivery-internal: catalog.internal.read
   # 目录与资源服务参数（WBS-3.3.2 hifi §4~§5）
   catalog:
+    # 对象存在性拒绝保护（DB-134）：固定 60 秒窗口，只统计拒绝，不影响属主正常请求。
+    denial-protection:
+      max-requests-per-minute: 20
+      max-tracked-keys: 10000
+      max-subject-requests-per-minute: 100
+      max-subject-tracked-keys: 10000
     # 主体服务衔接（资格判定只读通道，subject yml 已加 catalog-internal 1 行授权）：
     # 未配置 = 资格判定不可用（1007S0001，不冒充"未入驻"防枚举）。
     subject:

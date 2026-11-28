@@ -60,7 +60,7 @@ class GatewayRateLimitDisabledIntegrationTest {
     private AuditRecorder auditRecorder;
 
     @Test
-    void rateLimitDisabledForwardsBurstBeyondThreshold() {
+    void rateLimitDisabledForwardsBurstBeyondThreshold() throws Exception {
         UPSTREAM.resetCounters();
         UPSTREAM.respondUpstream(HttpStatus.OK.value(), "{\"code\":\"0\"}");
         JUDGE.respondAllowed("S-burst", "S-prov-352");
@@ -78,7 +78,7 @@ class GatewayRateLimitDisabledIntegrationTest {
 
         assertThat(UPSTREAM.requestCount()).as("开关关闭时不限流，全部放行").isEqualTo(5);
         final List<AuditEvent> metering = ((RecordingAuditRecorder) auditRecorder)
-                .eventsOf(GatewayAuditActions.DELIVERY_METERING);
+                .awaitEventsOf(GatewayAuditActions.DELIVERY_METERING, 5);
         assertThat(metering).hasSize(5);
     }
 }
